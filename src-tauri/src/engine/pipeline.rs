@@ -198,6 +198,118 @@ mod tests {
         assert!(render_source(&deck_path, source).is_err());
     }
 
+    // A 4-section, 15-minute deck (mirroring a real example deck) — the
+    // fixture the next few tests mutate the way Studio.tsx's
+    // deleteSlide/addSlide/toggleSlideSection do, to confirm the
+    // frontend's frontmatter-time bookkeeping actually produces something
+    // peitho-core accepts.
+    const FOUR_SECTION_DECK: &str = "---\ntime: 15m\n---\n\
+<!-- {\"key\":\"problem\",\"section\":\"Problem\",\"time\":\"1m\"} -->\n# One\n\n---\n\n\
+<!-- {\"key\":\"approach\",\"section\":\"Approach\",\"time\":\"2m\"} -->\n# Two\n\n---\n\n\
+<!-- {\"key\":\"wrapup\",\"section\":\"Wrap-up\",\"time\":\"1m\"} -->\n# Three\n\n---\n\n\
+<!-- {\"key\":\"setup\",\"section\":\"Setup\",\"time\":\"11m\"} -->\n# Four\n\n---\n\n\
+<!-- {\"key\":\"review\"} -->\n# Five\n";
+
+    #[test]
+    fn render_source_spec_deck_after_deleting_a_section_slide_stays_valid() {
+        // Studio.tsx's deleteSlide removes the "Problem" slide (1m) and
+        // resyncs frontmatter time to the remaining sections' sum (14m) —
+        // this is the exact bug (tmp/todo.md: "時間指定されていると、
+        // エラーになる") this test guards against regressing.
+        let source = "---\ntime: 14m\n---\n\
+<!-- {\"key\":\"approach\",\"section\":\"Approach\",\"time\":\"2m\"} -->\n# Two\n\n---\n\n\
+<!-- {\"key\":\"wrapup\",\"section\":\"Wrap-up\",\"time\":\"1m\"} -->\n# Three\n\n---\n\n\
+<!-- {\"key\":\"setup\",\"section\":\"Setup\",\"time\":\"11m\"} -->\n# Four\n\n---\n\n\
+<!-- {\"key\":\"review\"} -->\n# Five\n";
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let output = render_source(&deck_path, source).expect("resynced frontmatter time should build cleanly");
+        let manifest: serde_json::Value = serde_json::from_str(&output.manifest_json).unwrap();
+        assert_eq!(manifest["slideCount"], 4);
+        assert_eq!(manifest["plannedDurationMs"], 14 * 60_000);
+    }
+
+    #[test]
+    fn render_source_adversarial_deleting_a_section_slide_without_resyncing_time_fails() {
+        // The bug itself: same deletion as above, but frontmatter still
+        // says 15m — proves the resync in `syncedSource` (Studio.tsx) is
+        // load-bearing, not just tidiness.
+        let source = "---\ntime: 15m\n---\n\
+<!-- {\"key\":\"approach\",\"section\":\"Approach\",\"time\":\"2m\"} -->\n# Two\n\n---\n\n\
+<!-- {\"key\":\"wrapup\",\"section\":\"Wrap-up\",\"time\":\"1m\"} -->\n# Three\n\n---\n\n\
+<!-- {\"key\":\"setup\",\"section\":\"Setup\",\"time\":\"11m\"} -->\n# Four\n\n---\n\n\
+<!-- {\"key\":\"review\"} -->\n# Five\n";
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        assert!(render_source(&deck_path, source).is_err());
+    }
+
+    #[test]
+    fn render_source_spec_deck_after_adding_a_plain_slide_stays_valid() {
+        // Studio.tsx's addSlide inserts a section-less blank slide — the
+        // section sum (and so the frontmatter time) is unchanged.
+        let source = "---\ntime: 15m\n---\n\
+<!-- {\"key\":\"problem\",\"section\":\"Problem\",\"time\":\"1m\"} -->\n# One\n\n---\n\n\
+# New Slide\n\n---\n\n\
+<!-- {\"key\":\"approach\",\"section\":\"Approach\",\"time\":\"2m\"} -->\n# Two\n\n---\n\n\
+<!-- {\"key\":\"wrapup\",\"section\":\"Wrap-up\",\"time\":\"1m\"} -->\n# Three\n\n---\n\n\
+<!-- {\"key\":\"setup\",\"section\":\"Setup\",\"time\":\"11m\"} -->\n# Four\n\n---\n\n\
+<!-- {\"key\":\"review\"} -->\n# Five\n";
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let output = render_source(&deck_path, source).expect("adding a plain slide shouldn't need a time resync");
+        let manifest: serde_json::Value = serde_json::from_str(&output.manifest_json).unwrap();
+        assert_eq!(manifest["slideCount"], 6);
+        assert_eq!(manifest["plannedDurationMs"], 15 * 60_000);
+    }
+
+    #[test]
+    fn render_source_spec_deck_after_marking_a_slide_as_a_new_section_stays_valid() {
+        // Studio.tsx's toggleSlideSection promotes the plain "review" slide
+        // to a section start (default 30s) — frontmatter time grows to
+        // match the new sum (15m30s).
+        let source = "---\ntime: 15m30s\n---\n\
+<!-- {\"key\":\"problem\",\"section\":\"Problem\",\"time\":\"1m\"} -->\n# One\n\n---\n\n\
+<!-- {\"key\":\"approach\",\"section\":\"Approach\",\"time\":\"2m\"} -->\n# Two\n\n---\n\n\
+<!-- {\"key\":\"wrapup\",\"section\":\"Wrap-up\",\"time\":\"1m\"} -->\n# Three\n\n---\n\n\
+<!-- {\"key\":\"setup\",\"section\":\"Setup\",\"time\":\"11m\"} -->\n# Four\n\n---\n\n\
+<!-- {\"key\":\"review\",\"section\":\"New Section\",\"time\":\"30s\"} -->\n# Five\n";
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let output = render_source(&deck_path, source).expect("a freshly-sectioned slide should build cleanly");
+        let manifest: serde_json::Value = serde_json::from_str(&output.manifest_json).unwrap();
+        assert_eq!(manifest["slideCount"], 5);
+        assert_eq!(manifest["plannedDurationMs"], 15 * 60_000 + 30_000);
+        assert_eq!(manifest["sections"].as_array().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn render_source_spec_deck_after_removing_a_section_stays_valid() {
+        // Studio.tsx's toggleSlideSection demotes a section start back to
+        // a plain slide (both `section` and `time` dropped together) —
+        // frontmatter time shrinks to match.
+        let source = "---\ntime: 14m\n---\n\
+<!-- {\"key\":\"approach\",\"section\":\"Approach\",\"time\":\"2m\"} -->\n# Two\n\n---\n\n\
+<!-- {\"key\":\"wrapup\",\"section\":\"Wrap-up\",\"time\":\"1m\"} -->\n# Three\n\n---\n\n\
+<!-- {\"key\":\"setup\",\"section\":\"Setup\",\"time\":\"11m\"} -->\n# Four\n\n---\n\n\
+<!-- {\"key\":\"review\"} -->\n# Five\n";
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let output = render_source(&deck_path, source).expect("demoting a section should build cleanly");
+        let manifest: serde_json::Value = serde_json::from_str(&output.manifest_json).unwrap();
+        assert_eq!(manifest["sections"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn render_source_spec_four_section_fixture_itself_is_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let output = render_source(&deck_path, FOUR_SECTION_DECK).expect("fixture deck should be valid");
+        let manifest: serde_json::Value = serde_json::from_str(&output.manifest_json).unwrap();
+        assert_eq!(manifest["slideCount"], 5);
+        assert_eq!(manifest["plannedDurationMs"], 15 * 60_000);
+    }
+
     #[test]
     fn render_source_adversarial_section_without_time_is_a_build_error() {
         // peitho requires `section` and `time` to be set together in a

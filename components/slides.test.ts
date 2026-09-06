@@ -10,6 +10,8 @@ import {
   parseDurationToMs,
   formatDurationMs,
   updateFrontmatterTime,
+  joinSlideTexts,
+  sumSectionTimesMs,
 } from './slides'
 
 describe('splitSlides', () => {
@@ -259,5 +261,50 @@ describe('updateFrontmatterTime', () => {
   test('adversarial: zero duration formats as 0s, not an empty string', () => {
     const source = '---\ntime: 1m\n---\n# Title\n'
     expect(updateFrontmatterTime(source, 0)).toBe('---\ntime: 0s\n---\n# Title\n')
+  })
+})
+
+describe('joinSlideTexts', () => {
+  test('spec: joins slides with peitho\'s --- separator and keeps prefix/suffix', () => {
+    const joined = joinSlideTexts('---\ntime: 1m\n---\n', ['# One', '# Two'], '')
+    expect(joined).toBe('---\ntime: 1m\n---\n# One\n\n---\n\n# Two\n')
+  })
+
+  test('adversarial: a single slide has no separator at all', () => {
+    expect(joinSlideTexts('', ['# One'], '')).toBe('# One\n')
+  })
+
+  test('adversarial: each slide text is trimmed before joining', () => {
+    expect(joinSlideTexts('', ['  # One  \n', '\n# Two\n'], '')).toBe('# One\n\n---\n\n# Two\n')
+  })
+
+  test('adversarial: an empty texts array still returns prefix+suffix', () => {
+    expect(joinSlideTexts('pre', [], 'post')).toBe('pre\npost')
+  })
+})
+
+describe('sumSectionTimesMs', () => {
+  test('spec: sums only slides that mark the start of a section', () => {
+    const texts = [
+      '<!-- {"section":"Intro","time":"1m"} -->\n# One',
+      '# Two (no section)',
+      '<!-- {"section":"Body","time":"2m30s"} -->\n# Three',
+    ]
+    expect(sumSectionTimesMs(texts)).toBe(210_000)
+  })
+
+  test('adversarial: no sections at all sums to zero', () => {
+    expect(sumSectionTimesMs(['# One', '# Two'])).toBe(0)
+  })
+
+  test('adversarial: a slide with only `section` (no `time`) contributes nothing', () => {
+    // peitho requires section+time to be set together — a malformed
+    // half-set PageComment shouldn't be treated as if it had a valid time.
+    const texts = ['<!-- {"section":"Intro"} -->\n# One']
+    expect(sumSectionTimesMs(texts)).toBe(0)
+  })
+
+  test('adversarial: an empty array sums to zero', () => {
+    expect(sumSectionTimesMs([])).toBe(0)
   })
 })

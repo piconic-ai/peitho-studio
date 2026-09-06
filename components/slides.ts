@@ -205,6 +205,33 @@ export function formatDurationMs(ms: number): string {
   return `${String(minutes)}m${String(seconds)}s`
 }
 
+/** Rebuilds a deck's full source from an ordered list of slide texts,
+ * joined with peitho's own `---` slide separator. `prefix` (YAML
+ * frontmatter, if any) and `suffix` (anything after the last slide) are
+ * passed through untouched — callers slice them from the original source
+ * once, since splitting them back out of the rebuilt text isn't otherwise
+ * possible. */
+export function joinSlideTexts(prefix: string, texts: string[], suffix: string): string {
+  return `${prefix}${texts.map(t => t.trim()).join('\n\n---\n\n')}\n${suffix}`
+}
+
+/** Sums every slide's own section time — only a slide whose PageComment
+ * marks the *start* of a section counts (peitho requires `section`/`time`
+ * to be set together), so a plain slide with neither contributes nothing.
+ * Used to keep the deck's frontmatter `time:` in sync whenever the slide
+ * list itself changes (adding, pasting, or deleting a slide can add or
+ * remove a section along with it). */
+export function sumSectionTimesMs(slideTexts: string[]): number {
+  let total = 0
+  for (const text of slideTexts) {
+    const { config } = extractPageComment(text)
+    if (typeof config.section === 'string' && typeof config.time === 'string') {
+      total += parseDurationToMs(config.time) ?? 0
+    }
+  }
+  return total
+}
+
 // peitho requires a deck's frontmatter `time:` to equal the sum of every
 // section's planned time — editing one section's time from the slide list
 // would otherwise silently break the very next build. This keeps the two

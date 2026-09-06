@@ -14,6 +14,8 @@ import {
   parseDurationToMs,
   updateFrontmatterTime,
   formatDurationMs,
+  joinSlideTexts,
+  sumSectionTimesMs,
   type SlideRange,
 } from './slides'
 import { buildSlidePreviewDoc } from './previewDoc'
@@ -64,6 +66,9 @@ interface DeckSessionInfo {
 const MIN_COLUMN_WIDTH = 180
 const MAX_COLUMN_WIDTH = 640
 const SLIDE_LIST_WIDTH = 176
+// No PageComment — peitho assigns a fresh key at build time the same way
+// it would for any other slide that never specified one.
+const NEW_SLIDE_MARKDOWN = '# New Slide\n'
 
 export function Studio() {
   const [deckPath, setDeckPath] = createSignal<string | null>(null)
@@ -571,6 +576,32 @@ export function Studio() {
     await commitChange(nextSource, index, { body, note })
   }
 
+  // Rebuilds `fullSource` from an ordered list of slide texts, preserving
+  // whatever precedes the first slide (YAML frontmatter) and follows the
+  // last. Every operation that adds, removes, or reorders slides goes
+  // through this rather than slicing `fullSource` directly, so none of
+  // them can leave a doubled separator or stray blank line behind.
+  function rebuildSource(texts: string[]): string {
+    const ranges = slideRanges()
+    const source = fullSource()
+    const prefix = source.slice(0, ranges[0]?.start ?? 0)
+    const suffix = source.slice(ranges[ranges.length - 1]?.end ?? source.length)
+    return joinSlideTexts(prefix, texts, suffix)
+  }
+
+  // Same as `rebuildSource`, plus keeping the frontmatter `time:` in sync
+  // with the sum of every section's own time — required whenever the
+  // *set* of slides changes (adding, pasting, or deleting a slide can add
+  // or remove a section along with it), unlike a plain reorder, which
+  // never changes that sum. Left untouched when the deck uses no sections
+  // at all, so a plain deck never gets a `time:` frontmatter block it
+  // never asked for.
+  function syncedSource(texts: string[]): string {
+    const rebuilt = rebuildSource(texts)
+    const totalMs = sumSectionTimesMs(texts)
+    return totalMs > 0 ? updateFrontmatterTime(rebuilt, totalMs) : rebuilt
+  }
+
   async function commitSectionEdit(startIndex: number): Promise<void> {
     const draft = sectionDrafts()[startIndex]
     const range = slideRanges()[startIndex]
@@ -604,11 +635,10 @@ export function Studio() {
     const texts = ranges.map((_, i) => currentSlideText(i).trim())
     const [moved] = texts.splice(from, 1)
     texts.splice(to, 0, moved)
-    const source = fullSource()
-    const prefix = source.slice(0, ranges[0]?.start ?? 0)
-    const suffix = source.slice(ranges[ranges.length - 1]?.end ?? source.length)
-    const nextSource = `${prefix}${texts.join('\n\n---\n\n')}\n${suffix}`
-    await commitChange(nextSource, to)
+    // A reorder never changes *which* sections exist or their times, only
+    // their positions — the frontmatter total can't have gone stale, so
+    // this skips `syncedSource`'s (harmless, but pointless) recompute.
+    await commitChange(rebuildSource(texts), to)
   }
 
   // Native HTML5 drag-and-drop (`draggable`/`onDragStart`/`onDrop`) used to
@@ -696,21 +726,16 @@ export function Studio() {
     setClipboardSlideText(currentSlideText(index))
   }
 
-  // Removes a slide by re-joining every other slide's text with peitho's own
-  // `---` separator — the same reconstruction `reorderSlides` already uses,
-  // rather than slicing `fullSource` directly (which risks leaving a
-  // doubled separator or stray blank line behind).
+  // Removes a slide by re-joining every other slide's text — the frontmatter
+  // time total is re-synced in case the removed slide was itself a section
+  // start (see `syncedSource`).
   async function deleteSlide(index: number): Promise<void> {
     const ranges = slideRanges()
     if (ranges.length <= 1) return
     if (index < 0 || index >= ranges.length) return
     const texts = ranges.map((_, i) => currentSlideText(i).trim())
     texts.splice(index, 1)
-    const source = fullSource()
-    const prefix = source.slice(0, ranges[0]?.start ?? 0)
-    const suffix = source.slice(ranges[ranges.length - 1]?.end ?? source.length)
-    const nextSource = `${prefix}${texts.join('\n\n---\n\n')}\n${suffix}`
-    await commitChange(nextSource, Math.min(index, texts.length - 1))
+    await commitChange(syncedSource(texts), Math.min(index, texts.length - 1))
   }
 
   async function cutSlide(index: number): Promise<void> {
@@ -720,6 +745,17 @@ export function Studio() {
     await deleteSlide(index)
   }
 
+  // Inserts a blank new slide right after `index` — content-free (no
+  // PageComment), so peitho assigns it a key the same way it would for any
+  // hand-written slide that never specified one.
+  async function addSlide(index: number): Promise<void> {
+    const ranges = slideRanges()
+    const texts = ranges.map((_, i) => currentSlideText(i).trim())
+    const insertAt = Math.min(index + 1, texts.length)
+    texts.splice(insertAt, 0, NEW_SLIDE_MARKDOWN)
+    await commitChange(syncedSource(texts), insertAt)
+  }
+
   async function pasteSlideAfter(index: number): Promise<void> {
     const clip = clipboardSlideText()
     if (clip === null) return
@@ -727,11 +763,7 @@ export function Studio() {
     const texts = ranges.map((_, i) => currentSlideText(i).trim())
     const insertAt = Math.min(index + 1, texts.length)
     texts.splice(insertAt, 0, stripPageCommentKey(clip.trim()))
-    const source = fullSource()
-    const prefix = source.slice(0, ranges[0]?.start ?? 0)
-    const suffix = source.slice(ranges[ranges.length - 1]?.end ?? source.length)
-    const nextSource = `${prefix}${texts.join('\n\n---\n\n')}\n${suffix}`
-    await commitChange(nextSource, insertAt)
+    await commitChange(syncedSource(texts), insertAt)
   }
 
   async function moveSlide(index: number, direction: 1 | -1): Promise<void> {
@@ -748,15 +780,16 @@ export function Studio() {
     return extractPageComment(withoutNote).config
   }
 
+  // Routed through `syncedSource` (not a direct range-slice replace) so a
+  // config change that adds or removes a section (see `toggleSlideSection`)
+  // keeps the frontmatter time total correct — a no-op resync for updates
+  // (layout/draft/skip) that don't touch `section`/`time`.
   async function updateSlideConfig(index: number, updates: Record<string, unknown>): Promise<void> {
     const slideText = currentSlideText(index)
     const updated = updatePageComment(slideText, updates)
     if (updated === slideText) return
-    const range = slideRanges()[index]
-    if (!range) return
-    const source = fullSource()
-    const nextSource = source.slice(0, range.start) + updated + source.slice(range.end)
-    await commitChange(nextSource, index)
+    const texts = slideRanges().map((_, i) => (i === index ? updated : currentSlideText(i)).trim())
+    await commitChange(syncedSource(texts), index)
   }
 
   async function changeSlideLayout(index: number, layout: string): Promise<void> {
@@ -769,6 +802,20 @@ export function Studio() {
 
   async function toggleSlideSkip(index: number): Promise<void> {
     await updateSlideConfig(index, { skip: slideConfigOf(index).skip !== true })
+  }
+
+  // Toggles whether this slide marks the *start* of a section. peitho
+  // requires `section`/`time` to be set together, so both are set (with
+  // sensible defaults the user immediately overwrites via the section
+  // header's own inline name/time editing) or both cleared — never one
+  // without the other.
+  async function toggleSlideSection(index: number): Promise<void> {
+    const config = slideConfigOf(index)
+    if (typeof config.section === 'string') {
+      await updateSlideConfig(index, { section: undefined, time: undefined })
+    } else {
+      await updateSlideConfig(index, { section: 'New Section', time: '30s' })
+    }
   }
 
   // Reacts to the Rust-side file watcher (`deck-file-changed`): an external
@@ -857,6 +904,11 @@ export function Studio() {
         if (event.metaKey && event.shiftKey && event.key === 'ArrowDown') {
           event.preventDefault()
           void moveSlide(current, 1)
+          return
+        }
+        if (event.metaKey && event.key === 'Enter') {
+          event.preventDefault()
+          void addSlide(current)
           return
         }
         if (event.metaKey && key === 'x') {
@@ -1240,6 +1292,14 @@ export function Studio() {
       >
         <button
           type="button"
+          onClick={() => { void addSlide(contextMenu()!.index); closeContextMenu() }}
+          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent"
+        >
+          <span>New Slide</span><span className="text-xs text-muted-foreground">⌘⏎</span>
+        </button>
+        <div className="my-1 border-t border-border" />
+        <button
+          type="button"
           onClick={() => { void cutSlide(contextMenu()!.index); closeContextMenu() }}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent"
         >
@@ -1312,6 +1372,14 @@ export function Studio() {
         >
           <span>Skip in Present</span>
           {contextMenu() !== null && slideConfigOf(contextMenu()!.index).skip === true ? <span aria-hidden="true">✓</span> : null}
+        </button>
+        <button
+          type="button"
+          onClick={() => { void toggleSlideSection(contextMenu()!.index); closeContextMenu() }}
+          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent"
+        >
+          <span>Section Start</span>
+          {contextMenu() !== null && typeof slideConfigOf(contextMenu()!.index).section === 'string' ? <span aria-hidden="true">✓</span> : null}
         </button>
         <div className="my-1 border-t border-border" />
         <button
