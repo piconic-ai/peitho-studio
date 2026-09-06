@@ -1,0 +1,34 @@
+{
+  "name": "peitho-studio",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite build && unocss && concurrently -k -n build,uno,server -c blue,magenta,green \"vite build --watch\" \"unocss --watch\" \"tsx watch server.ts\"",
+    "build": "vite build && unocss",
+    "start": "tsx server.ts",
+    "watch": "concurrently -k -n build,uno -c blue,magenta \"vite build --watch\" \"unocss --watch\"",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@barefootjs/client": "^0.33.6",
+    "@barefootjs/jsx": "^0.33.6",
+    "@barefootjs/shared": "^0.33.6",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3"
+  },
+  "devDependencies": {
+    "@barefootjs/cli": "^0.33.6",
+    "@barefootjs/test": "^0.33.6",
+    "@barefootjs/vite": "^0.33.6",
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/bun": "^1.1.0",
+    "@types/node": "^22.0.0",
+    "@unocss/cli": "^66.0.0",
+    "@unocss/preset-wind4": "^66.0.0",
+    "concurrently": "^9.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "unocss": "^66.0.0",
+    "vite": "^6.0.0"
+  }
+}
