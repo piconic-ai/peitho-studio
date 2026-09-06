@@ -169,3 +169,74 @@ fn short_sha256_hex(bytes: &[u8], hex_chars: usize) -> String {
     }
     hex
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_source_spec_renders_a_real_example_deck() {
+        // Exercises the embedded engine against a real, maintained deck
+        // from the sibling peitho checkout (see `engine::fixtures`) rather
+        // than a hand-rolled snippet — that's what actually catches a
+        // peitho-core API/behavior drift.
+        let deck_path = crate::engine::fixtures::example_deck("minimal");
+        let source = std::fs::read_to_string(&deck_path).expect("fixture deck should exist on disk");
+        let output = render_source(&deck_path, &source).expect("a valid example deck should render");
+
+        let manifest: serde_json::Value = serde_json::from_str(&output.manifest_json).expect("manifest_json should be valid JSON");
+        assert_eq!(manifest["slideCount"], 3);
+        assert_eq!(output.fragments.len(), 3);
+        assert!(!output.css.is_empty());
+    }
+
+    #[test]
+    fn render_source_adversarial_duplicate_keys_is_a_build_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let source = "<!-- {\"key\":\"a\"} -->\n# One\n\n---\n\n<!-- {\"key\":\"a\"} -->\n# Two\n";
+        assert!(render_source(&deck_path, source).is_err());
+    }
+
+    #[test]
+    fn render_source_adversarial_section_without_time_is_a_build_error() {
+        // peitho requires `section` and `time` to be set together in a
+        // PageComment — one without the other is rejected at build time.
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let source = "<!-- {\"section\":\"Intro\"} -->\n# One\n";
+        assert!(render_source(&deck_path, source).is_err());
+    }
+
+    #[test]
+    fn short_sha256_hex_spec_matches_a_known_sha256_prefix() {
+        // sha256("") == e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        assert_eq!(short_sha256_hex(b"", 16), "e3b0c44298fc1c14");
+    }
+
+    #[test]
+    fn short_sha256_hex_spec_same_bytes_always_hash_the_same() {
+        assert_eq!(short_sha256_hex(b"peitho", 16), short_sha256_hex(b"peitho", 16));
+        assert_ne!(short_sha256_hex(b"peitho", 16), short_sha256_hex(b"peitho!", 16));
+    }
+
+    #[test]
+    fn short_sha256_hex_adversarial_hex_chars_zero_returns_empty() {
+        assert_eq!(short_sha256_hex(b"anything", 0), "");
+    }
+
+    #[test]
+    fn short_sha256_hex_adversarial_odd_hex_chars_rounds_up_a_full_byte() {
+        // 1 hex char still needs a whole byte (2 hex digits) to render.
+        assert_eq!(short_sha256_hex(b"", 1), "e3");
+    }
+
+    #[test]
+    fn short_sha256_hex_adversarial_hex_chars_beyond_digest_length_is_clamped() {
+        // A 32-byte SHA-256 digest is 64 hex chars long — asking for more
+        // must not panic on an out-of-bounds slice.
+        let full = short_sha256_hex(b"", 64);
+        assert_eq!(full.len(), 64);
+        assert_eq!(short_sha256_hex(b"", 1000), full);
+    }
+}

@@ -35,3 +35,6 @@ sha2 = "0.10"
 # carries no semver guarantee (it's the peitho CLI's internal engine, not a
 # published crate — see plan notes).
 peitho-core = { path = "/Users/kfly8/src/github.com/mizzy/peitho/crates/peitho-core" }
+
+[dev-dependencies]
+tempfile = "3"

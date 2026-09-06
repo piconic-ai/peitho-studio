@@ -153,13 +153,12 @@ const STARTER_DECK: &str = "---\ntime: 1m\n---\n\
 # New Presentation\n\n\
 Start writing your slides here.\n";
 
-/// Creates `<parent_dir>/<name>/deck.md` with a minimal starter deck and
-/// returns its path (for the frontend to hand straight to
-/// `open_deck_window`). `name` becomes a directory name picked by the user
-/// in a plain text field, not a path — rejected outright if it could act
-/// like one, rather than trying to sanitize it into something safe.
-#[tauri::command]
-pub fn create_deck(parent_dir: String, name: String) -> Result<String, String> {
+/// `name` becomes a directory name picked by the user in a plain text
+/// field, not a path — rejected outright if it could act like one, rather
+/// than trying to sanitize it into something safe. Split out of
+/// `create_deck` as its own pure function so the validation rules are
+/// unit-testable without touching the filesystem.
+fn validate_deck_name(name: &str) -> Result<&str, String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
         return Err("deck name cannot be empty".to_string());
@@ -167,7 +166,15 @@ pub fn create_deck(parent_dir: String, name: String) -> Result<String, String> {
     if trimmed.contains('/') || trimmed.contains('\\') || trimmed == "." || trimmed == ".." {
         return Err("deck name can't contain a path separator".to_string());
     }
+    Ok(trimmed)
+}
 
+/// Creates `<parent_dir>/<name>/deck.md` with a minimal starter deck and
+/// returns its path (for the frontend to hand straight to
+/// `open_deck_window`).
+#[tauri::command]
+pub fn create_deck(parent_dir: String, name: String) -> Result<String, String> {
+    let trimmed = validate_deck_name(&name)?;
     let dir = PathBuf::from(&parent_dir).join(trimmed);
     if dir.exists() {
         return Err(format!("{} already exists", dir.display()));
@@ -466,4 +473,68 @@ pub fn present_deck(rehearsal: bool, window: WebviewWindow, session: State<Peith
 
     state.present_child = Some(child);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_deck_name_spec_trims_surrounding_whitespace() {
+        assert_eq!(validate_deck_name("  my-talk  ").unwrap(), "my-talk");
+    }
+
+    #[test]
+    fn validate_deck_name_adversarial_rejects_empty_and_whitespace_only() {
+        assert!(validate_deck_name("").is_err());
+        assert!(validate_deck_name("   ").is_err());
+    }
+
+    #[test]
+    fn validate_deck_name_adversarial_rejects_path_separators() {
+        assert!(validate_deck_name("a/b").is_err());
+        assert!(validate_deck_name("a\\b").is_err());
+    }
+
+    #[test]
+    fn validate_deck_name_adversarial_rejects_dot_and_dotdot() {
+        assert!(validate_deck_name(".").is_err());
+        assert!(validate_deck_name("..").is_err());
+        assert!(validate_deck_name(" .. ").is_err());
+    }
+
+    #[test]
+    fn validate_deck_name_spec_allows_dots_within_a_longer_name() {
+        // Only a name that is *exactly* "." or ".." after trimming is
+        // rejected — "v1.2" legitimately contains a dot.
+        assert_eq!(validate_deck_name("v1.2").unwrap(), "v1.2");
+    }
+
+    #[test]
+    fn resolve_deck_path_spec_appends_deck_md_for_a_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("deck.md"), "# Hi").unwrap();
+        let resolved = resolve_deck_path(dir.path().to_str().unwrap()).unwrap();
+        assert_eq!(resolved, dir.path().join("deck.md"));
+    }
+
+    #[test]
+    fn resolve_deck_path_spec_accepts_a_direct_file_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("custom-name.md");
+        std::fs::write(&file, "# Hi").unwrap();
+        let resolved = resolve_deck_path(file.to_str().unwrap()).unwrap();
+        assert_eq!(resolved, file);
+    }
+
+    #[test]
+    fn resolve_deck_path_adversarial_missing_file_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(resolve_deck_path(dir.path().to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn resolve_deck_path_adversarial_nonexistent_path_is_an_error() {
+        assert!(resolve_deck_path("/definitely/does/not/exist/deck.md").is_err());
+    }
 }
