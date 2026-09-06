@@ -977,6 +977,14 @@ export function Studio() {
                       key={path}
                       onClick={() => void openDeckInNewWindow(path)}
                       title={path}
+                      // A path's most distinguishing part (the deck's own
+                      // folder name) is at the *end* — plain `truncate`
+                      // elides there first, leaving every entry looking
+                      // like the same shared parent directory. `dir="rtl"`
+                      // flips which side the ellipsis lands on (to the
+                      // left) while the path text itself still renders
+                      // left-to-right, so the tail stays visible instead.
+                      dir="rtl"
                       className="w-full text-left px-3 py-2 rounded-md border border-border hover:bg-accent text-sm truncate"
                     >
                       {path}
