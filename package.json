@@ -8,6 +8,7 @@
     "start": "tsx server.ts",
     "watch": "concurrently -k -n build,uno -c blue,magenta \"vite build --watch\" \"unocss --watch\"",
     "test": "bun test",
+    "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
     "@barefootjs/cli": "^0.33.6",
     "@barefootjs/test": "^0.33.6",
     "@barefootjs/vite": "^0.33.6",
+    "@playwright/test": "^1.63.0",
     "@tauri-apps/cli": "^2.11.4",
     "@types/bun": "^1.1.0",
     "@types/node": "^22.0.0",

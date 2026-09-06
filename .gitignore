@@ -22,6 +22,10 @@ yarn-error.log*
 # Playwright MCP debug artifacts
 .playwright-mcp/
 
+# Playwright test runner output
+/test-results/
+/playwright-report/
+
 # Personal/machine-local Claude Code settings — never shared project config
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
