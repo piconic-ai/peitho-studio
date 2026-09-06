@@ -7,7 +7,8 @@
     "build": "vite build && unocss",
     "start": "tsx server.ts",
     "watch": "concurrently -k -n build,uno -c blue,magenta \"vite build --watch\" \"unocss --watch\"",
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@barefootjs/client": "^0.33.6",

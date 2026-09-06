@@ -194,17 +194,24 @@ export function parseDurationToMs(value: string): number | null {
   return (minutes * 60 + seconds) * 1000
 }
 
+/** Formats milliseconds as a peitho-style duration ("1m", "90s", "1m30s") —
+ * inverse of `parseDurationToMs`. Rounds to the nearest second. */
+export function formatDurationMs(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes === 0) return `${String(seconds)}s`
+  if (seconds === 0) return `${String(minutes)}m`
+  return `${String(minutes)}m${String(seconds)}s`
+}
+
 // peitho requires a deck's frontmatter `time:` to equal the sum of every
 // section's planned time — editing one section's time from the slide list
 // would otherwise silently break the very next build. This keeps the two
 // in sync automatically instead of asking the user to hunt down and edit
 // the frontmatter by hand.
 export function updateFrontmatterTime(source: string, totalMs: number): string {
-  const totalSeconds = Math.round(totalMs / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  const value = minutes === 0 ? `${String(seconds)}s` : seconds === 0 ? `${String(minutes)}m` : `${String(minutes)}m${String(seconds)}s`
-
+  const value = formatDurationMs(totalMs)
   const lines = source.split('\n')
   if (lines[0]?.trim() !== '---') {
     return `---\ntime: ${value}\n---\n${source}`

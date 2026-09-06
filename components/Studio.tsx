@@ -13,8 +13,10 @@ import {
   stripPageCommentKey,
   parseDurationToMs,
   updateFrontmatterTime,
+  formatDurationMs,
   type SlideRange,
 } from './slides'
+import { buildSlidePreviewDoc } from './previewDoc'
 
 interface ManifestSlide {
   index: number
@@ -40,17 +42,6 @@ interface Manifest {
   canvasHeight: number
   sections: ManifestSection[]
   slides: ManifestSlide[]
-}
-
-// Pre-fills the editable time field ("1m", "90s", "1m30s") — confirmed
-// against a real `peitho build` that this combined-unit syntax parses.
-function formatDurationForInput(ms: number): string {
-  const totalSeconds = Math.round(ms / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  if (minutes === 0) return `${String(seconds)}s`
-  if (seconds === 0) return `${String(minutes)}m`
-  return `${String(minutes)}m${String(seconds)}s`
 }
 
 interface SectionDraft {
@@ -264,7 +255,7 @@ export function Studio() {
     setAssetBaseUrl(payload.assetBaseUrl)
     const drafts: Record<number, SectionDraft> = {}
     for (const section of payload.manifest.sections) {
-      drafts[section.startIndex] = { name: section.name, time: formatDurationForInput(section.plannedDurationMs) }
+      drafts[section.startIndex] = { name: section.name, time: formatDurationMs(section.plannedDurationMs) }
     }
     setSectionDrafts(drafts)
     for (const [key, html] of Object.entries(payload.fragments)) {
@@ -343,14 +334,6 @@ export function Studio() {
     }
   })
 
-  // A slide fragment (e.g. `<section class="lt peitho-slide">...`) is just
-  // markup — it has no <head>/CSS of its own. Wrap it with the deck's own
-  // peitho.css (loaded from the running preview server via <base>) plus a
-  // tiny script that scales `.peitho-slide` (sized from the manifest's
-  // native canvas dimensions) to fit whatever box the iframe ends up in,
-  // so the same document works for both a small list thumbnail and the
-  // large Preview pane.
-  //
   // This reloads the whole iframe (a visible flash) on every content
   // change, which is worth fixing now that renders happen on every
   // keystroke — but an earlier attempt at that (patching content in place
@@ -361,33 +344,7 @@ export function Studio() {
   // binding; revisit the flicker separately once that assumption is
   // actually verified against the compiled output.
   function buildSlideDoc(fragmentHtml: string): string {
-    const base = assetBaseUrl() ?? ''
-    const width = manifest()?.canvasWidth ?? 1280
-    const height = manifest()?.canvasHeight ?? 720
-    return `<!doctype html><html><head><base href="${base}"><link rel="stylesheet" href="peitho.css"><style>
-      html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; }
-      :root { --peitho-canvas-width: ${String(width)}px; --peitho-canvas-height: ${String(height)}px; }
-      /* Without this, being a flex child of <body> lets the browser
-         shrink .peitho-slide below its native canvas width to fit a small
-         iframe (flex-shrink defaults to 1) — that reflows/wraps the
-         slide's own text at the shrunken width *before* the scale
-         transform below runs, instead of shrinking the correctly-wrapped
-         full-size rendering. Pin it to its native size and let transform
-         do 100% of the size reduction. */
-      .peitho-slide { flex-shrink: 0; }
-    </style></head><body>${fragmentHtml}<script>
-      (function () {
-        function fit() {
-          var el = document.querySelector('.peitho-slide')
-          if (!el) return
-          var scale = Math.min(window.innerWidth / ${String(width)}, window.innerHeight / ${String(height)})
-          el.style.transform = 'scale(' + scale + ')'
-          el.style.transformOrigin = 'center center'
-        }
-        window.addEventListener('resize', fit)
-        fit()
-      })()
-    </script></body></html>`
+    return buildSlidePreviewDoc(fragmentHtml, assetBaseUrl() ?? '', manifest()?.canvasWidth ?? 1280, manifest()?.canvasHeight ?? 720)
   }
 
   async function refreshSource(preserveSelection: boolean): Promise<void> {
@@ -1117,14 +1074,14 @@ export function Studio() {
                           value={sectionDrafts()[indexSignal(slide.key)[0]()]?.name ?? sectionStartByIndex()[indexSignal(slide.key)[0]()].name}
                           onInput={e => setSectionDrafts(prev => ({
                             ...prev,
-                            [indexSignal(slide.key)[0]()]: { name: e.target.value, time: prev[indexSignal(slide.key)[0]()]?.time ?? formatDurationForInput(sectionStartByIndex()[indexSignal(slide.key)[0]()].plannedDurationMs) },
+                            [indexSignal(slide.key)[0]()]: { name: e.target.value, time: prev[indexSignal(slide.key)[0]()]?.time ?? formatDurationMs(sectionStartByIndex()[indexSignal(slide.key)[0]()].plannedDurationMs) },
                           }))}
                           onBlur={() => void commitSectionEdit(indexSignal(slide.key)[0]())}
                           onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                           className="min-w-0 flex-1 bg-transparent outline-none text-xs font-semibold text-foreground/80"
                         />
                         <input
-                          value={sectionDrafts()[indexSignal(slide.key)[0]()]?.time ?? formatDurationForInput(sectionStartByIndex()[indexSignal(slide.key)[0]()].plannedDurationMs)}
+                          value={sectionDrafts()[indexSignal(slide.key)[0]()]?.time ?? formatDurationMs(sectionStartByIndex()[indexSignal(slide.key)[0]()].plannedDurationMs)}
                           onInput={e => setSectionDrafts(prev => ({
                             ...prev,
                             [indexSignal(slide.key)[0]()]: { name: prev[indexSignal(slide.key)[0]()]?.name ?? sectionStartByIndex()[indexSignal(slide.key)[0]()].name, time: e.target.value },
