@@ -1506,7 +1506,7 @@ export function Studio() {
                           className={selectedIndex() === (indexSignal(slide.key)[0]())
                             ? 'block relative rounded-md border-4 border-[#eab308] overflow-hidden bg-black'
                             : 'block relative rounded-md border-2 border-border overflow-hidden bg-black hover:border-4 hover:border-muted-foreground'}
-                          style={`aspect-ratio: ${String(canvasWidth())} / ${String(canvasHeight())}`}
+                          style={`aspect-ratio: ${String(canvasWidth())} / ${String(canvasHeight())}; box-sizing: content-box`}
                         >
                           <iframe
                             title={`Slide ${String((indexSignal(slide.key)[0]()) + 1)}`}
@@ -1596,37 +1596,96 @@ export function Studio() {
                               const wrapperEl = iframeEl.parentElement
                               if (wrapperEl) {
                                 const syncIframeSize = () => {
-                                  const availW = wrapperEl.clientWidth
-                                  const availH = wrapperEl.clientHeight
+                                  // clientWidth/clientHeight round to the
+                                  // nearest integer (per spec) — with the
+                                  // wrapper's content-box already exactly
+                                  // canvas-ratio (box-sizing: content-box
+                                  // above), that rounding was the last
+                                  // source of a ~1px residual gap.
+                                  // getBoundingClientRect() is sub-pixel
+                                  // precise and always reports the
+                                  // border-box regardless of box-sizing, so
+                                  // subtracting the (also sub-pixel-capable)
+                                  // border width gives an exact content size.
+                                  const cs = getComputedStyle(wrapperEl)
+                                  const borderLeft = parseFloat(cs.borderLeftWidth) || 0
+                                  const borderRight = parseFloat(cs.borderRightWidth) || 0
+                                  const borderTop = parseFloat(cs.borderTopWidth) || 0
+                                  const borderBottom = parseFloat(cs.borderBottomWidth) || 0
+                                  const rect = wrapperEl.getBoundingClientRect()
+                                  const availW = rect.width - borderLeft - borderRight
+                                  const availH = rect.height - borderTop - borderBottom
                                   const scale = Math.min(availW / canvasWidth(), availH / canvasHeight())
                                   const w = canvasWidth() * scale
                                   const h = canvasHeight() * scale
-                                  iframeEl.style.width = `${String(w)}px`
-                                  iframeEl.style.height = `${String(h)}px`
-                                  iframeEl.style.left = `${String((availW - w) / 2)}px`
-                                  iframeEl.style.top = `${String((availH - h) / 2)}px`
+                                  // Deliberately render the iframe a few px
+                                  // *larger* than the exact-fit box (and
+                                  // recentered), then use `clip-path` to
+                                  // crop it back down to that exact box.
+                                  // An exact-fit iframe left a persistent
+                                  // black wedge at each rounded corner even
+                                  // once every straight edge measured
+                                  // pixel-perfect (confirmed via zoomed
+                                  // screenshot pixel measurement, and ruled
+                                  // out the slide theme's own CSS as the
+                                  // cause — peitho.css has no border-radius
+                                  // anywhere). That corner-only symptom
+                                  // matches a sub-pixel shortfall too small
+                                  // to darken a straight-edge pixel but
+                                  // still large enough to show at a curve.
+                                  // previewDoc.ts's own fit() script hit
+                                  // the same class of WebKit sub-pixel
+                                  // rounding gap and already papers over it
+                                  // with a 1.02x overscan — this is that
+                                  // same fix applied one level out, sized
+                                  // in real px instead of a ratio since the
+                                  // amount to cover here is constant
+                                  // (governed by the browser's own rounding
+                                  // granularity, not by the box size).
+                                  const overscan = 3
+                                  iframeEl.style.width = `${String(w + overscan * 2)}px`
+                                  iframeEl.style.height = `${String(h + overscan * 2)}px`
+                                  // NOT `borderLeft + ...` — an absolutely
+                                  // positioned element's `left`/`top` are
+                                  // already relative to the containing
+                                  // block's *padding* edge (just inside the
+                                  // border), so adding the border width
+                                  // again double-counts it, shifting the
+                                  // iframe down-right by a full border
+                                  // width (confirmed the hard way: produced
+                                  // a lopsided gap at the top-left only).
+                                  iframeEl.style.left = `${String((availW - w) / 2 - overscan)}px`
+                                  iframeEl.style.top = `${String((availH - h) / 2 - overscan)}px`
+                                  // WebKit gives an <iframe> its own
+                                  // compositing layer, which doesn't
+                                  // reliably honor the wrapper's
+                                  // `overflow:hidden` + `border-radius`
+                                  // clip, so the iframe needs its own
+                                  // `clip-path` regardless of the overscan
+                                  // above. It must use the *inner* radius —
+                                  // the wrapper's own border-radius is
+                                  // defined for its outer (border-box)
+                                  // edge, while the visible box sits inset
+                                  // from that edge by the border width, so
+                                  // reusing the outer radius directly
+                                  // overshoots — and must inset by
+                                  // `overscan` to crop the iframe's own
+                                  // enlarged box back down to that exact
+                                  // visible box.
+                                  const outerRadius = parseFloat(cs.borderTopLeftRadius) || 0
+                                  const innerRadius = Math.max(0, outerRadius - borderLeft)
+                                  iframeEl.style.clipPath = `inset(${String(overscan)}px round ${String(innerRadius)}px)`
                                 }
                                 syncIframeSize()
                                 new ResizeObserver(syncIframeSize).observe(wrapperEl)
                               }
                             }}
-                            // `rounded-md` (border-radius) alone left a small
-                            // dark wedge visible at each corner once the
-                            // iframe was correctly sized/centered — the
-                            // ancestor's `overflow:hidden` clip and/or the
-                            // iframe's own `border-radius` clip isn't
-                            // reliably respected for an <iframe> here
-                            // (iframes commonly get their own compositing
-                            // layer, and WebKit has a known class of bugs
-                            // where such a layer doesn't honor a
-                            // border-radius-driven clip). `clip-path` is a
-                            // different mechanism entirely (a paint-time
-                            // mask, not an overflow/stacking-context
-                            // computation), and is the standard, more
-                            // reliable fix for exactly this WebKit
-                            // iframe-clipping quirk.
+                            // clip-path (the correct, border-inset-adjusted
+                            // radius) is set imperatively in the ref
+                            // callback's syncIframeSize above, alongside
+                            // the size/position it also depends on.
                             className="border-0 rounded-md"
-                            style="position: absolute; pointer-events: none; clip-path: inset(0 round var(--radius-md))"
+                            style="position: absolute; pointer-events: none"
                           />
                           {/* `pointer-events: none` above keeps normal clicks/drags
                               passing through to the row beneath, but WKWebView still
