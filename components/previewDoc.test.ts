@@ -28,4 +28,14 @@ describe('buildSlidePreviewDoc', () => {
     expect(doc).toContain('--peitho-canvas-width: 1px')
     expect(doc).toContain('--peitho-canvas-height: 99999px')
   })
+
+  test('spec: the fit scale uses Math.min (contain), not Math.max (cover)', () => {
+    // Math.max blows up content on a box whose own aspect ratio doesn't
+    // match the canvas (e.g. the large preview pane, which has no
+    // aspect-ratio lock of its own) — regression-tested directly rather
+    // than only inferred from the source, since this exact swap shipped
+    // and broke that pane in practice.
+    const doc = buildSlidePreviewDoc('<div></div>', 'http://localhost/', 1280, 720)
+    expect(doc).toContain('var scale = Math.min(window.innerWidth / 1280, window.innerHeight / 720)')
+  })
 })

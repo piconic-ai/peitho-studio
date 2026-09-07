@@ -24,20 +24,24 @@ export function buildSlidePreviewDoc(fragmentHtml: string, baseUrl: string, canv
         function fit() {
           var el = document.querySelector('.peitho-slide')
           if (!el) return
-          // The outer container is sized to this exact aspect ratio (see
-          // Studio.tsx's \`style="aspect-ratio: ..."\` on the thumbnail/preview
-          // wrapper), so in theory \`window.innerWidth/innerHeight\` and
-          // \`${String(canvasWidth)}x${String(canvasHeight)}\` share the same
-          // ratio and either Math.min or Math.max would agree. In practice
-          // the two are computed through independent rounding paths (CSS
-          // aspect-ratio layout vs. this script's own division), so they
-          // rarely land on the *exact* same ratio — Math.min then slightly
-          // under-scales one axis, leaving a hairline gap that shows body's
-          // black background as a faint line along one edge. Math.max (plus
-          // a hair of deliberate overscan) always fully covers the box
-          // instead, at the cost of an imperceptible sub-pixel crop at the
-          // far edges rather than a visible seam.
-          var scale = Math.max(window.innerWidth / ${String(canvasWidth)}, window.innerHeight / ${String(canvasHeight)}) * 1.01
+          // Math.min is "contain": on a box whose own aspect ratio doesn't
+          // match the canvas (e.g. the large "selected slide" preview pane,
+          // which is just \`flex-1 w-full\` with no aspect-ratio lock of its
+          // own) this intentionally letterboxes, showing body's black
+          // background as real, sizeable bars — do not switch this to
+          // Math.max ("cover"), which blows up content on the tighter axis
+          // instead (confirmed the hard way: it did exactly that here).
+          // The thumbnail wrapper *is* separately aspect-ratio-locked in
+          // Studio.tsx to match the canvas, so there Math.min should in
+          // theory make both axes agree exactly — but that CSS layout
+          // computation and this script's own division are independent
+          // rounding paths that rarely land on the *exact* same ratio,
+          // leaving a hairline gap on one axis that shows through as a
+          // faint line. The \`* 1.005\` below closes only that sub-pixel gap
+          // (half a percent) without changing which axis constrains the
+          // scale, so real letterboxing (a genuine ratio mismatch, not a
+          // rounding fuzz) is unaffected.
+          var scale = Math.min(window.innerWidth / ${String(canvasWidth)}, window.innerHeight / ${String(canvasHeight)}) * 1.005
           el.style.transform = 'scale(' + scale + ')'
           el.style.transformOrigin = 'center center'
         }
