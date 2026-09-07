@@ -12,16 +12,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@barefootjs/client": "^0.35.0",
-    "@barefootjs/jsx": "^0.35.0",
-    "@barefootjs/shared": "^0.35.0",
+    "@barefootjs/client": "^0.35.1",
+    "@barefootjs/jsx": "^0.35.1",
+    "@barefootjs/shared": "^0.35.1",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.3"
   },
   "devDependencies": {
-    "@barefootjs/cli": "^0.35.0",
-    "@barefootjs/test": "^0.35.0",
-    "@barefootjs/vite": "^0.35.0",
+    "@barefootjs/cli": "^0.35.1",
+    "@barefootjs/test": "^0.35.1",
+    "@barefootjs/vite": "^0.35.1",
     "@playwright/test": "^1.63.0",
     "@tauri-apps/cli": "^2.11.4",
     "@types/bun": "^1.1.0",
