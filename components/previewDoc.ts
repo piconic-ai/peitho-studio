@@ -24,7 +24,20 @@ export function buildSlidePreviewDoc(fragmentHtml: string, baseUrl: string, canv
         function fit() {
           var el = document.querySelector('.peitho-slide')
           if (!el) return
-          var scale = Math.min(window.innerWidth / ${String(canvasWidth)}, window.innerHeight / ${String(canvasHeight)})
+          // The outer container is sized to this exact aspect ratio (see
+          // Studio.tsx's \`style="aspect-ratio: ..."\` on the thumbnail/preview
+          // wrapper), so in theory \`window.innerWidth/innerHeight\` and
+          // \`${String(canvasWidth)}x${String(canvasHeight)}\` share the same
+          // ratio and either Math.min or Math.max would agree. In practice
+          // the two are computed through independent rounding paths (CSS
+          // aspect-ratio layout vs. this script's own division), so they
+          // rarely land on the *exact* same ratio — Math.min then slightly
+          // under-scales one axis, leaving a hairline gap that shows body's
+          // black background as a faint line along one edge. Math.max (plus
+          // a hair of deliberate overscan) always fully covers the box
+          // instead, at the cost of an imperceptible sub-pixel crop at the
+          // far edges rather than a visible seam.
+          var scale = Math.max(window.innerWidth / ${String(canvasWidth)}, window.innerHeight / ${String(canvasHeight)}) * 1.01
           el.style.transform = 'scale(' + scale + ')'
           el.style.transformOrigin = 'center center'
         }
