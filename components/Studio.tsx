@@ -290,6 +290,100 @@ export function Studio() {
     window.setTimeout(() => setErrorMessageCopied(false), 1500)
   }
 
+  // TEMPORARY — investigating the black-corner/top-edge report on
+  // border-4 (selected/hover) thumbnails. Not reproducible in Chromium
+  // (tested directly, both border widths, real fragment+CSS rendered by
+  // the actual engine) and this sandbox can't run real WebKit to check
+  // there either, so this pulls real geometry/paint data out of the
+  // user's own WKWebView instead of guessing a fourth time. Triggered by
+  // Cmd+Shift+D (see onKeyDown below); remove once root-caused.
+  function rectToPlain(rect: DOMRect): Record<string, number> {
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom }
+  }
+
+  function scanColumn(
+    elementFrom: (x: number, y: number) => Element | null,
+    styleOf: (el: Element) => CSSStyleDeclaration,
+    x: number,
+    yStart: number,
+    count: number,
+  ): { dy: number; tag: string | null; cls: string | null; bg: string | null }[] {
+    const rows: { dy: number; tag: string | null; cls: string | null; bg: string | null }[] = []
+    for (let dy = 0; dy < count; dy++) {
+      const el = elementFrom(x, yStart + dy)
+      rows.push({
+        dy,
+        tag: el?.tagName ?? null,
+        cls: el instanceof HTMLElement ? el.className : null,
+        bg: el ? styleOf(el).backgroundColor : null,
+      })
+    }
+    return rows
+  }
+
+  async function copyThumbnailDebugSnapshot(): Promise<void> {
+    const iframes = Array.from(document.querySelectorAll<HTMLIFrameElement>('[data-slide-preview-key]'))
+    const report = iframes.map(iframe => {
+      const wrapper = iframe.parentElement
+      const wrapperRect = wrapper?.getBoundingClientRect() ?? null
+      const wrapperStyle = wrapper ? getComputedStyle(wrapper) : null
+      const iframeRect = iframe.getBoundingClientRect()
+      const iframeStyle = getComputedStyle(iframe)
+      const idoc = iframe.contentDocument
+      const iwin = iframe.contentWindow
+      const slideEl = idoc?.querySelector('.peitho-slide') as HTMLElement | null
+      const bodyStyle = idoc?.body && iwin ? iwin.getComputedStyle(idoc.body) : null
+      const slideStyle = slideEl && iwin ? iwin.getComputedStyle(slideEl) : null
+      const outerX = wrapperRect ? wrapperRect.left + wrapperRect.width / 2 : iframeRect.left + iframeRect.width / 2
+      const outerScan = wrapperRect
+        ? scanColumn((x, y) => document.elementFromPoint(x, y), el => getComputedStyle(el), outerX, wrapperRect.top - 2, 16)
+        : []
+      const innerScan = idoc && iwin
+        ? scanColumn((x, y) => idoc.elementFromPoint(x, y), el => iwin.getComputedStyle(el), iframeRect.width / 2, 0, 12)
+        : null
+      const cornerAt = (x: number, y: number) => {
+        const el = document.elementFromPoint(x, y)
+        return { tag: el?.tagName ?? null, cls: el instanceof HTMLElement ? el.className : null, bg: el ? getComputedStyle(el).backgroundColor : null }
+      }
+      return {
+        key: iframe.dataset.slidePreviewKey ?? null,
+        wrapper: wrapper && wrapperRect && wrapperStyle ? {
+          rect: rectToPlain(wrapperRect),
+          borderTopWidth: wrapperStyle.borderTopWidth,
+          borderTopColor: wrapperStyle.borderTopColor,
+          borderRadius: wrapperStyle.borderRadius,
+          backgroundColor: wrapperStyle.backgroundColor,
+          overflow: wrapperStyle.overflow,
+        } : null,
+        iframe: {
+          rect: rectToPlain(iframeRect),
+          borderRadius: iframeStyle.borderRadius,
+          backgroundColor: iframeStyle.backgroundColor,
+          insetFromWrapper: wrapperRect ? {
+            top: iframeRect.top - wrapperRect.top,
+            left: iframeRect.left - wrapperRect.left,
+            right: wrapperRect.right - iframeRect.right,
+            bottom: wrapperRect.bottom - iframeRect.bottom,
+          } : null,
+        },
+        insideIframe: slideEl && slideStyle ? {
+          bodyBackgroundColor: bodyStyle?.backgroundColor ?? null,
+          slideRect: rectToPlain(slideEl.getBoundingClientRect()),
+          slideTransform: slideStyle.transform,
+          slideBackgroundColor: slideStyle.backgroundColor,
+        } : null,
+        outerTopScan: outerScan,
+        innerTopScan: innerScan,
+        corners: wrapperRect ? {
+          topLeftOuter: cornerAt(wrapperRect.left + 2, wrapperRect.top + 2),
+          topRightOuter: cornerAt(wrapperRect.right - 2, wrapperRect.top + 2),
+        } : null,
+      }
+    })
+    await navigator.clipboard.writeText(JSON.stringify(report, null, 2))
+    setStatusMessage(`Debug snapshot copied (${String(iframes.length)} thumbnail${iframes.length === 1 ? '' : 's'})`)
+  }
+
   // Applies a render result (from `open_deck` or `render_draft`) to state.
   // Each fragment is written to its own key's signal, and only when the
   // value actually changed — see `fragmentSignal` above for why this must
@@ -1073,6 +1167,12 @@ export function Studio() {
     const unlistenMenuNew = listen('menu:new-deck', () => { void handleNewDeck() })
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // TEMPORARY debug shortcut — see copyThumbnailDebugSnapshot's comment.
+      if (event.metaKey && event.shiftKey && event.key.toLowerCase() === 'd') {
+        event.preventDefault()
+        void copyThumbnailDebugSnapshot()
+        return
+      }
       if (event.key === 'Escape' && contextMenu() !== null) {
         event.preventDefault()
         closeContextMenu()
