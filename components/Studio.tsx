@@ -11,7 +11,9 @@ import {
   extractPageComment,
   buildSlideText,
   updatePageComment,
-  stripPageCommentKey,
+  slugifyTitle,
+  uniqueSlideKey,
+  extractHeadingText,
   parseDurationToMs,
   updateFrontmatterTime,
   formatDurationMs,
@@ -68,8 +70,8 @@ interface DeckSessionInfo {
 const MIN_COLUMN_WIDTH = 180
 const MAX_COLUMN_WIDTH = 640
 const SLIDE_LIST_WIDTH = 176
-// No PageComment — peitho assigns a fresh key at build time the same way
-// it would for any other slide that never specified one.
+// Just the heading — `addSlide` attaches an explicit, collision-free
+// PageComment `key` around this (see its own comment for why).
 const NEW_SLIDE_MARKDOWN = '# New Slide\n'
 
 export function Studio() {
@@ -857,24 +859,48 @@ export function Studio() {
     await deleteSlide(index)
   }
 
-  // Inserts a blank new slide right after `index` — content-free (no
-  // PageComment), so peitho assigns it a key the same way it would for any
-  // hand-written slide that never specified one.
+  // Every currently-known slide key (derived or explicit) — the source of
+  // truth for picking a new key that's guaranteed not to collide.
+  function existingSlideKeys(): string[] {
+    return (manifest()?.slides ?? []).map(s => s.key)
+  }
+
+  // Inserts a blank new slide right after `index`, with an explicit
+  // PageComment `key` — pressing "New Slide" more than once always
+  // produces the exact same heading ("New Slide"), and peitho derives a
+  // key from a slide's heading when it has no explicit one, so leaving
+  // the key unset (as this used to) meant a second press collided with
+  // the first ("duplicate slide key 'new-slide'"). `uniqueSlideKey` picks
+  // `new-slide`, `new-slide-2`, `new-slide-3`, ... against the deck's
+  // actual current keys instead.
   async function addSlide(index: number): Promise<void> {
     const ranges = slideRanges()
     const texts = ranges.map((_, i) => currentSlideText(i).trim())
     const insertAt = Math.min(index + 1, texts.length)
-    texts.splice(insertAt, 0, NEW_SLIDE_MARKDOWN)
+    const key = uniqueSlideKey(slugifyTitle('New Slide'), existingSlideKeys())
+    texts.splice(insertAt, 0, buildSlideText({ key }, NEW_SLIDE_MARKDOWN, ''))
     await commitChange(syncedSource(texts), insertAt)
   }
 
+  // Same collision as `addSlide`, one step removed: pasting the same
+  // clipboard slide more than once (or a slide whose heading matches one
+  // already in the deck) used to just drop the copied `key` and hope
+  // peitho's own heading-derived fallback was unique — it isn't, when the
+  // heading itself repeats. Re-key explicitly instead, based on the
+  // original's own key if it had one, else its heading.
   async function pasteSlideAfter(index: number): Promise<void> {
     const clip = clipboardSlideText()
     if (clip === null) return
     const ranges = slideRanges()
     const texts = ranges.map((_, i) => currentSlideText(i).trim())
     const insertAt = Math.min(index + 1, texts.length)
-    texts.splice(insertAt, 0, stripPageCommentKey(clip.trim()))
+    const trimmedClip = clip.trim()
+    const { config } = extractPageComment(trimmedClip)
+    const baseKey = typeof config.key === 'string' && config.key !== ''
+      ? config.key
+      : slugifyTitle(extractHeadingText(trimmedClip) ?? '')
+    const key = uniqueSlideKey(baseKey, existingSlideKeys())
+    texts.splice(insertAt, 0, updatePageComment(trimmedClip, { key }))
     await commitChange(syncedSource(texts), insertAt)
   }
 

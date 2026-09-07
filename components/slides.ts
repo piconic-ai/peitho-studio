@@ -160,28 +160,51 @@ export function updatePageComment(raw: string, updates: Record<string, unknown>)
   return `${nextComment}\n${raw}`
 }
 
-/** Drops the `key` field from a slide's PageComment, if any — for pasting a
- * copied slide, where keeping the original's `key` would collide with it
- * (peitho's build-time `validate_unique_keys` rejects duplicates). `key` is
- * optional in PageComment, so removing it just lets peitho assign a fresh
- * one, same as a slide that never had one. */
-export function stripPageCommentKey(raw: string): string {
-  const re = /<!--([\s\S]*?)-->/g
-  let match: RegExpExecArray | null
-  while ((match = re.exec(raw)) !== null) {
-    const trimmed = match[1].trim()
-    if (trimmed.startsWith('{')) {
-      try {
-        const config = JSON.parse(trimmed) as Record<string, unknown>
-        if (!('key' in config)) return raw
-        delete config.key
-        return raw.replace(match[0], `<!-- ${JSON.stringify(config)} -->`)
-      } catch {
-        return raw
-      }
+/** Slugifies a title the same way peitho-core derives a slide's key from
+ * its heading when no explicit `key` is given (`derive_key_from_fragments`
+ * in peitho-core's `parser.rs`): lowercase, every run of non-alphanumeric
+ * characters collapsed to one hyphen, no leading/trailing hyphens. Mirrored
+ * here (not just left to peitho) so a slide *we* insert can be given an
+ * explicit, already-known-unique key up front — see `uniqueSlideKey`. */
+export function slugifyTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+/** Picks a key guaranteed not to collide with any of `existingKeys` —
+ * `baseKey` itself if it's free, otherwise `${baseKey}-2`, `${baseKey}-3`,
+ * etc. An empty `baseKey` (e.g. a heading-less slide) falls back to
+ * `slide`, matching peitho-core's own `slide-<n>` fallback prefix. */
+export function uniqueSlideKey(baseKey: string, existingKeys: readonly string[]): string {
+  const base = baseKey === '' ? 'slide' : baseKey
+  const used = new Set(existingKeys)
+  if (!used.has(base)) return base
+  let n = 2
+  while (used.has(`${base}-${String(n)}`)) n++
+  return `${base}-${String(n)}`
+}
+
+/** Pulls the text of a slide's first Markdown ATX heading (`# Title`),
+ * ignoring PageComment/note HTML comments and the contents of fenced code
+ * blocks — used as the base name for `uniqueSlideKey` when a slide has no
+ * explicit `key` of its own (peitho itself derives a key the same way, from
+ * the first heading it finds). Returns null if the slide has no heading. */
+export function extractHeadingText(raw: string): string | null {
+  const withoutComments = raw.replace(/<!--[\s\S]*?-->/g, '')
+  let inFence = false
+  for (const line of withoutComments.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('```')) {
+      inFence = !inFence
+      continue
     }
+    if (inFence) continue
+    const match = /^#{1,6}\s+(.+)$/.exec(trimmed)
+    if (match) return match[1].trim()
   }
-  return raw
+  return null
 }
 
 /** Parses a peitho-style duration ("1m", "90s", "1m30s") into milliseconds,

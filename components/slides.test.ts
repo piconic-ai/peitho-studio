@@ -6,7 +6,9 @@ import {
   extractPageComment,
   buildSlideText,
   updatePageComment,
-  stripPageCommentKey,
+  slugifyTitle,
+  uniqueSlideKey,
+  extractHeadingText,
   parseDurationToMs,
   formatDurationMs,
   updateFrontmatterTime,
@@ -180,21 +182,54 @@ describe('updatePageComment', () => {
   })
 })
 
-describe('stripPageCommentKey', () => {
-  test('spec: removes the key field, keeping everything else', () => {
-    const stripped = stripPageCommentKey('<!-- {"key":"a","layout":"cover"} -->\n# Title\n')
-    expect(stripped).toContain('"layout":"cover"')
-    expect(stripped).not.toContain('"key"')
+describe('slugifyTitle', () => {
+  test('spec: lowercases and hyphenates', () => {
+    expect(slugifyTitle('New Slide')).toBe('new-slide')
   })
 
-  test('adversarial: no PageComment at all is a no-op', () => {
-    const raw = '# Title\n'
-    expect(stripPageCommentKey(raw)).toBe(raw)
+  test('adversarial: punctuation and repeated separators collapse to one hyphen', () => {
+    expect(slugifyTitle('Q&A -- Wrap Up!!')).toBe('q-a-wrap-up')
   })
 
-  test('adversarial: a PageComment with no key field is a no-op', () => {
-    const raw = '<!-- {"layout":"cover"} -->\n# Title\n'
-    expect(stripPageCommentKey(raw)).toBe(raw)
+  test('adversarial: a title with no alphanumeric characters slugifies to empty', () => {
+    expect(slugifyTitle('!!!')).toBe('')
+  })
+})
+
+describe('uniqueSlideKey', () => {
+  test('spec: returns the base key unchanged when it is free', () => {
+    expect(uniqueSlideKey('new-slide', ['intro', 'outro'])).toBe('new-slide')
+  })
+
+  test('spec: appends -2, -3, ... past the first collision', () => {
+    expect(uniqueSlideKey('new-slide', ['new-slide'])).toBe('new-slide-2')
+    expect(uniqueSlideKey('new-slide', ['new-slide', 'new-slide-2'])).toBe('new-slide-3')
+  })
+
+  test('adversarial: an empty base key falls back to "slide"', () => {
+    expect(uniqueSlideKey('', [])).toBe('slide')
+  })
+
+  test('adversarial: an empty base key that also collides still numbers from "slide"', () => {
+    expect(uniqueSlideKey('', ['slide'])).toBe('slide-2')
+  })
+})
+
+describe('extractHeadingText', () => {
+  test('spec: finds the first ATX heading', () => {
+    expect(extractHeadingText('# New Slide\n\nSome body text\n')).toBe('New Slide')
+  })
+
+  test('adversarial: a heading inside a fenced code block is ignored', () => {
+    expect(extractHeadingText('```\n# not a heading\n```\n\n## Real Heading\n')).toBe('Real Heading')
+  })
+
+  test('adversarial: a heading-shaped line inside a PageComment/note HTML comment is ignored', () => {
+    expect(extractHeadingText('<!-- {"key":"a"} -->\n<!--\n# not a heading\n-->\n# Real\n')).toBe('Real')
+  })
+
+  test('adversarial: no heading at all returns null', () => {
+    expect(extractHeadingText('just some text\n')).toBe(null)
   })
 })
 
