@@ -244,10 +244,27 @@ fn recent_decks_path(app: &AppHandle) -> Result<PathBuf, String> {
 /// into each window's own `localStorage`, is what lets a deck opened from
 /// the native menu (which never touches any window's webview) still show
 /// up for every window's own UI.
+///
+/// Drops (and re-persists without) any entry whose file no longer exists —
+/// moved or deleted since it was remembered. Without this, a stale entry
+/// sits in both the welcome screen's Recent list and the native "Open
+/// Recent" submenu until clicked, at which point `open_deck` fails with a
+/// raw "deck file not found" error instead of the entry simply not being
+/// offered. Every caller (the `get_recent_decks` command, `build_menu`'s
+/// submenu, and `recent_deck:<index>` click resolution in `on_menu_event`)
+/// goes through this, so the menu's items and their indices always match
+/// what's actually left after pruning.
 pub(crate) fn read_recent_decks(app: &AppHandle) -> Vec<String> {
     let Ok(path) = recent_decks_path(app) else { return Vec::new() };
     let Ok(content) = std::fs::read_to_string(&path) else { return Vec::new() };
-    serde_json::from_str(&content).unwrap_or_default()
+    let recents: Vec<String> = serde_json::from_str(&content).unwrap_or_default();
+    let pruned: Vec<String> = recents.iter().filter(|p| Path::new(p).is_file()).cloned().collect();
+    if pruned.len() != recents.len() {
+        if let Ok(json) = serde_json::to_string(&pruned) {
+            let _ = std::fs::write(&path, json);
+        }
+    }
+    pruned
 }
 
 fn remember_recent_deck(app: &AppHandle, deck_path: &str) {

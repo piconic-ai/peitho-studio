@@ -3,10 +3,11 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "windows": [
-    "main"
+    "*"
   ],
   "permissions": [
     "core:default",
+    "core:window:allow-close",
     "dialog:default"
   ]
 }

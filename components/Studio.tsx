@@ -4,6 +4,7 @@ import { createSignal, createMemo, createEffect, onMount, onCleanup } from '@bar
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import {
   splitSlides,
   extractNote,
@@ -409,6 +410,11 @@ export function Studio() {
       setStatusMessage(`Opened ${info.deckPath}`)
     } catch (err) {
       setErrorMessage(String(err))
+      // A failure here often means the path was a Recent entry pointing at
+      // a folder that's since moved or been deleted — re-fetch so a
+      // now-stale entry (Rust prunes it against disk on every read) isn't
+      // still sitting there to fail the exact same way if clicked again.
+      void refreshRecentDecks()
     } finally {
       setIsBusy(false)
     }
@@ -895,6 +901,14 @@ export function Studio() {
       const pending = await invoke<string | null>('take_pending_deck')
       if (pending) {
         await loadDeck(pending)
+        if (deckPath() === null) {
+          // This window exists solely to show `pending` (e.g. a Recent
+          // entry that pointed at a folder deleted/moved since it was
+          // remembered) — closing it returns focus to whichever window
+          // the user was already on, instead of leaving a second,
+          // otherwise-empty window sitting on screen with an error banner.
+          await getCurrentWindow().close()
+        }
         return
       }
       const devDeck = await invoke<string | null>('dev_default_deck')
