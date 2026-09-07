@@ -1,6 +1,6 @@
 'use client'
 
-import { createSignal, createMemo, createEffect, onMount, onCleanup } from '@barefootjs/client'
+import { createSignal, createMemo, createEffect, untrack, onMount, onCleanup } from '@barefootjs/client'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
@@ -260,6 +260,14 @@ export function Studio() {
     if (i === null) return null
     return manifest()?.slides[i] ?? null
   })
+  // `selectedSlide()` itself is a *new object* on every keystroke (even to
+  // some other slide — see `stabilizeByKey` in slides.ts), but a memo's
+  // own output is compared by value before it notifies anyone, and two
+  // strings that read the same are `Object.is`-equal regardless of which
+  // slide object produced them. Deriving just the key through a memo is
+  // what lets the preview iframe (below) depend on "which slide is
+  // selected" without also depending on "has its content changed".
+  const selectedSlideKey = createMemo<string | null>(() => selectedSlide()?.key ?? null)
 
   createEffect(() => {
     if (errorMessage() === null) return
@@ -278,20 +286,30 @@ export function Studio() {
   // skip re-running that row's bindings at all — see `stabilizeByKey`'s own
   // comment for why this is load-bearing, not just tidiness.
   function applyRenderPayload(payload: RenderPayload): void {
-    const previousSlides = manifest()?.slides ?? []
-    setManifest({ ...payload.manifest, slides: stabilizeByKey(previousSlides, payload.manifest.slides) })
+    // Everything `buildSlideDoc`/the untracked initial `srcdoc` read for a
+    // slide's iframe depends on — its fragment, the canvas size, the asset
+    // base URL — must already be current *before* `setManifest` below,
+    // not after. A brand-new row (this deck's first render, or a slide
+    // that didn't exist a moment ago) reads its `srcdoc` synchronously as
+    // part of reacting to the manifest update that creates it; since that
+    // read is frozen forever (see the comment on `buildSlideDoc`'s
+    // `untrack` usage), setting it up in the other order let a fresh row
+    // capture an empty fragment permanently, before this function ever
+    // reached the loop that would have given it real content.
+    for (const [key, html] of Object.entries(payload.fragments)) {
+      const [get, set] = fragmentSignal(key)
+      if (get() !== html) set(html)
+    }
     setAssetBaseUrl(payload.assetBaseUrl)
     if (canvasWidth() !== payload.manifest.canvasWidth) setCanvasWidth(payload.manifest.canvasWidth)
     if (canvasHeight() !== payload.manifest.canvasHeight) setCanvasHeight(payload.manifest.canvasHeight)
+    const previousSlides = manifest()?.slides ?? []
+    setManifest({ ...payload.manifest, slides: stabilizeByKey(previousSlides, payload.manifest.slides) })
     const drafts: Record<number, SectionDraft> = {}
     for (const section of payload.manifest.sections) {
       drafts[section.startIndex] = { name: section.name, time: formatDurationMs(section.plannedDurationMs) }
     }
     setSectionDrafts(drafts)
-    for (const [key, html] of Object.entries(payload.fragments)) {
-      const [get, set] = fragmentSignal(key)
-      if (get() !== html) set(html)
-    }
   }
 
   // Renders `content` in-process (no disk write — see `engine::pipeline` on
@@ -367,6 +385,69 @@ export function Studio() {
   function buildSlideDoc(fragmentHtml: string): string {
     return buildSlidePreviewDoc(fragmentHtml, assetBaseUrl() ?? '', canvasWidth(), canvasHeight())
   }
+
+  // `srcdoc={...}` always reloads the iframe (a visible flash) when
+  // reassigned, even to a value that's byte-identical to what's already
+  // there — plain reactive `srcdoc={buildSlideDoc(fragmentSignal(key)[0]())}`
+  // therefore flickered on *every* keystroke to a slide's own body, not just
+  // edits to other slides. `untrack` freezes the read: BarefootJS's compiler
+  // still wraps this binding in an effect (it doesn't understand `untrack`
+  // statically — the JSX for a keyed `.map()` row always looks reactive to
+  // it), but at runtime an effect whose only signal read happens inside
+  // `untrack` never registers a dependency, so it runs exactly once, at
+  // mount, and never again — confirmed by compiling a two-line isolated
+  // repro and reading the emitted JS (`R(() => r())`, `R` = `untrack`)
+  // rather than assuming it. All *later* content updates flow through
+  // `patchSlidePreviewIframes` (a plain effect below) instead, which mutates
+  // the already-loaded iframe's document in place — no `.srcdoc` write, no
+  // reload. An earlier attempt at "patch in place" (via `postMessage`, with
+  // `srcdoc` set once through a `ref`) broke thumbnail rendering outright;
+  // that one relied on a `ref` firing exactly once per mount, which this
+  // compiler's `.map()` output doesn't guarantee — this version doesn't
+  // depend on that at all (no `ref`; iframes are found by a live
+  // `data-slide-preview-key` query every time a patch runs).
+  // For the "selected slide" preview pane (a single iframe reused across
+  // whichever slide is selected, unlike a thumbnail row's iframe which is
+  // permanently tied to one key) — `key` must be read by the *caller*, in
+  // normal (tracked) context, so switching slides still reloads this
+  // pane; only the fragment lookup itself is untracked here.
+  function buildSelectedSlideDoc(key: string | null): string {
+    if (key === null) return ''
+    return buildSlideDoc(untrack(() => fragmentSignal(key)[0]()))
+  }
+
+  // Swaps in fresh fragment HTML for every iframe currently showing `key`
+  // (its thumbnail row and/or the "selected slide" preview pane both carry
+  // `data-slide-preview-key`), without touching `.srcdoc`. Only ever
+  // *replaces* an existing `.peitho-slide` — never inserts one — so a
+  // patch that lands before an iframe's own initial `srcdoc` load has
+  // finished (a real possibility: that load is async, this effect isn't)
+  // is a safe no-op instead of risking a duplicated slide; the in-flight
+  // `srcdoc` navigation already carries the correct content for that case,
+  // and the next keystroke's patch (a beat later) catches up.
+  function patchSlidePreviewIframes(key: string, fragmentHtml: string): void {
+    const selector = `[data-slide-preview-key="${CSS.escape(key)}"]`
+    for (const iframe of document.querySelectorAll<HTMLIFrameElement>(selector)) {
+      const doc = iframe.contentDocument
+      const current = doc?.querySelector('.peitho-slide')
+      if (!current || current.outerHTML === fragmentHtml) continue
+      const wrapper = doc!.createElement('div')
+      wrapper.innerHTML = fragmentHtml
+      const next = wrapper.firstElementChild
+      if (!next) continue
+      current.replaceWith(next)
+      // The fit() script embedded in buildSlidePreviewDoc only re-scales on
+      // its own `resize` listener — nothing else re-invokes it after a
+      // direct content swap like this.
+      doc!.defaultView?.dispatchEvent(new Event('resize'))
+    }
+  }
+
+  createEffect(() => {
+    for (const slide of manifest()?.slides ?? []) {
+      patchSlidePreviewIframes(slide.key, fragmentSignal(slide.key)[0]())
+    }
+  })
 
   async function refreshSource(preserveSelection: boolean): Promise<void> {
     const source = await invoke<string>('read_deck_source')
@@ -1222,7 +1303,8 @@ export function Studio() {
                         >
                           <iframe
                             title={`Slide ${String((indexSignal(slide.key)[0]()) + 1)}`}
-                            srcdoc={buildSlideDoc(fragmentSignal(slide.key)[0]())}
+                            data-slide-preview-key={slide.key}
+                            srcdoc={untrack(() => buildSlideDoc(fragmentSignal(slide.key)[0]()))}
                             className="w-full h-full border-0"
                             style="pointer-events: none"
                           />
@@ -1295,10 +1377,11 @@ export function Studio() {
         />
 
         <div className="flex-1 min-w-0 flex flex-col min-h-0">
-          {selectedSlide() ? (
+          {selectedSlideKey() !== null ? (
             <iframe
               title="Selected slide preview"
-              srcdoc={buildSlideDoc(fragmentSignal(selectedSlide()!.key)[0]())}
+              data-slide-preview-key={selectedSlideKey()}
+              srcdoc={buildSelectedSlideDoc(selectedSlideKey())}
               className="flex-1 w-full border-0"
             />
           ) : (
