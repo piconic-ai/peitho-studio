@@ -321,6 +321,26 @@ export function Studio() {
     return rows
   }
 
+  function scanRow(
+    elementFrom: (x: number, y: number) => Element | null,
+    styleOf: (el: Element) => CSSStyleDeclaration,
+    xStart: number,
+    y: number,
+    count: number,
+  ): { dx: number; tag: string | null; cls: string | null; bg: string | null }[] {
+    const cols: { dx: number; tag: string | null; cls: string | null; bg: string | null }[] = []
+    for (let dx = 0; dx < count; dx++) {
+      const el = elementFrom(xStart + dx, y)
+      cols.push({
+        dx,
+        tag: el?.tagName ?? null,
+        cls: el instanceof HTMLElement ? el.className : null,
+        bg: el ? styleOf(el).backgroundColor : null,
+      })
+    }
+    return cols
+  }
+
   async function copyThumbnailDebugSnapshot(): Promise<void> {
     const iframes = Array.from(document.querySelectorAll<HTMLIFrameElement>('[data-slide-preview-key]'))
     const report = iframes.map(iframe => {
@@ -340,6 +360,13 @@ export function Studio() {
         : []
       const innerScan = idoc && iwin
         ? scanColumn((x, y) => idoc.elementFromPoint(x, y), el => iwin.getComputedStyle(el), iframeRect.width / 2, 0, 12)
+        : null
+      const outerY = wrapperRect ? wrapperRect.top + wrapperRect.height / 2 : iframeRect.top + iframeRect.height / 2
+      const outerLeftScan = wrapperRect
+        ? scanRow((x, y) => document.elementFromPoint(x, y), el => getComputedStyle(el), wrapperRect.left - 2, outerY, 16)
+        : []
+      const innerLeftScan = idoc && iwin
+        ? scanRow((x, y) => idoc.elementFromPoint(x, y), el => iwin.getComputedStyle(el), 0, iframeRect.height / 2, 16)
         : null
       const cornerAt = (x: number, y: number) => {
         const el = document.elementFromPoint(x, y)
@@ -379,9 +406,12 @@ export function Studio() {
           slideRect: rectToPlain(slideEl.getBoundingClientRect()),
           slideTransform: slideStyle.transform,
           slideBackgroundColor: slideStyle.backgroundColor,
+          slideOuterHTMLPrefix: slideEl.outerHTML.slice(0, 200),
         } : null,
         outerTopScan: outerScan,
         innerTopScan: innerScan,
+        outerLeftScan,
+        innerLeftScan,
         corners: wrapperRect ? {
           topLeftOuter: cornerAt(wrapperRect.left + 2, wrapperRect.top + 2),
           topRightOuter: cornerAt(wrapperRect.right - 2, wrapperRect.top + 2),
