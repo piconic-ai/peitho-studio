@@ -612,6 +612,13 @@ export function Studio() {
   // window that might already have a *different* deck open — that's what
   // `openDeckInNewWindow` is for.
   async function loadDeck(path: string): Promise<void> {
+    // Same reasoning as the guard at the top of `submitNewDeck` — the
+    // welcome screen's buttons/Recent entries reactively disable on
+    // `isBusy()`, but that's not synchronous, so a rapid double-click
+    // (e.g. two different Recent entries before the first re-render lands)
+    // could otherwise start a second overlapping `open_deck` in the same
+    // window.
+    if (isBusy()) return
     setIsBusy(true)
     setErrorMessage(null)
     try {
@@ -679,7 +686,12 @@ export function Studio() {
   async function submitNewDeck(): Promise<void> {
     const parent = newDeckParentDir()
     const name = newDeckName().trim()
-    if (!parent || !name) return
+    // The `disabled` state on the Create button/input covers this in the
+    // UI, but that's a reactive re-render away, not synchronous — without
+    // this, pressing Enter twice in quick succession (or once from the
+    // input plus once from a queued click) starts a second overlapping
+    // `create_deck` for the same name before the first re-render lands.
+    if (!parent || !name || isBusy()) return
     setIsBusy(true)
     setErrorMessage(null)
     try {
@@ -1361,7 +1373,7 @@ export function Studio() {
                 disabled={isBusy()}
                 className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
               >
-                Open Deck…
+                {isBusy() ? 'Opening…' : 'Open Deck…'}
               </button>
               <button
                 type="button"
@@ -1372,6 +1384,16 @@ export function Studio() {
                 New Deck…
               </button>
             </div>
+            {/* `disabled` on the buttons above (and on each Recent entry
+                below) was the only previously-existing feedback while
+                `loadDeck`/`create_deck` are in flight — easy to miss
+                (opacity-50 on an already-plain button) and gives no signal
+                at all once a button is clicked, so a slow open/create read
+                as a frozen window rather than "still working". This is
+                deliberately unconditional layout space (not conditionally
+                rendered) so its appearance doesn't itself shift the
+                surrounding buttons. */}
+            <div className="h-4 text-xs text-muted-foreground">{isBusy() ? 'Opening…' : ''}</div>
             {errorMessage() ? <div className="text-xs text-destructive text-center">{errorMessage()}</div> : null}
             {recentDecks().length > 0 ? (
               <div className="w-full">
@@ -1382,6 +1404,7 @@ export function Studio() {
                       type="button"
                       key={path}
                       onClick={() => void openDeckPreferringCurrentWindow(path)}
+                      disabled={isBusy()}
                       title={path}
                       // A path's most distinguishing part (the deck's own
                       // folder name) is at the *end* — plain `truncate`
@@ -1391,7 +1414,7 @@ export function Studio() {
                       // left) while the path text itself still renders
                       // left-to-right, so the tail stays visible instead.
                       dir="rtl"
-                      className="w-full text-left px-3 py-2 rounded-md border border-border hover:bg-accent text-sm truncate"
+                      className="w-full text-left px-3 py-2 rounded-md border border-border hover:bg-accent text-sm truncate disabled:opacity-50"
                     >
                       {path}
                     </button>
@@ -2091,7 +2114,13 @@ export function Studio() {
 
       {newDeckModalOpen() ? (
         <>
-          <div className="fixed top-0 right-0 bottom-0 left-0 z-40 bg-black/40" onClick={() => setNewDeckModalOpen(false)} />
+          {/* Closing on a backdrop click/Escape while `create_deck` is still
+              in flight would abandon the modal but not the in-flight
+              `submitNewDeck()` call itself — it still finishes and opens
+              the deck once `create_deck` resolves, just with no modal left
+              on screen to have shown that. Guarding these the same way as
+              the Cancel/Create buttons below keeps all four exits in sync. */}
+          <div className="fixed top-0 right-0 bottom-0 left-0 z-40 bg-black/40" onClick={() => { if (!isBusy()) setNewDeckModalOpen(false) }} />
           <div className="fixed top-0 right-0 bottom-0 left-0 z-50 flex items-center justify-center">
             <div className="w-full max-w-sm rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-4">
               <div className="text-sm font-medium mb-3">New Deck</div>
@@ -2101,28 +2130,30 @@ export function Studio() {
                 onInput={e => setNewDeckName(e.target.value)}
                 placeholder="Deck name"
                 autofocus
-                className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm outline-none mb-1"
+                disabled={isBusy()}
+                className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm outline-none mb-1 disabled:opacity-50"
                 onKeyDown={e => {
                   if (e.key === 'Enter') void submitNewDeck()
-                  if (e.key === 'Escape') setNewDeckModalOpen(false)
+                  if (e.key === 'Escape' && !isBusy()) setNewDeckModalOpen(false)
                 }}
               />
               <div className="text-xs text-muted-foreground mb-3 truncate">{newDeckParentDir()}</div>
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
+                  disabled={isBusy()}
                   onClick={() => setNewDeckModalOpen(false)}
-                  className="px-3 py-1.5 rounded-md border border-border text-sm"
+                  className="px-3 py-1.5 rounded-md border border-border text-sm disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  disabled={newDeckName().trim() === ''}
+                  disabled={newDeckName().trim() === '' || isBusy()}
                   onClick={() => void submitNewDeck()}
                   className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
                 >
-                  Create
+                  {isBusy() ? 'Creating…' : 'Create'}
                 </button>
               </div>
             </div>
