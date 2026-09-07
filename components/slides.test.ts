@@ -12,6 +12,7 @@ import {
   updateFrontmatterTime,
   joinSlideTexts,
   sumSectionTimesMs,
+  stabilizeByKey,
 } from './slides'
 
 describe('splitSlides', () => {
@@ -306,5 +307,49 @@ describe('sumSectionTimesMs', () => {
 
   test('adversarial: an empty array sums to zero', () => {
     expect(sumSectionTimesMs([])).toBe(0)
+  })
+})
+
+describe('stabilizeByKey', () => {
+  test('spec: reuses the previous object for a structurally-unchanged entry', () => {
+    const prevItem = { key: 'a', title: 'Hello' }
+    const previous = [prevItem]
+    const next = [{ key: 'a', title: 'Hello' }] // same content, different object
+    const result = stabilizeByKey(previous, next)
+    expect(result[0]).toBe(prevItem)
+  })
+
+  test('spec: keeps the new object for a genuinely changed entry', () => {
+    const previous = [{ key: 'a', title: 'Hello' }]
+    const nextItem = { key: 'a', title: 'Changed' }
+    const result = stabilizeByKey(previous, [nextItem])
+    expect(result[0]).toBe(nextItem)
+  })
+
+  test('adversarial: a brand-new key (no previous match) passes through as-is', () => {
+    const nextItem = { key: 'b', title: 'New' }
+    const result = stabilizeByKey([{ key: 'a', title: 'Hello' }], [nextItem])
+    expect(result[0]).toBe(nextItem)
+  })
+
+  test('adversarial: an empty previous array stabilizes nothing', () => {
+    const nextItem = { key: 'a', title: 'Hello' }
+    expect(stabilizeByKey([], [nextItem])[0]).toBe(nextItem)
+  })
+
+  test('adversarial: order and length follow `next`, not `previous`', () => {
+    const a = { key: 'a', title: 'A' }
+    const b = { key: 'b', title: 'B' }
+    const result = stabilizeByKey([b, a], [a, b])
+    expect(result.map(item => item.key)).toEqual(['a', 'b'])
+  })
+
+  test('adversarial: mixed reordering only stabilizes the unchanged entries', () => {
+    const a = { key: 'a', title: 'A' }
+    const b = { key: 'b', title: 'B' }
+    const changedB = { key: 'b', title: 'B2' }
+    const result = stabilizeByKey([a, b], [changedB, a])
+    expect(result[0]).toBe(changedB)
+    expect(result[1]).toBe(a)
   })
 })

@@ -232,6 +232,33 @@ export function sumSectionTimesMs(slideTexts: string[]): number {
   return total
 }
 
+/** Rebuilds `next` reusing each `previous` entry's own object reference
+ * wherever a same-keyed entry is deeply (structurally) unchanged.
+ *
+ * `manifest_json`/`render_draft` hand back a freshly-deserialized object on
+ * every keystroke, including for slides whose content didn't change at all
+ * — every slide is a brand-new object reference even when byte-identical.
+ * BarefootJS's keyed `.map()` pushes each row's item through its own
+ * per-row signal on every reconcile pass regardless of whether the pushed
+ * value differs (`mapArray`'s `existing.setItem(item)` has no equality
+ * check of its own), but the signal itself skips notifying subscribers
+ * when the new value is `Object.is`-equal to the old one — so reusing the
+ * *same reference* for an unchanged slide (rather than handing over a new,
+ * merely-equal-by-value one) is what actually stops that row's bindings
+ * (its thumbnail `<iframe srcdoc>` in particular — a real reload, not just
+ * wasted work, since `.srcdoc` re-assignment reloads the frame even when
+ * set to an identical string) from re-running on an edit to some *other*
+ * slide. See [[barefootjs-per-key-signal-pattern]] for the same fix at a
+ * different data shape (a signal holding a whole collection, vs. object
+ * identity for one `.map()`'s items). */
+export function stabilizeByKey<T extends { key: string }>(previous: T[], next: T[]): T[] {
+  const byKey = new Map(previous.map(item => [item.key, item]))
+  return next.map(item => {
+    const prev = byKey.get(item.key)
+    return prev && JSON.stringify(prev) === JSON.stringify(item) ? prev : item
+  })
+}
+
 // peitho requires a deck's frontmatter `time:` to equal the sum of every
 // section's planned time — editing one section's time from the slide list
 // would otherwise silently break the very next build. This keeps the two

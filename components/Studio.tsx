@@ -16,6 +16,7 @@ import {
   formatDurationMs,
   joinSlideTexts,
   sumSectionTimesMs,
+  stabilizeByKey,
   type SlideRange,
 } from './slides'
 import { buildSlidePreviewDoc } from './previewDoc'
@@ -73,6 +74,16 @@ const NEW_SLIDE_MARKDOWN = '# New Slide\n'
 export function Studio() {
   const [deckPath, setDeckPath] = createSignal<string | null>(null)
   const [assetBaseUrl, setAssetBaseUrl] = createSignal<string | null>(null)
+  // The deck's native slide canvas size — split out of `manifest` into its
+  // own equality-guarded signals (set in `applyRenderPayload`) even though
+  // it logically lives there. `manifest()` gets a brand-new object on every
+  // single-slide edit, but every thumbnail's `.map()` row reads canvas size
+  // (for its `<iframe>` doc and its aspect-ratio style) — reading it via
+  // `manifest()` directly made *every* row's reactive bindings depend on
+  // *every* edit, forcing a real `.srcdoc` reassignment (a visible reload)
+  // on rows whose own content never changed. See [[barefootjs-per-key-signal-pattern]].
+  const [canvasWidth, setCanvasWidth] = createSignal(1280)
+  const [canvasHeight, setCanvasHeight] = createSignal(720)
   const [manifest, setManifest] = createSignal<Manifest | null>(null)
   const [fullSource, setFullSource] = createSignal('')
   const [slideRanges, setSlideRanges] = createSignal<SlideRange[]>([])
@@ -254,10 +265,19 @@ export function Studio() {
   // Applies a render result (from `open_deck` or `render_draft`) to state.
   // Each fragment is written to its own key's signal, and only when the
   // value actually changed — see `fragmentSignal` above for why this must
-  // stay per-key rather than one shared record.
+  // stay per-key rather than one shared record. `manifest.slides` itself
+  // gets the same treatment at the object level via `stabilizeByKey`: every
+  // slide (edited or not) arrives as a freshly-deserialized object on every
+  // keystroke, and reusing the *previous* slide's own reference for one
+  // that's unchanged is what lets the keyed `.map()` over `manifest().slides`
+  // skip re-running that row's bindings at all — see `stabilizeByKey`'s own
+  // comment for why this is load-bearing, not just tidiness.
   function applyRenderPayload(payload: RenderPayload): void {
-    setManifest(payload.manifest)
+    const previousSlides = manifest()?.slides ?? []
+    setManifest({ ...payload.manifest, slides: stabilizeByKey(previousSlides, payload.manifest.slides) })
     setAssetBaseUrl(payload.assetBaseUrl)
+    if (canvasWidth() !== payload.manifest.canvasWidth) setCanvasWidth(payload.manifest.canvasWidth)
+    if (canvasHeight() !== payload.manifest.canvasHeight) setCanvasHeight(payload.manifest.canvasHeight)
     const drafts: Record<number, SectionDraft> = {}
     for (const section of payload.manifest.sections) {
       drafts[section.startIndex] = { name: section.name, time: formatDurationMs(section.plannedDurationMs) }
@@ -349,7 +369,7 @@ export function Studio() {
   // binding; revisit the flicker separately once that assumption is
   // actually verified against the compiled output.
   function buildSlideDoc(fragmentHtml: string): string {
-    return buildSlidePreviewDoc(fragmentHtml, assetBaseUrl() ?? '', manifest()?.canvasWidth ?? 1280, manifest()?.canvasHeight ?? 720)
+    return buildSlidePreviewDoc(fragmentHtml, assetBaseUrl() ?? '', canvasWidth(), canvasHeight())
   }
 
   async function refreshSource(preserveSelection: boolean): Promise<void> {
@@ -1177,7 +1197,7 @@ export function Studio() {
                           className={selectedIndex() === (indexSignal(slide.key)[0]())
                             ? 'block relative rounded-md border-4 border-[#eab308] overflow-hidden bg-black'
                             : 'block relative rounded-md border-2 border-border overflow-hidden bg-black hover:border-4 hover:border-muted-foreground'}
-                          style={`aspect-ratio: ${String(manifest()!.canvasWidth)} / ${String(manifest()!.canvasHeight)}`}
+                          style={`aspect-ratio: ${String(canvasWidth())} / ${String(canvasHeight())}`}
                         >
                           <iframe
                             title={`Slide ${String((indexSignal(slide.key)[0]()) + 1)}`}
