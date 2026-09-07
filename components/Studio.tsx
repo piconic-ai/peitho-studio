@@ -1106,6 +1106,13 @@ export function Studio() {
           return
         }
         if (event.metaKey && key === 'c') {
+          // A slide stays "selected" (and this handler active) the whole
+          // time a deck is open, so Cmd+C over an ordinary text selection
+          // elsewhere (the deck path, an error message, ...) hit this
+          // unconditionally and stole it — `preventDefault` here blocks
+          // the native Edit-menu Copy from ever running. Only intercept
+          // when there's no real text selection to defer to.
+          if ((window.getSelection()?.toString().length ?? 0) > 0) return
           event.preventDefault()
           copySlide(current)
           return
