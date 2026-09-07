@@ -172,6 +172,10 @@ export function Studio() {
   // reactive `value={...}` binding.
   let bodyTextareaEl: HTMLTextAreaElement | undefined
   let noteTextareaEl: HTMLTextAreaElement | undefined
+  // The context menu is permanently mounted (only its `hidden` class
+  // toggles — see the comment above its JSX for why), so its `ref` fires
+  // exactly once and this stays valid for the component's whole lifetime.
+  let contextMenuEl: HTMLElement | undefined
   // Tracks an in-progress IME composition (kana->kanji conversion, etc.) on
   // each textarea, via `compositionstart`/`compositionend`. `syncEditorFields`
   // must never touch `.value` while one is active: WebKit owns the
@@ -827,6 +831,36 @@ export function Studio() {
     setContextMenu({ index, x: event.clientX, y: event.clientY })
     void loadLayoutPreviews()
   }
+
+  // Keeps the context menu on-screen: it's positioned at the raw click
+  // coordinates, with no clamping of its own, so a right-click low in the
+  // slide list could open a menu whose bottom items render past the
+  // window edge with no way to reach them. Runs on open and whenever
+  // `layoutPickerOpen` changes (its expanded submenu can itself push the
+  // menu's bottom edge off-screen) via `requestAnimationFrame` — deferring
+  // to the next paint, rather than measuring synchronously here, is what
+  // guarantees the menu has actually been laid out (at its current,
+  // possibly just-toggled height) before `getBoundingClientRect` runs.
+  createEffect(() => {
+    if (contextMenu() === null) return
+    layoutPickerOpen()
+    requestAnimationFrame(() => {
+      // Re-read rather than closing over this run's `contextMenu()` value —
+      // it may have moved (a new right-click) or closed by the time this
+      // frame actually runs.
+      const menu = contextMenu()
+      if (!contextMenuEl || menu === null) return
+      const rect = contextMenuEl.getBoundingClientRect()
+      const margin = 8
+      const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin)
+      const maxTop = Math.max(margin, window.innerHeight - rect.height - margin)
+      const x = Math.min(menu.x, maxLeft)
+      const y = Math.min(menu.y, maxTop)
+      if (x !== menu.x || y !== menu.y) {
+        setContextMenu(prev => (prev ? { ...prev, x, y } : prev))
+      }
+    })
+  })
 
   // The index a slide-appending action (New Slide, Paste) should insert
   // after — the right-clicked slide, or the end of the list when the menu
@@ -1498,7 +1532,13 @@ export function Studio() {
         onContextMenu={e => { e.preventDefault(); closeContextMenu() }}
       />
       <div
-        className={(contextMenu() === null || layoutPickerOpen() ? 'hidden ' : '') + 'fixed w-56 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg py-1 z-40 text-sm'}
+        ref={el => { contextMenuEl = el }}
+        // Was `contextMenu() === null || layoutPickerOpen()` — the "Change
+        // Layout" submenu (`layoutPickerOpen() ? <div>...` below) renders
+        // as a CHILD of this same div, so that condition hid the whole
+        // menu, submenu included, the instant it was expanded. Only
+        // `contextMenu() === null` should hide this.
+        className={(contextMenu() === null ? 'hidden ' : '') + 'fixed w-56 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg py-1 z-40 text-sm'}
         style={`left: ${String(contextMenu()?.x ?? 0)}px; top: ${String(contextMenu()?.y ?? 0)}px`}
       >
         <button
