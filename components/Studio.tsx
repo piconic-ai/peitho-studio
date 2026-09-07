@@ -1384,7 +1384,7 @@ export function Studio() {
           </div>
           {presentMenuOpen() ? (
             <>
-              <div className="fixed inset-0 z-10" onClick={() => setPresentMenuOpen(false)} />
+              <div className="fixed top-0 right-0 bottom-0 left-0 z-10" onClick={() => setPresentMenuOpen(false)} />
               <div className="absolute right-0 top-full mt-2 w-72 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg py-1 z-20">
                 <button
                   type="button"
@@ -1504,37 +1504,35 @@ export function Studio() {
                               el.dataset.slidePreviewKey = slide.key
                               ;(el as HTMLIFrameElement).srcdoc = buildSlideDoc(fragmentSignal(slide.key)[0]())
                             }}
-                            // Root-caused via a Cmd+Shift+D debug snapshot
-                            // taken in the real app (WKWebView): `h-full`
-                            // (height:100%) resolved against the wrapper
-                            // span's *border-box* there instead of its
-                            // content-box, so the iframe's own height came
-                            // out equal to the wrapper's FULL height,
-                            // border included — one border-width too tall.
-                            // `window.innerHeight` inside the iframe (what
-                            // `fit()` in previewDoc.ts scales against) was
-                            // therefore too large by one border-width,
-                            // pushing the whole scaled `.peitho-slide` down
-                            // by that same amount within the visible
-                            // (overflow-hidden-clipped) window — revealing
-                            // exactly one border-width of the iframe's own
-                            // black `<body>` at the top. Confirmed directly
-                            // in the snapshot data: `insetFromWrapper.bottom`
-                            // was *negative* (the iframe's bottom edge was
-                            // measured past the wrapper's own bottom edge),
-                            // and the border-4 (selected/hover) thumbnails'
-                            // `innerTopScan` showed `BODY` (black) at the
-                            // very first pixel row, `.peitho-slide` only
-                            // from the next row on — while border-2 showed
-                            // the identical pattern shrunk to a sub-pixel
-                            // gap, matching why only border-4 was visibly
-                            // black. `absolute inset-0` sidesteps the bug
-                            // entirely: unlike percentage sizing, its
-                            // resolution against the padding-box isn't
-                            // ambiguous, so this doesn't depend on why
-                            // WebKit's `%`-height resolution went wrong.
-                            className="absolute inset-0 border-0 rounded-md"
-                            style="pointer-events: none"
+                            // Two root-caused-from-real-data bugs stacked
+                            // here (both via Cmd+Shift+D snapshots against
+                            // the actual WKWebView):
+                            // 1. `h-full` (height:100%) resolved against the
+                            //    wrapper span's *border-box*, not its
+                            //    content-box, so the iframe came out one
+                            //    border-width too tall — `fit()`'s
+                            //    `window.innerHeight` was wrong by that much,
+                            //    pushing the scaled `.peitho-slide` down and
+                            //    revealing a black sliver of the iframe's
+                            //    own `<body>` at the top (worse on border-4
+                            //    than border-2, matching the reported
+                            //    difference).
+                            // 2. Switching to the `inset-0` utility class
+                            //    (`inset: calc(var(--spacing) * 0)`, the CSS
+                            //    `inset` *shorthand*) to sidestep bug 1
+                            //    turned out to not apply at all — the
+                            //    snapshot showed the iframe at exactly
+                            //    300x150, an `<iframe>`'s default intrinsic
+                            //    size, meaning `position:absolute` took but
+                            //    `inset` didn't constrain anything.
+                            // Explicit `top`/`right`/`bottom`/`left`
+                            // (unlike the `inset` shorthand, universally
+                            // supported since CSS2) sidesteps both: it
+                            // resolves unambiguously against the padding-box
+                            // regardless of percentage-sizing quirks, and
+                            // doesn't depend on shorthand-property support.
+                            className="border-0 rounded-md"
+                            style="position: absolute; top: 0; right: 0; bottom: 0; left: 0; pointer-events: none"
                           />
                           {/* `pointer-events: none` above keeps normal clicks/drags
                               passing through to the row beneath, but WKWebView still
@@ -1544,7 +1542,7 @@ export function Studio() {
                               overlay blocks the iframe from ever being the event
                               target at all, so both clicks and right-clicks always
                               bubble from here up to the row/button instead. */}
-                          <div className="absolute inset-0" />
+                          <div className="absolute top-0 right-0 bottom-0 left-0" />
                         </span>
                         {slide.skip ? <span className="text-xs text-destructive">skip</span> : null}
                       </span>
@@ -1650,7 +1648,7 @@ export function Studio() {
           like that one, instead of gated on `contextMenu()`, sidesteps
           whatever that remount-specific issue is. */}
       <div
-        className={(contextMenu() === null ? 'hidden ' : '') + 'fixed inset-0 z-30'}
+        className={(contextMenu() === null ? 'hidden ' : '') + 'fixed top-0 right-0 bottom-0 left-0 z-30'}
         onClick={closeContextMenu}
         onContextMenu={e => { e.preventDefault(); closeContextMenu() }}
       />
@@ -1784,8 +1782,8 @@ export function Studio() {
 
       {newDeckModalOpen() ? (
         <>
-          <div className="fixed inset-0 z-40 bg-black/40" onClick={() => setNewDeckModalOpen(false)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed top-0 right-0 bottom-0 left-0 z-40 bg-black/40" onClick={() => setNewDeckModalOpen(false)} />
+          <div className="fixed top-0 right-0 bottom-0 left-0 z-50 flex items-center justify-center">
             <div className="w-full max-w-sm rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-4">
               <div className="text-sm font-medium mb-3">New Deck</div>
               <input

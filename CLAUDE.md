@@ -123,3 +123,12 @@ Tauri v2(Rust) + BarefootJS CSR + UnoCSS。peitho-coreはサブプロセスで�
   ブレンドされる(ページ全体の背景に対してではない)。意図した色にならない
   ときは、アルファ付きトークンではなく不透明なトークン
   (`border-muted-foreground`など)を使う。
+- `inset-0`はUnoCSSでCSSの`inset`ショートハンドプロパティ
+  (`inset: calc(var(--spacing) * 0)`)にコンパイルされるが、この
+  アプリが動くWKWebViewでは(実機のCmd+Shift+Dデバッグスナップショットで
+  確認済み)`inset`ショートハンド自体が効かず、`position:absolute`/`fixed`は
+  適用されるのに`top`/`right`/`bottom`/`left`が一切効かない
+  ——絶対配置要素が「制約なし」のフォールバック(static位置・内在サイズ、
+  `<iframe>`ならデフォルトの300×150px)になる。`inset-0`は使わず、
+  `top-0 right-0 bottom-0 left-0`(個別の物理プロパティ、CSS2から
+  存在する)を明示的に並べる。
