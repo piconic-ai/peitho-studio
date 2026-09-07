@@ -130,7 +130,11 @@ export function Studio() {
   const [statusMessage, setStatusMessage] = createSignal('')
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null)
   const [slideListWidth, setSlideListWidth] = createSignal(SLIDE_LIST_WIDTH)
-  const [contextMenu, setContextMenu] = createSignal<{ index: number; x: number; y: number } | null>(null)
+  // `index: null` means the menu was opened by right-clicking empty space
+  // in the slide list (not a specific thumbnail) — every per-slide action
+  // (Cut/Delete/Change Layout/...) disables itself in that case, while
+  // actions that don't need an existing slide (New Slide, Paste) still work.
+  const [contextMenu, setContextMenu] = createSignal<{ index: number | null; x: number; y: number } | null>(null)
   // "Change Layout" expands this inline within the thumbnail context menu.
   // A grid of real rendered previews (Google Slides-style) was attempted
   // first, backed by `preview_layouts`'s per-layout fragment/CSS render —
@@ -360,15 +364,6 @@ export function Studio() {
     }
   })
 
-  // This reloads the whole iframe (a visible flash) on every content
-  // change, which is worth fixing now that renders happen on every
-  // keystroke — but an earlier attempt at that (patching content in place
-  // via `postMessage`, srcdoc set once through a `ref`) broke thumbnail
-  // rendering outright, most likely because this compiler's `.map()` output
-  // doesn't guarantee a mounted row's `ref` fires only once the way that
-  // fix assumed. Reverted to the simple, known-correct reactive `srcdoc`
-  // binding; revisit the flicker separately once that assumption is
-  // actually verified against the compiled output.
   function buildSlideDoc(fragmentHtml: string): string {
     return buildSlidePreviewDoc(fragmentHtml, assetBaseUrl() ?? '', canvasWidth(), canvasHeight())
   }
@@ -739,12 +734,24 @@ export function Studio() {
     setLayoutPickerOpen(false)
   }
 
-  function openContextMenu(index: number, event: MouseEvent): void {
+  function openContextMenu(index: number | null, event: MouseEvent): void {
     event.preventDefault()
-    void selectSlide(index)
+    // Without this, a right-click on a thumbnail bubbles up to the slide
+    // list container's own `onContextMenu` (added so right-clicking empty
+    // space still opens a menu) and immediately overwrites this call's
+    // real index with `null`.
+    event.stopPropagation()
+    if (index !== null) void selectSlide(index)
     setLayoutPickerOpen(false)
     setContextMenu({ index, x: event.clientX, y: event.clientY })
     void loadLayoutPreviews()
+  }
+
+  // The index a slide-appending action (New Slide, Paste) should insert
+  // after — the right-clicked slide, or the end of the list when the menu
+  // was opened on empty space (`index: null`).
+  function contextMenuAppendIndex(): number {
+    return contextMenu()?.index ?? (manifest()?.slideCount ?? 1) - 1
   }
 
   async function loadLayoutPreviews(): Promise<void> {
@@ -1154,7 +1161,7 @@ export function Studio() {
           className="shrink-0 flex flex-col border-r border-border min-h-0"
           style={`width: ${slideListWidth()}px`}
         >
-          <div className="flex-1 overflow-y-auto p-2">
+          <div className="flex-1 overflow-y-auto p-2" onContextMenu={e => openContextMenu(null, e)}>
             {manifest() === null ? (
               <p className="text-sm text-muted-foreground">Open a deck to see its slides.</p>
             ) : (
@@ -1335,7 +1342,7 @@ export function Studio() {
       >
         <button
           type="button"
-          onClick={() => { void addSlide(contextMenu()!.index); closeContextMenu() }}
+          onClick={() => { void addSlide(contextMenuAppendIndex()); closeContextMenu() }}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent"
         >
           <span>New Slide</span><span className="text-xs text-muted-foreground">⌘⏎</span>
@@ -1343,22 +1350,24 @@ export function Studio() {
         <div className="my-1 border-t border-border" />
         <button
           type="button"
-          onClick={() => { void cutSlide(contextMenu()!.index); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent"
+          disabled={contextMenu()?.index === null}
+          onClick={() => { void cutSlide(contextMenu()!.index!); closeContextMenu() }}
+          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>Cut</span><span className="text-xs text-muted-foreground">⌘X</span>
         </button>
         <button
           type="button"
-          onClick={() => { copySlide(contextMenu()!.index); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent"
+          disabled={contextMenu()?.index === null}
+          onClick={() => { copySlide(contextMenu()!.index!); closeContextMenu() }}
+          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>Copy</span><span className="text-xs text-muted-foreground">⌘C</span>
         </button>
         <button
           type="button"
           disabled={clipboardSlideText() === null}
-          onClick={() => { void pasteSlideAfter(contextMenu()!.index); closeContextMenu() }}
+          onClick={() => { void pasteSlideAfter(contextMenuAppendIndex()); closeContextMenu() }}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>Paste</span><span className="text-xs text-muted-foreground">⌘V</span>
@@ -1366,8 +1375,8 @@ export function Studio() {
         <div className="my-1 border-t border-border" />
         <button
           type="button"
-          disabled={(manifest()?.slideCount ?? 0) <= 1}
-          onClick={() => { void deleteSlide(contextMenu()!.index); closeContextMenu() }}
+          disabled={contextMenu()?.index === null || (manifest()?.slideCount ?? 0) <= 1}
+          onClick={() => { void deleteSlide(contextMenu()!.index!); closeContextMenu() }}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent text-destructive"
         >
           <span>Delete</span><span className="text-xs text-muted-foreground">⌦</span>
@@ -1375,8 +1384,9 @@ export function Studio() {
         <div className="my-1 border-t border-border" />
         <button
           type="button"
+          disabled={contextMenu()?.index === null}
           onClick={() => { setLayoutPickerOpen(v => !v) }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent"
+          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>Change Layout</span><span aria-hidden="true">{layoutPickerOpen() ? '▾' : '▸'}</span>
         </button>
@@ -1391,7 +1401,7 @@ export function Studio() {
                 <button
                   type="button"
                   key={preview.name}
-                  onClick={() => { void changeSlideLayout(contextMenu()!.index, preview.name); closeContextMenu() }}
+                  onClick={() => { void changeSlideLayout(contextMenu()!.index!, preview.name); closeContextMenu() }}
                   className="w-full text-left px-3 py-1.5 hover:bg-accent text-xs"
                 >
                   {preview.name}
@@ -1402,41 +1412,44 @@ export function Studio() {
         ) : null}
         <button
           type="button"
-          onClick={() => { void toggleSlideDraft(contextMenu()!.index); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent"
+          disabled={contextMenu()?.index === null}
+          onClick={() => { void toggleSlideDraft(contextMenu()!.index!); closeContextMenu() }}
+          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>Mark as Draft</span>
-          {contextMenu() !== null && slideConfigOf(contextMenu()!.index).draft === true ? <span aria-hidden="true">✓</span> : null}
+          {contextMenu()?.index != null && slideConfigOf(contextMenu()!.index!).draft === true ? <span aria-hidden="true">✓</span> : null}
         </button>
         <button
           type="button"
-          onClick={() => { void toggleSlideSkip(contextMenu()!.index); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent"
+          disabled={contextMenu()?.index === null}
+          onClick={() => { void toggleSlideSkip(contextMenu()!.index!); closeContextMenu() }}
+          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>Skip in Present</span>
-          {contextMenu() !== null && slideConfigOf(contextMenu()!.index).skip === true ? <span aria-hidden="true">✓</span> : null}
+          {contextMenu()?.index != null && slideConfigOf(contextMenu()!.index!).skip === true ? <span aria-hidden="true">✓</span> : null}
         </button>
         <button
           type="button"
-          onClick={() => { void toggleSlideSection(contextMenu()!.index); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent"
+          disabled={contextMenu()?.index === null}
+          onClick={() => { void toggleSlideSection(contextMenu()!.index!); closeContextMenu() }}
+          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>Section Start</span>
-          {contextMenu() !== null && typeof slideConfigOf(contextMenu()!.index).section === 'string' ? <span aria-hidden="true">✓</span> : null}
+          {contextMenu()?.index != null && typeof slideConfigOf(contextMenu()!.index!).section === 'string' ? <span aria-hidden="true">✓</span> : null}
         </button>
         <div className="my-1 border-t border-border" />
         <button
           type="button"
-          disabled={(contextMenu()?.index ?? 0) <= 0}
-          onClick={() => { void moveSlide(contextMenu()!.index, -1); closeContextMenu() }}
+          disabled={contextMenu()?.index === null || (contextMenu()?.index ?? 0) <= 0}
+          onClick={() => { void moveSlide(contextMenu()!.index!, -1); closeContextMenu() }}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>Move Slide Up</span><span className="text-xs text-muted-foreground">⌘⇧↑</span>
         </button>
         <button
           type="button"
-          disabled={(contextMenu()?.index ?? 0) >= (manifest()?.slideCount ?? 1) - 1}
-          onClick={() => { void moveSlide(contextMenu()!.index, 1); closeContextMenu() }}
+          disabled={contextMenu()?.index === null || (contextMenu()?.index ?? 0) >= (manifest()?.slideCount ?? 1) - 1}
+          onClick={() => { void moveSlide(contextMenu()!.index!, 1); closeContextMenu() }}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>Move Slide Down</span><span className="text-xs text-muted-foreground">⌘⇧↓</span>
