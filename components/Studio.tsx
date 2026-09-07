@@ -132,7 +132,6 @@ export function Studio() {
   const [statusMessage, setStatusMessage] = createSignal('')
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null)
   const [errorMessageCopied, setErrorMessageCopied] = createSignal(false)
-  const [deckPathCopied, setDeckPathCopied] = createSignal(false)
   const [slideListWidth, setSlideListWidth] = createSignal(SLIDE_LIST_WIDTH)
   // `index: null` means the menu was opened by right-clicking empty space
   // in the slide list (not a specific thumbnail) — every per-slide action
@@ -289,14 +288,6 @@ export function Studio() {
     await navigator.clipboard.writeText(message)
     setErrorMessageCopied(true)
     window.setTimeout(() => setErrorMessageCopied(false), 1500)
-  }
-
-  async function copyDeckPath(): Promise<void> {
-    const path = deckPath()
-    if (path === null) return
-    await navigator.clipboard.writeText(path)
-    setDeckPathCopied(true)
-    window.setTimeout(() => setDeckPathCopied(false), 1500)
   }
 
   // Applies a render result (from `open_deck` or `render_draft`) to state.
@@ -1248,16 +1239,11 @@ export function Studio() {
       ) : (
         <>
       <header className="h-12 shrink-0 flex items-center gap-3 px-4 border-b border-border">
+        {/* Selecting this text and Cmd+C just works (native Edit-menu
+            Copy — src-tauri/src/lib.rs's build_menu — routes to whatever
+            has focus, including a WKWebView selection), so a dedicated
+            copy button here is unnecessary UI. */}
         <span className="text-sm text-muted-foreground truncate select-text">{deckPath()}</span>
-        {deckPath() ? (
-          <button
-            type="button"
-            onClick={() => { void copyDeckPath() }}
-            className="shrink-0 px-1.5 py-0.5 text-xs rounded border border-border text-muted-foreground hover:bg-accent"
-          >
-            {deckPathCopied() ? 'Copied' : 'Copy'}
-          </button>
-        ) : null}
         <div className="flex-1" />
         <div className="relative">
           <div
