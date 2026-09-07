@@ -1573,18 +1573,45 @@ export function Studio() {
                               // re-synced on any resize of the wrapper (the
                               // slide-list panel's own width is
                               // user-draggable) via ResizeObserver.
+                              //
+                              // Sizing the iframe to the *raw* content-box
+                              // (clientWidth x clientHeight directly) left a
+                              // final, tiny residual: the wrapper's own
+                              // aspect-ratio is locked to the canvas ratio
+                              // at its *border-box*, but subtracting a fixed
+                              // border width from both dimensions of a
+                              // 16:9-ish box doesn't preserve 16:9 exactly
+                              // (confirmed in a debug snapshot: a 1px sliver
+                              // of the iframe's own black background,
+                              // visible only on the thicker border-4 case,
+                              // where the drift is large enough to round up
+                              // to a whole pixel). Instead of sizing the
+                              // iframe to the content-box and letting
+                              // previewDoc.ts's own fit() paper over the
+                              // mismatch, compute the largest canvas-ratio
+                              // box that fits the content-box and center it
+                              // directly — the iframe's own aspect ratio
+                              // then matches the canvas exactly, so fit()'s
+                              // Math.min never has anything to reconcile.
                               const wrapperEl = iframeEl.parentElement
                               if (wrapperEl) {
                                 const syncIframeSize = () => {
-                                  iframeEl.style.width = `${String(wrapperEl.clientWidth)}px`
-                                  iframeEl.style.height = `${String(wrapperEl.clientHeight)}px`
+                                  const availW = wrapperEl.clientWidth
+                                  const availH = wrapperEl.clientHeight
+                                  const scale = Math.min(availW / canvasWidth(), availH / canvasHeight())
+                                  const w = canvasWidth() * scale
+                                  const h = canvasHeight() * scale
+                                  iframeEl.style.width = `${String(w)}px`
+                                  iframeEl.style.height = `${String(h)}px`
+                                  iframeEl.style.left = `${String((availW - w) / 2)}px`
+                                  iframeEl.style.top = `${String((availH - h) / 2)}px`
                                 }
                                 syncIframeSize()
                                 new ResizeObserver(syncIframeSize).observe(wrapperEl)
                               }
                             }}
                             className="border-0 rounded-md"
-                            style="position: absolute; top: 0; left: 0; pointer-events: none"
+                            style="position: absolute; pointer-events: none"
                           />
                           {/* `pointer-events: none` above keeps normal clicks/drags
                               passing through to the row beneath, but WKWebView still
