@@ -1510,37 +1510,51 @@ export function Studio() {
                               // which finds this element via the very
                               // `data-slide-preview-key` attribute set here.
                               el.dataset.slidePreviewKey = slide.key
-                              ;(el as HTMLIFrameElement).srcdoc = buildSlideDoc(fragmentSignal(slide.key)[0]())
+                              const iframeEl = el as HTMLIFrameElement
+                              iframeEl.srcdoc = buildSlideDoc(fragmentSignal(slide.key)[0]())
+                              // Three root-caused-from-real-data attempts
+                              // before this one (all via Cmd+Shift+D
+                              // snapshots against the actual WKWebView):
+                              // `h-full` (height:100%) came out one
+                              // border-width too tall; `absolute inset-0`
+                              // didn't apply at all (the CSS `inset`
+                              // shorthand went unrecognized); `absolute` with
+                              // explicit `top/right/bottom/left` and no
+                              // width/height turned out to be spec-correct,
+                              // unhelpful behavior, not a bug — CSS2.1
+                              // §10.3.8 says an absolutely positioned
+                              // *replaced* element (an <iframe> is one) with
+                              // `width`/`height: auto` uses its *intrinsic*
+                              // size (300x150 for an iframe) regardless of
+                              // what top/right/bottom/left resolve to; the
+                              // snapshot confirmed exactly that. None of
+                              // these are reproducible in Chromium (which
+                              // this repo can test), so each got shipped on
+                              // real-device data rather than a guess, and
+                              // each still turned out wrong — CSS sizing of
+                              // this element clearly isn't trustworthy here
+                              // by any means tried so far.
+                              // This drops CSS out of the loop entirely:
+                              // `clientWidth`/`clientHeight` are DOM
+                              // properties, not CSS, and are unambiguously
+                              // defined as the wrapper's content-box size —
+                              // no percentage/aspect-ratio/replaced-element
+                              // resolution involved. Set once at mount and
+                              // re-synced on any resize of the wrapper (the
+                              // slide-list panel's own width is
+                              // user-draggable) via ResizeObserver.
+                              const wrapperEl = iframeEl.parentElement
+                              if (wrapperEl) {
+                                const syncIframeSize = () => {
+                                  iframeEl.style.width = `${String(wrapperEl.clientWidth)}px`
+                                  iframeEl.style.height = `${String(wrapperEl.clientHeight)}px`
+                                }
+                                syncIframeSize()
+                                new ResizeObserver(syncIframeSize).observe(wrapperEl)
+                              }
                             }}
-                            // Two root-caused-from-real-data bugs stacked
-                            // here (both via Cmd+Shift+D snapshots against
-                            // the actual WKWebView):
-                            // 1. `h-full` (height:100%) resolved against the
-                            //    wrapper span's *border-box*, not its
-                            //    content-box, so the iframe came out one
-                            //    border-width too tall — `fit()`'s
-                            //    `window.innerHeight` was wrong by that much,
-                            //    pushing the scaled `.peitho-slide` down and
-                            //    revealing a black sliver of the iframe's
-                            //    own `<body>` at the top (worse on border-4
-                            //    than border-2, matching the reported
-                            //    difference).
-                            // 2. Switching to the `inset-0` utility class
-                            //    (`inset: calc(var(--spacing) * 0)`, the CSS
-                            //    `inset` *shorthand*) to sidestep bug 1
-                            //    turned out to not apply at all — the
-                            //    snapshot showed the iframe at exactly
-                            //    300x150, an `<iframe>`'s default intrinsic
-                            //    size, meaning `position:absolute` took but
-                            //    `inset` didn't constrain anything.
-                            // Explicit `top`/`right`/`bottom`/`left`
-                            // (unlike the `inset` shorthand, universally
-                            // supported since CSS2) sidesteps both: it
-                            // resolves unambiguously against the padding-box
-                            // regardless of percentage-sizing quirks, and
-                            // doesn't depend on shorthand-property support.
                             className="border-0 rounded-md"
-                            style="position: absolute; top: 0; right: 0; bottom: 0; left: 0; pointer-events: none"
+                            style="position: absolute; top: 0; left: 0; pointer-events: none"
                           />
                           {/* `pointer-events: none` above keeps normal clicks/drags
                               passing through to the row beneath, but WKWebView still
