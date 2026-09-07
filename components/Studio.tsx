@@ -388,29 +388,18 @@ export function Studio() {
 
   // `srcdoc={...}` always reloads the iframe (a visible flash) when
   // reassigned, even to a value that's byte-identical to what's already
-  // there — plain reactive `srcdoc={buildSlideDoc(fragmentSignal(key)[0]())}`
-  // therefore flickered on *every* keystroke to a slide's own body, not just
-  // edits to other slides. `untrack` freezes the read: BarefootJS's compiler
-  // still wraps this binding in an effect (it doesn't understand `untrack`
-  // statically — the JSX for a keyed `.map()` row always looks reactive to
-  // it), but at runtime an effect whose only signal read happens inside
-  // `untrack` never registers a dependency, so it runs exactly once, at
-  // mount, and never again — confirmed by compiling a two-line isolated
-  // repro and reading the emitted JS (`R(() => r())`, `R` = `untrack`)
-  // rather than assuming it. All *later* content updates flow through
-  // `patchSlidePreviewIframes` (a plain effect below) instead, which mutates
-  // the already-loaded iframe's document in place — no `.srcdoc` write, no
-  // reload. An earlier attempt at "patch in place" (via `postMessage`, with
-  // `srcdoc` set once through a `ref`) broke thumbnail rendering outright;
-  // that one relied on a `ref` firing exactly once per mount, which this
-  // compiler's `.map()` output doesn't guarantee — this version doesn't
-  // depend on that at all (no `ref`; iframes are found by a live
-  // `data-slide-preview-key` query every time a patch runs).
+  // there (confirmed empirically — reassigning the exact same string three
+  // times in a row fires three `load` events) — so the only real fix is to
+  // never reassign it after the first load. All *later* content updates
+  // flow through `patchSlidePreviewIframes` (a plain effect below) instead,
+  // which mutates the already-loaded iframe's document in place — no
+  // `.srcdoc` write, no reload.
+  //
   // For the "selected slide" preview pane (a single iframe reused across
-  // whichever slide is selected, unlike a thumbnail row's iframe which is
-  // permanently tied to one key) — `key` must be read by the *caller*, in
-  // normal (tracked) context, so switching slides still reloads this
-  // pane; only the fragment lookup itself is untracked here.
+  // whichever slide is selected) `key` must be read by the *caller*, in
+  // normal (tracked) context, so switching slides still reloads this pane;
+  // only the fragment lookup itself is untracked (see the thumbnail row's
+  // `ref` below for why a thumbnail needs a stronger fix than `untrack`).
   function buildSelectedSlideDoc(key: string | null): string {
     if (key === null) return ''
     return buildSlideDoc(untrack(() => fragmentSignal(key)[0]()))
@@ -1303,8 +1292,38 @@ export function Studio() {
                         >
                           <iframe
                             title={`Slide ${String((indexSignal(slide.key)[0]()) + 1)}`}
-                            data-slide-preview-key={slide.key}
-                            srcdoc={untrack(() => buildSlideDoc(fragmentSignal(slide.key)[0]()))}
+                            ref={el => {
+                              // `data-slide-preview-key`/`srcdoc` are set here
+                              // (once, at row creation) instead of as ordinary
+                              // reactive JSX attributes — `title` above shares a
+                              // *single* effect with every other dynamic binding
+                              // on this row (confirmed via `bf debug graph`:
+                              // they all report the same slot ID), because this
+                              // compiler fuses a whole `.map()` row's dynamic
+                              // attributes into one `createEffect`. Editing this
+                              // row's own text legitimately changes its `slide`
+                              // object reference (only *unchanged* rows get a
+                              // stabilized reference — see `stabilizeByKey`),
+                              // which reruns that *entire* shared effect — so
+                              // even a `srcdoc={untrack(() => ...)}` binding
+                              // still gets *recomputed and reassigned* every
+                              // keystroke, since `untrack` only stops a read
+                              // from registering a *new* subscription, not the
+                              // expression from being re-evaluated when the
+                              // effect reruns for an unrelated sibling
+                              // binding's sake. A `ref` callback, by contrast,
+                              // runs exactly once at creation — confirmed by an
+                              // isolated repro where a sibling reactive text
+                              // binding re-rendered 6 times while a `ref`-set
+                              // value never changed — so it's immune to that
+                              // shared effect entirely. Later content updates
+                              // still flow through `patchSlidePreviewIframes`
+                              // (a separate, always-tracked effect below),
+                              // which finds this element via the very
+                              // `data-slide-preview-key` attribute set here.
+                              el.dataset.slidePreviewKey = slide.key
+                              ;(el as HTMLIFrameElement).srcdoc = buildSlideDoc(fragmentSignal(slide.key)[0]())
+                            }}
                             className="w-full h-full border-0"
                             style="pointer-events: none"
                           />
