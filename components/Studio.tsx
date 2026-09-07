@@ -131,6 +131,7 @@ export function Studio() {
   const [isBusy, setIsBusy] = createSignal(false)
   const [statusMessage, setStatusMessage] = createSignal('')
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null)
+  const [errorMessageCopied, setErrorMessageCopied] = createSignal(false)
   const [slideListWidth, setSlideListWidth] = createSignal(SLIDE_LIST_WIDTH)
   // `index: null` means the menu was opened by right-clicking empty space
   // in the slide list (not a specific thumbnail) — every per-slide action
@@ -276,6 +277,14 @@ export function Studio() {
     const timer = window.setTimeout(() => setErrorMessage(null), 6000)
     return () => window.clearTimeout(timer)
   })
+
+  async function copyErrorMessage(): Promise<void> {
+    const message = errorMessage()
+    if (message === null) return
+    await navigator.clipboard.writeText(message)
+    setErrorMessageCopied(true)
+    window.setTimeout(() => setErrorMessageCopied(false), 1500)
+  }
 
   // Applies a render result (from `open_deck` or `render_draft`) to state.
   // Each fragment is written to its own key's signal, and only when the
@@ -1438,8 +1447,15 @@ export function Studio() {
       </div>
 
       {errorMessage() ? (
-        <div className="px-3 py-1.5 bg-destructive/10 text-destructive text-xs shrink-0 border-t border-destructive/30">
-          {errorMessage()}
+        <div className="px-3 py-1.5 bg-destructive/10 text-destructive text-xs shrink-0 border-t border-destructive/30 flex items-start gap-2">
+          <span className="flex-1 select-text">{errorMessage()}</span>
+          <button
+            type="button"
+            onClick={() => { void copyErrorMessage() }}
+            className="shrink-0 px-1.5 py-0.5 rounded border border-destructive/30 hover:bg-destructive/20"
+          >
+            {errorMessageCopied() ? 'Copied' : 'Copy'}
+          </button>
         </div>
       ) : null}
       <footer className="h-6 shrink-0 flex items-center px-3 text-xs text-muted-foreground border-t border-border">
