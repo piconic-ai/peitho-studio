@@ -1610,8 +1610,23 @@ export function Studio() {
                                 new ResizeObserver(syncIframeSize).observe(wrapperEl)
                               }
                             }}
+                            // `rounded-md` (border-radius) alone left a small
+                            // dark wedge visible at each corner once the
+                            // iframe was correctly sized/centered — the
+                            // ancestor's `overflow:hidden` clip and/or the
+                            // iframe's own `border-radius` clip isn't
+                            // reliably respected for an <iframe> here
+                            // (iframes commonly get their own compositing
+                            // layer, and WebKit has a known class of bugs
+                            // where such a layer doesn't honor a
+                            // border-radius-driven clip). `clip-path` is a
+                            // different mechanism entirely (a paint-time
+                            // mask, not an overflow/stacking-context
+                            // computation), and is the standard, more
+                            // reliable fix for exactly this WebKit
+                            // iframe-clipping quirk.
                             className="border-0 rounded-md"
-                            style="position: absolute; pointer-events: none"
+                            style="position: absolute; pointer-events: none; clip-path: inset(0 round var(--radius-md))"
                           />
                           {/* `pointer-events: none` above keeps normal clicks/drags
                               passing through to the row beneath, but WKWebView still
