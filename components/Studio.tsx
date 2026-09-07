@@ -1752,6 +1752,36 @@ export function Studio() {
                                   iframeEl.style.clipPath = `inset(${String(overscan)}px)`
                                 }
                                 syncIframeSize()
+                                // KNOWN ISSUE, not yet fixed: a repro loop
+                                // reproducibly leaves a handful of scattered
+                                // rows (different ones each run, no content/
+                                // position pattern) with a black gap below
+                                // the card that a manual resize of the
+                                // slide-list column always clears. That
+                                // looked at first like a stale-measurement
+                                // race, but a Cmd+Shift+D debug snapshot
+                                // ruled it out: on an affected row, the
+                                // wrapper rect, iframe rect/style, and even
+                                // the iframe's *own* internal `.peitho-slide`
+                                // transform were byte-for-byte identical to
+                                // a clean row's — every number our JS reads
+                                // or writes was already correct, and
+                                // re-running `syncIframeSize` (tried up to
+                                // 2s later, well past any layout-settling
+                                // race) reproducibly changed nothing. That
+                                // points at the *paint*, not the geometry —
+                                // WebKit gives this iframe its own
+                                // compositing layer (already the reason it
+                                // needs its own `clip-path` rather than
+                                // trusting an ancestor's `overflow:hidden`),
+                                // and for some subset of layers that paint
+                                // apparently goes stale independent of the
+                                // underlying values. A forced-repaint nudge
+                                // (briefly perturbing `style.width` via
+                                // `calc()` then restoring it) was tried here
+                                // and made things *worse* — every thumbnail
+                                // went solid black — so that specific
+                                // approach is ruled out, not just untested.
                                 new ResizeObserver(syncIframeSize).observe(wrapperEl)
                               }
                             }}
@@ -1810,6 +1840,13 @@ export function Studio() {
                                 overlayEl.style.borderRadius = cs.borderTopLeftRadius
                               }
                               syncOverlay()
+                              // No forced-repaint nudge here, unlike the
+                              // iframe's own `syncIframeSize` above — this
+                              // is a plain `<div>` with no transform/opacity/
+                              // will-change of its own to trigger WebKit
+                              // promoting it to its own compositing layer,
+                              // so it shouldn't be exposed to that same
+                              // stale-paint failure mode.
                               new ResizeObserver(syncOverlay).observe(wrapperEl)
                             }}
                             className="absolute box-border"
