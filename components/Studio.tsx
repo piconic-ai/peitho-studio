@@ -1359,7 +1359,24 @@ export function Studio() {
                               el.dataset.slidePreviewKey = slide.key
                               ;(el as HTMLIFrameElement).srcdoc = buildSlideDoc(fragmentSignal(slide.key)[0]())
                             }}
-                            className="w-full h-full border-0"
+                            // WebKit has a long-standing bug where an <iframe>
+                            // isn't reliably clipped by an *ancestor's*
+                            // `overflow:hidden` + `border-radius` (this
+                            // wrapper span's), especially past a few px of
+                            // border thickness — the iframe's own square
+                            // corners (and its black `<body>` background)
+                            // show through at the rounded corner/top edge.
+                            // Rounding the iframe's OWN corners is the
+                            // standard workaround: browsers reliably clip an
+                            // element's *own* content to its *own*
+                            // border-radius, so this doesn't depend on the
+                            // ancestor-clipping behavior at all. Not
+                            // reproducible in Chromium (tested both border
+                            // widths directly) — this repo has no way to run
+                            // actual WebKit in this sandbox to confirm
+                            // directly, but it matches a well-documented
+                            // class of WebKit iframe-clipping bug.
+                            className="w-full h-full border-0 rounded-md"
                             style="pointer-events: none"
                           />
                           {/* `pointer-events: none` above keeps normal clicks/drags
