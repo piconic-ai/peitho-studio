@@ -1504,24 +1504,36 @@ export function Studio() {
                               el.dataset.slidePreviewKey = slide.key
                               ;(el as HTMLIFrameElement).srcdoc = buildSlideDoc(fragmentSignal(slide.key)[0]())
                             }}
-                            // WebKit has a long-standing bug where an <iframe>
-                            // isn't reliably clipped by an *ancestor's*
-                            // `overflow:hidden` + `border-radius` (this
-                            // wrapper span's), especially past a few px of
-                            // border thickness — the iframe's own square
-                            // corners (and its black `<body>` background)
-                            // show through at the rounded corner/top edge.
-                            // Rounding the iframe's OWN corners is the
-                            // standard workaround: browsers reliably clip an
-                            // element's *own* content to its *own*
-                            // border-radius, so this doesn't depend on the
-                            // ancestor-clipping behavior at all. Not
-                            // reproducible in Chromium (tested both border
-                            // widths directly) — this repo has no way to run
-                            // actual WebKit in this sandbox to confirm
-                            // directly, but it matches a well-documented
-                            // class of WebKit iframe-clipping bug.
-                            className="w-full h-full border-0 rounded-md"
+                            // Root-caused via a Cmd+Shift+D debug snapshot
+                            // taken in the real app (WKWebView): `h-full`
+                            // (height:100%) resolved against the wrapper
+                            // span's *border-box* there instead of its
+                            // content-box, so the iframe's own height came
+                            // out equal to the wrapper's FULL height,
+                            // border included — one border-width too tall.
+                            // `window.innerHeight` inside the iframe (what
+                            // `fit()` in previewDoc.ts scales against) was
+                            // therefore too large by one border-width,
+                            // pushing the whole scaled `.peitho-slide` down
+                            // by that same amount within the visible
+                            // (overflow-hidden-clipped) window — revealing
+                            // exactly one border-width of the iframe's own
+                            // black `<body>` at the top. Confirmed directly
+                            // in the snapshot data: `insetFromWrapper.bottom`
+                            // was *negative* (the iframe's bottom edge was
+                            // measured past the wrapper's own bottom edge),
+                            // and the border-4 (selected/hover) thumbnails'
+                            // `innerTopScan` showed `BODY` (black) at the
+                            // very first pixel row, `.peitho-slide` only
+                            // from the next row on — while border-2 showed
+                            // the identical pattern shrunk to a sub-pixel
+                            // gap, matching why only border-4 was visibly
+                            // black. `absolute inset-0` sidesteps the bug
+                            // entirely: unlike percentage sizing, its
+                            // resolution against the padding-box isn't
+                            // ambiguous, so this doesn't depend on why
+                            // WebKit's `%`-height resolution went wrong.
+                            className="absolute inset-0 border-0 rounded-md"
                             style="pointer-events: none"
                           />
                           {/* `pointer-events: none` above keeps normal clicks/drags
