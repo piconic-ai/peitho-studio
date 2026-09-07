@@ -372,13 +372,12 @@ export function Studio() {
     syncEditorFields()
   }
 
-  // Loads a deck into *this* window. Only ever called for the window's own
-  // initial deck — either one handed off via `take_pending_deck` (a window
-  // just spawned by `open_deck_window`) or `dev_default_deck` (see
-  // `onMount` below). Every other "open a deck" action (the welcome
-  // screen's buttons, a Recent-list click, the native File menu) opens a
-  // brand new window instead, on purpose — see `refreshRecentDecks`'s
-  // comment.
+  // Loads a deck into *this* window, replacing whatever it currently shows
+  // (nothing, on first mount via `take_pending_deck`/`dev_default_deck` —
+  // see `onMount` below; the welcome screen, via
+  // `openDeckPreferringCurrentWindow`). Never call this directly for a
+  // window that might already have a *different* deck open — that's what
+  // `openDeckInNewWindow` is for.
   async function loadDeck(path: string): Promise<void> {
     setIsBusy(true)
     setErrorMessage(null)
@@ -403,10 +402,12 @@ export function Studio() {
     }
   }
 
-  // Always spawns a new window rather than loading into this one — a user
-  // comparing two decks side by side needs both on screen at once, and a
-  // window that already has a deck open shouldn't lose it just because
-  // another one was picked from its welcome screen.
+  // A window that already has a deck open never loses it just because
+  // another one was picked from, say, the native menu — a user comparing
+  // two decks side by side needs both on screen at once, so that always
+  // spawns a separate window. A window still on the welcome screen has
+  // nothing to lose, though, so filling *that* window beats leaving it
+  // stranded, empty, behind a new one.
   async function openDeckInNewWindow(path: string): Promise<void> {
     try {
       await invoke('open_deck_window', { path })
@@ -415,10 +416,18 @@ export function Studio() {
     }
   }
 
+  async function openDeckPreferringCurrentWindow(path: string): Promise<void> {
+    if (deckPath() === null) {
+      await loadDeck(path)
+    } else {
+      await openDeckInNewWindow(path)
+    }
+  }
+
   async function handleOpenFolder(): Promise<void> {
     const picked = await openDialog({ directory: true, title: 'Open a Peitho deck folder' })
     if (!picked || typeof picked !== 'string') return
-    await openDeckInNewWindow(picked)
+    await openDeckPreferringCurrentWindow(picked)
   }
 
   async function handleNewDeck(): Promise<void> {
@@ -438,7 +447,7 @@ export function Studio() {
     try {
       const path = await invoke<string>('create_deck', { parentDir: parent, name })
       setNewDeckModalOpen(false)
-      await openDeckInNewWindow(path)
+      await openDeckPreferringCurrentWindow(path)
     } catch (err) {
       setErrorMessage(String(err))
     } finally {
@@ -1027,7 +1036,7 @@ export function Studio() {
                     <button
                       type="button"
                       key={path}
-                      onClick={() => void openDeckInNewWindow(path)}
+                      onClick={() => void openDeckPreferringCurrentWindow(path)}
                       title={path}
                       // A path's most distinguishing part (the deck's own
                       // folder name) is at the *end* — plain `truncate`
