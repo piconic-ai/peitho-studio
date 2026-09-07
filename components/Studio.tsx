@@ -929,6 +929,7 @@ export function Studio() {
       const onUp = () => {
         window.removeEventListener('mousemove', onMove)
         window.removeEventListener('mouseup', onUp)
+        window.removeEventListener('blur', onBlur)
         document.body.style.userSelect = ''
         const gap = dragOverGap()
         setDraggedIndex(null)
@@ -941,8 +942,27 @@ export function Studio() {
           if (to !== index) void reorderSlides(index, to)
         }
       }
+      // If the window loses focus mid-drag (e.g. a native dialog steals
+      // focus, or the user alt-tabs away) the `mouseup` that would normally
+      // end the drag can land outside this window and never reach these
+      // listeners — WKWebView doesn't reliably deliver it here either way.
+      // Without this, `draggedIndex`/`dragOverGap` stay stuck at whatever
+      // they were the moment focus was lost, permanently pinning a
+      // leftover `border-t-primary`/`border-b-primary` line on whatever
+      // row/gap the drag last passed over. Cancel outright (no reorder) —
+      // unlike a normal `mouseup`, a focus loss isn't a deliberate "drop
+      // here" gesture.
+      const onBlur = () => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+        window.removeEventListener('blur', onBlur)
+        document.body.style.userSelect = ''
+        setDraggedIndex(null)
+        setDragOverGap(null)
+      }
       window.addEventListener('mousemove', onMove)
       window.addEventListener('mouseup', onUp)
+      window.addEventListener('blur', onBlur)
     }
   }
 
@@ -1502,6 +1522,51 @@ export function Studio() {
                           under the border area by default — so it looked black instead of
                           gray. `muted-foreground` is used solid (no alpha) to avoid that. */}
                       <span className="flex-1 flex flex-col gap-0.5 min-w-0">
+                        {/* This outer span exists purely to clip — no border, no
+                            background, no size of its own (it's a plain
+                            `block`, so it just fills the available width and
+                            auto-heights to match its one normal-flow child,
+                            exactly like the inner span used to on its own).
+                            The iframe's own size sync (below) is a
+                            `ResizeObserver` callback reacting to the *inner*
+                            span's box, so for a brief window after mount —
+                            before that box has settled into its final layout
+                            (e.g. while a sibling row's text is still being
+                            laid out) — the iframe can be sized against a
+                            stale rect and briefly overshoot. With
+                            `overflow-hidden` on the inner span itself (the
+                            previous approach), that overshoot was contained,
+                            but so was the corner-repaint overlay's ring (see
+                            below) — it clips at the *content* edge, inside
+                            the border, cutting the ring off before it could
+                            cover the corner seam. Splitting the clip out to
+                            this borderless outer span clips at what is now
+                            the outer span's own outer edge instead — which
+                            coincides exactly with the inner span's own outer
+                            (border-box) edge, since the outer span has no
+                            border/padding of its own to offset it — so both
+                            problems are covered: transient overshoot never
+                            escapes the card, and the ring can still freely
+                            reach the border area. Confirmed via a repro
+                            loop: an intermittent black line under "New
+                            Slide" thumbnails shortly after mount, gone by
+                            the time layout settled — consistent with
+                            exactly this race.
+                            IMPORTANT: `aspect-ratio` + the border must stay
+                            on the *same* (inner) span. Splitting them here
+                            once — aspect-ratio on the outer span, border on
+                            the inner — silently reintroduced the original
+                            border-box-vs-content-box bug this file's first
+                            commit fixed: the outer span's content-box (with
+                            no border of its own to subtract) matched the
+                            canvas ratio, but that's not the box the iframe
+                            actually needs to fit — the *inner* span's
+                            content-box (canvas ratio minus the border it
+                            alone carries) is, and the two aren't the same
+                            box. Caught via pixel measurement: a uniform 6px
+                            gap on both the left *and* right straight edges,
+                            not just the corners. */}
+                        <span className="block relative rounded-md overflow-hidden">
                         <span
                           className={selectedIndex() === (indexSignal(slide.key)[0]())
                             ? 'block relative rounded-md border-4 border-[#eab308] bg-black'
@@ -1749,6 +1814,7 @@ export function Studio() {
                             }}
                             className="absolute box-border"
                           />
+                        </span>
                         </span>
                         {slide.skip ? <span className="text-xs text-destructive">skip</span> : null}
                       </span>
