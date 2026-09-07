@@ -1504,8 +1504,8 @@ export function Studio() {
                       <span className="flex-1 flex flex-col gap-0.5 min-w-0">
                         <span
                           className={selectedIndex() === (indexSignal(slide.key)[0]())
-                            ? 'block relative rounded-md border-4 border-[#eab308] overflow-hidden bg-black'
-                            : 'block relative rounded-md border-2 border-border overflow-hidden bg-black hover:border-4 hover:border-muted-foreground'}
+                            ? 'block relative rounded-md border-4 border-[#eab308] bg-black'
+                            : 'block relative rounded-md border-2 border-border bg-black hover:border-4 hover:border-muted-foreground'}
                           style={`aspect-ratio: ${String(canvasWidth())} / ${String(canvasHeight())}; box-sizing: content-box`}
                         >
                           <iframe
@@ -1672,9 +1672,19 @@ export function Studio() {
                                   // `overscan` to crop the iframe's own
                                   // enlarged box back down to that exact
                                   // visible box.
-                                  const outerRadius = parseFloat(cs.borderTopLeftRadius) || 0
-                                  const innerRadius = Math.max(0, outerRadius - borderLeft)
-                                  iframeEl.style.clipPath = `inset(${String(overscan)}px round ${String(innerRadius)}px)`
+                                  // No rounding on this clip: the overlay
+                                  // div below repaints the wrapper's border
+                                  // on top of the iframe, and its own inner
+                                  // curve (governed by the browser's own,
+                                  // always-precise self-painted
+                                  // border-radius, not a second independent
+                                  // clip-path) is what actually determines
+                                  // the visible rounded shape. A square
+                                  // iframe corner sitting at the border
+                                  // inset is always safely inside that
+                                  // overlay ring's outer curve, so it's
+                                  // fully masked regardless.
+                                  iframeEl.style.clipPath = `inset(${String(overscan)}px)`
                                 }
                                 syncIframeSize()
                                 new ResizeObserver(syncIframeSize).observe(wrapperEl)
@@ -1687,15 +1697,58 @@ export function Studio() {
                             className="border-0 rounded-md"
                             style="position: absolute; pointer-events: none"
                           />
-                          {/* `pointer-events: none` above keeps normal clicks/drags
-                              passing through to the row beneath, but WKWebView still
-                              routes a right-click landing on the iframe to its own
-                              native "Open Frame in New Window" menu regardless — this
-                              fully transparent, ordinary (non-`pointer-events:none`)
-                              overlay blocks the iframe from ever being the event
-                              target at all, so both clicks and right-clicks always
-                              bubble from here up to the row/button instead. */}
-                          <div className="absolute top-0 right-0 bottom-0 left-0" />
+                          {/* `pointer-events: none` on the iframe above keeps normal
+                              clicks/drags passing through to the row beneath, but
+                              WKWebView still routes a right-click landing on the
+                              iframe to its own native "Open Frame in New Window"
+                              menu regardless — this fully transparent, ordinary
+                              (non-`pointer-events:none`) overlay blocks the iframe
+                              from ever being the event target at all, so both
+                              clicks and right-clicks always bubble from here up to
+                              the row/button instead.
+                              It also repaints the wrapper's own border on top of
+                              the iframe — since this sits after the iframe in DOM
+                              order, it paints over it, unlike the wrapper's own
+                              border (painted before/under any absolutely positioned
+                              child per CSS stacking order). Getting the iframe's
+                              own clip-path to land *exactly* on the wrapper's
+                              native border-radius curve, pixel for pixel, turned
+                              out not to be reliably achievable — the two are
+                              independent WebKit rendering/anti-aliasing paths and
+                              kept leaving a faint 1px seam even once the radius
+                              math was right (confirmed via pixel measurement).
+                              Painting an identical border on top sidesteps that
+                              entirely — it doesn't matter whether the iframe's edge
+                              lands a sub-pixel off, this covers it either way.
+                              It's sized/positioned/colored imperatively (from the
+                              wrapper's own computed border, in the ref below)
+                              rather than via Tailwind classes mirroring the
+                              wrapper's, because `top-0 right-0 bottom-0 left-0`
+                              targets the wrapper's *content* edge (inside its
+                              border) — adding a border there paints a second ring
+                              further inward, not over the original. */}
+                          <div
+                            ref={el => {
+                              const overlayEl = el as HTMLDivElement
+                              const wrapperEl = overlayEl.parentElement
+                              if (!wrapperEl) return
+                              const syncOverlay = () => {
+                                const cs = getComputedStyle(wrapperEl)
+                                const rect = wrapperEl.getBoundingClientRect()
+                                overlayEl.style.width = `${String(rect.width)}px`
+                                overlayEl.style.height = `${String(rect.height)}px`
+                                overlayEl.style.left = `-${cs.borderLeftWidth}`
+                                overlayEl.style.top = `-${cs.borderTopWidth}`
+                                overlayEl.style.borderStyle = 'solid'
+                                overlayEl.style.borderWidth = cs.borderTopWidth
+                                overlayEl.style.borderColor = cs.borderTopColor
+                                overlayEl.style.borderRadius = cs.borderTopLeftRadius
+                              }
+                              syncOverlay()
+                              new ResizeObserver(syncOverlay).observe(wrapperEl)
+                            }}
+                            className="absolute box-border"
+                          />
                         </span>
                         {slide.skip ? <span className="text-xs text-destructive">skip</span> : null}
                       </span>
