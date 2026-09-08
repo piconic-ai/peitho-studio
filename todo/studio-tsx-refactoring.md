@@ -397,8 +397,15 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
         このシンプルなケースでは安全。リスク1・2(下記6章)は解消。
         ただし実際の`SlideList`の行はiframe/ドラッグ/セクションヘッダーを
         含みさらに複雑なので、Step 7(drag)着手時に同様の検証を継続する。
-- [ ] **Step 0b**: `fast-check`追加、`domain/spec.ts`、`test/pairwise.ts`、
-      `scripts/arch-check.test.ts`を用意。
+- [x] **Step 0b**完了。`fast-check`追加、`domain/spec.ts`
+      (`defineExamples`/`isExhaustivelyAccountedFor`)、`test/pairwise.ts`
+      (決定的greedy pairwiseジェネレータ——実装時に無限ループを実際に踏んで
+      修正: 全パラメータを同時に貪欲選択すると最初のパラメータが固定され
+      進行しない。未カバーペアを1つシードにする方式に変更)、
+      `scripts/arch-check.test.ts`(レイヤー違反をパターンマッチで検出、
+      実際に違反を注入して検出できることを確認済み)。`domain/`/`state/`
+      /`ipc/`はまだ空(spec.tsのみ)なので、`components/`への
+      `invoke(`直書き禁止ルールはStep 3(ipc/導入)以降に追加する。
 - [ ] **Step 1**: TEMPORARYデバッグスナップショット(268〜398, 1260〜1265)を
       削除、または`dom/debugSnapshot.ts`に隔離。(-135行、挙動不変)
 - [ ] **Step 2**: `git mv components/slides.ts domain/`、`previewDoc.ts`同様。
