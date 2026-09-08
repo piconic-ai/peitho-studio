@@ -411,7 +411,12 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       Cmd+Shift+Dショートカット)を削除、-138行。root-caused済みで
       「remove once root-caused」と明記されていたため隔離ではなく削除。
       挙動不変(typecheck/test/build全通過、バンドルサイズ88.46kB→85.72kB)。
-- [ ] **Step 2**: `git mv components/slides.ts domain/`、`previewDoc.ts`同様。
+- [x] **Step 2**完了。`slides.ts`/`slides.test.ts`/`previewDoc.ts`/
+      `previewDoc.test.ts`を`domain/`へ移動。`scripts/arch-check.test.ts`が
+      即座に`previewDoc.ts`の誤検知(生成HTML文字列内の`document.`/`window.`
+      リテラル)を検出——ファイル単位ではなくパターン単位の
+      `// arch-check-allow: <pattern>`opt-outで対応し、他の禁止パターンは
+      引き続き検出されることを確認済み。
 - [ ] **Step 3**: `ipc/deckIpc.ts`に11コマンド+2イベントの型付きラッパー。
       `Studio.tsx`の`invoke`直書きを置換。`fakeDeckIpc.ts`も用意。
 - [ ] **Step 4**: 既に純粋なのに埋め込まれているロジックを`domain/`へ
