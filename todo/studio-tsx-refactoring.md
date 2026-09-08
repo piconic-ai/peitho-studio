@@ -543,7 +543,32 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       「DevToolsのInspect Elementモードが有効だと物理クリックが
       アプリに届かない」問題を検証中に発見・回避)。
       全spec/adversarialテスト通過(173 pass)。
-- [ ] **Step 8**: `domain/contextMenu.ts` + `menuItems()`。
+- [x] **Step 8**完了。`domain/contextMenu.ts`(`ContextMenu`ADT
+      closed/on-empty-space/on-slide + `MenuAction`/`MenuItem` +
+      `menuItems`/`indexOf`/`positionOf`/`isLayoutPickerOpen`/
+      `appendIndex`)。旧`contextMenu: {index,x,y}|null`
+      シグナルと独立した`layoutPickerOpen`シグナルを1つの`ContextMenu`
+      ADTに統合——`layoutPickerOpen`は`on-slide`にしか存在しないため、
+      空白右クリックでピッカーが開く状態が型で排除される。JSXに11個
+      散らばっていた`disabled={contextMenu()?.index === null || ...}`
+      式を`menuItems(contextMenu(), ctx)`1箇所に集約。
+      **Step 7の制約の亜種をここでも踏んだ(CLAUDE.mdに追記済み)**:
+      `menuItemEnabled(action)`のように内部で`currentMenuItems()`memoを
+      読むヘルパー関数をJSXから`disabled={!menuItemEnabled('cut')}`と
+      呼んだところ、`bf debug graph`で`deps: []`——ヘルパー関数の呼び出し
+      自体はJSX式に書かれているが、その中で読むmemo呼び出しはJSX式の
+      ソースに現れないため追跡されない。`menuItemEnabled(items, action)`
+      のように**メモの呼び出し結果を引数として渡す**
+      (`disabled={!menuItemEnabled(currentMenuItems(), 'cut')}`)形に
+      直して解決。「シグナル/メモはコンポーネントファイルで直接宣言」
+      だけでなく「JSXバインディングの式にその呼び出しを直接書く」も
+      合わせて必要と判明——Step 9以降も同じ注意が要る。
+      `bf debug graph`で全disabled/conditionalバインディングの`deps`に
+      `currentMenuItems`/`contextMenu`が乗ることを確認。
+      全spec/adversarialテスト通過(189 pass)。
+      **実機確認は保留**——確認しようとした時点でmacOSが再びロック中
+      だったため、静的検証(typecheck/test/build/`bf debug graph`)のみで
+      進めた。
 - [ ] **Step 9**: `domain/editorSession.ts` + `state/editorStore.ts`
       (fast/slow lane、`reconcileAfterCommit`)。Step 7で判明した
       BarefootJSの制約(シグナルはコンポーネントファイル直書き必須)を
