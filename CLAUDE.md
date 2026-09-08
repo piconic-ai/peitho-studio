@@ -118,6 +118,32 @@ Tauri v2(Rust) + BarefootJS CSR + UnoCSS。peitho-coreはサブプロセスで�
   正しく読めているのに)。同じJSXを最初からマウントしておく構成に変えたら
   直った。マウント後の状態遷移で特定の分岐だけ描画されないときは、まず
   この可能性(三項演算子の連鎖 vs マウントで出し分け)を疑う。
+- **シグナル/メモはコンポーネントファイル自身の中で`createSignal`/
+  `createMemo`を直接呼んで宣言しないといけない——ファクトリ関数から返す形は
+  壊れる。** `state/xxxStore.ts`に`export function createFooStore() { const
+  [x, setX] = createSignal(...); return { x, ... } }`を書き、コンポーネント側で
+  `const store = createFooStore()`として使うパターン(5層アーキテクチャの
+  `state/`層をそのまま素直に実装した形)を試したところ、`store.x()`を
+  JSX内で呼んでも画面が更新されなかった(値は実際には変わっている)。
+  `bf debug graph <Component>`で調べると、そのバインディングの`deps`が
+  空(`(no tracked deps)`)——コンパイラは「そのコンポーネントのソース内に
+  リテラルで書かれた`createSignal`/`createMemo`呼び出し」を静的解析して
+  依存関係を組み立てており、関数呼び出しの戻り値をたどってシグナルの
+  出所を追うことはしていない。`const { x } = store`のような分割代入は
+  さらに悪く、`ReferenceError: Can't find variable: x`で実行時に落ちる
+  (識別子抽出が分割代入を素通りしてしまう)。`const x = store.x`という
+  単純代入に変えても改善しない——同じく`deps: []`のまま。
+  **対策**: シグナル/メモの宣言自体は使うコンポーネントの`.tsx`ファイルに
+  残し、`domain/`にはロジック(状態遷移関数)だけを置く。例えば
+  `domain/drag.ts`はDragStateのADTと`arm`/`move`/`dropTarget`/`cancel`という
+  純粋関数を提供し、`components/Studio.tsx`側で
+  `const [dragState, setDragState] = createSignal<DragState>(...)`と
+  `createMemo`をコンポーネント内に直接書いて、それらの関数を呼ぶ
+  (`components/Studio.tsx`の`draggedIndex`/`dragOverGap`/`dragDeltaY`memo
+  参照)。5層アーキテクチャの`state/`層は「シグナルを持つグルーコード」の
+  置き場所という位置づけ自体は変わらないが、実装上はコンポーネント
+  ファイルの外にシグナル宣言そのものを追い出すことはできない、という
+  制約と理解しておく。
 
 ## UnoCSS (Wind4 preset) で踏んだ落とし穴
 
