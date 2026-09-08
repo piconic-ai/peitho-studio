@@ -144,6 +144,20 @@ Tauri v2(Rust) + BarefootJS CSR + UnoCSS。peitho-coreはサブプロセスで�
   置き場所という位置づけ自体は変わらないが、実装上はコンポーネント
   ファイルの外にシグナル宣言そのものを追い出すことはできない、という
   制約と理解しておく。
+- **上記の亜種: JSX式の中に`シグナル()`/`メモ()`の呼び出しがリテラルに
+  現れないと、それを間接的に読むだけのヘルパー関数越しでも依存追跡が
+  外れる。** `const items = createMemo(...)`と`function isEnabled(action)
+  { return items().find(...)?.enabled }`を定義し、JSX側で
+  `disabled={!isEnabled('cut')}`のように呼ぶと、`bf debug graph`の
+  `deps`が空になり更新されない——`isEnabled`の呼び出し自体はJSX式に
+  書かれているが、その中で読んでいる`items()`はJSX式のソースには
+  現れないため。`disabled={!isEnabled(items(), 'cut')}`のように
+  **メモの呼び出し結果をJSX式の中で直接引数として渡す**と直る
+  (`domain/contextMenu.ts`の`menuItems`を使う
+  `components/Studio.tsx`の`menuItemEnabled`/`menuItemChecked`参照)。
+  「シグナル/メモはコンポーネントファイルで直接宣言する」だけでなく、
+  「JSXバインディングに使う式は、そのシグナル/メモの呼び出しを式の中に
+  直接書く(関数呼び出しの内側に隠さない)」も合わせて守る。
 
 ## UnoCSS (Wind4 preset) で踏んだ落とし穴
 
