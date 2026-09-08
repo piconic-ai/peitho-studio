@@ -427,11 +427,25 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       追加(Step 0bで先送りしていた項目)——実際に違反を注入して検出を確認済み。
       `@tauri-apps/plugin-dialog`/`.../window`は未対応のまま残す(Welcome画面
       /ウィンドウ操作は別ステップ)。
-- [ ] **Step 4**: 既に純粋なのに埋め込まれているロジックを`domain/`へ
-      (各1PR可): `nextIndexAfterRefresh`、`gapToIndex`(970行)、
-      `clampMenuPosition`(1036〜1041)、`fitBox`(1779〜1819の数式)、
-      `sectionDraftsFrom(manifest)`、`appendIndex`、`keyboardCommand`、
-      `externalChangePlan`。
+- [x] **Step 4**完了(一部は後続ステップへ委譲、下記参照)。
+      `domain/slides.ts`に`clampFocusIndex`(旧`nextIndexAfterRefresh`——
+      `refreshSource`と`commitChange`が微妙に違う候補値で同じ三項演算子
+      チェーンを重複させていたのを1関数に統合)と`gapToIndex`
+      (旧970行相当のドラッグ&ドロップのgap→to変換)。
+      `domain/geometry.ts`(新規)に`clampMenuPosition`。
+      `domain/render.ts`(新規)に`sectionStartByIndex(sections)`——
+      あわせて`Manifest`/`ManifestSection`/`ManifestSlide`型を
+      `ipc/deckIpc.ts`(Step 3で一時的にそこへ置いていた)からこちらへ移動
+      (依存方向`ipc→domain`を正しくするため。`scripts/arch-check.test.ts`
+      に`domain`が`ipc/`をimportすることを禁止するルールを追加、実際に
+      違反を注入して検出を確認済み)。
+      全て spec + adversarial テスト付き。
+      **後続ステップへ委譲**: `fitBox`(DOM計測と密結合した
+      `syncIframeSize`の一部——Step 12〜18のJSX/`dom/`分割まで見送る方が
+      安全)、`appendIndex`(`contextMenuAppendIndex`——Step 8の
+      `domain/contextMenu.ts`で本格的に扱う)、`keyboardCommand`
+      (`onKeyDown`——Step 9のeditorStore整理時に統合)、
+      `externalChangePlan`(`handleExternalChange`——同じくStep 9)。
 - [ ] **Step 5**: `domain/pageConfig.ts`(2.5)。
 - [ ] **Step 6**: `domain/slideCommands.ts`(2.6)。`commitChange`の引数を
       `SelectionPlan`に。
