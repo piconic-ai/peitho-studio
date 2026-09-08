@@ -1,9 +1,14 @@
 // Typed boundary around every Tauri command/event Studio.tsx talks to (see
 // src-tauri/src/peitho.rs for the Rust side — 11 #[tauri::command]s + the
 // `deck-file-changed`/`menu:new-deck` events emitted from lib.rs). Per
-// docs/architecture.md's layering: this is the ONLY module allowed to
-// import `@tauri-apps/*`; components/state call through the `DeckIpc`
-// interface so they can run against `fakeDeckIpc.ts` in tests/e2e instead.
+// docs/architecture.md's layering: this is the sanctioned door for
+// `@tauri-apps/api/core`(`invoke`)/`.../event`(`listen`) — enforced by
+// `scripts/arch-check.test.ts`'s `components/` rule — so components/state
+// call through the `DeckIpc` interface and can run against
+// `fakeDeckIpc.ts` in tests/e2e instead. `@tauri-apps/plugin-dialog` and
+// `@tauri-apps/api/window` are a separate, not-yet-covered concern —
+// `components/Studio.tsx` still imports those directly for the
+// welcome-screen/window flows this module doesn't touch yet.
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
