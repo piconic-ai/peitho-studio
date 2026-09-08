@@ -52,8 +52,13 @@ const server = createServer(async (req, res) => {
     return
   }
 
+  // Usually just a route name (`/`, `/foo`) that needs `.html` appended,
+  // but Tauri's `WebviewUrl::App("index.html")` (see `open_deck_window` in
+  // src-tauri/src/peitho.rs) requests the literal `/index.html` in dev
+  // mode — already has the extension, so appending again would look for
+  // the non-existent `index.html.html` and 404.
   const pageName = path === '/' ? 'index' : path.slice(1).replace(/\/$/, '')
-  const rel = `${pageName}.html`
+  const rel = pageName.endsWith('.html') ? pageName : `${pageName}.html`
   if (isTraversal(rel)) {
     res.writeHead(403).end('Forbidden')
     return
