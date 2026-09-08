@@ -19,6 +19,8 @@ import {
   slugifyTitle,
   uniqueSlideKey,
   indexAfterMove,
+  clampFocusIndex,
+  gapToIndex,
   extractHeadingText,
   parseDurationToMs,
   updateFrontmatterTime,
@@ -401,10 +403,7 @@ export function Studio() {
     setFullSource(source)
     const ranges = splitSlides(source)
     setSlideRanges(ranges)
-    const currentIndex = selectedIndex()
-    const nextIndex = preserveSelection && currentIndex !== null && currentIndex < ranges.length
-      ? currentIndex
-      : ranges.length > 0 ? 0 : null
+    const nextIndex = clampFocusIndex(preserveSelection ? selectedIndex() : null, ranges.length)
     setSelectedIndex(nextIndex)
     const { rest: withoutNote, note } = extractNote(nextIndex !== null ? ranges[nextIndex].text : '')
     const { rest, config } = extractPageComment(withoutNote)
@@ -580,9 +579,7 @@ export function Studio() {
       setFullSource(nextSource)
       const ranges = splitSlides(nextSource)
       setSlideRanges(ranges)
-      const nextIndex = focusIndex !== null && focusIndex < ranges.length
-        ? focusIndex
-        : ranges.length > 0 ? 0 : null
+      const nextIndex = clampFocusIndex(focusIndex, ranges.length)
 
       // Only move the user's selection if they haven't already navigated
       // elsewhere themselves while this was in flight. Every caller passes
@@ -800,10 +797,7 @@ export function Studio() {
         setDragOverGap(null)
         setDragDeltaY(0)
         if (dragging && gap !== null) {
-          // Removing `index` first shifts every later index down by one, so
-          // a gap that was after the dragged row lands one earlier once it's
-          // gone; a gap at or before it is unaffected.
-          const to = gap <= index ? gap : gap - 1
+          const to = gapToIndex(gap, index)
           if (to !== index) void reorderSlides(index, to)
         }
       }
