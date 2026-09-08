@@ -3,13 +3,8 @@
 import { createSignal, createMemo, createEffect, untrack, onMount, onCleanup } from '@barefootjs/client'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import {
-  createTauriDeckIpc,
-  type Manifest,
-  type ManifestSection,
-  type ManifestSlide,
-  type RenderPayload,
-} from '../ipc/deckIpc'
+import { createTauriDeckIpc, type RenderPayload } from '../ipc/deckIpc'
+import { type Manifest, type ManifestSection, type ManifestSlide, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
 import { clampMenuPosition } from '../domain/geometry'
 import {
   splitSlides,
@@ -188,11 +183,7 @@ export function Studio() {
   const [editorWidth, setEditorWidth] = createSignal(420)
   const [presentMenuOpen, setPresentMenuOpen] = createSignal(false)
 
-  const sectionStartByIndex = createMemo<Record<number, ManifestSection>>(() => {
-    const byIndex: Record<number, ManifestSection> = {}
-    for (const section of manifest()?.sections ?? []) byIndex[section.startIndex] = section
-    return byIndex
-  })
+  const sectionStartByIndex = createMemo<Record<number, ManifestSection>>(() => computeSectionStartByIndex(manifest()?.sections ?? []))
   const layoutPickerView = createMemo<'loading' | 'empty' | 'ready'>(() => {
     const previews = layoutPreviews()
     if (previews === null) return 'loading'

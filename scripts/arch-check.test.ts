@@ -29,6 +29,7 @@ const RULES: readonly LayerRule[] = [
       { pattern: /from\s+['"]@tauri-apps/, reason: "imports '@tauri-apps/*' (belongs in ipc/)" },
       { pattern: /\bdocument\./, reason: 'touches `document.` (belongs in dom/)' },
       { pattern: /\bwindow\./, reason: 'touches `window.` (belongs in dom/)' },
+      { pattern: /from\s+['"].*\/ipc\//, reason: "imports from ipc/ (domain/ has zero dependencies; ipc/ imports FROM domain/, never the reverse)" },
     ],
   },
   {

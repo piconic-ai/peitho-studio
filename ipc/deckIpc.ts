@@ -11,32 +11,9 @@
 // welcome-screen/window flows this module doesn't touch yet.
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import type { Manifest } from '../domain/render'
 
-export interface ManifestSlide {
-  index: number
-  key: string
-  src: string
-  hasNotes: boolean
-  skip: boolean
-  revealSteps: number
-  text: { title: string; body: string; code: string }
-}
-
-export interface ManifestSection {
-  name: string
-  startIndex: number
-  endIndex: number
-  plannedDurationMs: number
-}
-
-export interface Manifest {
-  title: string
-  slideCount: number
-  canvasWidth: number
-  canvasHeight: number
-  sections: ManifestSection[]
-  slides: ManifestSlide[]
-}
+export type { Manifest, ManifestSection, ManifestSlide } from '../domain/render'
 
 export interface RenderPayload {
   manifest: Manifest
