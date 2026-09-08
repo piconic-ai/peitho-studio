@@ -41,7 +41,9 @@ Tauri v2(Rust) + BarefootJS CSR + UnoCSS。peitho-coreはサブプロセスで�
   Tauriを介さず、開発サーバー(`bun run dev`のフロントエンド部分)に対して
   「起動して主要画面が表示される」ことだけを確認する薄いものから始める。
   実際のTauriウィンドウを操作する本格的なe2e(`tauri-driver`経由)は
-  Scope1以降の課題として`tmp/todo.md`に積む。
+  Scope1以降の課題として`tmp/todo.md`に積む。それまでの間、Welcome画面より
+  先(デッキを開く/編集する等)の動作を実機で確認する手順は
+  `.claude/skills/run-peitho-studio/SKILL.md`にまとめてある。
 
 ## コミットの粒度
 
