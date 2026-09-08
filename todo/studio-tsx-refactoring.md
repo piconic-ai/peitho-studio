@@ -471,6 +471,6 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
 ## Critical Files
 
 - `/Users/kfly8/src/github.com/kfly8/peitho-studio/components/Studio.tsx` — 分割対象そのもの
-- `/Users/kfly8/src/github.com/kfly8/peitho-studio/components/slides.ts` / `slides.test.ts` — 既存の純粋関数群、命名規約の実例
+- `/Users/kfly8/src/github.com/kfly8/peitho-studio/domain/slides.ts` / `slides.test.ts` — 既存の純粋関数群、命名規約の実例
 - `/Users/kfly8/src/github.com/kfly8/peitho-studio/docs/architecture.md` — 恒久ルール
 - `/Users/kfly8/src/github.com/kfly8/peitho-studio/vite.config.ts` — `barefoot({ components: ['components'] })`の発見範囲
