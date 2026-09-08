@@ -488,10 +488,29 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       `keep`/`follow-move`(先頭フォールバック)と
       `select`/`clamp-after-delete`(末尾クランプ)を意図的に別ロジックの
       ままにした。全spec/adversarialテスト通過(159 pass)。
-      **実機確認は保留**——確認しようとした時点でmacOSがロック中で
-      GUI自動操作ができなかったため、静的検証(typecheck/test/build)の
-      みで進めた。次にビルドを実機で触る機会に、スライドの追加・削除・
-      並べ替え・貼り付けでタイトル/選択位置が壊れていないか確認する。
+      pullfrogのレビューコメントでもう1つ発見: `updateSlideConfig`
+      (コンテキストメニューでの他スライドのレイアウト/draft/skip/section
+      切り替え)は旧実装だと`commitChange(source, index)`——`index`は
+      *変更対象*のスライド——を渡しており、変更対象が選択中と別のスライド
+      だと選択がそちらへ勝手に移動するバグがあった。新しい
+      `selectionPlanFor({type:'replace',...}) = {kind:'keep'}`は
+      *現在選択中*のスライドを維持するので、副作用としてこのバグを修正
+      している。todo 44行目の不変条件(「選択は現在選択中のスライドの
+      行き先を追従すべきで、変更対象を追従すべきでない」)に照らして
+      pullfrogが「correction, not a new bug」と判定——狙って直したのでは
+      なく、設計の統一の副産物。
+      **実機確認**: ロック解除後に実施。`addSlide`(右クリック→New Slide)
+      は2回とも正しく新規スライドを挿入・選択(`select`プランが機能)。
+      ドラッグ中のフローティング表示(`be02610`)も正常。一方、
+      コンテキストメニュー項目のクリック(Mark as Draft等)・
+      Forward Deleteキー・ドラッグのmouseup後の並べ替え結果は、この
+      環境のGUI自動操作(cliclick/osascriptによるイベント合成)がネイティブ
+      メニューやOSレベルのドラッグ処理に届かず、確認できなかった
+      (`updateSlideConfig`/`deleteSlide`/`reorderSlides`の实機での動作
+      そのものはユニットテストと`addSlide`の成功で間接的に裏付けられて
+      いるが、目視での完全な実機確認ではない)。自動化の限界であって
+      アプリ側の不具合ではないと判断し先に進めるが、次に人手で操作する
+      機会があれば右クリックメニュー経由の操作を一通り触っておきたい。
 - [ ] **Step 7**: `domain/drag.ts` + `state/uiStore.ts`のdrag部分 +
       `dom/dragGesture.ts`。
 - [ ] **Step 8**: `domain/contextMenu.ts` + `menuItems()`。
