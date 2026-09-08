@@ -14,7 +14,7 @@
 | ディレクトリ | 使ってよいもの | 使ってはいけないもの | テスト手段 |
 |---|---|---|---|
 | `domain/` (`.ts`) | 何にも依存しない純粋関数・ADT・遷移関数・例示データ | `@barefootjs/client`, `@tauri-apps/*`, `document`/`window` | `bun test`(spec / adversarial / property / pairwise) |
-| `state/` (`.ts`) | `createSignal`/`createMemo`/`createEffect`/`batch`/`createSelector`、`domain/` | `@tauri-apps/*`、DOM API、JSX | `bun test` + `createRoot`(モデルベーステスト) |
+| `state/` (`.ts`) | シグナルの`Signal<T>`/setterを引数で受け取り`domain/`の遷移関数を適用する薄いグルー関数、`domain/` | シグナル/メモの**宣言**(`createSignal`/`createMemo`はそれを使うコンポーネントの`.tsx`に直書きする——ファクトリ関数の戻り値越しでは依存が追跡されない、詳細はCLAUDE.md「BarefootJSで踏んだ落とし穴」)、`@tauri-apps/*`、DOM API、JSX | `bun test`(`domain/`の遷移関数をモデルにモデルベーステスト) |
 | `ipc/` (`.ts`) | `invoke`/`listen`/`openDialog`の薄い型付きラッパーと境界の型 | シグナル、DOM、ビジネスロジック | 型のみ。e2e用のフェイク実装を同じインターフェースで用意 |
 | `dom/` (`.ts`) | DOM計測・スタイル書き込み・イベント購読(iframeサイズ同期、ドラッグジェスチャ、textarea同期) | シグナル、IPC、JSX | 数式部分は`domain/`に押し出して`bun test`。残りはIRテスト/e2e |
 | `components/` (`.tsx`) | JSX + 上記4層のimport。合成ルートは「ストア生成・IPC/イベント配線・子の配置」のみ | ビジネスロジック、テキスト操作、状態遷移の判断 | `@barefootjs/test`のIRテスト + Playwright(IPCスタブ) |
@@ -43,8 +43,21 @@
 - **ローカル関数内にJSXは書けない**(BF045)。「JSXを描画ヘルパー関数に切る」
   形の分割はできない。分割は必ず本物のサブコンポーネントで行う。
 - **モジュールスコープの単一シグナルに頼らない**。各`.tsx`は独立したビルド
-  チャンクなので、状態共有は合成ルートでファクトリを呼び、テスト時も
-  `createRoot`で明示的に所有・破棄する。
+  チャンクなので、状態共有はモジュールトップレベルの変数ではなく、
+  合成ルートのコンポーネント関数内でシグナルを宣言し、props/コールバックで
+  子に配る形にする。テスト時も`createRoot`で明示的に所有・破棄する。
+- **シグナル/メモは、それを使うコンポーネントファイル自身に`createSignal`/
+  `createMemo`をリテラルに書いて宣言する。`state/xxxStore.ts`のような
+  ファクトリ関数から返す形は壊れる。** BarefootJSのコンパイラはレンダーの
+  リアクティブ依存を、コンポーネント自身のソースに直接書かれた
+  `createSignal`/`createMemo`呼び出しの静的解析だけで組み立てており、
+  関数呼び出しの戻り値をたどってシグナルの出所を追うことはしない
+  ——`createDragStore()`が返す`{ draggedIndex, ... }`をJSX側で
+  `store.draggedIndex()`と呼んでも依存ゼロになり、二度と再レンダーされない
+  (`bf debug graph`で確認可能)。`const { draggedIndex } = store`という
+  分割代入はさらに悪く、実行時`ReferenceError`になる。`state/`に置けるのは
+  シグナルの`Signal<T>`/setterを引数に取って`domain/`の遷移関数を適用する
+  薄いグルー関数までで、宣言そのものはコンポーネントファイルから出せない。
 - **keyedな`.map()`の行を子コンポーネントに切り出した場合の`index`propsの
   鮮度は、着手前にスパイクで検証してから分割方針を確定する**(過去に
   #2859/#2861のクロージャstaleness系バグを踏んでいるため)。
@@ -59,14 +72,24 @@
 真実、購読は射影側**と役割を分けることで解消する。
 
 ```
-domain/drag.ts        DragState (ADT, 1つの値)      ← 純粋な遷移: begin/move/drop/cancel
+domain/drag.ts         DragState (ADT, 1つの値)      ← 純粋な遷移: arm/move/dropTarget/cancel
         ↓
-state/uiStore.ts      const [drag, setDrag] = createSignal<DragState>({kind:'idle'})
-                       const draggedIndex = createMemo(() => drag().kind === 'dragging' ? drag().index : null)
-                       const isDragged    = createSelector(draggedIndex)
+components/Studio.tsx  const [drag, setDrag] = createSignal<DragState>({kind:'idle'})
+  (シグナル宣言はここ)  const draggedIndex = createMemo(() => drag().kind === 'dragging' ? drag().index : null)
+                        const isDragged    = createSelector(draggedIndex)
         ↓
-components/SlideList   行は isDragged(i) だけ購読 → 無関係な変化(dragDeltaYなど)では再評価されない
+同ファイル内の.map()    行は isDragged(i) だけ購読 → 無関係な変化(dragDeltaYなど)では再評価されない
 ```
+
+`createSignal`/`createMemo`はこの図のとおり**シグナルを実際に使うコンポーネント
+ファイル自身**に書く——`state/uiStore.ts`のようなファクトリ関数に切り出して
+`{ draggedIndex, ... }`を返す形にすると、BarefootJSのコンパイラはその
+シグナル/メモを静的解析で見つけられず、JSX側の依存関係が空になって画面が
+更新されない(`domain/drag.ts`+`components/Studio.tsx`で実際に踏んだ制約。
+詳細はCLAUDE.md「BarefootJSで踏んだ落とし穴」)。`state/`に置けるのは
+`domain/`の遷移関数をシグナルのsetter越しに呼ぶだけの薄いグルー
+(例: 複数シグナルを`batch()`でまとめて更新する関数)であり、シグナルの
+宣言そのものではない。
 
 `createMemo`は出力を`Object.is`比較してから通知するので、ADTの一部分だけが
 変わっても、無関係な射影memoへは通知が伝播しない。
@@ -121,10 +144,11 @@ DSLと具体的な記述例は`todo/`配下の実行計画、または実装時�
 - **プロパティベーステスト**(`fast-check`、`bun test`でそのまま動く):
   往復関数(parse/serialize)の恒等性、変換の不変条件(枚数保存、多重集合保存)
   など、個別の例より「性質」で語れるものに使う。
-- **モデルベーステスト**(`fast-check`の`commands`): `state/`層はDOMもIPCも
-  持たないため、純粋なreducerをモデルとして、ランダムな操作列で実装と
-  モデルの一致を検証できる。直近のバグ2件はいずれも「操作列の順序と
-  in-flight状態の組み合わせ」が原因だったため、費用対効果が高い。
+- **モデルベーステスト**(`fast-check`の`commands`): `domain/`の遷移関数は
+  DOMもIPCもシグナルも持たない純粋なreducerなので、それをモデルとして、
+  ランダムな操作列で実装とモデルの一致を検証できる。直近のバグ2件は
+  いずれも「操作列の順序とin-flight状態の組み合わせ」が原因だったため、
+  費用対効果が高い。
 - **全数/網羅性テスト**: 遷移関数(`decide`など)は状態×イベントの直積が
   現実的な数(数十程度)に収まるなら、全組み合わせを列挙し「必ず有効な
   結果を返す」(例外・undefinedにならない)ことを検査する。

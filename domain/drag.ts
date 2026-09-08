@@ -44,7 +44,8 @@ export function move(state: DragState, x: number, y: number, gapUnderCursor: num
 /** The reorder a mouseup should commit, or `null` if nothing should happen
  * — either the drag never cleared the threshold (`armed`, a plain click)
  * or there was no drag to begin with (`idle`). Doesn't filter out a
- * no-op `from === to`; callers already do (see `reorderSlides`). */
+ * no-op `from === to` itself; the caller does, before ever calling
+ * `reorderSlides` (see Studio.tsx's `onUp` handler). */
 export function dropTarget(state: DragState): { from: number; to: number } | null {
   if (state.kind !== 'dragging') return null
   return { from: state.index, to: gapToIndex(state.gap, state.index) }
