@@ -6,6 +6,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc, type RenderPayload } from '../ipc/deckIpc'
 import { type Manifest, type ManifestSection, type ManifestSlide, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
 import { clampMenuPosition } from '../domain/geometry'
+import { type PageConfig } from '../domain/pageConfig'
 import {
   splitSlides,
   extractNote,
@@ -69,7 +70,7 @@ export function Studio() {
   // edit it. Applied through `buildSlideText` whenever the raw slide text is
   // reconstructed for saving; edited only via the thumbnail context menu /
   // section-header inputs, never by hand here.
-  const [pageConfig, setPageConfig] = createSignal<Record<string, unknown>>({})
+  const [pageConfig, setPageConfig] = createSignal<PageConfig>({})
   // One independent signal per slide key, rather than a single
   // `Record<string, string>` signal — reading `slideFragments()` as a whole
   // record would subscribe every thumbnail's `srcdoc` effect to the *entire*
@@ -962,7 +963,7 @@ export function Studio() {
   // — the live `pageConfig` signal for the open slide (which may have
   // pending edits not yet reflected in `slideRanges`), the raw on-disk text
   // for any other slide.
-  function slideConfigOf(index: number): Record<string, unknown> {
+  function slideConfigOf(index: number): PageConfig {
     if (index === selectedIndex()) return pageConfig()
     const { rest: withoutNote } = extractNote(slideRanges()[index]?.text ?? '')
     return extractPageComment(withoutNote).config
@@ -972,7 +973,7 @@ export function Studio() {
   // config change that adds or removes a section (see `toggleSlideSection`)
   // keeps the frontmatter time total correct — a no-op resync for updates
   // (layout/draft/skip) that don't touch `section`/`time`.
-  async function updateSlideConfig(index: number, updates: Record<string, unknown>): Promise<void> {
+  async function updateSlideConfig(index: number, updates: Partial<PageConfig>): Promise<void> {
     const slideText = currentSlideText(index)
     const updated = updatePageComment(slideText, updates)
     if (updated === slideText) return
