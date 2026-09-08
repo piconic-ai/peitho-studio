@@ -33,7 +33,7 @@
 | F | ドラッグ並べ替えジェスチャ | `draggedIndex`, `dragOverGap`, `dragDeltaY` | `startSlideDrag`(914〜998) | `window` mouse/blur listeners, `document.body.style` |
 | G | コンテキストメニュー/レイアウトピッカー | `contextMenu`, `layoutPickerOpen`, `layoutPreviews`, `layoutPreviewCss`, `layoutPickerView`; `contextMenuEl` | `openContextMenu`, `closeContextMenu`, `contextMenuAppendIndex`, `loadLayoutPreviews`, 画面内クランプeffect(1027) | `preview_layouts`, `getBoundingClientRect`, `requestAnimationFrame` |
 | H | 外部変更/キーボード/Present/カラム幅 | `presentMenuOpen`, `slideListWidth`, `editorWidth` | `handleExternalChange`(1192), `onKeyDown`(1259〜1329), `handlePresent`, `startResize` | `deck-file-changed`/`menu:new-deck` listen, `window.confirm`, `present_deck` |
-| I | 通知/デバッグ | `statusMessage`, `errorMessage`, `errorMessageCopied` | `copyErrorMessage`, 自動消去effect(254); ~~TEMPORARY: `rectToPlain`, `scanColumn`, `scanRow`, `copyThumbnailDebugSnapshot`~~(Step 1で削除済み) | `navigator.clipboard` |
+| I | 通知/デバッグ | `statusMessage`, `errorMessage`, `errorMessageCopied` | `copyErrorMessage`, 自動消去effect(254); TEMPORARY: `rectToPlain`, `scanColumn`, `scanRow`, `copyThumbnailDebugSnapshot`(Step 1で削除予定——このPR時点ではまだ`components/Studio.tsx`に存在) | `navigator.clipboard` |
 | J | サムネイルiframeの実装詳細(JSX内) | — | `ref`コールバック(1634〜1883): サイズ同期`syncIframeSize`, `ResizeObserver`, overscan/clip-path; オーバーレイ`ref`(1952〜1980) | DOM計測・スタイル書き込み |
 
 ### 0.3 コード上に型として存在しない「暗黙の契約」(バグの温床)
