@@ -506,16 +506,49 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       Forward Deleteキー・ドラッグのmouseup後の並べ替え結果は、この
       環境のGUI自動操作(cliclick/osascriptによるイベント合成)がネイティブ
       メニューやOSレベルのドラッグ処理に届かず、確認できなかった
-      (`updateSlideConfig`/`deleteSlide`/`reorderSlides`の实機での動作
+      (`updateSlideConfig`/`deleteSlide`/`reorderSlides`の実機での動作
       そのものはユニットテストと`addSlide`の成功で間接的に裏付けられて
       いるが、目視での完全な実機確認ではない)。自動化の限界であって
       アプリ側の不具合ではないと判断し先に進めるが、次に人手で操作する
       機会があれば右クリックメニュー経由の操作を一通り触っておきたい。
-- [ ] **Step 7**: `domain/drag.ts` + `state/uiStore.ts`のdrag部分 +
-      `dom/dragGesture.ts`。
+- [x] **Step 7**完了。`domain/drag.ts`(`DragState`ADT
+      idle/armed/dragging + `arm`/`move`/`dropTarget`/`cancel`)と
+      `dom/dragGesture.ts`(`gapUnderCursor`/`attachDragListeners`/
+      `setDragAffordance`——DOM依存部分のみ)。`startSlideDrag`の
+      手組みmousedown/mousemove/mouseupクロージャと3つの緩く関連する
+      シグナル(`draggedIndex`/`dragOverGap`/`dragDeltaY`)を、1つの型付き
+      状態機械+薄いDOM層に置き換え。`scripts/arch-check.test.ts`に新設の
+      `dom/`層ルール(シグナル禁止・Tauri IPC禁止)を追加、違反注入で検出を
+      確認済み。
+      **重大な発見(CLAUDE.mdに記録済み)**: 当初`state/uiStore.ts`に
+      `createDragStore()`ファクトリ(シグナル+3つのmemoを`{draggedIndex,
+      ...}`として返す設計、todoのディレクトリ構成案どおり)を実装したが、
+      実機で動作せず——`bf debug graph`で調べると該当バインディングの
+      `deps`が空(`no tracked deps`)だった。BarefootJSのコンパイラは
+      「コンポーネント自身のソースにリテラルで書かれた`createSignal`/
+      `createMemo`呼び出し」だけを静的解析しており、関数呼び出しの
+      戻り値をたどってシグナルの出所を追わない。`const { x } = store`の
+      分割代入は`ReferenceError`で即落ち、`const x = store.x`という
+      単純代入でも`deps: []`のまま改善しなかった。シグナル宣言を
+      `Studio.tsx`側に戻し(`domain/drag.ts`の状態遷移関数はそのまま
+      呼ぶ)て解決。**Step 9/10/11の`state/`層(editorStore.ts/
+      deckStore.ts/renderStore.ts)も同じ制約を受ける**——シグナル/メモは
+      使うコンポーネントファイルに直接書く前提で設計すること
+      (`state/`は「ロジック」ではなく「グルーコード」の置き場という
+      位置づけに修正が必要かもしれない)。
+      実機確認: ロック解除後に実施(既に解除済みの状態で継続)。
+      `dispatchEvent`によるJS直接テストでロジック自体を確認、その後
+      物理`cliclick`ドラッグでも並べ替え・保存まで成功を確認
+      (`.claude/skills/run-peitho-studio/SKILL.md`に追記した
+      「DevToolsのInspect Elementモードが有効だと物理クリックが
+      アプリに届かない」問題を検証中に発見・回避)。
+      全spec/adversarialテスト通過(173 pass)。
 - [ ] **Step 8**: `domain/contextMenu.ts` + `menuItems()`。
 - [ ] **Step 9**: `domain/editorSession.ts` + `state/editorStore.ts`
-      (fast/slow lane、`reconcileAfterCommit`)。
+      (fast/slow lane、`reconcileAfterCommit`)。Step 7で判明した
+      BarefootJSの制約(シグナルはコンポーネントファイル直書き必須)を
+      踏まえ、`state/editorStore.ts`はロジック関数のみ、シグナル自体は
+      `Studio.tsx`側に置く設計にする。
 - [ ] **Step 10**: `domain/deckLifecycle.ts` + `state/deckStore.ts`。
       `isBusy`を派生値に、`loadDeck`/`loadDeckCore`/`alreadyBusy`を廃止。
 - [ ] **Step 11**: `state/renderStore.ts`: `applyRenderPayload`を`batch()`で
