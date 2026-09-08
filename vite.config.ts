@@ -11,6 +11,21 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 // directly and `@barefootjs/client/runtime`. Both need real module
 // resolution/bundling, which is what routes it through Vite's own
 // multi-page build instead of a hand-written import map.
+// `package.json`'s `dev` script runs a one-shot `vite build` (clean) and
+// THEN starts `vite build --watch` alongside `tsx watch server.ts`. With
+// `emptyOutDir: true` unconditional, that second, watch-mode invocation
+// re-empties `dist/` the moment it starts, before its first build
+// finishes writing anything back — a ~300-400ms window (measured) where
+// `dist/pages/index.html` doesn't exist. `tauri dev` only waits for
+// `devUrl` to accept connections, not for a real page to be servable, so
+// if the Tauri window's initial load lands in that window it 404s, and
+// since a WKWebView doesn't retry once loaded, the window is stuck
+// showing "Not Found" even after the rebuild finishes — the exact bug
+// this was chasing. Only the clean, non-watch build (the one that runs
+// before the dev servers start, and `bun run build` itself) should ever
+// empty the directory out from under a server that's already serving it.
+const isWatchBuild = process.argv.includes('--watch')
+
 export default defineConfig({
   base: '/static/',
   resolve: {
@@ -37,7 +52,7 @@ export default defineConfig({
   publicDir: false,
   build: {
     outDir: 'dist',
-    emptyOutDir: true,
+    emptyOutDir: !isWatchBuild,
     // The starter Counter has no top-level await, but this matches
     // every other JS adapter scaffold's Vite config (and the CSR
     // integration's own reasoning: several apps that grow beyond the
