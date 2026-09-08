@@ -573,21 +573,16 @@ export function Studio() {
     syncEditorFields()
   }
 
-  // Loads a deck into *this* window, replacing whatever it currently shows
-  // (nothing, on first mount via `take_pending_deck`/`dev_default_deck` —
-  // see `onMount` below; the welcome screen, via
-  // `openDeckPreferringCurrentWindow`). Never call this directly for a
-  // window that might already have a *different* deck open — that's what
-  // `openDeckInNewWindow` is for.
-  async function loadDeck(path: string): Promise<void> {
-    // Same reasoning as the guard at the top of `submitNewDeck` — the
-    // welcome screen's buttons/Recent entries reactively disable on
-    // `isBusy()`, but that's not synchronous, so a rapid double-click
-    // (e.g. two different Recent entries before the first re-render lands)
-    // could otherwise start a second overlapping `open_deck` in the same
-    // window.
-    if (isBusy()) return
-    setIsBusy(true)
+  // The actual work of loading a deck into *this* window, replacing
+  // whatever it currently shows. Assumes the caller already holds `isBusy`
+  // (set before calling, cleared after) — this has no guard of its own, so
+  // it's only safe to call from a spot that itself enforces "only one of
+  // these in flight at a time". `loadDeck` below is that guard for callers
+  // that aren't already busy; `submitNewDeck` manages its own `isBusy`
+  // across both `create_deck` and the open that follows, so it calls this
+  // directly instead of through `loadDeck` (which would otherwise see
+  // `isBusy()` already true and silently no-op).
+  async function loadDeckCore(path: string): Promise<void> {
     setErrorMessage(null)
     try {
       const info = await invoke<DeckSessionInfo>('open_deck', { path })
@@ -602,6 +597,25 @@ export function Studio() {
       // now-stale entry (Rust prunes it against disk on every read) isn't
       // still sitting there to fail the exact same way if clicked again.
       void refreshRecentDecks()
+    }
+  }
+
+  // Loads a deck into *this* window (nothing, on first mount via
+  // `take_pending_deck`/`dev_default_deck` — see `onMount` below; the
+  // welcome screen, via `openDeckPreferringCurrentWindow`). Never call this
+  // directly for a window that might already have a *different* deck open
+  // — that's what `openDeckInNewWindow` is for.
+  async function loadDeck(path: string): Promise<void> {
+    // Same reasoning as the guard at the top of `submitNewDeck` — the
+    // welcome screen's buttons/Recent entries reactively disable on
+    // `isBusy()`, but that's not synchronous, so a rapid double-click
+    // (e.g. two different Recent entries before the first re-render lands)
+    // could otherwise start a second overlapping `open_deck` in the same
+    // window.
+    if (isBusy()) return
+    setIsBusy(true)
+    try {
+      await loadDeckCore(path)
     } finally {
       setIsBusy(false)
     }
@@ -629,9 +643,12 @@ export function Studio() {
     }
   }
 
-  async function openDeckPreferringCurrentWindow(path: string): Promise<void> {
+  // `alreadyBusy`: pass true when the caller is already holding `isBusy`
+  // across a call to this (see `submitNewDeck`) so this goes through
+  // `loadDeckCore` instead of the self-guarding `loadDeck`.
+  async function openDeckPreferringCurrentWindow(path: string, alreadyBusy = false): Promise<void> {
     if (deckPath() === null) {
-      await loadDeck(path)
+      await (alreadyBusy ? loadDeckCore(path) : loadDeck(path))
     } else {
       await openDeckInNewWindow(path)
     }
@@ -665,7 +682,7 @@ export function Studio() {
     try {
       const path = await invoke<string>('create_deck', { parentDir: parent, name })
       setNewDeckModalOpen(false)
-      await openDeckPreferringCurrentWindow(path)
+      await openDeckPreferringCurrentWindow(path, true)
     } catch (err) {
       setErrorMessage(String(err))
     } finally {
