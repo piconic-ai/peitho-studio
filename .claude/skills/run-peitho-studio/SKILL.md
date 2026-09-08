@@ -117,7 +117,46 @@ osascript -e 'tell application "System Events" to keystroke "v" using {command d
 「Open」ボタンが有効化されているかを確認し、反映されていなければ
 `Cmd+Shift+G` からやり直す。
 
-## 6. 後片付け
+## 6. 独自コンテキストメニュー/キーボードショートカットが`cliclick`で反応しないとき
+
+アプリ独自の右クリックメニュー(New Slide/Delete/Change Layoutなど)の
+項目に対して`cliclick c:x,y`でクリックしても、メニューが閉じるだけで
+アクションが実行されないことがある。矢印キー+Enterでの選択、
+`Delete`/`Fn+Delete`キーの直接送信も同様に効かないことがあった
+(挙動としては、キー入力が最前面のメニューではなく背後のドキュメントに
+届いてしまい、スライドの選択を動かすだけだった)。
+
+切り分け・確認手順:
+
+1. `tauri.conf.json`の`"devtools": false`を一時的に`true`に変更し、
+   `tauri dev`を再起動する(CLAUDE.mdの「開発ビルドではdevtools=trueだと
+   ネイティブの要素検証メニューが優先される」を逆用する)。
+2. 空白領域を右クリック → 「Inspect Element」を選ぶとWeb Inspectorが
+   開く。ただし選択した要素がスライドプレビューの`<iframe>`内なら、
+   Consoleパネル右下のコンテキスト表示(`about:srcdoc`)を
+   `localhost`に切り替えないと、メインドキュメントのグローバル
+   (`document`/`window`)を参照できない。
+3. Console欄に直接JSを打ち込み、`dispatchEvent`でmousedown/mousemoveを
+   合成してロジック自体が動くか確認する(実装のバグか、自動操作の限界か
+   を切り分けられる)。`pbcopy`経由で複数行のコードを貼ると改行が
+   スペースに変換され構文エラーになるので、`;`区切りの1行にまとめる。
+   例:
+   ```js
+   (() => { const row = document.querySelectorAll('[data-slide-row]')[0]; const r = row.getBoundingClientRect(); row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: r.left + r.width/2, clientY: r.top + r.height/2, button: 0 })); return document.body.style.cursor; })()
+   ```
+4. **重要な発見**: `dispatchEvent`では正しく動くのに`cliclick`の物理
+   クリックでは無反応、という場合、原因はロジックではなく
+   **Web Inspectorの「Inspect Element」選択モードが有効なままになって
+   いること**だった。DevToolsパネル左上の閉じるボタン(×)でパネルを
+   閉じてから同じ`cliclick`操作を再試行したところ、正常に動作した
+   (物理マウスイベントが要素選択モードに奪われ、アプリ本体の
+   `mousedown`ハンドラに届いていなかったとみられる)。DevToolsで検証し
+   終えたら、次の`cliclick`操作の前に必ずパネルを閉じること。
+5. 検証が終わったら`tauri.conf.json`の`"devtools"`を`false`に戻す
+   ——独自の右クリックメニュー自体が機能しなくなるため、`true`のまま
+   コミットしない。
+
+## 7. 後片付け
 
 自分が起動した `tauri dev` とその子プロセス(`concurrently`,
 `vite build --watch`, `unocss --watch`, `tsx watch server.ts`,
