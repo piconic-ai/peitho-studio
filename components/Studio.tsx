@@ -209,44 +209,6 @@ export function Studio() {
     for (const section of manifest()?.sections ?? []) byIndex[section.startIndex] = section
     return byIndex
   })
-  // Looks up a slide's *current* position by its stable key, rather than
-  // trusting the `i` a `.map()` callback closed over at render time. After a
-  // reorder, this compiler's keyed list reconciliation moves/reuses a row's
-  // DOM node for a persisted key but does not appear to refresh plain
-  // (non-signal) closure values like a bare `i` bound inside it — confirmed
-  // by the slide-number badge and section header both landing on the wrong
-  // row after a drag-reorder while the row's own reactive content (bound by
-  // key) stayed correct. Every per-row index used for anything that must
-  // stay right after reordering (badges, section lookups, click/drag/context
-  // menu targeting) goes through this instead of the raw `i` parameter.
-  //
-  // One signal per key — same reasoning as `fragmentSignal` above, and the
-  // same regression it was originally written to avoid: a single memo
-  // recomputing a `Map` from `manifest()` looked equivalent, but *every*
-  // row's index lookup then read that one memo, so any edit to *any* slide
-  // (which always produces a brand-new `manifest()`) invalidated every
-  // row's index binding and re-touched every thumbnail — reintroducing the
-  // exact cross-thumbnail flicker the per-key fragment signals were meant
-  // to eliminate. Writing to a key's own signal only when its index
-  // actually changed (mirroring `applyRenderPayload`'s `if (get() !== ...)
-  // set(...)` guard) means editing one slide's text never notifies any
-  // other slide's index binding at all.
-  const indexSignals = new Map<string, [() => number, (value: number) => void]>()
-  function indexSignal(key: string): [() => number, (value: number) => void] {
-    let entry = indexSignals.get(key)
-    if (!entry) {
-      entry = createSignal(-1)
-      indexSignals.set(key, entry)
-    }
-    return entry
-  }
-  createEffect(() => {
-    const slides = manifest()?.slides ?? []
-    for (let idx = 0; idx < slides.length; idx++) {
-      const [get, set] = indexSignal(slides[idx].key)
-      if (get() !== idx) set(idx)
-    }
-  })
   const layoutPickerView = createMemo<'loading' | 'empty' | 'ready'>(() => {
     const previews = layoutPreviews()
     if (previews === null) return 'loading'
@@ -1496,38 +1458,38 @@ export function Studio() {
             {manifest() === null ? (
               <p className="text-sm text-muted-foreground">Open a deck to see its slides.</p>
             ) : (
-              manifest()!.slides.map(slide => (
+              manifest()!.slides.map((slide, i) => (
                   <div
                     key={slide.key}
-                    data-slide-row={String(indexSignal(slide.key)[0]())}
-                    onMouseDown={startSlideDrag(indexSignal(slide.key)[0]())}
-                    onContextMenu={e => openContextMenu(indexSignal(slide.key)[0](), e)}
+                    data-slide-row={String(i)}
+                    onMouseDown={startSlideDrag(i)}
+                    onContextMenu={e => openContextMenu(i, e)}
                     className={
-                      (draggedIndex() === (indexSignal(slide.key)[0]()) ? 'opacity-60 scale-95 shadow-lg rounded-md ' : '')
-                      + (draggedIndex() !== null && dragOverGap() === (indexSignal(slide.key)[0]()) ? 'border-t-2 border-t-primary ' : '')
-                      + (draggedIndex() !== null && (indexSignal(slide.key)[0]()) === manifest()!.slides.length - 1 && dragOverGap() === (indexSignal(slide.key)[0]()) + 1 ? 'border-b-2 border-b-primary ' : '')
+                      (draggedIndex() === i ? 'opacity-60 scale-95 shadow-lg rounded-md ' : '')
+                      + (draggedIndex() !== null && dragOverGap() === i ? 'border-t-2 border-t-primary ' : '')
+                      + (draggedIndex() !== null && i === manifest()!.slides.length - 1 && dragOverGap() === i + 1 ? 'border-b-2 border-b-primary ' : '')
                       + 'cursor-grab'
                     }
                   >
-                    {sectionStartByIndex()[indexSignal(slide.key)[0]()] ? (
+                    {sectionStartByIndex()[i] ? (
                       <div className="flex items-center gap-1 pt-3 pb-1">
                         <input
-                          value={sectionDrafts()[indexSignal(slide.key)[0]()]?.name ?? sectionStartByIndex()[indexSignal(slide.key)[0]()].name}
+                          value={sectionDrafts()[i]?.name ?? sectionStartByIndex()[i].name}
                           onInput={e => setSectionDrafts(prev => ({
                             ...prev,
-                            [indexSignal(slide.key)[0]()]: { name: e.target.value, time: prev[indexSignal(slide.key)[0]()]?.time ?? formatDurationMs(sectionStartByIndex()[indexSignal(slide.key)[0]()].plannedDurationMs) },
+                            [i]: { name: e.target.value, time: prev[i]?.time ?? formatDurationMs(sectionStartByIndex()[i].plannedDurationMs) },
                           }))}
-                          onBlur={() => void commitSectionEdit(indexSignal(slide.key)[0]())}
+                          onBlur={() => void commitSectionEdit(i)}
                           onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                           className="min-w-0 flex-1 bg-transparent outline-none text-xs font-semibold text-foreground/80"
                         />
                         <input
-                          value={sectionDrafts()[indexSignal(slide.key)[0]()]?.time ?? formatDurationMs(sectionStartByIndex()[indexSignal(slide.key)[0]()].plannedDurationMs)}
+                          value={sectionDrafts()[i]?.time ?? formatDurationMs(sectionStartByIndex()[i].plannedDurationMs)}
                           onInput={e => setSectionDrafts(prev => ({
                             ...prev,
-                            [indexSignal(slide.key)[0]()]: { name: prev[indexSignal(slide.key)[0]()]?.name ?? sectionStartByIndex()[indexSignal(slide.key)[0]()].name, time: e.target.value },
+                            [i]: { name: prev[i]?.name ?? sectionStartByIndex()[i].name, time: e.target.value },
                           }))}
-                          onBlur={() => void commitSectionEdit(indexSignal(slide.key)[0]())}
+                          onBlur={() => void commitSectionEdit(i)}
                           onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                           className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
                         />
@@ -1535,11 +1497,11 @@ export function Studio() {
                     ) : null}
                     <button
                       type="button"
-                      title={slide.text.title || `Slide ${String((indexSignal(slide.key)[0]()) + 1)}`}
-                      onClick={() => selectSlide(indexSignal(slide.key)[0]())}
+                      title={slide.text.title || `Slide ${String(i + 1)}`}
+                      onClick={() => selectSlide(i)}
                       className="w-full flex items-start gap-2 mb-2"
                     >
-                      <span className="w-4 pt-1 text-xs text-muted-foreground shrink-0">{String((indexSignal(slide.key)[0]()) + 1)}</span>
+                      <span className="w-4 pt-1 text-xs text-muted-foreground shrink-0">{String(i + 1)}</span>
                       {/* A semi-transparent hover border color (e.g. `border-foreground/40`)
                           paints over this element's *own* `bg-black` — CSS backgrounds clip
                           under the border area by default — so it looked black instead of
@@ -1591,13 +1553,13 @@ export function Studio() {
                             not just the corners. */}
                         <span className="block relative rounded-md overflow-hidden">
                         <span
-                          className={selectedIndex() === (indexSignal(slide.key)[0]())
+                          className={selectedIndex() === i
                             ? 'block relative rounded-md border-4 border-[#eab308] bg-black'
                             : 'block relative rounded-md border-2 border-border bg-black hover:border-4 hover:border-muted-foreground'}
                           style={`aspect-ratio: ${String(canvasWidth())} / ${String(canvasHeight())}; box-sizing: content-box`}
                         >
                           <iframe
-                            title={`Slide ${String((indexSignal(slide.key)[0]()) + 1)}`}
+                            title={`Slide ${String(i + 1)}`}
                             ref={el => {
                               // `data-slide-preview-key`/`srcdoc` are set here
                               // (once, at row creation) instead of as ordinary
