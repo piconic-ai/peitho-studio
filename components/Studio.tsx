@@ -13,6 +13,7 @@ import {
   updatePageComment,
   slugifyTitle,
   uniqueSlideKey,
+  indexAfterMove,
   extractHeadingText,
   parseDurationToMs,
   updateFrontmatterTime,
@@ -742,10 +743,14 @@ export function Studio() {
         : ranges.length > 0 ? 0 : null
 
       // Only move the user's selection if they haven't already navigated
-      // elsewhere themselves while this was in flight. (Drag-reorder is the
-      // one caller that legitimately wants to move selection to follow the
-      // slide it just moved — every other caller passes the slide that was
-      // already selected, so this is a no-op for them.)
+      // elsewhere themselves while this was in flight. Every caller passes
+      // back wherever the *currently selected* slide ends up after its
+      // change (a no-op for `handleSave`/`commitSectionEdit`, which never
+      // move anything; `reorderSlides` works this out via
+      // `indexAfterMove` even when the slide it moved isn't the one
+      // that's open) — never the position of whatever the change actually
+      // touched, or this would drag the selection there regardless of
+      // what the user had open.
       if (selectedIndex() === selectedBefore) {
         setSelectedIndex(nextIndex)
       }
@@ -879,10 +884,20 @@ export function Studio() {
     const texts = ranges.map((_, i) => currentSlideText(i).trim())
     const [moved] = texts.splice(from, 1)
     texts.splice(to, 0, moved)
+    // `commitChange`'s selection-follows-`focusIndex` step assumes every
+    // caller but this one already passes back whatever was selected (a
+    // no-op for them) — so unconditionally passing `to` here would drag
+    // the *editor's* selection over to whatever slide just got dropped
+    // even when a *different* slide, mid-edit and not yet saved, was the
+    // one actually open. `indexAfterMove` keeps the open slide's own
+    // position (shifted for the reorder) unless it's the one that moved,
+    // in which case that's `to` anyway.
+    const current = selectedIndex()
+    const focusIndex = current === null ? to : indexAfterMove(current, from, to)
     // A reorder never changes *which* sections exist or their times, only
     // their positions — the frontmatter total can't have gone stale, so
     // this skips `syncedSource`'s (harmless, but pointless) recompute.
-    await commitChange(rebuildSource(texts), to)
+    await commitChange(rebuildSource(texts), focusIndex)
   }
 
   // Native HTML5 drag-and-drop (`draggable`/`onDragStart`/`onDrop`) used to

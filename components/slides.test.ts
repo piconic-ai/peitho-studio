@@ -8,6 +8,7 @@ import {
   updatePageComment,
   slugifyTitle,
   uniqueSlideKey,
+  indexAfterMove,
   extractHeadingText,
   parseDurationToMs,
   formatDurationMs,
@@ -212,6 +213,37 @@ describe('uniqueSlideKey', () => {
 
   test('adversarial: an empty base key that also collides still numbers from "slide"', () => {
     expect(uniqueSlideKey('', ['slide'])).toBe('slide-2')
+  })
+})
+
+describe('indexAfterMove', () => {
+  test('spec: the moved slide follows itself to the drop target', () => {
+    expect(indexAfterMove(0, 0, 2)).toBe(2)
+    expect(indexAfterMove(3, 3, 0)).toBe(0)
+  })
+
+  test('spec: a later slide shifts down by one when an earlier slide moves past it', () => {
+    // [A,B,C,D] -> move A(0) to 2 -> [B,C,A,D]: B(1)->0, C(2)->1, D(3)->3
+    expect(indexAfterMove(1, 0, 2)).toBe(0)
+    expect(indexAfterMove(2, 0, 2)).toBe(1)
+    expect(indexAfterMove(3, 0, 2)).toBe(3)
+  })
+
+  test('spec: an earlier slide shifts up by one when a later slide moves in front of it', () => {
+    // [A,B,C,D] -> move D(3) to 0 -> [D,A,B,C]: A(0)->1, B(1)->2, C(2)->3
+    expect(indexAfterMove(0, 3, 0)).toBe(1)
+    expect(indexAfterMove(1, 3, 0)).toBe(2)
+    expect(indexAfterMove(2, 3, 0)).toBe(3)
+  })
+
+  test('adversarial: a from/to no-op leaves every index unchanged', () => {
+    for (let i = 0; i < 4; i++) expect(indexAfterMove(i, 1, 1)).toBe(i)
+  })
+
+  test('adversarial: an index outside the moved range on either side of a forward move is untouched', () => {
+    // [A,B,C,D,E] -> move B(1) to 3 -> [A,C,D,B,E]: E(4) stays 4, A(0) stays 0
+    expect(indexAfterMove(4, 1, 3)).toBe(4)
+    expect(indexAfterMove(0, 1, 3)).toBe(0)
   })
 })
 

@@ -186,6 +186,22 @@ export function uniqueSlideKey(baseKey: string, existingKeys: readonly string[])
   return `${base}-${String(n)}`
 }
 
+/** Where slide index `i` ends up after moving the slide at `from` to `to`
+ * (the same two-step `splice(from, 1)` then `splice(to, 0, moved)` a
+ * drag-reorder performs). `i === from` maps to `to` — the moved slide
+ * follows itself — everything else shifts by however the removal/
+ * insertion displaces it. Used to keep the *editor's* selection pointed at
+ * whatever slide it already had open when a drag moves some *other* row,
+ * rather than the drop target's position — see the `reorderSlides` call
+ * site in Studio.tsx. */
+export function indexAfterMove(i: number, from: number, to: number): number {
+  if (i === from) return to
+  let shifted = i
+  if (i > from) shifted -= 1
+  if (shifted >= to) shifted += 1
+  return shifted
+}
+
 /** Pulls the text of a slide's first Markdown ATX heading (`# Title`),
  * ignoring PageComment/note HTML comments and the contents of fenced code
  * blocks — used as the base name for `uniqueSlideKey` when a slide has no
