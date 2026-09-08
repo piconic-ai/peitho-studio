@@ -33,7 +33,7 @@
 | F | ドラッグ並べ替えジェスチャ | `draggedIndex`, `dragOverGap`, `dragDeltaY` | `startSlideDrag`(914〜998) | `window` mouse/blur listeners, `document.body.style` |
 | G | コンテキストメニュー/レイアウトピッカー | `contextMenu`, `layoutPickerOpen`, `layoutPreviews`, `layoutPreviewCss`, `layoutPickerView`; `contextMenuEl` | `openContextMenu`, `closeContextMenu`, `contextMenuAppendIndex`, `loadLayoutPreviews`, 画面内クランプeffect(1027) | `preview_layouts`, `getBoundingClientRect`, `requestAnimationFrame` |
 | H | 外部変更/キーボード/Present/カラム幅 | `presentMenuOpen`, `slideListWidth`, `editorWidth` | `handleExternalChange`(1192), `onKeyDown`(1259〜1329), `handlePresent`, `startResize` | `deck-file-changed`/`menu:new-deck` listen, `window.confirm`, `present_deck` |
-| I | 通知/デバッグ | `statusMessage`, `errorMessage`, `errorMessageCopied` | `copyErrorMessage`, 自動消去effect(254); TEMPORARY: `rectToPlain`, `scanColumn`, `scanRow`, `copyThumbnailDebugSnapshot`(Step 1で削除予定——このPR時点ではまだ`components/Studio.tsx`に存在) | `navigator.clipboard` |
+| I | 通知/デバッグ | `statusMessage`, `errorMessage`, `errorMessageCopied` | `copyErrorMessage`, 自動消去effect(254); ~~TEMPORARY: `rectToPlain`, `scanColumn`, `scanRow`, `copyThumbnailDebugSnapshot`~~(Step 1で削除済み——このコミットで) | `navigator.clipboard` |
 | J | サムネイルiframeの実装詳細(JSX内) | — | `ref`コールバック(1634〜1883): サイズ同期`syncIframeSize`, `ResizeObserver`, overscan/clip-path; オーバーレイ`ref`(1952〜1980) | DOM計測・スタイル書き込み |
 
 ### 0.3 コード上に型として存在しない「暗黙の契約」(バグの温床)
@@ -406,9 +406,17 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       実際に違反を注入して検出できることを確認済み)。`domain/`/`state/`
       /`ipc/`はまだ空(spec.tsのみ)なので、`components/`への
       `invoke(`直書き禁止ルールはStep 3(ipc/導入)以降に追加する。
-- [ ] **Step 1**: TEMPORARYデバッグスナップショット(268〜398, 1260〜1265)を
-      削除、または`dom/debugSnapshot.ts`に隔離。(-135行、挙動不変)
-- [ ] **Step 2**: `git mv components/slides.ts domain/`、`previewDoc.ts`同様。
+- [x] **Step 1**完了。TEMPORARYデバッグスナップショット
+      (`rectToPlain`/`scanColumn`/`scanRow`/`copyThumbnailDebugSnapshot`と
+      Cmd+Shift+Dショートカット)を削除、-138行。root-caused済みで
+      「remove once root-caused」と明記されていたため隔離ではなく削除。
+      挙動不変(typecheck/test/build全通過、バンドルサイズ88.46kB→85.72kB)。
+- [x] **Step 2**完了。`slides.ts`/`slides.test.ts`/`previewDoc.ts`/
+      `previewDoc.test.ts`を`domain/`へ移動。`scripts/arch-check.test.ts`が
+      即座に`previewDoc.ts`の誤検知(生成HTML文字列内の`document.`/`window.`
+      リテラル)を検出——ファイル単位ではなくパターン単位の
+      `// arch-check-allow: <pattern>`opt-outで対応し、他の禁止パターンは
+      引き続き検出されることを確認済み。
 - [ ] **Step 3**: `ipc/deckIpc.ts`に11コマンド+2イベントの型付きラッパー。
       `Studio.tsx`の`invoke`直書きを置換。`fakeDeckIpc.ts`も用意。
 - [ ] **Step 4**: 既に純粋なのに埋め込まれているロジックを`domain/`へ
@@ -463,6 +471,6 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
 ## Critical Files
 
 - `/Users/kfly8/src/github.com/kfly8/peitho-studio/components/Studio.tsx` — 分割対象そのもの
-- `/Users/kfly8/src/github.com/kfly8/peitho-studio/components/slides.ts` / `slides.test.ts` — 既存の純粋関数群、命名規約の実例
+- `/Users/kfly8/src/github.com/kfly8/peitho-studio/domain/slides.ts` / `slides.test.ts` — 既存の純粋関数群、命名規約の実例
 - `/Users/kfly8/src/github.com/kfly8/peitho-studio/docs/architecture.md` — 恒久ルール
 - `/Users/kfly8/src/github.com/kfly8/peitho-studio/vite.config.ts` — `barefoot({ components: ['components'] })`の発見範囲

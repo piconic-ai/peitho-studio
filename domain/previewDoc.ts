@@ -1,3 +1,12 @@
+// arch-check-allow: \bdocument\.
+// arch-check-allow: \bwindow\.
+// The `document.querySelector(...)`/`window.addEventListener(...)` calls
+// below live inside a template-literal <script> string this file BUILDS —
+// they execute later, inside whatever iframe loads the resulting HTML
+// document, never in this file's own (domain/, no-DOM) execution context.
+// See scripts/arch-check.test.ts's `allowedPatterns` for how this opt-out
+// is scoped to exactly these two patterns.
+//
 // A slide fragment (e.g. `<section class="lt peitho-slide">...`) is just
 // markup — it has no <head>/CSS of its own. `buildSlidePreviewDoc`/
 // `buildLayoutPreviewDoc` (below) wrap one into a standalone HTML document

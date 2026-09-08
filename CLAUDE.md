@@ -17,7 +17,7 @@ Tauri v2(Rust) + BarefootJS CSR + UnoCSS。peitho-coreはサブプロセスで�
   「これは状態を持つコードか、純粋なロジックか」がファイルを見ただけで
   判断できることを目指す。具体的な現状の割り当て:
   - フロントエンド: `components/*.ts`(`.tsx`ではない)はシグナル・DOM・IPC
-    に触れない純粋ロジック専用(例: `components/slides.ts`, `components/previewDoc.ts`)。
+    に触れない純粋ロジック専用(例: `domain/slides.ts`, `domain/previewDoc.ts`)。
     `components/*.tsx`はBarefootJSのシグナル・エフェクト・IPC呼び出しを持つ
     状態あり層。新しい純粋ロジックは`.tsx`の中に埋め込まず、まず`.ts`ファイル
     に切り出せないか検討する。
