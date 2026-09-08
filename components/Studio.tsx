@@ -128,6 +128,12 @@ export function Studio() {
   // not a row index, so the drop-line indicator can render between two rows
   // rather than highlighting one of them.
   const [dragOverGap, setDragOverGap] = createSignal<number | null>(null)
+  // How far the cursor has moved vertically from the drag's start — applied
+  // as a `translateY` on the dragged row itself (see its `style` below) so
+  // it visibly follows the cursor up/down while dragging, instead of
+  // staying pinned at its original position with only the drop-line
+  // indicator moving.
+  const [dragDeltaY, setDragDeltaY] = createSignal(0)
   const [isBusy, setIsBusy] = createSignal(false)
   const [statusMessage, setStatusMessage] = createSignal('')
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null)
@@ -885,7 +891,16 @@ export function Studio() {
           dragging = true
           setDraggedIndex(index)
           document.body.style.userSelect = 'none'
+          // The dragged row's own `cursor-grab` (set below) only applies
+          // while the *pointer* is over that row — as soon as a move takes
+          // it over a sibling row/gap, the cursor reverts to whatever that
+          // element specifies, flickering between grab/default/text for
+          // the rest of the drag. Overriding on `body` keeps one consistent
+          // cursor for the drag's whole duration regardless of what's under
+          // the pointer.
+          document.body.style.cursor = 'grabbing'
         }
+        setDragDeltaY(moveEvent.clientY - startY)
         const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-slide-row]'))
         // The gap right before the first row whose vertical center the
         // cursor is still above; if the cursor is below every row's center,
@@ -905,9 +920,11 @@ export function Studio() {
         window.removeEventListener('mouseup', onUp)
         window.removeEventListener('blur', onBlur)
         document.body.style.userSelect = ''
+        document.body.style.cursor = ''
         const gap = dragOverGap()
         setDraggedIndex(null)
         setDragOverGap(null)
+        setDragDeltaY(0)
         if (dragging && gap !== null) {
           // Removing `index` first shifts every later index down by one, so
           // a gap that was after the dragged row lands one earlier once it's
@@ -931,8 +948,10 @@ export function Studio() {
         window.removeEventListener('mouseup', onUp)
         window.removeEventListener('blur', onBlur)
         document.body.style.userSelect = ''
+        document.body.style.cursor = ''
         setDraggedIndex(null)
         setDragOverGap(null)
+        setDragDeltaY(0)
       }
       window.addEventListener('mousemove', onMove)
       window.addEventListener('mouseup', onUp)
@@ -1465,11 +1484,24 @@ export function Studio() {
                     onMouseDown={startSlideDrag(i)}
                     onContextMenu={e => openContextMenu(i, e)}
                     className={
-                      (draggedIndex() === i ? 'opacity-60 scale-95 shadow-lg rounded-md ' : '')
+                      // `relative z-10` lifts the dragged row above its
+                      // siblings while `style`'s `translateY` below carries
+                      // it past them — without a stacking order bump it
+                      // would slide *under* whichever row it's currently
+                      // overlapping instead of visibly floating over it.
+                      (draggedIndex() === i ? 'relative z-10 opacity-60 shadow-lg rounded-md ' : '')
                       + (draggedIndex() !== null && dragOverGap() === i ? 'border-t-2 border-t-primary ' : '')
                       + (draggedIndex() !== null && i === manifest()!.slides.length - 1 && dragOverGap() === i + 1 ? 'border-b-2 border-b-primary ' : '')
                       + 'cursor-grab'
                     }
+                    // `scale` lives here instead of a `scale-95` class
+                    // because `transform` doesn't merge across a class and
+                    // an inline style — whichever is specified in `style`
+                    // (higher specificity) replaces the *entire* class-set
+                    // `transform`, not just adds to it. Combining both into
+                    // one declaration keeps the existing "lifted" shrink
+                    // effect alongside the new follow-the-cursor movement.
+                    style={draggedIndex() === i ? `transform: translateY(${String(dragDeltaY())}px) scale(0.95)` : ''}
                   >
                     {sectionStartByIndex()[i] ? (
                       <div className="flex items-center gap-1 pt-3 pb-1">
@@ -1645,26 +1677,66 @@ export function Studio() {
                               // Math.min never has anything to reconcile.
                               const wrapperEl = iframeEl.parentElement
                               if (wrapperEl) {
-                                const syncIframeSize = () => {
+                                const syncIframeSize = (entries?: ResizeObserverEntry[]) => {
                                   // clientWidth/clientHeight round to the
                                   // nearest integer (per spec) — with the
                                   // wrapper's content-box already exactly
                                   // canvas-ratio (box-sizing: content-box
                                   // above), that rounding was the last
-                                  // source of a ~1px residual gap.
-                                  // getBoundingClientRect() is sub-pixel
-                                  // precise and always reports the
-                                  // border-box regardless of box-sizing, so
-                                  // subtracting the (also sub-pixel-capable)
-                                  // border width gives an exact content size.
+                                  // source of a ~1px residual gap. The
+                                  // sub-pixel-precise sources are the
+                                  // ResizeObserver entry's `contentRect`
+                                  // (preferred) and getBoundingClientRect()
+                                  // (initial call only, before any entry
+                                  // exists).
+                                  //
+                                  // `contentRect` over getBoundingClientRect()
+                                  // is load-bearing, not a style choice:
+                                  // getBoundingClientRect() is in *viewport*
+                                  // space, so it bakes in every ancestor
+                                  // transform — and during a drag-reorder
+                                  // this row carries `scale(0.95)` (see the
+                                  // row's `style`). A `:hover` flicker on the
+                                  // wrapper mid-drag (its border toggles
+                                  // 2px<->4px, so its content-box changes and
+                                  // this observer fires) then measured the
+                                  // wrapper 5% too small and sized the iframe
+                                  // to that — in the row's *own*, untransformed
+                                  // coordinate space, where the 5% is real.
+                                  // Nothing fires again once the transform is
+                                  // cleared on drop (transforms don't touch
+                                  // layout), so the undersized iframe stuck,
+                                  // leaving a black band along its right/
+                                  // bottom edge. The observer entry reports
+                                  // layout-space (pre-transform) CSS px, which
+                                  // is exactly the space this element's own
+                                  // `width`/`height` are set in. Reproduced
+                                  // step by step in a standalone page: the
+                                  // entry read 232x130.5 while the rect read
+                                  // 228x131.6 for the same box under
+                                  // scale(0.95).
                                   const cs = getComputedStyle(wrapperEl)
                                   const borderLeft = parseFloat(cs.borderLeftWidth) || 0
                                   const borderRight = parseFloat(cs.borderRightWidth) || 0
                                   const borderTop = parseFloat(cs.borderTopWidth) || 0
                                   const borderBottom = parseFloat(cs.borderBottomWidth) || 0
-                                  const rect = wrapperEl.getBoundingClientRect()
-                                  const availW = rect.width - borderLeft - borderRight
-                                  const availH = rect.height - borderTop - borderBottom
+                                  let availW: number
+                                  let availH: number
+                                  const contentRect = entries?.[0]?.contentRect
+                                  if (contentRect) {
+                                    availW = contentRect.width
+                                    availH = contentRect.height
+                                  } else {
+                                    const rect = wrapperEl.getBoundingClientRect()
+                                    availW = rect.width - borderLeft - borderRight
+                                    availH = rect.height - borderTop - borderBottom
+                                  }
+                                  // A detached or display:none wrapper
+                                  // measures 0x0; sizing against that would
+                                  // collapse the iframe to its overscan alone.
+                                  // The observer fires again with real numbers
+                                  // as soon as it's rendered, so just wait.
+                                  if (availW <= 0 || availH <= 0) return
                                   const scale = Math.min(availW / canvasWidth(), availH / canvasHeight())
                                   const w = canvasWidth() * scale
                                   const h = canvasHeight() * scale
@@ -1800,38 +1872,71 @@ export function Studio() {
                               Painting an identical border on top sidesteps that
                               entirely — it doesn't matter whether the iframe's edge
                               lands a sub-pixel off, this covers it either way.
-                              It's sized/positioned/colored imperatively (from the
-                              wrapper's own computed border, in the ref below)
-                              rather than via Tailwind classes mirroring the
-                              wrapper's, because `top-0 right-0 bottom-0 left-0`
-                              targets the wrapper's *content* edge (inside its
-                              border) — adding a border there paints a second ring
-                              further inward, not over the original. */}
+                              Its border *look* (style/width/color/radius) is
+                              plain CSS `inherit` from the wrapper, so it tracks
+                              every wrapper change at style-resolution time with
+                              no JS in the loop. Only its *placement* is
+                              imperative (in the ref below): it has to sit on the
+                              wrapper's border-box, but an absolutely positioned
+                              child's insets are measured from the wrapper's
+                              *padding* edge (inside the border) — `top-0 right-0
+                              bottom-0 left-0` would paint a second ring further
+                              inward, not over the original — so each inset is
+                              pulled outward by that side's own border width.
+                              Those insets only need updating when the border
+                              width changes, and a width change always shrinks/
+                              grows the wrapper's content-box, which is exactly
+                              what the ResizeObserver below fires on.
+                              Why not copy the color/width from computed style
+                              in that same observer callback (the previous
+                              approach)? Because the observer only fires on a
+                              content-box *size* change, and two of this
+                              wrapper's state transitions change the border
+                              color without changing its width: hovered-
+                              unselected (`hover:border-4`, 4px gray) ->
+                              selected (`border-4`, 4px yellow), and the
+                              reverse. A click-to-select is always the former
+                              (the cursor is on the card), and so is a
+                              drag-reorder's drop: the dragged card stays
+                              `:hover` through the drop (no mousemove happens
+                              between release and the reorder landing), then
+                              becomes the selection. The copied gray stuck on
+                              top of the new yellow border — and, when a hover
+                              flicker mid-drag had also re-run the copy while
+                              the row was `scale(0.95)` (see `syncIframeSize`
+                              for that getBoundingClientRect trap), stuck at 95%
+                              size too: the "smaller gray ring nested inside the
+                              yellow border" seen after a drop. Reproduced and
+                              confirmed fixed in a standalone page driven
+                              through the same hover/transform/class sequence. */}
                           <div
                             ref={el => {
                               const overlayEl = el as HTMLDivElement
                               const wrapperEl = overlayEl.parentElement
                               if (!wrapperEl) return
+                              overlayEl.style.borderStyle = 'inherit'
+                              overlayEl.style.borderWidth = 'inherit'
+                              overlayEl.style.borderColor = 'inherit'
+                              overlayEl.style.borderRadius = 'inherit'
+                              // Four negative insets and no explicit width/
+                              // height: a non-replaced absolutely positioned
+                              // box with all four insets set stretches to fill
+                              // them (CSS2.1 §10.3.7/§10.6.4), landing exactly
+                              // on the wrapper's border-box with sub-pixel
+                              // accuracy and no measurement at all — so no
+                              // getBoundingClientRect(), and no way for the
+                              // dragged row's transform to leak into these
+                              // numbers. (The individual physical properties,
+                              // not the `inset` shorthand — that shorthand
+                              // doesn't apply in this WKWebView.)
                               const syncOverlay = () => {
                                 const cs = getComputedStyle(wrapperEl)
-                                const rect = wrapperEl.getBoundingClientRect()
-                                overlayEl.style.width = `${String(rect.width)}px`
-                                overlayEl.style.height = `${String(rect.height)}px`
-                                overlayEl.style.left = `-${cs.borderLeftWidth}`
                                 overlayEl.style.top = `-${cs.borderTopWidth}`
-                                overlayEl.style.borderStyle = 'solid'
-                                overlayEl.style.borderWidth = cs.borderTopWidth
-                                overlayEl.style.borderColor = cs.borderTopColor
-                                overlayEl.style.borderRadius = cs.borderTopLeftRadius
+                                overlayEl.style.right = `-${cs.borderRightWidth}`
+                                overlayEl.style.bottom = `-${cs.borderBottomWidth}`
+                                overlayEl.style.left = `-${cs.borderLeftWidth}`
                               }
                               syncOverlay()
-                              // No forced-repaint nudge here, unlike the
-                              // iframe's own `syncIframeSize` above — this
-                              // is a plain `<div>` with no transform/opacity/
-                              // will-change of its own to trigger WebKit
-                              // promoting it to its own compositing layer,
-                              // so it shouldn't be exposed to that same
-                              // stale-paint failure mode.
                               new ResizeObserver(syncOverlay).observe(wrapperEl)
                             }}
                             className="absolute box-border"
