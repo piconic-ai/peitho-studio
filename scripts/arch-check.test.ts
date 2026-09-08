@@ -48,6 +48,14 @@ const RULES: readonly LayerRule[] = [
       { pattern: /\bcreateEffect\s*\(/, reason: 'calls `createEffect(` (belongs in state/)' },
     ],
   },
+  {
+    dir: 'components',
+    description: 'JSX composition — Tauri IPC only through ipc/, never inline',
+    forbidden: [
+      { pattern: /from\s+['"]@tauri-apps\/api\/core['"]/, reason: "imports '@tauri-apps/api/core' directly (invoke calls belong in ipc/)" },
+      { pattern: /from\s+['"]@tauri-apps\/api\/event['"]/, reason: "imports '@tauri-apps/api/event' directly (listen calls belong in ipc/)" },
+    ],
+  },
 ]
 
 function listSourceFiles(dir: string): string[] {
