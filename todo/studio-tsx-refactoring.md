@@ -417,8 +417,16 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       リテラル)を検出——ファイル単位ではなくパターン単位の
       `// arch-check-allow: <pattern>`opt-outで対応し、他の禁止パターンは
       引き続き検出されることを確認済み。
-- [ ] **Step 3**: `ipc/deckIpc.ts`に11コマンド+2イベントの型付きラッパー。
-      `Studio.tsx`の`invoke`直書きを置換。`fakeDeckIpc.ts`も用意。
+- [x] **Step 3**完了。`ipc/deckIpc.ts`(`DeckIpc`インターフェース、11コマンド
+      +2イベント、`createTauriDeckIpc()`)。`Studio.tsx`の13箇所の
+      `invoke`/`listen`直書きを`deckIpc.xxx()`呼び出しに置換、インライン
+      定義されていた型(`Manifest`/`RenderPayload`/`DeckSessionInfo`等)も
+      移動。`ipc/fakeDeckIpc.ts`(spec/adversarialテスト付き、将来の
+      state層モデルベーステスト用)。`scripts/arch-check.test.ts`に
+      `components/`の`@tauri-apps/api/core`/`.../event`直接import禁止を
+      追加(Step 0bで先送りしていた項目)——実際に違反を注入して検出を確認済み。
+      `@tauri-apps/plugin-dialog`/`.../window`は未対応のまま残す(Welcome画面
+      /ウィンドウ操作は別ステップ)。
 - [ ] **Step 4**: 既に純粋なのに埋め込まれているロジックを`domain/`へ
       (各1PR可): `nextIndexAfterRefresh`、`gapToIndex`(970行)、
       `clampMenuPosition`(1036〜1041)、`fitBox`(1779〜1819の数式)、
