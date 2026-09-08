@@ -22,8 +22,8 @@ import {
   sumSectionTimesMs,
   stabilizeByKey,
   type SlideRange,
-} from './slides'
-import { buildSlidePreviewDoc, buildLayoutPreviewDoc } from './previewDoc'
+} from '../domain/slides'
+import { buildSlidePreviewDoc, buildLayoutPreviewDoc } from '../domain/previewDoc'
 
 interface ManifestSlide {
   index: number

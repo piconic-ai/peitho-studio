@@ -58,6 +58,23 @@ function listSourceFiles(dir: string): string[] {
     .map(entry => join(entry.parentPath, entry.name))
 }
 
+/** A file can opt out of a specific forbidden pattern with a top-of-file
+ * `// arch-check-allow: <pattern source>` comment plus a reason on the
+ * next line — for the rare case where the match is a false positive, not
+ * an actual layer violation. E.g. previewDoc.ts (domain/) builds an HTML
+ * document whose *embedded <script>* references `document`/`window` —
+ * those run inside an iframe, never in this file's own execution
+ * context, so the pattern matching the literal text isn't a real
+ * violation. A bare exclusion list would silently stop protecting a file
+ * the moment unrelated code was added to it; requiring the exact pattern
+ * source keeps the allowance scoped to what was actually reviewed. */
+export function allowedPatterns(content: string): Set<string> {
+  const allowed = new Set<string>()
+  const re = /^\/\/ arch-check-allow: (.+)$/gm
+  for (const match of content.matchAll(re)) allowed.add(match[1])
+  return allowed
+}
+
 describe('architecture layering (docs/architecture.md)', () => {
   for (const rule of RULES) {
     test(`spec: ${rule.dir}/ stays "${rule.description}"`, () => {
@@ -65,8 +82,9 @@ describe('architecture layering (docs/architecture.md)', () => {
       for (const file of listSourceFiles(rule.dir)) {
         const content = readFileSync(file, 'utf-8')
         const relPath = file.slice(ROOT.length + 1)
+        const allowed = allowedPatterns(content)
         for (const { pattern, reason } of rule.forbidden) {
-          if (pattern.test(content)) violations.push(`${relPath}: ${reason}`)
+          if (pattern.test(content) && !allowed.has(pattern.source)) violations.push(`${relPath}: ${reason}`)
         }
       }
       expect(violations).toEqual([])
@@ -75,5 +93,27 @@ describe('architecture layering (docs/architecture.md)', () => {
 
   test('adversarial: a layer directory that does not exist yet reports no violations (not a crash)', () => {
     expect(listSourceFiles('this-directory-does-not-exist')).toEqual([])
+  })
+})
+
+describe('allowedPatterns', () => {
+  test('spec: extracts the pattern source from an arch-check-allow comment', () => {
+    expect(allowedPatterns('// arch-check-allow: \\bwindow\\.\n// reason here\ncode')).toEqual(new Set(['\\bwindow\\.']))
+  })
+
+  test('spec: extracts multiple allowances from the same file', () => {
+    const content = '// arch-check-allow: \\bwindow\\.\n// arch-check-allow: \\bdocument\\.\ncode'
+    expect(allowedPatterns(content)).toEqual(new Set(['\\bwindow\\.', '\\bdocument\\.']))
+  })
+
+  test('adversarial: a file with no allow comments yields an empty set', () => {
+    expect(allowedPatterns('just some code\n// a regular comment')).toEqual(new Set())
+  })
+
+  test('adversarial: an allowance only silences the exact pattern it names, not other forbidden patterns in the same file', () => {
+    const content = '// arch-check-allow: \\bwindow\\.\nwindow.foo(); document.bar()'
+    const allowed = allowedPatterns(content)
+    expect(allowed.has(/\bwindow\./.source)).toBe(true)
+    expect(allowed.has(/\bdocument\./.source)).toBe(false)
   })
 })
