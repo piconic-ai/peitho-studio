@@ -465,8 +465,33 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       検出——修正して全テスト通過。`components/Studio.tsx`の
       `pageConfig`シグナル/`slideConfigOf`/`updateSlideConfig`も
       `PageConfig`/`Partial<PageConfig>`に追従。
-- [ ] **Step 6**: `domain/slideCommands.ts`(2.6)。`commitChange`の引数を
-      `SelectionPlan`に。
+- [x] **Step 6**完了。`domain/editorSession.ts`(新規、Step 9の§2.1が
+      本来の置き場所だが、`SelectionPlan`型 + `selectionAfter`だけを
+      前倒し——`EditorSession`ADT本体/`reconcileAfterCommit`はStep 9で
+      追加)と`domain/slideCommands.ts`(`SlideCommand`ADT
+      insert/delete/move/replace + `applyCommand`/`needsTimeResync`/
+      `selectionPlanFor`/`validate`、2.6)。
+      `commitChange`の引数を`focusIndex: number | null`から
+      `plan: SelectionPlan`に変更、`Studio.tsx`の
+      `deleteSlide`/`addSlide`/`pasteSlideAfter`/`reorderSlides`/
+      `updateSlideConfig`をそれぞれ`SlideCommand`の組み立て+
+      `validate`/`applyCommand`/`selectionPlanFor`呼び出しに統一
+      (各関数が個別に持っていたガード節・`splice`・選択位置の三項演算子を
+      解消)。`needsTimeResync`で`syncedSource`/`rebuildSource`の
+      使い分けも1箇所(`sourceFor`)に集約。
+      実装中に見つけたバグ: `selectionAfter`の`clamp-after-delete`/
+      `select`を`keep`と同じ`clampFocusIndex`(範囲外なら**先頭**に
+      フォールバック)で統一しようとしたが、既存の`deleteSlide`の
+      `Math.min(index, texts.length - 1)`は範囲外なら**末尾**にクランプ
+      する意味論——最後のスライドを消すと選択が先頭に飛ぶ回帰になる
+      ところだった。テストを書く前に手計算で気づいて修正、
+      `keep`/`follow-move`(先頭フォールバック)と
+      `select`/`clamp-after-delete`(末尾クランプ)を意図的に別ロジックの
+      ままにした。全spec/adversarialテスト通過(159 pass)。
+      **実機確認は保留**——確認しようとした時点でmacOSがロック中で
+      GUI自動操作ができなかったため、静的検証(typecheck/test/build)の
+      みで進めた。次にビルドを実機で触る機会に、スライドの追加・削除・
+      並べ替え・貼り付けでタイトル/選択位置が壊れていないか確認する。
 - [ ] **Step 7**: `domain/drag.ts` + `state/uiStore.ts`のdrag部分 +
       `dom/dragGesture.ts`。
 - [ ] **Step 8**: `domain/contextMenu.ts` + `menuItems()`。
