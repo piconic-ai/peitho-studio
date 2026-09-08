@@ -406,8 +406,11 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       実際に違反を注入して検出できることを確認済み)。`domain/`/`state/`
       /`ipc/`はまだ空(spec.tsのみ)なので、`components/`への
       `invoke(`直書き禁止ルールはStep 3(ipc/導入)以降に追加する。
-- [ ] **Step 1**: TEMPORARYデバッグスナップショット(268〜398, 1260〜1265)を
-      削除、または`dom/debugSnapshot.ts`に隔離。(-135行、挙動不変)
+- [x] **Step 1**完了。TEMPORARYデバッグスナップショット
+      (`rectToPlain`/`scanColumn`/`scanRow`/`copyThumbnailDebugSnapshot`と
+      Cmd+Shift+Dショートカット)を削除、-138行。root-caused済みで
+      「remove once root-caused」と明記されていたため隔離ではなく削除。
+      挙動不変(typecheck/test/build全通過、バンドルサイズ88.46kB→85.72kB)。
 - [ ] **Step 2**: `git mv components/slides.ts domain/`、`previewDoc.ts`同様。
 - [ ] **Step 3**: `ipc/deckIpc.ts`に11コマンド+2イベントの型付きラッパー。
       `Studio.tsx`の`invoke`直書きを置換。`fakeDeckIpc.ts`も用意。
