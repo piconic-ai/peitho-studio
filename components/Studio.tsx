@@ -7,6 +7,8 @@ import { createTauriDeckIpc, type RenderPayload } from '../ipc/deckIpc'
 import { type Manifest, type ManifestSection, type ManifestSlide, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
 import { clampMenuPosition } from '../domain/geometry'
 import { type PageConfig } from '../domain/pageConfig'
+import { type SelectionPlan, selectionAfter } from '../domain/editorSession'
+import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
 import {
   splitSlides,
   extractNote,
@@ -15,7 +17,6 @@ import {
   updatePageComment,
   slugifyTitle,
   uniqueSlideKey,
-  indexAfterMove,
   clampFocusIndex,
   gapToIndex,
   extractHeadingText,
@@ -557,7 +558,7 @@ export function Studio() {
   // typing.
   async function commitChange(
     nextSource: string,
-    focusIndex: number | null,
+    plan: SelectionPlan,
     expectedDraft?: { body: string; note: string },
   ): Promise<void> {
     const selectedBefore = selectedIndex()
@@ -572,15 +573,16 @@ export function Studio() {
       setFullSource(nextSource)
       const ranges = splitSlides(nextSource)
       setSlideRanges(ranges)
-      const nextIndex = clampFocusIndex(focusIndex, ranges.length)
+      const nextIndex = selectionAfter(plan, selectedBefore, ranges.length)
 
       // Only move the user's selection if they haven't already navigated
       // elsewhere themselves while this was in flight. Every caller passes
-      // back wherever the *currently selected* slide ends up after its
-      // change (a no-op for `handleSave`/`commitSectionEdit`, which never
-      // move anything; `reorderSlides` works this out via
-      // `indexAfterMove` even when the slide it moved isn't the one
-      // that's open) — never the position of whatever the change actually
+      // a `SelectionPlan` naming its own intent (`keep` for
+      // `handleSave`/`commitSectionEdit`/`updateSlideConfig`, which never
+      // move anything; `follow-move` for `reorderSlides`, which keeps the
+      // open slide's own position even when the slide it moved isn't the
+      // one that's open; `select`/`clamp-after-delete` for insert/paste/
+      // delete) — never the position of whatever the change actually
       // touched, or this would drag the selection there regardless of
       // what the user had open.
       if (selectedIndex() === selectedBefore) {
@@ -654,7 +656,7 @@ export function Studio() {
     const newSlideText = buildSlideText(pageConfig(), body, note)
     const source = fullSource()
     const nextSource = source.slice(0, range.start) + newSlideText + source.slice(range.end)
-    await commitChange(nextSource, index, { body, note })
+    await commitChange(nextSource, { kind: 'keep' }, { body, note })
   }
 
   // Rebuilds `fullSource` from an ordered list of slide texts, preserving
@@ -707,29 +709,32 @@ export function Studio() {
       nextSource = updateFrontmatterTime(nextSource, totalMs)
     }
 
-    await commitChange(nextSource, selectedIndex())
+    await commitChange(nextSource, { kind: 'keep' })
   }
 
   async function reorderSlides(from: number, to: number): Promise<void> {
     const ranges = slideRanges()
-    if (from < 0 || from >= ranges.length || to < 0 || to >= ranges.length) return
     const texts = ranges.map((_, i) => currentSlideText(i).trim())
-    const [moved] = texts.splice(from, 1)
-    texts.splice(to, 0, moved)
-    // `commitChange`'s selection-follows-`focusIndex` step assumes every
-    // caller but this one already passes back whatever was selected (a
-    // no-op for them) — so unconditionally passing `to` here would drag
-    // the *editor's* selection over to whatever slide just got dropped
-    // even when a *different* slide, mid-edit and not yet saved, was the
-    // one actually open. `indexAfterMove` keeps the open slide's own
-    // position (shifted for the reorder) unless it's the one that moved,
-    // in which case that's `to` anyway.
-    const current = selectedIndex()
-    const focusIndex = current === null ? to : indexAfterMove(current, from, to)
-    // A reorder never changes *which* sections exist or their times, only
-    // their positions — the frontmatter total can't have gone stale, so
-    // this skips `syncedSource`'s (harmless, but pointless) recompute.
-    await commitChange(rebuildSource(texts), focusIndex)
+    const cmd: SlideCommand = { type: 'move', from, to }
+    if (validate(texts, cmd)) return
+    const nextTexts = applyCommand(texts, cmd)
+    // `commitChange`'s selection-follows-plan step assumes every caller
+    // but this one already passes back a `keep` (a no-op for them) — so
+    // unconditionally selecting `to` here would drag the *editor's*
+    // selection over to whatever slide just got dropped even when a
+    // *different* slide, mid-edit and not yet saved, was the one actually
+    // open. `follow-move` keeps the open slide's own position (shifted
+    // for the reorder) unless it's the one that moved, in which case
+    // that's `to` anyway.
+    await commitChange(sourceFor(nextTexts, cmd), selectionPlanFor(cmd))
+  }
+
+  // `move` never changes *which* sections exist or their times, only
+  // their positions — the frontmatter total can't have gone stale, so
+  // this skips `syncedSource`'s (harmless, but pointless) recompute for
+  // it; every other command routes through the resync.
+  function sourceFor(texts: string[], cmd: SlideCommand): string {
+    return needsTimeResync(cmd) ? syncedSource(texts) : rebuildSource(texts)
   }
 
   // Native HTML5 drag-and-drop (`draggable`/`onDragStart`/`onDrop`) used to
@@ -895,12 +900,11 @@ export function Studio() {
   // time total is re-synced in case the removed slide was itself a section
   // start (see `syncedSource`).
   async function deleteSlide(index: number): Promise<void> {
-    const ranges = slideRanges()
-    if (ranges.length <= 1) return
-    if (index < 0 || index >= ranges.length) return
-    const texts = ranges.map((_, i) => currentSlideText(i).trim())
-    texts.splice(index, 1)
-    await commitChange(syncedSource(texts), Math.min(index, texts.length - 1))
+    const texts = slideRanges().map((_, i) => currentSlideText(i).trim())
+    const cmd: SlideCommand = { type: 'delete', index }
+    if (validate(texts, cmd)) return
+    const nextTexts = applyCommand(texts, cmd)
+    await commitChange(sourceFor(nextTexts, cmd), selectionPlanFor(cmd))
   }
 
   async function cutSlide(index: number): Promise<void> {
@@ -925,12 +929,13 @@ export function Studio() {
   // `new-slide`, `new-slide-2`, `new-slide-3`, ... against the deck's
   // actual current keys instead.
   async function addSlide(index: number): Promise<void> {
-    const ranges = slideRanges()
-    const texts = ranges.map((_, i) => currentSlideText(i).trim())
+    const texts = slideRanges().map((_, i) => currentSlideText(i).trim())
     const insertAt = Math.min(index + 1, texts.length)
     const key = uniqueSlideKey(slugifyTitle('New Slide'), existingSlideKeys())
-    texts.splice(insertAt, 0, buildSlideText({ key }, NEW_SLIDE_MARKDOWN, ''))
-    await commitChange(syncedSource(texts), insertAt)
+    const cmd: SlideCommand = { type: 'insert', at: insertAt, text: buildSlideText({ key }, NEW_SLIDE_MARKDOWN, '') }
+    if (validate(texts, cmd)) return
+    const nextTexts = applyCommand(texts, cmd)
+    await commitChange(sourceFor(nextTexts, cmd), selectionPlanFor(cmd))
   }
 
   // Same collision as `addSlide`, one step removed: pasting the same
@@ -942,8 +947,7 @@ export function Studio() {
   async function pasteSlideAfter(index: number): Promise<void> {
     const clip = clipboardSlideText()
     if (clip === null) return
-    const ranges = slideRanges()
-    const texts = ranges.map((_, i) => currentSlideText(i).trim())
+    const texts = slideRanges().map((_, i) => currentSlideText(i).trim())
     const insertAt = Math.min(index + 1, texts.length)
     const trimmedClip = clip.trim()
     const { config } = extractPageComment(trimmedClip)
@@ -951,8 +955,10 @@ export function Studio() {
       ? config.key
       : slugifyTitle(extractHeadingText(trimmedClip) ?? '')
     const key = uniqueSlideKey(baseKey, existingSlideKeys())
-    texts.splice(insertAt, 0, updatePageComment(trimmedClip, { key }))
-    await commitChange(syncedSource(texts), insertAt)
+    const cmd: SlideCommand = { type: 'insert', at: insertAt, text: updatePageComment(trimmedClip, { key }) }
+    if (validate(texts, cmd)) return
+    const nextTexts = applyCommand(texts, cmd)
+    await commitChange(sourceFor(nextTexts, cmd), selectionPlanFor(cmd))
   }
 
   async function moveSlide(index: number, direction: 1 | -1): Promise<void> {
@@ -977,8 +983,11 @@ export function Studio() {
     const slideText = currentSlideText(index)
     const updated = updatePageComment(slideText, updates)
     if (updated === slideText) return
-    const texts = slideRanges().map((_, i) => (i === index ? updated : currentSlideText(i)).trim())
-    await commitChange(syncedSource(texts), index)
+    const texts = slideRanges().map((_, i) => currentSlideText(i).trim())
+    const cmd: SlideCommand = { type: 'replace', index, text: updated.trim() }
+    if (validate(texts, cmd)) return
+    const nextTexts = applyCommand(texts, cmd)
+    await commitChange(sourceFor(nextTexts, cmd), selectionPlanFor(cmd))
   }
 
   async function changeSlideLayout(index: number, layout: string): Promise<void> {
