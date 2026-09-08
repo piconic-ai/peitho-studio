@@ -446,7 +446,25 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       `domain/contextMenu.ts`で本格的に扱う)、`keyboardCommand`
       (`onKeyDown`——Step 9のeditorStore整理時に統合)、
       `externalChangePlan`(`handleExternalChange`——同じくStep 9)。
-- [ ] **Step 5**: `domain/pageConfig.ts`(2.5)。
+- [x] **Step 5**完了。`domain/pageConfig.ts`(`PageConfig`型 +
+      `ParsedPageComment` ADT `absent`/`ok`/`malformed` + `parsePageComment`/
+      `configOf`/`serializePageConfig`、spec+adversarialテスト付き)。
+      設計時の想定(§2.5、`section?: { name; time }`というネスト構造)は
+      実装時に`mizzy/peitho`の実際の`PageComment`struct
+      (`crates/peitho-core/src/parser.rs`)を確認したところ誤りと判明
+      ——`section`/`time`は独立したフラットな`Option<String>`
+      /`Option<PlannedTime>`で、ペア制約はこのアプリのUI側の運用規約に
+      すぎない。実データに合わせて`PageConfig`はフラットな型にした。
+      `domain/slides.ts`の`extractPageComment`/`updatePageComment`/
+      `buildSlideText`の`config`引数・戻り値を`Record<string, unknown>`
+      から`PageConfig`/`Partial<PageConfig>`に厳密化(ロジック自体は
+      `pageConfig.ts`の関数に委譲)。リファクタリング中に`rest`の計算を
+      誤ってtry/catchの外に出してしまい、malformedなPageCommentを
+      誤って除去してしまう回帰を作りかけたが、既存の
+      `adversarial: malformed JSON is left in place`テストが即座に
+      検出——修正して全テスト通過。`components/Studio.tsx`の
+      `pageConfig`シグナル/`slideConfigOf`/`updateSlideConfig`も
+      `PageConfig`/`Partial<PageConfig>`に追従。
 - [ ] **Step 6**: `domain/slideCommands.ts`(2.6)。`commitChange`の引数を
       `SelectionPlan`に。
 - [ ] **Step 7**: `domain/drag.ts` + `state/uiStore.ts`のdrag部分 +
