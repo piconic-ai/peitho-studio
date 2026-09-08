@@ -9,6 +9,8 @@ import { clampMenuPosition } from '../domain/geometry'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, selectionAfter } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
+import { type DragState, arm, move, dropTarget, cancel } from '../domain/drag'
+import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import {
   splitSlides,
   extractNote,
@@ -18,7 +20,6 @@ import {
   slugifyTitle,
   uniqueSlideKey,
   clampFocusIndex,
-  gapToIndex,
   extractHeadingText,
   parseDurationToMs,
   updateFrontmatterTime,
@@ -91,18 +92,45 @@ export function Studio() {
     return entry
   }
   const [sectionDrafts, setSectionDrafts] = createSignal<Record<number, SectionDraft>>({})
-  const [draggedIndex, setDraggedIndex] = createSignal<number | null>(null)
-  // The gap the dragged slide would land in if dropped now: 0 means "before
-  // row 0", N means "after the last row" — an insertion point between rows,
-  // not a row index, so the drop-line indicator can render between two rows
-  // rather than highlighting one of them.
-  const [dragOverGap, setDragOverGap] = createSignal<number | null>(null)
-  // How far the cursor has moved vertically from the drag's start — applied
-  // as a `translateY` on the dragged row itself (see its `style` below) so
-  // it visibly follows the cursor up/down while dragging, instead of
-  // staying pinned at its original position with only the drop-line
-  // indicator moving.
-  const [dragDeltaY, setDragDeltaY] = createSignal(0)
+  // A single `domain/drag.ts` DragState signal, with three independent
+  // memos over it for `draggedIndex`/`dragOverGap`/`dragDeltaY` — reading
+  // the raw DragState directly from every slide row would subscribe all
+  // of them to the whole state and re-render every row on each
+  // `dragOverGap` change during a drag, not just the two rows whose own
+  // border actually flips.
+  //
+  // The signal/memos live here, not in a `state/uiStore.ts` factory
+  // function, despite that being this refactor's usual pattern for
+  // extracting state out of Studio.tsx (see domain/editorSession.ts,
+  // domain/slideCommands.ts for the logic side of the same split): a
+  // `createDragStore()` returning `{ draggedIndex, ... }` compiled into
+  // JSX bindings with zero tracked deps for every reference to it
+  // (confirmed with `bf debug graph` — `dragStore.draggedIndex()` in JSX
+  // showed `deps: []`), so the row's `class`/`style` never updated during
+  // a drag. Even binding the factory's return values to plain top-level
+  // `const`s in the component (`const draggedIndex = dragStore.draggedIndex`)
+  // didn't help — same empty deps. BarefootJS's compiler resolves a
+  // render's reactive dependencies by static analysis of createSignal/
+  // createMemo calls literally written in the component's own source,
+  // not by tracing values back to a signal through a function call
+  // boundary — so a signal a component uses must be declared with
+  // `createSignal`/`createMemo` directly in that component's file.
+  // `domain/drag.ts`'s pure arm/move/dropTarget/cancel state machine is
+  // still the source of truth for every transition; only the signal
+  // itself had to move back here.
+  const [dragState, setDragState] = createSignal<DragState>({ kind: 'idle' })
+  const draggedIndex = createMemo(() => {
+    const s = dragState()
+    return s.kind === 'dragging' ? s.index : null
+  })
+  const dragOverGap = createMemo(() => {
+    const s = dragState()
+    return s.kind === 'dragging' ? s.gap : null
+  })
+  const dragDeltaY = createMemo(() => {
+    const s = dragState()
+    return s.kind === 'dragging' ? s.deltaY : 0
+  })
   const [isBusy, setIsBusy] = createSignal(false)
   const [statusMessage, setStatusMessage] = createSignal('')
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null)
@@ -751,77 +779,34 @@ export function Studio() {
       // whatever text/inputs it crosses (most visibly the section-name
       // inputs) at the same time the row is being dragged.
       event.preventDefault()
-      const startX = event.clientX
-      const startY = event.clientY
-      let dragging = false
-      const onMove = (moveEvent: MouseEvent) => {
-        if (!dragging) {
-          if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 4) return
-          dragging = true
-          setDraggedIndex(index)
-          document.body.style.userSelect = 'none'
-          // The dragged row's own `cursor-grab` (set below) only applies
-          // while the *pointer* is over that row — as soon as a move takes
-          // it over a sibling row/gap, the cursor reverts to whatever that
-          // element specifies, flickering between grab/default/text for
-          // the rest of the drag. Overriding on `body` keeps one consistent
-          // cursor for the drag's whole duration regardless of what's under
-          // the pointer.
-          document.body.style.cursor = 'grabbing'
-        }
-        setDragDeltaY(moveEvent.clientY - startY)
-        const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-slide-row]'))
-        // The gap right before the first row whose vertical center the
-        // cursor is still above; if the cursor is below every row's center,
-        // that's the gap after the last row (rows.length).
-        let gap = rows.length
-        for (const row of rows) {
-          const rect = row.getBoundingClientRect()
-          if (moveEvent.clientY < rect.top + rect.height / 2) {
-            gap = Number(row.dataset.slideRow)
-            break
-          }
-        }
-        setDragOverGap(gap)
-      }
-      const onUp = () => {
-        window.removeEventListener('mousemove', onMove)
-        window.removeEventListener('mouseup', onUp)
-        window.removeEventListener('blur', onBlur)
-        document.body.style.userSelect = ''
-        document.body.style.cursor = ''
-        const gap = dragOverGap()
-        setDraggedIndex(null)
-        setDragOverGap(null)
-        setDragDeltaY(0)
-        if (dragging && gap !== null) {
-          const to = gapToIndex(gap, index)
-          if (to !== index) void reorderSlides(index, to)
-        }
-      }
-      // If the window loses focus mid-drag (e.g. a native dialog steals
-      // focus, or the user alt-tabs away) the `mouseup` that would normally
-      // end the drag can land outside this window and never reach these
-      // listeners — WKWebView doesn't reliably deliver it here either way.
-      // Without this, `draggedIndex`/`dragOverGap` stay stuck at whatever
-      // they were the moment focus was lost, permanently pinning a
-      // leftover `border-t-primary`/`border-b-primary` line on whatever
-      // row/gap the drag last passed over. Cancel outright (no reorder) —
-      // unlike a normal `mouseup`, a focus loss isn't a deliberate "drop
-      // here" gesture.
-      const onBlur = () => {
-        window.removeEventListener('mousemove', onMove)
-        window.removeEventListener('mouseup', onUp)
-        window.removeEventListener('blur', onBlur)
-        document.body.style.userSelect = ''
-        document.body.style.cursor = ''
-        setDraggedIndex(null)
-        setDragOverGap(null)
-        setDragDeltaY(0)
-      }
-      window.addEventListener('mousemove', onMove)
-      window.addEventListener('mouseup', onUp)
-      window.addEventListener('blur', onBlur)
+      setDragState(arm(index, event.clientX, event.clientY))
+      attachDragListeners({
+        onMove(moveEvent) {
+          const wasArmed = dragState().kind === 'armed'
+          setDragState(prev => move(prev, moveEvent.clientX, moveEvent.clientY, gapUnderCursor(moveEvent.clientY)))
+          if (wasArmed && dragState().kind === 'dragging') setDragAffordance(true)
+        },
+        onUp() {
+          const target = dropTarget(dragState())
+          setDragState(cancel())
+          setDragAffordance(false)
+          if (target && target.from !== target.to) void reorderSlides(target.from, target.to)
+        },
+        // If the window loses focus mid-drag (e.g. a native dialog steals
+        // focus, or the user alt-tabs away) the `mouseup` that would
+        // normally end the drag can land outside this window and never
+        // reach these listeners — WKWebView doesn't reliably deliver it
+        // here either way. Without this, the drag state stays stuck at
+        // whatever it was the moment focus was lost, permanently pinning a
+        // leftover `border-t-primary`/`border-b-primary` line on whatever
+        // row/gap the drag last passed over. Cancel outright (no reorder)
+        // — unlike a normal `mouseup`, a focus loss isn't a deliberate
+        // "drop here" gesture.
+        onBlur() {
+          setDragState(cancel())
+          setDragAffordance(false)
+        },
+      })
     }
   }
 
