@@ -10,6 +10,7 @@ import {
   type ManifestSlide,
   type RenderPayload,
 } from '../ipc/deckIpc'
+import { clampMenuPosition } from '../domain/geometry'
 import {
   splitSlides,
   extractNote,
@@ -864,11 +865,12 @@ export function Studio() {
       const menu = contextMenu()
       if (!contextMenuEl || menu === null) return
       const rect = contextMenuEl.getBoundingClientRect()
-      const margin = 8
-      const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin)
-      const maxTop = Math.max(margin, window.innerHeight - rect.height - margin)
-      const x = Math.min(menu.x, maxLeft)
-      const y = Math.min(menu.y, maxTop)
+      const { x, y } = clampMenuPosition(
+        { x: menu.x, y: menu.y },
+        { width: rect.width, height: rect.height },
+        { width: window.innerWidth, height: window.innerHeight },
+        8,
+      )
       if (x !== menu.x || y !== menu.y) {
         setContextMenu(prev => (prev ? { ...prev, x, y } : prev))
       }
