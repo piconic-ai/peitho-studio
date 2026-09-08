@@ -9,6 +9,8 @@ import {
   slugifyTitle,
   uniqueSlideKey,
   indexAfterMove,
+  clampFocusIndex,
+  gapToIndex,
   extractHeadingText,
   parseDurationToMs,
   formatDurationMs,
@@ -213,6 +215,52 @@ describe('uniqueSlideKey', () => {
 
   test('adversarial: an empty base key that also collides still numbers from "slide"', () => {
     expect(uniqueSlideKey('', ['slide'])).toBe('slide-2')
+  })
+})
+
+describe('clampFocusIndex', () => {
+  test('spec: a valid in-range candidate is kept as-is', () => {
+    expect(clampFocusIndex(2, 5)).toBe(2)
+  })
+
+  test('spec: a candidate at or past the new count falls back to the first slide', () => {
+    expect(clampFocusIndex(5, 5)).toBe(0)
+    expect(clampFocusIndex(99, 5)).toBe(0)
+  })
+
+  test('spec: a null candidate (e.g. not preserving selection) falls back to the first slide', () => {
+    expect(clampFocusIndex(null, 3)).toBe(0)
+  })
+
+  test('adversarial: an empty list always yields null, valid-looking candidate or not', () => {
+    expect(clampFocusIndex(0, 0)).toBe(null)
+    expect(clampFocusIndex(null, 0)).toBe(null)
+  })
+
+  test('adversarial: a negative candidate is treated as invalid, not as a valid low index', () => {
+    expect(clampFocusIndex(-1, 5)).toBe(0)
+  })
+})
+
+describe('gapToIndex', () => {
+  test('spec: a gap before or at the dragged row is unaffected by its own removal', () => {
+    expect(gapToIndex(0, 3)).toBe(0)
+    expect(gapToIndex(3, 3)).toBe(3)
+  })
+
+  test('spec: a gap after the dragged row shifts down by one once it is removed', () => {
+    expect(gapToIndex(4, 3)).toBe(3)
+    expect(gapToIndex(1, 0)).toBe(0)
+  })
+
+  test('adversarial: dropping into the row\'s own two surrounding gaps both resolve to a no-op index', () => {
+    // Dragging row 2 and releasing on either gap immediately around it
+    // (gap 2 = just before it, gap 3 = just after) should both mean
+    // "put it back where it was" — reorderSlides' own `to !== index`
+    // check is what actually skips the no-op commit; this just verifies
+    // the index math funnels both gaps to the same place.
+    expect(gapToIndex(2, 2)).toBe(2)
+    expect(gapToIndex(3, 2)).toBe(2)
   })
 })
 

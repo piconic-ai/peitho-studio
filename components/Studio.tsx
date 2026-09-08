@@ -1,10 +1,11 @@
 'use client'
 
 import { createSignal, createMemo, createEffect, untrack, onMount, onCleanup } from '@barefootjs/client'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { createTauriDeckIpc, type RenderPayload } from '../ipc/deckIpc'
+import { type Manifest, type ManifestSection, type ManifestSlide, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
+import { clampMenuPosition } from '../domain/geometry'
 import {
   splitSlides,
   extractNote,
@@ -14,6 +15,8 @@ import {
   slugifyTitle,
   uniqueSlideKey,
   indexAfterMove,
+  clampFocusIndex,
+  gapToIndex,
   extractHeadingText,
   parseDurationToMs,
   updateFrontmatterTime,
@@ -25,47 +28,9 @@ import {
 } from '../domain/slides'
 import { buildSlidePreviewDoc, buildLayoutPreviewDoc } from '../domain/previewDoc'
 
-interface ManifestSlide {
-  index: number
-  key: string
-  src: string
-  hasNotes: boolean
-  skip: boolean
-  revealSteps: number
-  text: { title: string; body: string; code: string }
-}
-
-interface ManifestSection {
-  name: string
-  startIndex: number
-  endIndex: number
-  plannedDurationMs: number
-}
-
-interface Manifest {
-  title: string
-  slideCount: number
-  canvasWidth: number
-  canvasHeight: number
-  sections: ManifestSection[]
-  slides: ManifestSlide[]
-}
-
 interface SectionDraft {
   name: string
   time: string
-}
-
-interface RenderPayload {
-  manifest: Manifest
-  fragments: Record<string, string>
-  assetBaseUrl: string
-}
-
-interface DeckSessionInfo {
-  deckPath: string
-  deckDir: string
-  render: RenderPayload
 }
 
 const MIN_COLUMN_WIDTH = 180
@@ -76,6 +41,7 @@ const SLIDE_LIST_WIDTH = 176
 const NEW_SLIDE_MARKDOWN = '# New Slide\n'
 
 export function Studio() {
+  const deckIpc = createTauriDeckIpc()
   const [deckPath, setDeckPath] = createSignal<string | null>(null)
   const [assetBaseUrl, setAssetBaseUrl] = createSignal<string | null>(null)
   // The deck's native slide canvas size — split out of `manifest` into its
@@ -217,11 +183,7 @@ export function Studio() {
   const [editorWidth, setEditorWidth] = createSignal(420)
   const [presentMenuOpen, setPresentMenuOpen] = createSignal(false)
 
-  const sectionStartByIndex = createMemo<Record<number, ManifestSection>>(() => {
-    const byIndex: Record<number, ManifestSection> = {}
-    for (const section of manifest()?.sections ?? []) byIndex[section.startIndex] = section
-    return byIndex
-  })
+  const sectionStartByIndex = createMemo<Record<number, ManifestSection>>(() => computeSectionStartByIndex(manifest()?.sections ?? []))
   const layoutPickerView = createMemo<'loading' | 'empty' | 'ready'>(() => {
     const previews = layoutPreviews()
     if (previews === null) return 'loading'
@@ -311,7 +273,7 @@ export function Studio() {
   async function renderPreview(content: string): Promise<void> {
     const generation = ++previewGeneration
     try {
-      const payload = await invoke<RenderPayload>('render_draft', { content })
+      const payload = await deckIpc.renderDraft(content)
       if (generation !== previewGeneration) return
       applyRenderPayload(payload)
       setErrorMessage(null)
@@ -429,14 +391,11 @@ export function Studio() {
   })
 
   async function refreshSource(preserveSelection: boolean): Promise<void> {
-    const source = await invoke<string>('read_deck_source')
+    const source = await deckIpc.readDeckSource()
     setFullSource(source)
     const ranges = splitSlides(source)
     setSlideRanges(ranges)
-    const currentIndex = selectedIndex()
-    const nextIndex = preserveSelection && currentIndex !== null && currentIndex < ranges.length
-      ? currentIndex
-      : ranges.length > 0 ? 0 : null
+    const nextIndex = clampFocusIndex(preserveSelection ? selectedIndex() : null, ranges.length)
     setSelectedIndex(nextIndex)
     const { rest: withoutNote, note } = extractNote(nextIndex !== null ? ranges[nextIndex].text : '')
     const { rest, config } = extractPageComment(withoutNote)
@@ -460,7 +419,7 @@ export function Studio() {
   async function loadDeckCore(path: string): Promise<void> {
     setErrorMessage(null)
     try {
-      const info = await invoke<DeckSessionInfo>('open_deck', { path })
+      const info = await deckIpc.openDeck(path)
       setDeckPath(info.deckPath)
       applyRenderPayload(info.render)
       await refreshSource(false)
@@ -498,7 +457,7 @@ export function Studio() {
 
   async function refreshRecentDecks(): Promise<void> {
     try {
-      setRecentDecks(await invoke<string[]>('get_recent_decks'))
+      setRecentDecks(await deckIpc.getRecentDecks())
     } catch {
       // Best-effort — an empty Recent list just means nothing to suggest.
     }
@@ -512,7 +471,7 @@ export function Studio() {
   // stranded, empty, behind a new one.
   async function openDeckInNewWindow(path: string): Promise<void> {
     try {
-      await invoke('open_deck_window', { path })
+      await deckIpc.openDeckWindow(path)
     } catch (err) {
       setErrorMessage(String(err))
     }
@@ -555,7 +514,7 @@ export function Studio() {
     setIsBusy(true)
     setErrorMessage(null)
     try {
-      const path = await invoke<string>('create_deck', { parentDir: parent, name })
+      const path = await deckIpc.createDeck(parent, name)
       setNewDeckModalOpen(false)
       await openDeckPreferringCurrentWindow(path, true)
     } catch (err) {
@@ -606,15 +565,13 @@ export function Studio() {
     setIsBusy(true)
     setErrorMessage(null)
     try {
-      const payload = await invoke<RenderPayload>('render_draft', { content: nextSource })
+      const payload = await deckIpc.renderDraft(nextSource)
       applyRenderPayload(payload)
-      await invoke('save_deck_source', { content: nextSource })
+      await deckIpc.saveDeckSource(nextSource)
       setFullSource(nextSource)
       const ranges = splitSlides(nextSource)
       setSlideRanges(ranges)
-      const nextIndex = focusIndex !== null && focusIndex < ranges.length
-        ? focusIndex
-        : ranges.length > 0 ? 0 : null
+      const nextIndex = clampFocusIndex(focusIndex, ranges.length)
 
       // Only move the user's selection if they haven't already navigated
       // elsewhere themselves while this was in flight. Every caller passes
@@ -832,10 +789,7 @@ export function Studio() {
         setDragOverGap(null)
         setDragDeltaY(0)
         if (dragging && gap !== null) {
-          // Removing `index` first shifts every later index down by one, so
-          // a gap that was after the dragged row lands one earlier once it's
-          // gone; a gap at or before it is unaffected.
-          const to = gap <= index ? gap : gap - 1
+          const to = gapToIndex(gap, index)
           if (to !== index) void reorderSlides(index, to)
         }
       }
@@ -902,11 +856,12 @@ export function Studio() {
       const menu = contextMenu()
       if (!contextMenuEl || menu === null) return
       const rect = contextMenuEl.getBoundingClientRect()
-      const margin = 8
-      const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin)
-      const maxTop = Math.max(margin, window.innerHeight - rect.height - margin)
-      const x = Math.min(menu.x, maxLeft)
-      const y = Math.min(menu.y, maxTop)
+      const { x, y } = clampMenuPosition(
+        { x: menu.x, y: menu.y },
+        { width: rect.width, height: rect.height },
+        { width: window.innerWidth, height: window.innerHeight },
+        8,
+      )
       if (x !== menu.x || y !== menu.y) {
         setContextMenu(prev => (prev ? { ...prev, x, y } : prev))
       }
@@ -923,7 +878,7 @@ export function Studio() {
   async function loadLayoutPreviews(): Promise<void> {
     if (layoutPreviews() !== null) return
     try {
-      const payload = await invoke<{ previews: { name: string; fragment: string }[]; css: string }>('preview_layouts')
+      const payload = await deckIpc.previewLayouts()
       setLayoutPreviewCss(payload.css)
       setLayoutPreviews(payload.previews)
     } catch {
@@ -1059,7 +1014,7 @@ export function Studio() {
   // instead of stomping the external change with stale surrounding text.
   async function handleExternalChange(): Promise<void> {
     if (!deckPath() || isBusy()) return
-    const source = await invoke<string>('read_deck_source')
+    const source = await deckIpc.readDeckSource()
     if (source === fullSource()) return
     if (isDirty()) {
       const discard = window.confirm(
@@ -1096,7 +1051,7 @@ export function Studio() {
     // over the dev-convenience env var, which only matters for a window
     // with nothing else assigned to it.
     void (async () => {
-      const pending = await invoke<string | null>('take_pending_deck')
+      const pending = await deckIpc.takePendingDeck()
       if (pending) {
         await loadDeck(pending)
         if (deckPath() === null) {
@@ -1109,11 +1064,11 @@ export function Studio() {
         }
         return
       }
-      const devDeck = await invoke<string | null>('dev_default_deck')
+      const devDeck = await deckIpc.devDefaultDeck()
       if (devDeck) await loadDeck(devDeck)
     })()
 
-    const unlistenFileChanged = listen('deck-file-changed', () => {
+    const unlistenFileChanged = deckIpc.onDeckFileChanged(() => {
       void handleExternalChange()
     })
 
@@ -1122,7 +1077,7 @@ export function Studio() {
     // "Open Deck…"/"Open Recent" are handled entirely Rust-side now (a
     // native folder-picker dialog + `open_deck_window`), since neither
     // needs anything this webview can do.
-    const unlistenMenuNew = listen('menu:new-deck', () => { void handleNewDeck() })
+    const unlistenMenuNew = deckIpc.onMenuNewDeck(() => { void handleNewDeck() })
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && contextMenu() !== null) {
@@ -1193,15 +1148,15 @@ export function Studio() {
 
     onCleanup(() => {
       window.removeEventListener('keydown', onKeyDown)
-      unlistenFileChanged.then(stop => stop())
-      unlistenMenuNew.then(stop => stop())
+      unlistenFileChanged()
+      unlistenMenuNew()
     })
   })
 
   async function handlePresent(rehearsal: boolean): Promise<void> {
     setErrorMessage(null)
     try {
-      await invoke('present_deck', { rehearsal })
+      await deckIpc.presentDeck(rehearsal)
       setStatusMessage(rehearsal ? 'Presenting (rehearsal)…' : 'Presenting…')
     } catch (err) {
       setErrorMessage(String(err))

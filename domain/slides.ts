@@ -323,3 +323,23 @@ export function updateFrontmatterTime(source: string, totalMs: number): string {
   if (!replaced) lines.splice(closeIndex, 0, `time: ${value}`)
   return lines.join('\n')
 }
+
+/** Picks the index to focus after the slide list changes: `candidate` if
+ * it's still a valid index into the new list, otherwise the first slide
+ * (or `null` if the list is now empty). Shared shape behind two call
+ * sites that used to duplicate this ternary chain — `refreshSource`
+ * (candidate = the previously-selected index, only when preserving
+ * selection) and `commitChange` (candidate = the caller's `focusIndex`). */
+export function clampFocusIndex(candidate: number | null, count: number): number | null {
+  if (candidate !== null && candidate >= 0 && candidate < count) return candidate
+  return count > 0 ? 0 : null
+}
+
+/** Where a drag-reorder should drop the dragged slide, given the gap
+ * (a `data-slide-row` boundary index) the cursor released over. Removing
+ * `from` first shifts every later index down by one, so a gap that was
+ * after the dragged row lands one earlier once it's gone; a gap at or
+ * before it is unaffected. */
+export function gapToIndex(gap: number, from: number): number {
+  return gap <= from ? gap : gap - 1
+}

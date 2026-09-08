@@ -29,6 +29,7 @@ const RULES: readonly LayerRule[] = [
       { pattern: /from\s+['"]@tauri-apps/, reason: "imports '@tauri-apps/*' (belongs in ipc/)" },
       { pattern: /\bdocument\./, reason: 'touches `document.` (belongs in dom/)' },
       { pattern: /\bwindow\./, reason: 'touches `window.` (belongs in dom/)' },
+      { pattern: /from\s+['"].*\/ipc\//, reason: "imports from ipc/ (domain/ has zero dependencies; ipc/ imports FROM domain/, never the reverse)" },
     ],
   },
   {
@@ -46,6 +47,14 @@ const RULES: readonly LayerRule[] = [
     forbidden: [
       { pattern: /\bcreateSignal\s*\(/, reason: 'calls `createSignal(` (belongs in state/)' },
       { pattern: /\bcreateEffect\s*\(/, reason: 'calls `createEffect(` (belongs in state/)' },
+    ],
+  },
+  {
+    dir: 'components',
+    description: 'JSX composition — Tauri IPC only through ipc/, never inline',
+    forbidden: [
+      { pattern: /from\s+['"]@tauri-apps\/api\/core['"]/, reason: "imports '@tauri-apps/api/core' directly (invoke calls belong in ipc/)" },
+      { pattern: /from\s+['"]@tauri-apps\/api\/event['"]/, reason: "imports '@tauri-apps/api/event' directly (listen calls belong in ipc/)" },
     ],
   },
 ]
