@@ -23,7 +23,7 @@ import {
   stabilizeByKey,
   type SlideRange,
 } from './slides'
-import { buildSlidePreviewDoc } from './previewDoc'
+import { buildSlidePreviewDoc, buildLayoutPreviewDoc } from './previewDoc'
 
 interface ManifestSlide {
   index: number
@@ -147,18 +147,24 @@ export function Studio() {
   const [contextMenu, setContextMenu] = createSignal<{ index: number | null; x: number; y: number } | null>(null)
   // "Change Layout" expands this inline within the thumbnail context menu.
   // A grid of real rendered previews (Google Slides-style) was attempted
-  // first, backed by `preview_layouts`'s per-layout fragment/CSS render —
-  // but a conditional (`layoutPreviews() === null ? Loading : ... : ...`)
-  // sitting in the context menu's part of the tree never showed its
-  // post-mount branches (confirmed with plain `<div>` content too, so not
-  // about the grid/`.map()`/iframe specifically), while the identical
-  // pattern elsewhere in this file that isn't inside the context menu (e.g.
-  // `manifest() === null ? ... : ...` for the slide list) works fine. Given
-  // more time this is worth a proper BarefootJS repro/issue like the
-  // stale-index one; for now this uses the plain name list, which is the
-  // same shape that already worked before this attempt.
+  // first, backed by `preview_layouts`'s per-layout fragment/CSS render,
+  // but got shelved: a conditional
+  // (`layoutPreviews() === null ? Loading : ... : ...`) sitting in the
+  // context menu's part of the tree never showed its post-mount branches
+  // (confirmed with plain `<div>` content too, so not about the
+  // grid/`.map()`/iframe specifically), while the identical pattern
+  // elsewhere in this file that isn't inside the context menu (e.g.
+  // `manifest() === null ? ... : ...` for the slide list) worked fine.
+  // Fixed since by permanently mounting the whole context-menu subtree
+  // (see the comment above it further down) instead of gating it on
+  // `contextMenu()` — that was the actual remount-on-every-open trigger,
+  // not this conditional's own shape. `layoutPreviewCss` (below) carries
+  // `preview_layouts`'s shared CSS alongside the per-layout fragments —
+  // see `buildLayoutPreviewDoc` for why it's inlined per-iframe rather
+  // than served, unlike a real slide's own `peitho.css`.
   const [layoutPickerOpen, setLayoutPickerOpen] = createSignal(false)
   const [layoutPreviews, setLayoutPreviews] = createSignal<{ name: string; fragment: string }[] | null>(null)
+  const [layoutPreviewCss, setLayoutPreviewCss] = createSignal('')
   // The thumbnail context menu's Cut/Copy/Paste clipboard. Deliberately not
   // backed by `navigator.clipboard` — OS clipboard access needs its own
   // Tauri capability/plugin wiring, and the ask here is standard in-app
@@ -1050,6 +1056,7 @@ export function Studio() {
     if (layoutPreviews() !== null) return
     try {
       const payload = await invoke<{ previews: { name: string; fragment: string }[]; css: string }>('preview_layouts')
+      setLayoutPreviewCss(payload.css)
       setLayoutPreviews(payload.previews)
     } catch {
       setLayoutPreviews([])
@@ -2144,22 +2151,44 @@ export function Studio() {
           <span>Change Layout</span><span aria-hidden="true">{layoutPickerOpen() ? '▾' : '▸'}</span>
         </button>
         {layoutPickerOpen() ? (
-          <div className="pl-3 max-h-40 overflow-y-auto">
+          <div className="pl-3 max-h-64 overflow-y-auto">
             {layoutPickerView() === 'loading' ? (
               <div className="px-3 py-1.5 text-xs text-muted-foreground">Loading…</div>
             ) : layoutPickerView() === 'empty' ? (
               <div className="px-3 py-1.5 text-xs text-muted-foreground">No layouts found</div>
             ) : (
-              layoutPreviews()!.map(preview => (
-                <button
-                  type="button"
-                  key={preview.name}
-                  onClick={() => { void changeSlideLayout(contextMenu()!.index!, preview.name); closeContextMenu() }}
-                  className="w-full text-left px-3 py-1.5 hover:bg-accent text-xs"
-                >
-                  {preview.name}
-                </button>
-              ))
+              <div className="grid grid-cols-2 gap-1.5 px-2 py-1.5">
+                {layoutPreviews()!.map(preview => (
+                  <button
+                    type="button"
+                    key={preview.name}
+                    onClick={() => { void changeSlideLayout(contextMenu()!.index!, preview.name); closeContextMenu() }}
+                    className="flex flex-col gap-1 text-left group"
+                  >
+                    <span
+                      className="block relative rounded border border-border bg-black overflow-hidden group-hover:border-muted-foreground"
+                      style={`aspect-ratio: ${String(canvasWidth())} / ${String(canvasHeight())}`}
+                    >
+                      {preview.fragment ? (
+                        <>
+                          <iframe
+                            title={preview.name}
+                            srcdoc={buildLayoutPreviewDoc(preview.fragment, layoutPreviewCss(), canvasWidth(), canvasHeight())}
+                            className="absolute top-0 right-0 bottom-0 left-0 w-full h-full border-0"
+                          />
+                          {/* Keeps the iframe from ever being the click/
+                              right-click target — plain `pointer-events:
+                              none` on an iframe still loses a right-click
+                              to its own native context menu (see
+                              CLAUDE.md's Tauri pitfalls). */}
+                          <span className="absolute top-0 right-0 bottom-0 left-0" />
+                        </>
+                      ) : null}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground truncate">{preview.name}</span>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         ) : null}
