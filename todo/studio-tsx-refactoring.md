@@ -796,9 +796,32 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       指しており、具体的なシグネチャ型とは別の話と考えられるが、
       今回はそれを積極的に確かめてはいない)。
       全spec/adversarialテスト通過(222 pass、ロジック変更なし)。
-- [ ] **Step 18**: `SlideContextMenu`(永続マウント維持) →
-      `SlideList`(`dom/thumbnailIframe.ts`へref移動)。
-- [ ] **Step 19**: `Studio.tsx`を合成ルートに整理(目標200〜300行)。
+- [x] **Step 18**完了。これまでで最大の抽出。`domain/contextMenu.ts`に
+      `menuItemEnabled`/`menuItemChecked`(元は`Studio.tsx`のローカル
+      ヘルパー、`MenuItem[]`だけに依存する純粋関数)をspec/adversarial
+      テスト付きで昇格させ(別コミット)、`components/SlideContextMenu.tsx`
+      (新規)に永続マウントの右クリックメニュー全体(バックドロップ+
+      11個のメニュー項目+レイアウトピッカーサブメニュー+プレビュー
+      iframe)を移動。
+      `menuItems: MenuItem[]`は配列まるごと1つのpropsとして渡した——
+      「コレクション全体を1シグナルに持たない」原則は「一部だけ変わって
+      全行再レンダー」を防ぐためのものだが、この11項目は常に
+      `contextMenu()` ADT 1つから丸ごと再計算される単位であり、
+      per-row最適化の対象になる独立した行の集まりではないため適用対象外
+      と判断。`menuItemEnabled`/`menuItemChecked`/`buildLayoutPreviewDoc`
+      はpropsで橋渡しせず、純粋関数として`domain/`から直接importする形
+      にした(既存の`WelcomeScreen`パターンとは異なるが、これらはコンポー
+      ネント特有の値を必要としない純粋関数のため、propsを増やすより
+      importが素直)。各アクションのonClickは元のインラインクロージャ
+      そのまま(「実行してメニューを閉じる」を1つのcallback propsに)。
+      全spec/adversarialテスト通過(229 pass、+7件は新規移動した
+      `menuItemEnabled`/`menuItemChecked`のテスト)。
+      `bf debug graph`は他と同様全て`(no tracked deps)`——既存の教訓通り
+      動的追跡で正しく動作するはずだが、11アクション+レイアウト
+      ピッカーという規模の大きさから、実機確認の優先度は高めとして
+      おきたい。
+- [ ] **Step 19**: `SlideList`(`dom/thumbnailIframe.ts`へref移動)。
+- [ ] **Step 20**: `Studio.tsx`を合成ルートに整理(目標200〜300行)。
       `CLAUDE.md`の「BarefootJSで踏んだ落とし穴」に分割で得た知見を追記。
 
 順序の意図: 1〜5はリスクほぼゼロで行数を減らし、6〜11でバグ源の暗黙契約を
