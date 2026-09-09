@@ -945,11 +945,29 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
         であり新規のオーケストレーションを持たない。
         Studio.tsx: 1179→1140行。全spec/adversarialテスト通過
         (236 pass、ロジック変更なし)。
-  - [ ] **Step 20-4〜**: `state/deckStore.ts`(deckLifecycle +
-        dispatch/runOpen/runCreate)を同じ要領で切り出す。`runOpen`は
-        `applyRenderPayload`と`refreshSource`と通知系を横断するため、
-        オーケストレーション自体を`Studio.tsx`に残す設計を踏襲する
-        見込み。
+  - [x] **Step 20-4**完了。`state/deckStore.ts`(新規)に`deckLifecycle`
+        ADTシグナルと`deckPath`/`isBusy`/`newDeckModalOpen`/
+        `newDeckParentDir`/`newDeckName`射影を移動。
+        **`dispatch`/`runOpen`/`runCreate`/`openDeckInNewWindow`は
+        `Studio.tsx`に残した**——`state/renderStore.ts`の
+        `applyRenderPayload`、`refreshSource`、通知系シグナルを横断する
+        ため、`uiStore`/`renderStore`/`editorStore`と同じ
+        オーケストレーション分離パターンを踏襲。
+        Studio.tsx: 1140→1117行。テストは追加しなかった(`uiStore.ts`/
+        `editorStore.ts`と同じ理由——このストア自身のロジックは
+        `domain/deckLifecycle.test.ts`で既にカバー済みの単純なADT射影)。
+        全spec/adversarialテスト通過(236 pass、ロジック変更なし)。
+        **これで`state/`層への切り出しは一区切り**——`uiStore`/
+        `renderStore`/`editorStore`/`deckStore`の4ストア構成が完成
+        (元の設計案どおり)。Studio.tsxは2293行(開始時)→1117行
+        (51%減)。目標の200〜300行にはまだ届いていないが、残りは
+        JSX本体(合成ルートとして本質的に必要なコンポーネント配線)と、
+        `commitChange`/`selectSlide`/`refreshSource`等の複数ストアに
+        またがるオーケストレーション関数群——これ以上の削減は
+        オーケストレーション自体をどこかに動かす必要があり、それは
+        「合成ルートを薄くする」目的から外れて「オーケストレーション層を
+        別途作る」という設計変更になる。最終行数の評価は次の最終
+        ステップで行う。
   - [ ] **最終**: 全ストア切り出し後、`Studio.tsx`の行数を確認し
         200〜300行の目標に対する到達度を記録。`CLAUDE.md`の
         「BarefootJSで踏んだ落とし穴」に、このリファクタリング全体
