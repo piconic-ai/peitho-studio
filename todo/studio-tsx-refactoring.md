@@ -543,6 +543,25 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       「DevToolsのInspect Elementモードが有効だと物理クリックが
       アプリに届かない」問題を検証中に発見・回避)。
       全spec/adversarialテスト通過(173 pass)。
+      **【後日訂正】上記の「重大な発見」は誤りだった。** Step 9完了後、
+      `domain/drag.ts`の実装をそのまま使い、当時の`createDragStore()`
+      ファクトリ+keyed `.map()`+複数memo呼び出しを含む複雑な式を
+      正確に再現した最小コードで、DevToolsを使わずPlaywright経由で
+      実際にブラウザ動作を確認したところ、**ファクトリ越しでも正しく
+      動的に更新された**。つまり「ファクトリ経由だと動かない」は誤り
+      ——当時の「実機で動かない」という観察自体は事実だが、原因は
+      別(おそらく後で見つけたDevToolsのInspect Elementモードの干渉)
+      だった可能性が高い。`bf debug graph`の`no tracked deps`は静的
+      解析結果であり、BarefootJSの動的リアクティビティ追跡
+      (wrap-by-default)がそれより広くカバーするため、実行時の動作を
+      保証しない。CLAUDE.md/docs/architecture.mdは訂正済み。実際に
+      確認できた本物の制約は「分割代入(`const { x } = store`)で
+      `ReferenceError`になる」の1点のみ。**`state/uiStore.ts`のような
+      ファクトリパターンは実際には使える**——Step 9で
+      `state/editorStore.ts`を作らなかった判断も再考の余地があるが、
+      現状の実装(シグナル直接宣言)も実証済みで問題ないため、無理に
+      巻き戻さず現状維持とする。Step 10以降は`state/`ファクトリ
+      パターンも選択肢に入れてよい。
 - [x] **Step 8**完了。`domain/contextMenu.ts`(`ContextMenu`ADT
       closed/on-empty-space/on-slide + `MenuAction`/`MenuItem` +
       `menuItems`/`indexOf`/`positionOf`/`isLayoutPickerOpen`/
@@ -569,6 +588,14 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       **実機確認は保留**——確認しようとした時点でmacOSが再びロック中
       だったため、静的検証(typecheck/test/build/`bf debug graph`)のみで
       進めた。
+      **【後日訂正】上記の「Step 7の制約の亜種」も誤りだった。** Step 9
+      完了後の再検証(下記Step 7の訂正注記参照)で、ヘルパー関数が内部で
+      memoを読む形(`createMemo`+`function f() { return memo() }`+
+      JSXから`{f()}`)も実際には正しく動的に更新されることを確認した
+      ——`menuItemEnabled(items, action)`という引数渡しの形に直したこと
+      自体は無害だが、直さなくても壊れていなかった可能性が高い。
+      「JSXバインディングの式にメモの呼び出しを直接書く必要がある」と
+      いう追加の教訓もCLAUDE.mdから削除済み。
 - [x] **Step 9**完了。`domain/editorSession.ts`に§2.1の残りを実装:
       `EditorSession`ADT(`none`/`editing{index,saved,draft}`)、
       `isDirty`、`reconcileAfterCommit`、`withRefreshedSaved`、

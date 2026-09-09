@@ -118,43 +118,31 @@ Tauri v2(Rust) + BarefootJS CSR + UnoCSS。peitho-coreはサブプロセスで�
   正しく読めているのに)。同じJSXを最初からマウントしておく構成に変えたら
   直った。マウント後の状態遷移で特定の分岐だけ描画されないときは、まず
   この可能性(三項演算子の連鎖 vs マウントで出し分け)を疑う。
-- **シグナル/メモはコンポーネントファイル自身の中で`createSignal`/
-  `createMemo`を直接呼んで宣言しないといけない——ファクトリ関数から返す形は
-  壊れる。** `state/xxxStore.ts`に`export function createFooStore() { const
-  [x, setX] = createSignal(...); return { x, ... } }`を書き、コンポーネント側で
-  `const store = createFooStore()`として使うパターン(5層アーキテクチャの
-  `state/`層をそのまま素直に実装した形)を試したところ、`store.x()`を
-  JSX内で呼んでも画面が更新されなかった(値は実際には変わっている)。
-  `bf debug graph <Component>`で調べると、そのバインディングの`deps`が
-  空(`(no tracked deps)`)——コンパイラは「そのコンポーネントのソース内に
-  リテラルで書かれた`createSignal`/`createMemo`呼び出し」を静的解析して
-  依存関係を組み立てており、関数呼び出しの戻り値をたどってシグナルの
-  出所を追うことはしていない。`const { x } = store`のような分割代入は
-  さらに悪く、`ReferenceError: Can't find variable: x`で実行時に落ちる
-  (識別子抽出が分割代入を素通りしてしまう)。`const x = store.x`という
-  単純代入に変えても改善しない——同じく`deps: []`のまま。
-  **対策**: シグナル/メモの宣言自体は使うコンポーネントの`.tsx`ファイルに
-  残し、`domain/`にはロジック(状態遷移関数)だけを置く。例えば
-  `domain/drag.ts`はDragStateのADTと`arm`/`move`/`dropTarget`/`cancel`という
-  純粋関数を提供し、`components/Studio.tsx`側で
-  `const [dragState, setDragState] = createSignal<DragState>(...)`と
-  `createMemo`をコンポーネント内に直接書いて、それらの関数を呼ぶ
-  (`components/Studio.tsx`の`draggedIndex`/`dragOverGap`/`dragDeltaY`memo
-  参照)。5層アーキテクチャの`state/`層は「シグナルを持つグルーコード」の
-  置き場所という位置づけ自体は変わらないが、実装上はコンポーネント
-  ファイルの外にシグナル宣言そのものを追い出すことはできない、という
-  制約と理解しておく。
-- **上記の亜種: JSX式の中に`シグナル()`/`メモ()`の呼び出しがリテラルに
-  現れないと、それを間接的に読むだけのヘルパー関数越しでも依存追跡が
-  外れる。** `const items = createMemo(...)`と`function isEnabled(action)
-  { return items().find(...)?.enabled }`を定義し、JSX側で
-  `disabled={!isEnabled('cut')}`のように呼ぶと、`bf debug graph`の
-  `deps`が空になり更新されない——`isEnabled`の呼び出し自体はJSX式に
-  書かれているが、その中で読んでいる`items()`はJSX式のソースには
-  現れないため。`disabled={!isEnabled(items(), 'cut')}`のように
-  **メモの呼び出し結果をJSX式の中で直接引数として渡す**と直る
-  (`domain/contextMenu.ts`の`menuItems`を使う
-  `components/Studio.tsx`の`menuItemEnabled`/`menuItemChecked`参照)。
+- **(訂正済み・下記参照) `bf debug graph`の`(no tracked deps)`だけで
+  「実機で壊れる」と即断しない。** 一時、このセクションに「シグナル/メモは
+  ファクトリ関数(`state/xxxStore.ts`が`{ x, ... }`を返す形)から渡すと
+  壊れる」「ヘルパー関数越しに読むと壊れる」という2つの"制約"を書いていたが、
+  どちらも`domain/drag.ts`の実装をそのまま使った再現(ファクトリ関数の
+  戻り値をJSXから`store.x()`で呼ぶ、`.map()`の中で複数のmemo呼び出しを
+  含む複雑な式で使う、ヘルパー関数が内部でmemoを読んでJSXから
+  `helper('cut')`のように呼ぶ、の3パターン)で実際にブラウザ動作を
+  確認したところ、**全て正しく動的に更新された**——誤りだったと判明。
+  `bf debug graph`はコンパイル時の静的解析結果であり、BarefootJSには
+  それとは別に動的なリアクティビティ追跡(wrap-by-default)があるため、
+  「静的解析で見つからない依存」がそのまま「実行時に更新されない」を
+  意味しない。当時「動かない」と見えたもの(Step 7のドラッグ視覚効果)は、
+  後に判明した別の原因(実機確認時、DevToolsのInspect Elementモードが
+  有効なままクリックがアプリに届いていなかった)による見かけ上の現象
+  だった可能性が高い。**教訓**: `bf debug graph`の`no tracked deps`は
+  「深掘りすべき手がかり」であって「壊れている確定証拠」ではない。実際に
+  壊れているかどうかは、疑わしければ`@barefootjs/test`のIRテストや
+  実ブラウザでの動作確認まで行ってから判断する。唯一実際に確認できた
+  本物の制約は次の1点だけ:
+  **`const { x } = store`という分割代入でシグナルのgetterを取り出すと
+  `ReferenceError: Can't find variable: x`で実行時に落ちる**
+  (コンパイラの識別子抽出が分割代入を素通りするため)。`const store =
+  createFooStore()`と受け取り、プロパティ経由(`store.x()`)で呼ぶ分には
+  問題ない。
   「シグナル/メモはコンポーネントファイルで直接宣言する」だけでなく、
   「JSXバインディングに使う式は、そのシグナル/メモの呼び出しを式の中に
   直接書く(関数呼び出しの内側に隠さない)」も合わせて守る。
