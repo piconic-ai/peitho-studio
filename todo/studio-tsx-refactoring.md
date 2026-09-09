@@ -695,8 +695,30 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       増える経路は構造的に増えていないはずだが、目視/計測での裏取りは
       Step 9の訂正記録以降の運用(静的検証で進め、実機確認はユーザーが
       後日まとめて行う)に従い持ち越し。
-- [ ] **Step 12〜18**: JSXを1PRにつき1コンポーネントずつそのまま移動:
-      `WelcomeScreen` → `NewDeckModal` → `DeckHeader` → `StatusBar` →
+- [x] **Step 12**完了。`components/WelcomeScreen.tsx`(新規)に
+      Welcome画面のJSX(Open Deck/New Deckボタン、busyフィードバック、
+      エラーメッセージ、Recentリスト)をそのまま移動。値(`isBusy: boolean`/
+      `errorMessage: string | null`/`recentDecks: string[]`)とコールバック
+      props(`onOpenFolder`/`onNewDeck`/`onOpenRecent`)だけを受け取る
+      純粋な表示コンポーネント。
+      **新たに踏んだ制約(CLAUDE.md/docs/architecture.mdに記録済み)**:
+      当初`isBusy: Memo<boolean>`という型で設計し`isBusy={isBusy}`と
+      渡したところ、`bun run build`が`BF044`
+      (`Signal/Memo getter passed without calling it`)でビルドエラーに
+      なった。BarefootJSのpropsリアクティビティは実際にはSolidJSと同じ
+      モデルで、`isBusy={isBusy()}`のように呼び出した値を渡すと
+      コンパイラが`{ get isBusy() { return isBusy() } }`という
+      getterプロパティに下げる——`Memo<T>`型のgetter自体を運ぶ設計は
+      誤りだった。`WelcomeScreenProps`を`boolean`/`string | null`/
+      `string[]`のプレーンな値型に直し、`Studio.tsx`側の呼び出しを
+      `isBusy={isBusy()}`等に修正して解決。
+      `bf debug graph`では`props.xxx`型の読み取りは他の`no tracked
+      deps`ケース同様に静的グラフへ乗らないが、動的追跡
+      (wrap-by-default)で実際には正しく更新されることをPlaywrightで
+      確認済み(isBusy/errorMessage/recentDecksそれぞれの伝播)。
+      全spec/adversarialテスト通過(222 pass)。
+- [ ] **Step 13〜18**: JSXを1PRにつき1コンポーネントずつそのまま移動:
+      `NewDeckModal` → `DeckHeader` → `StatusBar` →
       `SlidePreview` → `SlideEditor` → `SlideContextMenu`(永続マウント維持) →
       `SlideList`(`dom/thumbnailIframe.ts`へref移動)。
 - [ ] **Step 19**: `Studio.tsx`を合成ルートに整理(目標200〜300行)。
