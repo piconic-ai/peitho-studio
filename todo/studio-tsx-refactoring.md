@@ -632,8 +632,46 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       判断により、以降のStepは静的検証(typecheck/test/build/
       `bf debug graph`)で進め、実機での動作確認はユーザー自身が後日
       まとめて行う運用にする。
-- [ ] **Step 10**: `domain/deckLifecycle.ts` + `state/deckStore.ts`。
-      `isBusy`を派生値に、`loadDeck`/`loadDeckCore`/`alreadyBusy`を廃止。
+- [x] **Step 10**完了。`domain/deckLifecycle.ts`(`DeckLifecycle`ADT
+      welcome/naming-new-deck/creating/opening/open + `DeckEvent` +
+      `Decision` + `decide`/`isBusy`)。旧`deckPath`/`isBusy`/
+      `newDeckModalOpen`/`newDeckParentDir`/`newDeckName`という5つの
+      独立シグナルを1つの`deckLifecycle`ADTシグナル+5つの射影memoに統合。
+      `loadDeckCore`/`loadDeck`/`openDeckPreferringCurrentWindow`/
+      `alreadyBusy`引数を全廃し、`dispatch(event)`(`decide`を呼び、
+      遷移をコミットし、`effect`があれば対応するIPC呼び出しを実行して
+      結果を`opened`/`failed`/`created`イベントとして`dispatch`に
+      フィードバックする1関数)に統一。
+      **バグ`bfa5577`(New Deck作成後にエディタへ遷移しないバグ)の
+      根本対策が型で表現された**: `creating`状態の`created`イベントは
+      `Decision`型上`opening`への遷移(+`invoke-open`エフェクト)しか
+      返せない——`created`から直接`open`に飛ぶ、または`invoke-open`
+      エフェクトを落とす、という実装ミスが型エラーになる。
+      **実装中に見つけたバグ(既存)**: `commitChange`が`isBusy`を
+      デッキライフサイクルの`isBusy`と共有していた
+      (`loadDeck`/`submitNewDeck`と同じフラグ)。両者はUIの表示条件
+      (`deckPath()===null`かどうか)で排他的だったため実害はなかったが、
+      `isBusy`を`deckLifecycle`由来の派生値にする以上、`commitChange`
+      専用の独立したシグナル`isSavingSlide`に分離した——2つの無関係な
+      「何か処理中」を1つのフラグで表現していた、という暗黙の結合を
+      解消。
+      **`openDeckPreferringCurrentWindow`の「既にデッキが開いている
+      ウィンドウで新しいデッキを開こうとしたら別ウィンドウを開く」
+      分岐(`domain/deckLifecycle.ts`では`open`状態の`open-requested`
+      → `spawn-window`エフェクト)は、現状のコードパスからは到達不可能
+      と判明**——「Open Deck…」ボタン/Recent項目はWelcome画面
+      (`deckPath()===null`)でのみレンダーされ、ネイティブの
+      「Open Recent」は`onMount`のコメントの通り完全にRust側
+      (`open_deck_window`)で処理されフロントエンドを経由しない。ADTには
+      完全性のため残したが、実際に発火しうるかは未確認のまま——
+      Step 12以降でWelcomeScreenを切り出す際に、この分岐が本当に
+      必要か再検討してよい。
+      `bf debug graph`で`deckPath`/`isBusy`/`newDeckModalOpen`/
+      `newDeckParentDir`/`newDeckName`が全て`deckLifecycle`から正しく
+      派生していることを確認。全spec/adversarialテスト通過(222 pass)。
+      **実機確認は見送り**——複数デスクトップでのフォーカス制御不安定
+      問題(Step 9の訂正記録参照)を受けたユーザーの判断により、静的検証
+      (typecheck/test/build/`bf debug graph`)のみで進める運用中。
 - [ ] **Step 11**: `state/renderStore.ts`: `applyRenderPayload`を`batch()`で
       包む。**e2eのsrcdoc変異回数計測(4→0が維持)されることを確認。**
 - [ ] **Step 12〜18**: JSXを1PRにつき1コンポーネントずつそのまま移動:
