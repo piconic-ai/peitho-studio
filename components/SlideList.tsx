@@ -12,7 +12,7 @@ import { formatDurationMs } from '../domain/slides'
 // BarefootJS's compiler fuses a whole `.map()` row's dynamic attributes into
 // one shared `createEffect` per row — see the comment above the thumbnail
 // iframe's own `ref` below for why that fusion is load-bearing here, and
-// `todo/studio-tsx-refactoring.md`'s Step 19 entry for why a per-row
+// `todo/archive/studio-tsx-refactoring.md`'s Step 19 entry for why a per-row
 // component split was deliberately avoided without a spike to validate it
 // first.
 export interface SlideListProps {

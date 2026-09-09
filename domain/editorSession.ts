@@ -2,7 +2,7 @@ import { indexAfterMove, extractNote, extractPageComment, type SlideRange } from
 import { type PageConfig } from './pageConfig'
 
 // This file started as just the SelectionPlan slice of §2.1's design in
-// todo/studio-tsx-refactoring.md (Step 6 needed it to give
+// todo/archive/studio-tsx-refactoring.md (Step 6 needed it to give
 // `commitChange`'s selection-follow behavior a typed shape before the
 // full EditorSession ADT + reconcileAfterCommit existed) and now has the
 // rest of §2.1 (Step 9).

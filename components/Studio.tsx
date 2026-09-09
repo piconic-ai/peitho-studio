@@ -141,7 +141,7 @@ export function Studio() {
   // called from this component, rather than with `createSignal` literally
   // written in this file, showed `deps: []` in `bf debug graph` and never
   // updated the DOM. That was wrong: a later, more careful repro (Step 9
-  // of `todo/studio-tsx-refactoring.md`) showed the exact same factory
+  // of `todo/archive/studio-tsx-refactoring.md`) showed the exact same factory
   // shape updating correctly via BarefootJS's dynamic (wrap-by-default)
   // reactivity tracking, which `bf debug graph`'s static analysis doesn't
   // capture. See CLAUDE.md's BarefootJS pitfalls for the full account.
