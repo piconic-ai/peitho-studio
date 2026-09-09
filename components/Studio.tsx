@@ -37,6 +37,7 @@ import { NewDeckModal } from './NewDeckModal'
 import { DeckHeader } from './DeckHeader'
 import { StatusBar } from './StatusBar'
 import { SlidePreview } from './SlidePreview'
+import { SlideEditor } from './SlideEditor'
 
 interface SectionDraft {
   name: string
@@ -341,6 +342,20 @@ export function Studio() {
   function syncEditorFields(): void {
     if (bodyTextareaEl && !bodyComposing && bodyTextareaEl.value !== bodyDraft()) bodyTextareaEl.value = bodyDraft()
     if (noteTextareaEl && !noteComposing && noteTextareaEl.value !== noteDraft()) noteTextareaEl.value = noteDraft()
+  }
+
+  function onBodyTextareaRef(el: HTMLTextAreaElement): void {
+    bodyTextareaEl = el
+    el.value = bodyDraft()
+    el.addEventListener('compositionstart', () => { bodyComposing = true })
+    el.addEventListener('compositionend', () => { bodyComposing = false })
+  }
+
+  function onNoteTextareaRef(el: HTMLTextAreaElement): void {
+    noteTextareaEl = el
+    el.value = noteDraft()
+    el.addEventListener('compositionstart', () => { noteComposing = true })
+    el.addEventListener('compositionend', () => { noteComposing = false })
   }
 
   const [editorWidth, setEditorWidth] = createSignal(420)
@@ -1747,39 +1762,13 @@ export function Studio() {
           className="shrink-0 flex flex-col border-r border-border min-h-0"
           style={`width: ${editorWidth()}px`}
         >
-          {selectedRange() === null ? (
-            <p className="p-3 text-sm text-muted-foreground">Select a slide to edit it.</p>
-          ) : (
-            <div className="flex-1 flex flex-col min-h-0">
-              <textarea
-                ref={el => {
-                  bodyTextareaEl = el
-                  el.value = bodyDraft()
-                  el.addEventListener('compositionstart', () => { bodyComposing = true })
-                  el.addEventListener('compositionend', () => { bodyComposing = false })
-                }}
-                onInput={e => setEditorSession(session => withDraftBody(session, e.target.value))}
-                spellcheck={false}
-                className="flex-1 resize-none p-3 font-mono text-sm bg-background text-foreground outline-none border-b border-border"
-              />
-              <div className="shrink-0 h-40 flex flex-col">
-                <div className="h-6 shrink-0 flex items-center px-3 text-xs uppercase tracking-wide text-muted-foreground bg-muted/30">
-                  Speaker Notes
-                </div>
-                <textarea
-                  ref={el => {
-                    noteTextareaEl = el
-                    el.value = noteDraft()
-                    el.addEventListener('compositionstart', () => { noteComposing = true })
-                    el.addEventListener('compositionend', () => { noteComposing = false })
-                  }}
-                  onInput={e => setEditorSession(session => withDraftNote(session, e.target.value))}
-                  placeholder="Notes for the presenter — not shown to the audience."
-                  className="flex-1 resize-none p-3 text-sm bg-background text-foreground outline-none"
-                />
-              </div>
-            </div>
-          )}
+          <SlideEditor
+            hasSelection={selectedRange() !== null}
+            onBodyRef={onBodyTextareaRef}
+            onNoteRef={onNoteTextareaRef}
+            onBodyInput={value => setEditorSession(session => withDraftBody(session, value))}
+            onNoteInput={value => setEditorSession(session => withDraftNote(session, value))}
+          />
         </div>
 
         <div
