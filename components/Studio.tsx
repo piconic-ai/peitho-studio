@@ -35,6 +35,7 @@ import { buildSlidePreviewDoc, buildLayoutPreviewDoc } from '../domain/previewDo
 import { WelcomeScreen } from './WelcomeScreen'
 import { NewDeckModal } from './NewDeckModal'
 import { DeckHeader } from './DeckHeader'
+import { StatusBar } from './StatusBar'
 
 interface SectionDraft {
   name: string
@@ -1801,21 +1802,12 @@ export function Studio() {
         </div>
       </div>
 
-      {errorMessage() ? (
-        <div className="px-3 py-1.5 bg-destructive/10 text-destructive text-xs shrink-0 border-t border-destructive/30 flex items-start gap-2">
-          <span className="flex-1 select-text">{errorMessage()}</span>
-          <button
-            type="button"
-            onClick={() => { void copyErrorMessage() }}
-            className="shrink-0 px-1.5 py-0.5 rounded border border-destructive/30 hover:bg-destructive/20"
-          >
-            {errorMessageCopied() ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-      ) : null}
-      <footer className="h-6 shrink-0 flex items-center px-3 text-xs text-muted-foreground border-t border-border">
-        {statusMessage()}
-      </footer>
+      <StatusBar
+        errorMessage={errorMessage()}
+        errorMessageCopied={errorMessageCopied()}
+        statusMessage={statusMessage()}
+        onCopyErrorMessage={() => void copyErrorMessage()}
+      />
 
       {/* This whole block (backdrop + both panels) is mounted exactly once,
           for the app's entire lifetime — visibility is a `hidden` class
