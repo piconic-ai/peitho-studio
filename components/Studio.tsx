@@ -1,6 +1,6 @@
 'use client'
 
-import { createSignal, createMemo, createEffect, untrack, onMount, onCleanup } from '@barefootjs/client'
+import { createSignal, createMemo, createEffect, untrack, batch, onMount, onCleanup } from '@barefootjs/client'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc, type RenderPayload } from '../ipc/deckIpc'
@@ -419,20 +419,31 @@ export function Studio() {
     // `untrack` usage), setting it up in the other order let a fresh row
     // capture an empty fragment permanently, before this function ever
     // reached the loop that would have given it real content.
-    for (const [key, html] of Object.entries(payload.fragments)) {
-      const [get, set] = fragmentSignal(key)
-      if (get() !== html) set(html)
-    }
-    setAssetBaseUrl(payload.assetBaseUrl)
-    if (canvasWidth() !== payload.manifest.canvasWidth) setCanvasWidth(payload.manifest.canvasWidth)
-    if (canvasHeight() !== payload.manifest.canvasHeight) setCanvasHeight(payload.manifest.canvasHeight)
-    const previousSlides = manifest()?.slides ?? []
-    setManifest({ ...payload.manifest, slides: stabilizeByKey(previousSlides, payload.manifest.slides) })
-    const drafts: Record<number, SectionDraft> = {}
-    for (const section of payload.manifest.sections) {
-      drafts[section.startIndex] = { name: section.name, time: formatDurationMs(section.plannedDurationMs) }
-    }
-    setSectionDrafts(drafts)
+    //
+    // Wrapped in `batch()` so `patchSlidePreviewIframes`'s effect (which
+    // depends on both `manifest()` and every slide's own `fragmentSignal`)
+    // flushes once per call to this function instead of once per signal
+    // write inside it — a multi-slide deck's first render used to fire
+    // that effect once per fragment plus once more for `setManifest`,
+    // each pass a no-op past the first (its own `outerHTML` equality
+    // check bails immediately), but still a `querySelectorAll` sweep over
+    // every mounted iframe repeated for nothing.
+    batch(() => {
+      for (const [key, html] of Object.entries(payload.fragments)) {
+        const [get, set] = fragmentSignal(key)
+        if (get() !== html) set(html)
+      }
+      setAssetBaseUrl(payload.assetBaseUrl)
+      if (canvasWidth() !== payload.manifest.canvasWidth) setCanvasWidth(payload.manifest.canvasWidth)
+      if (canvasHeight() !== payload.manifest.canvasHeight) setCanvasHeight(payload.manifest.canvasHeight)
+      const previousSlides = manifest()?.slides ?? []
+      setManifest({ ...payload.manifest, slides: stabilizeByKey(previousSlides, payload.manifest.slides) })
+      const drafts: Record<number, SectionDraft> = {}
+      for (const section of payload.manifest.sections) {
+        drafts[section.startIndex] = { name: section.name, time: formatDurationMs(section.plannedDurationMs) }
+      }
+      setSectionDrafts(drafts)
+    })
   }
 
   // Renders `content` in-process (no disk write — see `engine::pipeline` on
