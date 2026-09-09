@@ -717,8 +717,23 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       (wrap-by-default)で実際には正しく更新されることをPlaywrightで
       確認済み(isBusy/errorMessage/recentDecksそれぞれの伝播)。
       全spec/adversarialテスト通過(222 pass)。
-- [ ] **Step 13〜18**: JSXを1PRにつき1コンポーネントずつそのまま移動:
-      `NewDeckModal` → `DeckHeader` → `StatusBar` →
+- [x] **Step 13**完了。`components/NewDeckModal.tsx`(新規)にNew Deck
+      命名ダイアログ(バックドロップ、名前入力、親ディレクトリ表示、
+      Cancel/Createボタン)を移動。`WelcomeScreen`と同じ形——値渡し+
+      コールバックprops——に加え、`isOpen: boolean`propsで表示/非表示を
+      コンポーネント自身に持たせ、呼び出し側の三項演算子ラップを廃止
+      (`<NewDeckModal isOpen={newDeckModalOpen()} .../>`の1行に)。
+      `newDeckParentDir()`が`naming-new-deck`/`creating`以外の状態では
+      `null`を返す(既存の`domain/deckLifecycle.ts`の射影memoそのまま)
+      ため、`parentDir`propsの型は`string | null`にした。
+      `bf debug graph`は全propsバインディングが例のごとく
+      `(no tracked deps)`——`WelcomeScreen`での実機確認(Step 12)で
+      この読み取りパターンが動的追跡で正しく更新されることを既に確認済み
+      のため、同型の読み取りしかないこのコンポーネントは再検証しなかった。
+      全spec/adversarialテスト通過(222 pass、ロジック変更なしのため
+      件数不変)。
+- [ ] **Step 14〜18**: JSXを1PRにつき1コンポーネントずつそのまま移動:
+      `DeckHeader` → `StatusBar` →
       `SlidePreview` → `SlideEditor` → `SlideContextMenu`(永続マウント維持) →
       `SlideList`(`dom/thumbnailIframe.ts`へref移動)。
 - [ ] **Step 19**: `Studio.tsx`を合成ルートに整理(目標200〜300行)。
