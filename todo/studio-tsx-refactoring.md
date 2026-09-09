@@ -732,8 +732,23 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       のため、同型の読み取りしかないこのコンポーネントは再検証しなかった。
       全spec/adversarialテスト通過(222 pass、ロジック変更なしのため
       件数不変)。
-- [ ] **Step 14〜18**: JSXを1PRにつき1コンポーネントずつそのまま移動:
-      `DeckHeader` → `StatusBar` →
+- [x] **Step 14**完了。`components/DeckHeader.tsx`(新規)にヘッダーバー
+      (デッキパス表示、Present/Present-optionsスプリットボタン、
+      rehearsalドロップダウン)を移動。同じ形——値渡し+コールバック
+      props。`deckPath`propsは`string | null`(呼び出し元のJSXが
+      `deckPath() === null`の`else`分岐内にあっても、関数呼び出しの
+      戻り値である`deckPath()`はTypeScript上絞り込まれないため、
+      元のコードの`!deckPath()`ガードと同じ型のまま維持)。
+      全spec/adversarialテスト通過(222 pass、ロジック変更なし)。
+      **【運用上のミス】**このStepの作業を`new-deck-modal`ブランチに
+      直接コミットしてしまい(新しいステップごとに新しいブランチを切る
+      という繰り返し指摘されている原則への違反)、`git status`で気づいて
+      修正した。まだリモートに push していなかったため、該当コミットを
+      `git branch temp 461dce4`で退避 → `new-deck-modal`を直前のpush済み
+      コミットへ`git reset --hard`→`gh stack add deck-header`→
+      `git cherry-pick temp`で新ブランチへ移動、という手順で復旧。
+- [ ] **Step 15〜18**: JSXを1PRにつき1コンポーネントずつそのまま移動:
+      `StatusBar` →
       `SlidePreview` → `SlideEditor` → `SlideContextMenu`(永続マウント維持) →
       `SlideList`(`dom/thumbnailIframe.ts`へref移動)。
 - [ ] **Step 19**: `Studio.tsx`を合成ルートに整理(目標200〜300行)。
