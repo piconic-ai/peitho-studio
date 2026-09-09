@@ -11,15 +11,9 @@
 // welcome-screen/window flows this module doesn't touch yet.
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import type { Manifest } from '../domain/render'
+import type { RenderPayload } from '../domain/render'
 
-export type { Manifest, ManifestSection, ManifestSlide } from '../domain/render'
-
-export interface RenderPayload {
-  manifest: Manifest
-  fragments: Record<string, string>
-  assetBaseUrl: string
-}
+export type { Manifest, ManifestSection, ManifestSlide, RenderPayload } from '../domain/render'
 
 export interface DeckSessionInfo {
   deckPath: string

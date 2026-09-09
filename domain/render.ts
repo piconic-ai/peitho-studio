@@ -39,6 +39,15 @@ export interface SectionDraft {
   time: string
 }
 
+/** The result of one render pass — same "domain concept the IPC boundary
+ * happens to carry" reasoning as `Manifest` above; `ipc/deckIpc.ts`
+ * re-exports this rather than defining it. */
+export interface RenderPayload {
+  manifest: Manifest
+  fragments: Record<string, string>
+  assetBaseUrl: string
+}
+
 /** Indexes a manifest's sections by their starting slide index, for O(1)
  * "does slide i start a section?" lookups in the slide list. */
 export function sectionStartByIndex(sections: readonly ManifestSection[]): Record<number, ManifestSection> {

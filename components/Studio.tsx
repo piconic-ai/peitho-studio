@@ -1,10 +1,10 @@
 'use client'
 
-import { createSignal, createMemo, createEffect, untrack, batch, onMount, onCleanup } from '@barefootjs/client'
+import { createSignal, createMemo, createEffect, untrack, onMount, onCleanup } from '@barefootjs/client'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { createTauriDeckIpc, type RenderPayload } from '../ipc/deckIpc'
-import { type Manifest, type ManifestSection, type ManifestSlide, type SectionDraft, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
+import { createTauriDeckIpc } from '../ipc/deckIpc'
+import { type ManifestSlide } from '../domain/render'
 import { clampMenuPosition } from '../domain/geometry'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type EditorSession, type SlideFields, isDirty as computeIsDirty, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
@@ -15,6 +15,7 @@ import { type DeckLifecycle, type DeckEvent, decide, isBusy as computeIsBusy } f
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
 import { createUiStore } from '../state/uiStore'
+import { createRenderStore } from '../state/renderStore'
 import {
   splitSlides,
   extractNote,
@@ -30,10 +31,8 @@ import {
   formatDurationMs,
   joinSlideTexts,
   sumSectionTimesMs,
-  stabilizeByKey,
   type SlideRange,
 } from '../domain/slides'
-import { buildSlidePreviewDoc } from '../domain/previewDoc'
 import { WelcomeScreen } from './WelcomeScreen'
 import { NewDeckModal } from './NewDeckModal'
 import { DeckHeader } from './DeckHeader'
@@ -107,7 +106,7 @@ export function Studio() {
     setErrorMessage(null)
     try {
       const info = await deckIpc.openDeck(path)
-      applyRenderPayload(info.render)
+      render.applyRenderPayload(info.render)
       await refreshSource(false)
       setStatusMessage(`Opened ${info.deckPath}`)
       await dispatch({ type: 'opened', deckPath: info.deckPath })
@@ -147,18 +146,9 @@ export function Studio() {
       setErrorMessage(String(err))
     }
   }
-  const [assetBaseUrl, setAssetBaseUrl] = createSignal<string | null>(null)
-  // The deck's native slide canvas size — split out of `manifest` into its
-  // own equality-guarded signals (set in `applyRenderPayload`) even though
-  // it logically lives there. `manifest()` gets a brand-new object on every
-  // single-slide edit, but every thumbnail's `.map()` row reads canvas size
-  // (for its `<iframe>` doc and its aspect-ratio style) — reading it via
-  // `manifest()` directly made *every* row's reactive bindings depend on
-  // *every* edit, forcing a real `.srcdoc` reassignment (a visible reload)
-  // on rows whose own content never changed. See [[barefootjs-per-key-signal-pattern]].
-  const [canvasWidth, setCanvasWidth] = createSignal(1280)
-  const [canvasHeight, setCanvasHeight] = createSignal(720)
-  const [manifest, setManifest] = createSignal<Manifest | null>(null)
+  // Manifest/fragments/canvas size/asset base URL/section drafts — see
+  // `state/renderStore.ts`.
+  const render = createRenderStore()
   const [fullSource, setFullSource] = createSignal('')
   const [slideRanges, setSlideRanges] = createSignal<SlideRange[]>([])
   // The editor pane's entire state — which slide (if any) is open, its
@@ -195,33 +185,6 @@ export function Studio() {
     const s = editorSession()
     return s.kind === 'editing' ? s.draft.config : {}
   })
-  // One independent signal per slide key, rather than a single
-  // `Record<string, string>` signal — reading `slideFragments()` as a whole
-  // record would subscribe every thumbnail's `srcdoc` effect to the *entire*
-  // record, so editing one slide reassigned every other thumbnail's
-  // `<iframe srcdoc>` too (same value, but `.srcdoc` always forces a
-  // navigate/reload on assignment regardless of whether the string actually
-  // changed) — the visible flicker across the whole slide list on every
-  // keystroke. Keying a separate signal per slide means only the row whose
-  // fragment actually changed re-touches its iframe.
-  const fragmentSignals = new Map<string, [() => string, (value: string) => void]>()
-  function fragmentSignal(key: string): [() => string, (value: string) => void] {
-    let entry = fragmentSignals.get(key)
-    if (!entry) {
-      entry = createSignal('')
-      fragmentSignals.set(key, entry)
-    }
-    return entry
-  }
-  // A read-only accessor for `SlideList`'s thumbnail `ref` callback — it
-  // only ever needs the current fragment HTML at mount time (never the
-  // setter), so this keeps that setter from crossing the component
-  // boundary at all, per docs/architecture.md's "children never receive a
-  // setter" rule.
-  function fragmentOf(key: string): string {
-    return fragmentSignal(key)[0]()
-  }
-  const [sectionDrafts, setSectionDrafts] = createSignal<Record<number, SectionDraft>>({})
   // Drag gesture, context menu/layout-picker, in-app clipboard, Present
   // dropdown, column widths — see `state/uiStore.ts` for what each field
   // means. Orchestration that spans this store and another concern
@@ -306,7 +269,6 @@ export function Studio() {
     el.addEventListener('compositionend', () => { noteComposing = false })
   }
 
-  const sectionStartByIndex = createMemo<Record<number, ManifestSection>>(() => computeSectionStartByIndex(manifest()?.sections ?? []))
   const layoutPickerView = createMemo<'loading' | 'empty' | 'ready'>(() => {
     const previews = ui.layoutPreviews()
     if (previews === null) return 'loading'
@@ -314,7 +276,7 @@ export function Studio() {
     return 'ready'
   })
   const currentMenuItems = createMemo(() => computeMenuItems(ui.contextMenu(), {
-    slideCount: manifest()?.slideCount ?? 0,
+    slideCount: render.manifest()?.slideCount ?? 0,
     hasClipboard: ui.clipboardSlideText() !== null,
     configOf: slideConfigOf,
   }))
@@ -327,7 +289,7 @@ export function Studio() {
   const selectedSlide = createMemo<ManifestSlide | null>(() => {
     const i = selectedIndex()
     if (i === null) return null
-    return manifest()?.slides[i] ?? null
+    return render.manifest()?.slides[i] ?? null
   })
   // `selectedSlide()` itself is a *new object* on every keystroke (even to
   // some other slide — see `stabilizeByKey` in slides.ts), but a memo's
@@ -352,54 +314,6 @@ export function Studio() {
     window.setTimeout(() => setErrorMessageCopied(false), 1500)
   }
 
-  // Applies a render result (from `open_deck` or `render_draft`) to state.
-  // Each fragment is written to its own key's signal, and only when the
-  // value actually changed — see `fragmentSignal` above for why this must
-  // stay per-key rather than one shared record. `manifest.slides` itself
-  // gets the same treatment at the object level via `stabilizeByKey`: every
-  // slide (edited or not) arrives as a freshly-deserialized object on every
-  // keystroke, and reusing the *previous* slide's own reference for one
-  // that's unchanged is what lets the keyed `.map()` over `manifest().slides`
-  // skip re-running that row's bindings at all — see `stabilizeByKey`'s own
-  // comment for why this is load-bearing, not just tidiness.
-  function applyRenderPayload(payload: RenderPayload): void {
-    // Everything `buildSlideDoc`/the untracked initial `srcdoc` read for a
-    // slide's iframe depends on — its fragment, the canvas size, the asset
-    // base URL — must already be current *before* `setManifest` below,
-    // not after. A brand-new row (this deck's first render, or a slide
-    // that didn't exist a moment ago) reads its `srcdoc` synchronously as
-    // part of reacting to the manifest update that creates it; since that
-    // read is frozen forever (see the comment on `buildSlideDoc`'s
-    // `untrack` usage), setting it up in the other order let a fresh row
-    // capture an empty fragment permanently, before this function ever
-    // reached the loop that would have given it real content.
-    //
-    // Wrapped in `batch()` so `patchSlidePreviewIframes`'s effect (which
-    // depends on both `manifest()` and every slide's own `fragmentSignal`)
-    // flushes once per call to this function instead of once per signal
-    // write inside it — a multi-slide deck's first render used to fire
-    // that effect once per fragment plus once more for `setManifest`,
-    // each pass a no-op past the first (its own `outerHTML` equality
-    // check bails immediately), but still a `querySelectorAll` sweep over
-    // every mounted iframe repeated for nothing.
-    batch(() => {
-      for (const [key, html] of Object.entries(payload.fragments)) {
-        const [get, set] = fragmentSignal(key)
-        if (get() !== html) set(html)
-      }
-      setAssetBaseUrl(payload.assetBaseUrl)
-      if (canvasWidth() !== payload.manifest.canvasWidth) setCanvasWidth(payload.manifest.canvasWidth)
-      if (canvasHeight() !== payload.manifest.canvasHeight) setCanvasHeight(payload.manifest.canvasHeight)
-      const previousSlides = manifest()?.slides ?? []
-      setManifest({ ...payload.manifest, slides: stabilizeByKey(previousSlides, payload.manifest.slides) })
-      const drafts: Record<number, SectionDraft> = {}
-      for (const section of payload.manifest.sections) {
-        drafts[section.startIndex] = { name: section.name, time: formatDurationMs(section.plannedDurationMs) }
-      }
-      setSectionDrafts(drafts)
-    })
-  }
-
   // Renders `content` in-process (no disk write — see `engine::pipeline` on
   // the Rust side) and applies the result. `generation` guards against an
   // older, slower-to-resolve render landing after a newer one — with
@@ -411,7 +325,7 @@ export function Studio() {
     try {
       const payload = await deckIpc.renderDraft(content)
       if (generation !== previewGeneration) return
-      applyRenderPayload(payload)
+      render.applyRenderPayload(payload)
       setErrorMessage(null)
     } catch (err) {
       if (generation !== previewGeneration) return
@@ -470,10 +384,6 @@ export function Studio() {
     }
   })
 
-  function buildSlideDoc(fragmentHtml: string): string {
-    return buildSlidePreviewDoc(fragmentHtml, assetBaseUrl() ?? '', canvasWidth(), canvasHeight())
-  }
-
   // `srcdoc={...}` always reloads the iframe (a visible flash) when
   // reassigned, even to a value that's byte-identical to what's already
   // there (confirmed empirically — reassigning the exact same string three
@@ -490,7 +400,7 @@ export function Studio() {
   // `ref` below for why a thumbnail needs a stronger fix than `untrack`).
   function buildSelectedSlideDoc(key: string | null): string {
     if (key === null) return ''
-    return buildSlideDoc(untrack(() => fragmentSignal(key)[0]()))
+    return render.buildSlideDoc(untrack(() => render.fragmentSignal(key)[0]()))
   }
 
   // Swaps in fresh fragment HTML for every iframe currently showing `key`
@@ -521,8 +431,8 @@ export function Studio() {
   }
 
   createEffect(() => {
-    for (const slide of manifest()?.slides ?? []) {
-      patchSlidePreviewIframes(slide.key, fragmentSignal(slide.key)[0]())
+    for (const slide of render.manifest()?.slides ?? []) {
+      patchSlidePreviewIframes(slide.key, render.fragmentSignal(slide.key)[0]())
     }
   })
 
@@ -603,7 +513,7 @@ export function Studio() {
     setErrorMessage(null)
     try {
       const payload = await deckIpc.renderDraft(nextSource)
-      applyRenderPayload(payload)
+      render.applyRenderPayload(payload)
       await deckIpc.saveDeckSource(nextSource)
       setFullSource(nextSource)
       const ranges = splitSlides(nextSource)
@@ -700,21 +610,21 @@ export function Studio() {
   }
 
   function onSectionNameInput(index: number, value: string): void {
-    setSectionDrafts(prev => ({
+    render.setSectionDrafts(prev => ({
       ...prev,
-      [index]: { name: value, time: prev[index]?.time ?? formatDurationMs(sectionStartByIndex()[index].plannedDurationMs) },
+      [index]: { name: value, time: prev[index]?.time ?? formatDurationMs(render.sectionStartByIndex()[index].plannedDurationMs) },
     }))
   }
 
   function onSectionTimeInput(index: number, value: string): void {
-    setSectionDrafts(prev => ({
+    render.setSectionDrafts(prev => ({
       ...prev,
-      [index]: { name: prev[index]?.name ?? sectionStartByIndex()[index].name, time: value },
+      [index]: { name: prev[index]?.name ?? render.sectionStartByIndex()[index].name, time: value },
     }))
   }
 
   async function commitSectionEdit(startIndex: number): Promise<void> {
-    const draft = sectionDrafts()[startIndex]
+    const draft = render.sectionDrafts()[startIndex]
     const range = slideRanges()[startIndex]
     if (!draft || !range) return
     const slideText = currentSlideText(startIndex)
@@ -729,7 +639,7 @@ export function Studio() {
     // time here doesn't quietly break the next build.
     const editedMs = parseDurationToMs(draft.time)
     if (editedMs !== null) {
-      const sections = manifest()?.sections ?? []
+      const sections = render.manifest()?.sections ?? []
       const totalMs = sections.reduce(
         (sum, section) => sum + (section.startIndex === startIndex ? editedMs : section.plannedDurationMs),
         0,
@@ -893,7 +803,7 @@ export function Studio() {
   // Every currently-known slide key (derived or explicit) — the source of
   // truth for picking a new key that's guaranteed not to collide.
   function existingSlideKeys(): string[] {
-    return (manifest()?.slides ?? []).map(s => s.key)
+    return (render.manifest()?.slides ?? []).map(s => s.key)
   }
 
   // Inserts a blank new slide right after `index`, with an explicit
@@ -1071,7 +981,7 @@ export function Studio() {
       }
       const tag = document.activeElement?.tagName.toLowerCase()
       if (tag === 'input' || tag === 'textarea') return
-      const count = manifest()?.slides.length ?? 0
+      const count = render.manifest()?.slides.length ?? 0
       if (count === 0) return
       const current = selectedIndex()
       const key = event.key.toLowerCase()
@@ -1170,18 +1080,18 @@ export function Studio() {
 
       <div className="flex-1 flex min-h-0">
         <SlideList
-          manifest={manifest()}
+          manifest={render.manifest()}
           slideListWidth={ui.slideListWidth()}
           draggedIndex={ui.draggedIndex()}
           dragOverGap={ui.dragOverGap()}
           dragDeltaY={ui.dragDeltaY()}
           selectedIndex={selectedIndex()}
-          sectionStartByIndex={sectionStartByIndex()}
-          sectionDrafts={sectionDrafts()}
-          canvasWidth={canvasWidth()}
-          canvasHeight={canvasHeight()}
-          fragmentOf={fragmentOf}
-          buildSlideDoc={buildSlideDoc}
+          sectionStartByIndex={render.sectionStartByIndex()}
+          sectionDrafts={render.sectionDrafts()}
+          canvasWidth={render.canvasWidth()}
+          canvasHeight={render.canvasHeight()}
+          fragmentOf={render.fragmentOf}
+          buildSlideDoc={render.buildSlideDoc}
           onContextMenu={openContextMenu}
           onDragStart={startSlideDrag}
           onSelectSlide={index => selectSlide(index)}
@@ -1216,7 +1126,7 @@ export function Studio() {
         <SlidePreview
           selectedSlideKey={selectedSlideKey()}
           srcdoc={buildSelectedSlideDoc(selectedSlideKey())}
-          hasDeck={Boolean(assetBaseUrl())}
+          hasDeck={Boolean(render.assetBaseUrl())}
         />
       </div>
 
@@ -1235,14 +1145,14 @@ export function Studio() {
         layoutPickerView={layoutPickerView()}
         layoutPreviews={ui.layoutPreviews()}
         layoutPreviewCss={ui.layoutPreviewCss()}
-        canvasWidth={canvasWidth()}
-        canvasHeight={canvasHeight()}
+        canvasWidth={render.canvasWidth()}
+        canvasHeight={render.canvasHeight()}
         onMenuRef={el => { contextMenuEl = el }}
         onClose={ui.closeContextMenu}
-        onNewSlide={() => { void addSlide(ui.contextMenuAppendIndex(manifest()?.slideCount ?? 1)); ui.closeContextMenu() }}
+        onNewSlide={() => { void addSlide(ui.contextMenuAppendIndex(render.manifest()?.slideCount ?? 1)); ui.closeContextMenu() }}
         onCut={() => { void cutSlide(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onCopy={() => { copySlide(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
-        onPaste={() => { void pasteSlideAfter(ui.contextMenuAppendIndex(manifest()?.slideCount ?? 1)); ui.closeContextMenu() }}
+        onPaste={() => { void pasteSlideAfter(ui.contextMenuAppendIndex(render.manifest()?.slideCount ?? 1)); ui.closeContextMenu() }}
         onDelete={() => { void deleteSlide(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onToggleLayoutPicker={ui.toggleLayoutPicker}
         onChangeLayout={name => { void changeSlideLayout(contextMenuIndexOf(ui.contextMenu())!, name); ui.closeContextMenu() }}
