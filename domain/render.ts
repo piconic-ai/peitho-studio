@@ -31,6 +31,14 @@ export interface Manifest {
   slides: ManifestSlide[]
 }
 
+/** A section header's in-progress (unsaved) name/time edit, keyed by the
+ * slide index it starts at — falls back to the section's own saved values
+ * (`ManifestSection.name`/`plannedDurationMs`) until the user types. */
+export interface SectionDraft {
+  name: string
+  time: string
+}
+
 /** Indexes a manifest's sections by their starting slide index, for O(1)
  * "does slide i start a section?" lookups in the slide list. */
 export function sectionStartByIndex(sections: readonly ManifestSection[]): Record<number, ManifestSection> {
