@@ -7,7 +7,7 @@ import { createTauriDeckIpc } from '../ipc/deckIpc'
 import { type ManifestSlide } from '../domain/render'
 import { clampMenuPosition } from '../domain/geometry'
 import { type PageConfig } from '../domain/pageConfig'
-import { type SelectionPlan, type EditorSession, type SlideFields, isDirty as computeIsDirty, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
+import { type SelectionPlan, type SlideFields, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems } from '../domain/contextMenu'
@@ -16,6 +16,7 @@ import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/d
 import { startColumnResize } from '../dom/columnResize'
 import { createUiStore } from '../state/uiStore'
 import { createRenderStore } from '../state/renderStore'
+import { createEditorStore } from '../state/editorStore'
 import {
   splitSlides,
   extractNote,
@@ -31,7 +32,6 @@ import {
   formatDurationMs,
   joinSlideTexts,
   sumSectionTimesMs,
-  type SlideRange,
 } from '../domain/slides'
 import { WelcomeScreen } from './WelcomeScreen'
 import { NewDeckModal } from './NewDeckModal'
@@ -149,42 +149,9 @@ export function Studio() {
   // Manifest/fragments/canvas size/asset base URL/section drafts — see
   // `state/renderStore.ts`.
   const render = createRenderStore()
-  const [fullSource, setFullSource] = createSignal('')
-  const [slideRanges, setSlideRanges] = createSignal<SlideRange[]>([])
-  // The editor pane's entire state — which slide (if any) is open, its
-  // last-saved fields, and the live draft — as one `domain/editorSession.ts`
-  // ADT signal, with memos below projecting the pieces the rest of this
-  // file reads individually (`selectedIndex`/`bodyDraft`/`noteDraft`/
-  // `pageConfig`). Previously five independent signals
-  // (`selectedIndex`/`bodyDraft`/`noteDraft`/`originalBody`/`originalNote`)
-  // plus a separate `pageConfig`, which is exactly the kind of "ADT
-  // scattered across independent fields" this refactor's `docs/
-  // architecture.md` warns against — nothing stopped e.g. `bodyDraft`
-  // pointing at one slide's text while `selectedIndex` had already moved
-  // to another. `pageConfig` is held in `draft.config`/`saved.config`
-  // rather than in `bodyDraft` itself — the whole point of this app is
-  // that hand-writing/eyeballing that JSON comment (and telling it apart
-  // from the note comment, same HTML-comment syntax) is the wrong way to
-  // edit it. Applied through `buildSlideText` whenever the raw slide text
-  // is reconstructed for saving; edited only via the thumbnail context
-  // menu / section-header inputs, never by hand in the body textarea.
-  const [editorSession, setEditorSession] = createSignal<EditorSession>({ kind: 'none' })
-  const selectedIndex = createMemo(() => {
-    const s = editorSession()
-    return s.kind === 'editing' ? s.index : null
-  })
-  const bodyDraft = createMemo(() => {
-    const s = editorSession()
-    return s.kind === 'editing' ? s.draft.body : ''
-  })
-  const noteDraft = createMemo(() => {
-    const s = editorSession()
-    return s.kind === 'editing' ? s.draft.note : ''
-  })
-  const pageConfig = createMemo<PageConfig>(() => {
-    const s = editorSession()
-    return s.kind === 'editing' ? s.draft.config : {}
-  })
+  // Editor session ADT (selection/saved/draft), source text/ranges, and
+  // their projections — see `state/editorStore.ts`.
+  const editor = createEditorStore()
   // Drag gesture, context menu/layout-picker, in-app clipboard, Present
   // dropdown, column widths — see `state/uiStore.ts` for what each field
   // means. Orchestration that spans this store and another concern
@@ -251,20 +218,20 @@ export function Studio() {
   // is actively typing/composing. Uncontrolled + explicit imperative sync
   // avoids that class of bug entirely.
   function syncEditorFields(): void {
-    if (bodyTextareaEl && !bodyComposing && bodyTextareaEl.value !== bodyDraft()) bodyTextareaEl.value = bodyDraft()
-    if (noteTextareaEl && !noteComposing && noteTextareaEl.value !== noteDraft()) noteTextareaEl.value = noteDraft()
+    if (bodyTextareaEl && !bodyComposing && bodyTextareaEl.value !== editor.bodyDraft()) bodyTextareaEl.value = editor.bodyDraft()
+    if (noteTextareaEl && !noteComposing && noteTextareaEl.value !== editor.noteDraft()) noteTextareaEl.value = editor.noteDraft()
   }
 
   function onBodyTextareaRef(el: HTMLTextAreaElement): void {
     bodyTextareaEl = el
-    el.value = bodyDraft()
+    el.value = editor.bodyDraft()
     el.addEventListener('compositionstart', () => { bodyComposing = true })
     el.addEventListener('compositionend', () => { bodyComposing = false })
   }
 
   function onNoteTextareaRef(el: HTMLTextAreaElement): void {
     noteTextareaEl = el
-    el.value = noteDraft()
+    el.value = editor.noteDraft()
     el.addEventListener('compositionstart', () => { noteComposing = true })
     el.addEventListener('compositionend', () => { noteComposing = false })
   }
@@ -280,14 +247,8 @@ export function Studio() {
     hasClipboard: ui.clipboardSlideText() !== null,
     configOf: slideConfigOf,
   }))
-  const selectedRange = createMemo<SlideRange | null>(() => {
-    const i = selectedIndex()
-    if (i === null) return null
-    return slideRanges()[i] ?? null
-  })
-  const isDirty = createMemo(() => computeIsDirty(editorSession()))
   const selectedSlide = createMemo<ManifestSlide | null>(() => {
-    const i = selectedIndex()
+    const i = editor.selectedIndex()
     if (i === null) return null
     return render.manifest()?.slides[i] ?? null
   })
@@ -337,11 +298,11 @@ export function Studio() {
   }
 
   function currentDraftSource(): string | null {
-    const range = selectedRange()
-    const index = selectedIndex()
+    const range = editor.selectedRange()
+    const index = editor.selectedIndex()
     if (!range || index === null) return null
-    const newSlideText = buildSlideText(pageConfig(), bodyDraft(), noteDraft())
-    const source = fullSource()
+    const newSlideText = buildSlideText(editor.pageConfig(), editor.bodyDraft(), editor.noteDraft())
+    const source = editor.fullSource()
     return source.slice(0, range.start) + newSlideText + source.slice(range.end)
   }
 
@@ -350,9 +311,9 @@ export function Studio() {
   // Re-fires on every bodyDraft/noteDraft change, so each keystroke resets
   // the timer via the cleanup below.
   createEffect(() => {
-    bodyDraft()
-    noteDraft()
-    if (!isDirty()) return
+    editor.bodyDraft()
+    editor.noteDraft()
+    if (!editor.isDirty()) return
     const timer = window.setTimeout(() => {
       const draft = currentDraftSource()
       if (draft !== null) void renderPreview(draft)
@@ -364,9 +325,9 @@ export function Studio() {
   // Preview showing the latest content, so saving never competes with
   // typing for responsiveness.
   createEffect(() => {
-    bodyDraft()
-    noteDraft()
-    if (!isDirty()) return
+    editor.bodyDraft()
+    editor.noteDraft()
+    if (!editor.isDirty()) return
     let live = true
     let timerId: number
     const attempt = () => {
@@ -438,17 +399,17 @@ export function Studio() {
 
   async function refreshSource(preserveSelection: boolean): Promise<void> {
     const source = await deckIpc.readDeckSource()
-    setFullSource(source)
+    editor.setFullSource(source)
     const ranges = splitSlides(source)
-    setSlideRanges(ranges)
-    const nextIndex = clampFocusIndex(preserveSelection ? selectedIndex() : null, ranges.length)
+    editor.setSlideRanges(ranges)
+    const nextIndex = clampFocusIndex(preserveSelection ? editor.selectedIndex() : null, ranges.length)
     if (nextIndex === null) {
-      setEditorSession({ kind: 'none' })
+      editor.setEditorSession({ kind: 'none' })
     } else {
       const { rest: withoutNote, note } = extractNote(ranges[nextIndex].text)
       const { rest, config } = extractPageComment(withoutNote)
       const fields: SlideFields = { body: rest, note, config }
-      setEditorSession({ kind: 'editing', index: nextIndex, saved: fields, draft: fields })
+      editor.setEditorSession({ kind: 'editing', index: nextIndex, saved: fields, draft: fields })
     }
     syncEditorFields()
   }
@@ -491,7 +452,7 @@ export function Studio() {
   // custom-syntax load, ...).
   // `expectedDraft`: when the caller already knows exactly what it injected
   // for the focus slide (`handleSave` does — it built `nextSource` from
-  // `bodyDraft()`/`noteDraft()` itself), pass those back here so they can be
+  // `editor.bodyDraft()`/`editor.noteDraft()` itself), pass those back here so they can be
   // reused verbatim instead of round-tripping through `extractNote`.
   // `extractNote` trims/collapses blank lines — appropriate for a *fresh*
   // read from disk, but lossy when looped back into the live draft: it
@@ -508,16 +469,16 @@ export function Studio() {
     plan: SelectionPlan,
     expectedDraft?: { body: string; note: string },
   ): Promise<void> {
-    const before = editorSession()
+    const before = editor.editorSession()
     setIsSavingSlide(true)
     setErrorMessage(null)
     try {
       const payload = await deckIpc.renderDraft(nextSource)
       render.applyRenderPayload(payload)
       await deckIpc.saveDeckSource(nextSource)
-      setFullSource(nextSource)
+      editor.setFullSource(nextSource)
       const ranges = splitSlides(nextSource)
-      setSlideRanges(ranges)
+      editor.setSlideRanges(ranges)
       // `reconcileAfterCommit` only moves the selection/refreshes `saved`
       // if the user hasn't already navigated elsewhere themselves while
       // this was in flight — every caller passes a `SelectionPlan` naming
@@ -528,9 +489,9 @@ export function Studio() {
       // `select`/`clamp-after-delete` for insert/paste/delete) — never the
       // position of whatever the change actually touched, or this would
       // drag the selection there regardless of what the user had open.
-      const now = editorSession()
+      const now = editor.editorSession()
       const next = reconcileAfterCommit(before, now, ranges, plan, expectedDraft)
-      setEditorSession(next)
+      editor.setEditorSession(next)
       // `next === now` means the user moved on (a different selection, or
       // no change resolved) and this deliberately left it alone — nothing
       // to push into the textareas. Otherwise `saved` refreshed and/or
@@ -550,8 +511,8 @@ export function Studio() {
   // slide (reordering, editing another section's time) never clobbers
   // in-progress work in the editor.
   function currentSlideText(index: number): string {
-    if (index === selectedIndex() && isDirty()) return buildSlideText(pageConfig(), bodyDraft(), noteDraft())
-    return slideRanges()[index]?.text ?? ''
+    if (index === editor.selectedIndex() && editor.isDirty()) return buildSlideText(editor.pageConfig(), editor.bodyDraft(), editor.noteDraft())
+    return editor.slideRanges()[index]?.text ?? ''
   }
 
   // `window.confirm` used to gate this on discarding unsaved edits, but
@@ -562,23 +523,23 @@ export function Studio() {
   // same save path the auto-save effects use, then switch — never losing
   // work, never blocking on a dialog the webview won't show.
   async function selectSlide(index: number): Promise<void> {
-    if (index === selectedIndex()) return
-    if (isDirty()) await handleSave()
-    const { rest: withoutNote, note } = extractNote(slideRanges()[index]?.text ?? '')
+    if (index === editor.selectedIndex()) return
+    if (editor.isDirty()) await handleSave()
+    const { rest: withoutNote, note } = extractNote(editor.slideRanges()[index]?.text ?? '')
     const { rest, config } = extractPageComment(withoutNote)
     const fields: SlideFields = { body: rest, note, config }
-    setEditorSession({ kind: 'editing', index, saved: fields, draft: fields })
+    editor.setEditorSession({ kind: 'editing', index, saved: fields, draft: fields })
     syncEditorFields()
   }
 
   async function handleSave(): Promise<void> {
-    const range = selectedRange()
-    const index = selectedIndex()
+    const range = editor.selectedRange()
+    const index = editor.selectedIndex()
     if (!range || index === null) return
-    const body = bodyDraft()
-    const note = noteDraft()
-    const newSlideText = buildSlideText(pageConfig(), body, note)
-    const source = fullSource()
+    const body = editor.bodyDraft()
+    const note = editor.noteDraft()
+    const newSlideText = buildSlideText(editor.pageConfig(), body, note)
+    const source = editor.fullSource()
     const nextSource = source.slice(0, range.start) + newSlideText + source.slice(range.end)
     await commitChange(nextSource, { kind: 'keep' }, { body, note })
   }
@@ -589,8 +550,8 @@ export function Studio() {
   // through this rather than slicing `fullSource` directly, so none of
   // them can leave a doubled separator or stray blank line behind.
   function rebuildSource(texts: string[]): string {
-    const ranges = slideRanges()
-    const source = fullSource()
+    const ranges = editor.slideRanges()
+    const source = editor.fullSource()
     const prefix = source.slice(0, ranges[0]?.start ?? 0)
     const suffix = source.slice(ranges[ranges.length - 1]?.end ?? source.length)
     return joinSlideTexts(prefix, texts, suffix)
@@ -625,13 +586,13 @@ export function Studio() {
 
   async function commitSectionEdit(startIndex: number): Promise<void> {
     const draft = render.sectionDrafts()[startIndex]
-    const range = slideRanges()[startIndex]
+    const range = editor.slideRanges()[startIndex]
     if (!draft || !range) return
     const slideText = currentSlideText(startIndex)
     const updatedSlideText = updatePageComment(slideText, { section: draft.name, time: draft.time })
     if (updatedSlideText === slideText) return
 
-    let nextSource = fullSource()
+    let nextSource = editor.fullSource()
     nextSource = nextSource.slice(0, range.start) + updatedSlideText + nextSource.slice(range.end)
 
     // peitho requires the frontmatter's total time to equal the sum of
@@ -651,7 +612,7 @@ export function Studio() {
   }
 
   async function reorderSlides(from: number, to: number): Promise<void> {
-    const ranges = slideRanges()
+    const ranges = editor.slideRanges()
     const texts = ranges.map((_, i) => currentSlideText(i).trim())
     const cmd: SlideCommand = { type: 'move', from, to }
     if (validate(texts, cmd)) return
@@ -786,7 +747,7 @@ export function Studio() {
   // time total is re-synced in case the removed slide was itself a section
   // start (see `syncedSource`).
   async function deleteSlide(index: number): Promise<void> {
-    const texts = slideRanges().map((_, i) => currentSlideText(i).trim())
+    const texts = editor.slideRanges().map((_, i) => currentSlideText(i).trim())
     const cmd: SlideCommand = { type: 'delete', index }
     if (validate(texts, cmd)) return
     const nextTexts = applyCommand(texts, cmd)
@@ -794,7 +755,7 @@ export function Studio() {
   }
 
   async function cutSlide(index: number): Promise<void> {
-    const ranges = slideRanges()
+    const ranges = editor.slideRanges()
     if (ranges.length <= 1) return
     ui.setClipboardSlideText(currentSlideText(index))
     await deleteSlide(index)
@@ -815,7 +776,7 @@ export function Studio() {
   // `new-slide`, `new-slide-2`, `new-slide-3`, ... against the deck's
   // actual current keys instead.
   async function addSlide(index: number): Promise<void> {
-    const texts = slideRanges().map((_, i) => currentSlideText(i).trim())
+    const texts = editor.slideRanges().map((_, i) => currentSlideText(i).trim())
     const insertAt = Math.min(index + 1, texts.length)
     const key = uniqueSlideKey(slugifyTitle('New Slide'), existingSlideKeys())
     const cmd: SlideCommand = { type: 'insert', at: insertAt, text: buildSlideText({ key }, NEW_SLIDE_MARKDOWN, '') }
@@ -833,7 +794,7 @@ export function Studio() {
   async function pasteSlideAfter(index: number): Promise<void> {
     const clip = ui.clipboardSlideText()
     if (clip === null) return
-    const texts = slideRanges().map((_, i) => currentSlideText(i).trim())
+    const texts = editor.slideRanges().map((_, i) => currentSlideText(i).trim())
     const insertAt = Math.min(index + 1, texts.length)
     const trimmedClip = clip.trim()
     const { config } = extractPageComment(trimmedClip)
@@ -856,8 +817,8 @@ export function Studio() {
   // pending edits not yet reflected in `slideRanges`), the raw on-disk text
   // for any other slide.
   function slideConfigOf(index: number): PageConfig {
-    if (index === selectedIndex()) return pageConfig()
-    const { rest: withoutNote } = extractNote(slideRanges()[index]?.text ?? '')
+    if (index === editor.selectedIndex()) return editor.pageConfig()
+    const { rest: withoutNote } = extractNote(editor.slideRanges()[index]?.text ?? '')
     return extractPageComment(withoutNote).config
   }
 
@@ -869,7 +830,7 @@ export function Studio() {
     const slideText = currentSlideText(index)
     const updated = updatePageComment(slideText, updates)
     if (updated === slideText) return
-    const texts = slideRanges().map((_, i) => currentSlideText(i).trim())
+    const texts = editor.slideRanges().map((_, i) => currentSlideText(i).trim())
     const cmd: SlideCommand = { type: 'replace', index, text: updated.trim() }
     if (validate(texts, cmd)) return
     const nextTexts = applyCommand(texts, cmd)
@@ -911,20 +872,20 @@ export function Studio() {
   async function handleExternalChange(): Promise<void> {
     if (!deckPath() || isBusy()) return
     const source = await deckIpc.readDeckSource()
-    if (source === fullSource()) return
-    if (isDirty()) {
+    if (source === editor.fullSource()) return
+    if (editor.isDirty()) {
       const discard = window.confirm(
         'This deck changed outside Peitho Studio (e.g. another editor). Reload it and discard your unsaved edits here?',
       )
       if (!discard) {
         const ranges = splitSlides(source)
-        setFullSource(source)
-        setSlideRanges(ranges)
-        const i = selectedIndex()
+        editor.setFullSource(source)
+        editor.setSlideRanges(ranges)
+        const i = editor.selectedIndex()
         if (i !== null && i < ranges.length) {
           const { rest: withoutNote, note } = extractNote(ranges[i].text)
           const { rest, config } = extractPageComment(withoutNote)
-          setEditorSession(session => withRefreshedSaved(session, { body: rest, note, config }))
+          editor.setEditorSession(session => withRefreshedSaved(session, { body: rest, note, config }))
         }
         await renderPreview(source)
         setStatusMessage('Deck changed on disk elsewhere — merged around your unsaved edit.')
@@ -932,7 +893,7 @@ export function Studio() {
       }
     }
     await refreshSource(true)
-    await renderPreview(fullSource())
+    await renderPreview(editor.fullSource())
     setStatusMessage('Reloaded — the deck changed on disk.')
   }
 
@@ -983,7 +944,7 @@ export function Studio() {
       if (tag === 'input' || tag === 'textarea') return
       const count = render.manifest()?.slides.length ?? 0
       if (count === 0) return
-      const current = selectedIndex()
+      const current = editor.selectedIndex()
       const key = event.key.toLowerCase()
       if (current !== null) {
         if (event.metaKey && event.shiftKey && event.key === 'ArrowUp') {
@@ -1085,7 +1046,7 @@ export function Studio() {
           draggedIndex={ui.draggedIndex()}
           dragOverGap={ui.dragOverGap()}
           dragDeltaY={ui.dragDeltaY()}
-          selectedIndex={selectedIndex()}
+          selectedIndex={editor.selectedIndex()}
           sectionStartByIndex={render.sectionStartByIndex()}
           sectionDrafts={render.sectionDrafts()}
           canvasWidth={render.canvasWidth()}
@@ -1110,11 +1071,11 @@ export function Studio() {
           style={`width: ${ui.editorWidth()}px`}
         >
           <SlideEditor
-            hasSelection={selectedRange() !== null}
+            hasSelection={editor.selectedRange() !== null}
             onBodyRef={onBodyTextareaRef}
             onNoteRef={onNoteTextareaRef}
-            onBodyInput={value => setEditorSession(session => withDraftBody(session, value))}
-            onNoteInput={value => setEditorSession(session => withDraftNote(session, value))}
+            onBodyInput={value => editor.setEditorSession(session => withDraftBody(session, value))}
+            onNoteInput={value => editor.setEditorSession(session => withDraftNote(session, value))}
           />
         </div>
 
