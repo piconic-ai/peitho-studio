@@ -24,6 +24,44 @@
 `scripts/arch-check.test.ts`で機械的に検出する(`domain/`に`@tauri-apps`が
 あれば失敗、`components/`に`invoke(`の直書きがあれば失敗、等)。
 
+## 5層モデルに収まらないもの: 「オーケストレーション」
+
+`Studio.tsx`を`state/`4ストア(`deckStore`/`renderStore`/`editorStore`/
+`uiStore`、Step 20)まで切り出した後も、`commitChange`/`selectSlide`/
+`handleSave`/`refreshSource`/`addSlide`/`reorderSlides`等、目算で
+600行前後が`Studio.tsx`に残った——上の表の原則では合成ルートは「ストア
+生成・IPC/イベント配線・子の配置」のみのはずで、これらは明らかに
+「ビジネスロジック・テキスト操作・状態遷移の判断」に見える。委譲先が
+無かったから残ったのではなく、**この5層のどこにも置けないから残った**、
+というのが実装してみて分かった実際の理由:
+
+- `domain/`には置けない——IPC呼び出しを含み、不純。
+- `state/`には置けない——依存方向が`state → domain`のみで`ipc/`への
+  依存を許さない(`commitChange`は`deckIpc.renderDraft`/
+  `saveDeckSource`を呼ぶ)。
+- `ipc/`には置けない——型付きラッパーの範囲を超えたビジネスロジック
+  (`SelectionPlan`の解決、`reconcileAfterCommit`の呼び出し等)を持つ。
+- `dom/`には置けない——DOM操作(`syncEditorFields`)とIPC呼び出しの両方が
+  絡み、`dom/`はIPCを許さない。
+
+つまり「複数のstateストアを横断し、IPCを呼び、ときにDOMにも触れる
+一連の手続き」は、この4層+合成ルートという設計に**もう1つ、名前の
+付いていない置き場所**を要求している。今回はこれを`components/
+Studio.tsx`にそのまま残す判断をした(新しい層を導入するのは今回の
+リファクタリングのスコープを超える設計変更のため)——ただし表の
+「合成ルートはストア生成・配線・配置のみ」という原則そのものは、
+その通りに実現できなかった、という事実として記録しておく。将来
+この行数をさらに削るなら、選択肢は次の2つ:
+
+1. 明示的に「orchestrator」層を1つ増やし、依存方向を
+   `components → orchestrator → {state, ipc, dom}`に拡張する。
+2. 各ストアに、そのストア自身が呼ばれるべきIPC操作への依存を
+   注入する(`createDeckStore(deckIpc)`のように)——ただし「stateは
+   ipcに依存しない」という現在の原則そのものを変える決定になる。
+
+どちらも今回は選ばず、`Studio.tsx`が「合成ルート+オーケストレーション」
+という2つの役割を兼ねる現状維持とした。
+
 ## BarefootJSの制約が層構成に課す不変条件
 
 (個別の落とし穴の詳細は`CLAUDE.md`の「BarefootJSで踏んだ落とし穴」を参照。
