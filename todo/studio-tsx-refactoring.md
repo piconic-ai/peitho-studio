@@ -672,8 +672,29 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       **実機確認は見送り**——複数デスクトップでのフォーカス制御不安定
       問題(Step 9の訂正記録参照)を受けたユーザーの判断により、静的検証
       (typecheck/test/build/`bf debug graph`)のみで進める運用中。
-- [ ] **Step 11**: `state/renderStore.ts`: `applyRenderPayload`を`batch()`で
-      包む。**e2eのsrcdoc変異回数計測(4→0が維持)されることを確認。**
+- [x] **Step 11**完了。`applyRenderPayload`全体を`batch()`で包んだ
+      (`Studio.tsx`内、`state/renderStore.ts`は作らず)——Step 7/9/10の
+      実績通り、シグナル(`manifest`/各`fragmentSignal`/`canvasWidth`/
+      `canvasHeight`/`assetBaseUrl`/`sectionDrafts`)はコンポーネント
+      ファイル直書きのままで、`batch()`だけをそこに適用する形にした。
+      効果: `patchSlidePreviewIframes`の`createEffect`
+      (`manifest()`+全スライドの`fragmentSignal`に依存)が、
+      `applyRenderPayload`1回の呼び出しにつき1回だけ発火するように
+      なる——batch化前は「フラグメントの数+manifest更新」の回数だけ
+      発火していた(2枚目以降は`outerHTML`の一致チェックで早期
+      returnする無害な空振りだが、`querySelectorAll`のスイープ自体は
+      毎回走っていた)。
+      **e2eでのsrcdoc変異回数計測(4→0)は未実施**——`components/
+      Studio.tsx`は`createTauriDeckIpc()`を直接呼ぶ設計で、外部から
+      `ipc/fakeDeckIpc.ts`のようなフェイク実装を注入する経路がなく、
+      実機Tauriウィンドウなしでのe2e計測ができない。前回コミット
+      `547c3e8`の「4→0」計測もPlaywrightで実機を操作した一時的な
+      検証ハーネス(コミットに残っていない)によるもの。今回の変更は
+      `patchSlidePreviewIframes`自体のロジック(`.srcdoc`には一切
+      書き込まず`replaceWith`のみ)を触っていないため、srcdoc変異が
+      増える経路は構造的に増えていないはずだが、目視/計測での裏取りは
+      Step 9の訂正記録以降の運用(静的検証で進め、実機確認はユーザーが
+      後日まとめて行う)に従い持ち越し。
 - [ ] **Step 12〜18**: JSXを1PRにつき1コンポーネントずつそのまま移動:
       `WelcomeScreen` → `NewDeckModal` → `DeckHeader` → `StatusBar` →
       `SlidePreview` → `SlideEditor` → `SlideContextMenu`(永続マウント維持) →
