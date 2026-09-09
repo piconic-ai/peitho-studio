@@ -11,12 +11,13 @@ import { type SelectionPlan, type SlideFields, reconcileAfterCommit, withRefresh
 import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems } from '../domain/contextMenu'
-import { type DeckLifecycle, type DeckEvent, decide, isBusy as computeIsBusy } from '../domain/deckLifecycle'
+import { type DeckEvent, decide } from '../domain/deckLifecycle'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
 import { createUiStore } from '../state/uiStore'
 import { createRenderStore } from '../state/renderStore'
 import { createEditorStore } from '../state/editorStore'
+import { createDeckStore } from '../state/deckStore'
 import {
   splitSlides,
   extractNote,
@@ -48,47 +49,23 @@ const NEW_SLIDE_MARKDOWN = '# New Slide\n'
 
 export function Studio() {
   const deckIpc = createTauriDeckIpc()
-  // The whole welcome/new-deck/open flow as one `domain/deckLifecycle.ts`
-  // ADT signal, replacing five independently-settable signals
-  // (`deckPath`/`isBusy`/`newDeckModalOpen`/`newDeckParentDir`/
-  // `newDeckName`) that let bug bfa5577 happen: `submitNewDeck` held
-  // `isBusy(true)` across a call into `loadDeck`, whose own separate
-  // `isBusy` guard silently no-opped the load, leaving the folder
-  // created but the editor never shown. `decide`'s `creating` state can
-  // only transition to `opening` (never straight back to `welcome`) on
-  // its `created` event, so that failure mode is unrepresentable now.
-  const [deckLifecycle, setDeckLifecycle] = createSignal<DeckLifecycle>({ kind: 'welcome' })
-  const deckPath = createMemo(() => {
-    const l = deckLifecycle()
-    return l.kind === 'open' ? l.deckPath : null
-  })
-  const isBusy = createMemo(() => computeIsBusy(deckLifecycle()))
-  const newDeckModalOpen = createMemo(() => {
-    const k = deckLifecycle().kind
-    return k === 'naming-new-deck' || k === 'creating'
-  })
-  const newDeckParentDir = createMemo(() => {
-    const l = deckLifecycle()
-    return l.kind === 'naming-new-deck' || l.kind === 'creating' ? l.parentDir : null
-  })
-  const newDeckName = createMemo(() => {
-    const l = deckLifecycle()
-    return l.kind === 'naming-new-deck' || l.kind === 'creating' ? l.name : ''
-  })
+  // Deck lifecycle ADT (welcome/naming-new-deck/creating/opening/open) and
+  // its projections — see `state/deckStore.ts`.
+  const deck = createDeckStore()
   // Applies `event` to the current lifecycle via `decide`, commits the
   // resulting state, and runs whichever IPC call the transition implies
   // — awaited, so a caller that needs to know the outcome (`onMount`'s
-  // pending-deck load) can inspect `deckLifecycle()` right after this
+  // pending-deck load) can inspect `deck.deckLifecycle()` right after this
   // resolves. `rejected` decisions are silently dropped: every caller
   // already only fires events its own UI state makes reachable (e.g. the
-  // Create button is `disabled` while `isBusy()`), so a rejection here
+  // Create button is `disabled` while `deck.isBusy()`), so a rejection here
   // would mean a caller raced its own guard, not something worth
   // surfacing to the user.
   async function dispatch(event: DeckEvent): Promise<void> {
-    const decision = decide(deckLifecycle(), event)
+    const decision = decide(deck.deckLifecycle(), event)
     if (decision.kind === 'rejected') return
     const next = decision.next
-    setDeckLifecycle(next)
+    deck.setDeckLifecycle(next)
     if (decision.effect === 'invoke-open' && next.kind === 'opening') {
       await runOpen(next.path)
     } else if (decision.effect === 'invoke-create' && next.kind === 'creating') {
@@ -173,7 +150,7 @@ export function Studio() {
   // `commitChange`'s own in-flight save, which used to share the same
   // `isBusy` signal with the welcome-screen open/create flow. The two
   // never actually overlapped in practice (the welcome screen only
-  // shows while `deckPath() === null`, and `commitChange` only runs
+  // shows while `deck.deckPath() === null`, and `commitChange` only runs
   // once a deck is open), but sharing one flag for two unrelated
   // "something is in flight" meanings was exactly the kind of implicit
   // coupling this refactor is trying to remove.
@@ -870,7 +847,7 @@ export function Studio() {
   // *except* that one slide, so a later Save targets the right offsets
   // instead of stomping the external change with stale surrounding text.
   async function handleExternalChange(): Promise<void> {
-    if (!deckPath() || isBusy()) return
+    if (!deck.deckPath() || deck.isBusy()) return
     const source = await deckIpc.readDeckSource()
     if (source === editor.fullSource()) return
     if (editor.isDirty()) {
@@ -909,7 +886,7 @@ export function Studio() {
       const pending = await deckIpc.takePendingDeck()
       if (pending) {
         await dispatch({ type: 'open-requested', path: pending })
-        if (deckLifecycle().kind !== 'open') {
+        if (deck.deckLifecycle().kind !== 'open') {
           // This window exists solely to show `pending` (e.g. a Recent
           // entry that pointed at a folder deleted/moved since it was
           // remembered) — closing it returns focus to whichever window
@@ -1020,9 +997,9 @@ export function Studio() {
 
   return (
     <div className="h-full w-full flex flex-col bg-background text-foreground">
-      {deckPath() === null ? (
+      {deck.deckPath() === null ? (
         <WelcomeScreen
-          isBusy={isBusy()}
+          isBusy={deck.isBusy()}
           errorMessage={errorMessage()}
           recentDecks={recentDecks()}
           onOpenFolder={() => void handleOpenFolder()}
@@ -1032,7 +1009,7 @@ export function Studio() {
       ) : (
         <>
       <DeckHeader
-        deckPath={deckPath()}
+        deckPath={deck.deckPath()}
         presentMenuOpen={ui.presentMenuOpen()}
         onTogglePresentMenu={() => ui.setPresentMenuOpen(!ui.presentMenuOpen())}
         onClosePresentMenu={() => ui.setPresentMenuOpen(false)}
@@ -1127,10 +1104,10 @@ export function Studio() {
       )}
 
       <NewDeckModal
-        isOpen={newDeckModalOpen()}
-        name={newDeckName()}
-        parentDir={newDeckParentDir()}
-        isBusy={isBusy()}
+        isOpen={deck.newDeckModalOpen()}
+        name={deck.newDeckName()}
+        parentDir={deck.newDeckParentDir()}
+        isBusy={deck.isBusy()}
         onNameChange={name => void dispatch({ type: 'name-changed', name })}
         onCancel={() => void dispatch({ type: 'create-cancelled' })}
         onConfirm={() => void dispatch({ type: 'create-confirmed' })}
