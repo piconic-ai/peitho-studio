@@ -10,7 +10,7 @@ import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type EditorSession, type SlideFields, isDirty as computeIsDirty, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
 import { type DragState, arm, move, dropTarget, cancel } from '../domain/drag'
-import { type ContextMenu, type MenuAction, type MenuItem, indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, appendIndex as computeAppendIndex } from '../domain/contextMenu'
+import { type ContextMenu, indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, appendIndex as computeAppendIndex } from '../domain/contextMenu'
 import { type DeckLifecycle, type DeckEvent, decide, isBusy as computeIsBusy } from '../domain/deckLifecycle'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import {
@@ -31,13 +31,14 @@ import {
   stabilizeByKey,
   type SlideRange,
 } from '../domain/slides'
-import { buildSlidePreviewDoc, buildLayoutPreviewDoc } from '../domain/previewDoc'
+import { buildSlidePreviewDoc } from '../domain/previewDoc'
 import { WelcomeScreen } from './WelcomeScreen'
 import { NewDeckModal } from './NewDeckModal'
 import { DeckHeader } from './DeckHeader'
 import { StatusBar } from './StatusBar'
 import { SlidePreview } from './SlidePreview'
 import { SlideEditor } from './SlideEditor'
+import { SlideContextMenu } from './SlideContextMenu'
 
 interface SectionDraft {
   name: string
@@ -373,17 +374,6 @@ export function Studio() {
     hasClipboard: clipboardSlideText() !== null,
     configOf: slideConfigOf,
   }))
-  // Takes `items` as a parameter (the caller passes `currentMenuItems()`)
-  // rather than reading the memo itself in here: BarefootJS's compiler
-  // only tracks a memo call written directly in the JSX expression, not
-  // one hidden inside a helper function it calls — see CLAUDE.md's
-  // BarefootJS pitfalls (the same issue Step 7's `dragStore` factory hit).
-  function menuItemEnabled(items: MenuItem[], action: MenuAction): boolean {
-    return items.find(item => item.action === action)?.enabled ?? false
-  }
-  function menuItemChecked(items: MenuItem[], action: MenuAction): boolean {
-    return items.find(item => item.action === action)?.checked ?? false
-  }
   const selectedRange = createMemo<SlideRange | null>(() => {
     const i = selectedIndex()
     if (i === null) return null
@@ -1790,171 +1780,31 @@ export function Studio() {
         onCopyErrorMessage={() => void copyErrorMessage()}
       />
 
-      {/* This whole block (backdrop + both panels) is mounted exactly once,
-          for the app's entire lifetime — visibility is a `hidden` class
-          toggle on `contextMenu() === null`, never a mount/unmount. A child
-          conditional (`layoutPreviews() === null ? Loading : ... : ...`)
-          inside a subtree that gets freshly mounted on every open (the old
-          `{contextMenu() ? (...) : null}` gate) never showed its later,
-          post-mount branches here — not from `.map()`, not from CSS Grid,
-          not from any nesting/prop variant tried — while the exact same
-          kind of conditional inside the app's permanently-mounted tree
-          (e.g. `manifest() === null ? ... : ...` for the slide list) has
-          worked correctly all session. Keeping this permanently mounted
-          like that one, instead of gated on `contextMenu()`, sidesteps
-          whatever that remount-specific issue is. */}
-      <div
-        className={(contextMenu().kind === 'closed' ? 'hidden ' : '') + 'fixed top-0 right-0 bottom-0 left-0 z-30'}
-        onClick={closeContextMenu}
-        onContextMenu={e => { e.preventDefault(); closeContextMenu() }}
+      <SlideContextMenu
+        hidden={contextMenu().kind === 'closed'}
+        position={contextMenuPositionOf(contextMenu())}
+        menuItems={currentMenuItems()}
+        layoutPickerOpen={isLayoutPickerOpen(contextMenu())}
+        layoutPickerView={layoutPickerView()}
+        layoutPreviews={layoutPreviews()}
+        layoutPreviewCss={layoutPreviewCss()}
+        canvasWidth={canvasWidth()}
+        canvasHeight={canvasHeight()}
+        onMenuRef={el => { contextMenuEl = el }}
+        onClose={closeContextMenu}
+        onNewSlide={() => { void addSlide(contextMenuAppendIndex()); closeContextMenu() }}
+        onCut={() => { void cutSlide(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
+        onCopy={() => { copySlide(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
+        onPaste={() => { void pasteSlideAfter(contextMenuAppendIndex()); closeContextMenu() }}
+        onDelete={() => { void deleteSlide(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
+        onToggleLayoutPicker={toggleLayoutPicker}
+        onChangeLayout={name => { void changeSlideLayout(contextMenuIndexOf(contextMenu())!, name); closeContextMenu() }}
+        onToggleDraft={() => { void toggleSlideDraft(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
+        onToggleSkip={() => { void toggleSlideSkip(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
+        onToggleSection={() => { void toggleSlideSection(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
+        onMoveUp={() => { void moveSlide(contextMenuIndexOf(contextMenu())!, -1); closeContextMenu() }}
+        onMoveDown={() => { void moveSlide(contextMenuIndexOf(contextMenu())!, 1); closeContextMenu() }}
       />
-      <div
-        ref={el => { contextMenuEl = el }}
-        // Was `contextMenu() === null || layoutPickerOpen()` — the "Change
-        // Layout" submenu (`layoutPickerOpen() ? <div>...` below) renders
-        // as a CHILD of this same div, so that condition hid the whole
-        // menu, submenu included, the instant it was expanded. Only
-        // `contextMenu().kind === 'closed'` should hide this.
-        className={(contextMenu().kind === 'closed' ? 'hidden ' : '') + 'fixed w-56 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg py-1 z-40 text-sm'}
-        style={`left: ${String(contextMenuPositionOf(contextMenu()).x)}px; top: ${String(contextMenuPositionOf(contextMenu()).y)}px`}
-      >
-        <button
-          type="button"
-          onClick={() => { void addSlide(contextMenuAppendIndex()); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent"
-        >
-          <span>New Slide</span><span className="text-xs text-muted-foreground">⌘⏎</span>
-        </button>
-        <div className="my-1 border-t border-border" />
-        <button
-          type="button"
-          disabled={!menuItemEnabled(currentMenuItems(), 'cut')}
-          onClick={() => { void cutSlide(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          <span>Cut</span><span className="text-xs text-muted-foreground">⌘X</span>
-        </button>
-        <button
-          type="button"
-          disabled={!menuItemEnabled(currentMenuItems(), 'copy')}
-          onClick={() => { copySlide(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          <span>Copy</span><span className="text-xs text-muted-foreground">⌘C</span>
-        </button>
-        <button
-          type="button"
-          disabled={!menuItemEnabled(currentMenuItems(), 'paste')}
-          onClick={() => { void pasteSlideAfter(contextMenuAppendIndex()); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          <span>Paste</span><span className="text-xs text-muted-foreground">⌘V</span>
-        </button>
-        <div className="my-1 border-t border-border" />
-        <button
-          type="button"
-          disabled={!menuItemEnabled(currentMenuItems(), 'delete')}
-          onClick={() => { void deleteSlide(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent text-destructive"
-        >
-          <span>Delete</span><span className="text-xs text-muted-foreground">⌦</span>
-        </button>
-        <div className="my-1 border-t border-border" />
-        <button
-          type="button"
-          disabled={!menuItemEnabled(currentMenuItems(), 'change-layout')}
-          onClick={toggleLayoutPicker}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          <span>Change Layout</span><span aria-hidden="true">{isLayoutPickerOpen(contextMenu()) ? '▾' : '▸'}</span>
-        </button>
-        {isLayoutPickerOpen(contextMenu()) ? (
-          <div className="pl-3 max-h-64 overflow-y-auto">
-            {layoutPickerView() === 'loading' ? (
-              <div className="px-3 py-1.5 text-xs text-muted-foreground">Loading…</div>
-            ) : layoutPickerView() === 'empty' ? (
-              <div className="px-3 py-1.5 text-xs text-muted-foreground">No layouts found</div>
-            ) : (
-              <div className="grid grid-cols-2 gap-1.5 px-2 py-1.5">
-                {layoutPreviews()!.map(preview => (
-                  <button
-                    type="button"
-                    key={preview.name}
-                    onClick={() => { void changeSlideLayout(contextMenuIndexOf(contextMenu())!, preview.name); closeContextMenu() }}
-                    className="flex flex-col gap-1 text-left group"
-                  >
-                    <span
-                      className="block relative rounded border border-border bg-black overflow-hidden group-hover:border-muted-foreground"
-                      style={`aspect-ratio: ${String(canvasWidth())} / ${String(canvasHeight())}`}
-                    >
-                      {preview.fragment ? (
-                        <>
-                          <iframe
-                            title={preview.name}
-                            srcdoc={buildLayoutPreviewDoc(preview.fragment, layoutPreviewCss(), canvasWidth(), canvasHeight())}
-                            className="absolute top-0 right-0 bottom-0 left-0 w-full h-full border-0"
-                          />
-                          {/* Keeps the iframe from ever being the click/
-                              right-click target — plain `pointer-events:
-                              none` on an iframe still loses a right-click
-                              to its own native context menu (see
-                              CLAUDE.md's Tauri pitfalls). */}
-                          <span className="absolute top-0 right-0 bottom-0 left-0" />
-                        </>
-                      ) : null}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground truncate">{preview.name}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : null}
-        <button
-          type="button"
-          disabled={!menuItemEnabled(currentMenuItems(), 'toggle-draft')}
-          onClick={() => { void toggleSlideDraft(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          <span>Mark as Draft</span>
-          {menuItemChecked(currentMenuItems(), 'toggle-draft') ? <span aria-hidden="true">✓</span> : null}
-        </button>
-        <button
-          type="button"
-          disabled={!menuItemEnabled(currentMenuItems(), 'toggle-skip')}
-          onClick={() => { void toggleSlideSkip(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          <span>Skip in Present</span>
-          {menuItemChecked(currentMenuItems(), 'toggle-skip') ? <span aria-hidden="true">✓</span> : null}
-        </button>
-        <button
-          type="button"
-          disabled={!menuItemEnabled(currentMenuItems(), 'toggle-section')}
-          onClick={() => { void toggleSlideSection(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          <span>Section Start</span>
-          {menuItemChecked(currentMenuItems(), 'toggle-section') ? <span aria-hidden="true">✓</span> : null}
-        </button>
-        <div className="my-1 border-t border-border" />
-        <button
-          type="button"
-          disabled={!menuItemEnabled(currentMenuItems(), 'move-up')}
-          onClick={() => { void moveSlide(contextMenuIndexOf(contextMenu())!, -1); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          <span>Move Slide Up</span><span className="text-xs text-muted-foreground">⌘⇧↑</span>
-        </button>
-        <button
-          type="button"
-          disabled={!menuItemEnabled(currentMenuItems(), 'move-down')}
-          onClick={() => { void moveSlide(contextMenuIndexOf(contextMenu())!, 1); closeContextMenu() }}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          <span>Move Slide Down</span><span className="text-xs text-muted-foreground">⌘⇧↓</span>
-        </button>
-      </div>
         </>
       )}
 
