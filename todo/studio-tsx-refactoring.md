@@ -753,8 +753,28 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       `copyErrorMessage`自体(clipboard書き込み+`errorMessageCopied`の
       タイマー付きトグル)は副作用のため`Studio.tsx`側に残した。
       全spec/adversarialテスト通過(222 pass、ロジック変更なし)。
-- [ ] **Step 16〜18**: JSXを1PRにつき1コンポーネントずつそのまま移動:
-      `SlidePreview` → `SlideEditor` → `SlideContextMenu`(永続マウント維持) →
+- [x] **Step 16**完了。`components/SlidePreview.tsx`(新規)に選択中
+      スライドのプレビューiframe(+placeholder)を移動。**このStepは
+      WKWebViewの`.srcdoc`再代入=リロード仕様(バイト同一でもリロード
+      される)に触れる、これまでより慎重さが要る抽出だった**——
+      `srcdoc`propsは子で`buildSelectedSlideDoc(key)`を呼び直す形にせず、
+      `Studio.tsx`の呼び出し側で`buildSelectedSlideDoc(selectedSlideKey())`
+      を評価した**結果の文字列**を渡す形にした。これは元のコードの
+      「トラッキング対象の読み取り(`selectedSlideKey()`)は呼び出し側、
+      untrackedなfragment参照はその関数内部」という構造(コメントに
+      明記済み)を、JSX属性からpropsへ渡し先を変えるだけで保つため。
+      `hasDeck`propsは元の`assetBaseUrl() ? ... : ...`(truthinessチェック、
+      `null`だけでなく空文字列も偽扱い)と完全に同じ意味論になるよう
+      `Boolean(assetBaseUrl())`で渡した(`!== null`だと空文字列がtrueに
+      なり意味が変わってしまうところだった)。
+      `bf debug graph`は他と同様`(no tracked deps)`。全spec/adversarial
+      テスト通過(222 pass、ロジック変更なし)。
+      **実機確認を強く推奨**——srcdocの再代入頻度が増えていないか
+      (リロードのちらつきが増えていないか)は静的検証では検知できない
+      性質のバグなので、ユーザーの後日まとめての実機確認で優先的に
+      見てもらいたい箇所としてここに明記する。
+- [ ] **Step 17〜18**: JSXを1PRにつき1コンポーネントずつそのまま移動:
+      `SlideEditor` → `SlideContextMenu`(永続マウント維持) →
       `SlideList`(`dom/thumbnailIframe.ts`へref移動)。
 - [ ] **Step 19**: `Studio.tsx`を合成ルートに整理(目標200〜300行)。
       `CLAUDE.md`の「BarefootJSで踏んだ落とし穴」に分割で得た知見を追記。
