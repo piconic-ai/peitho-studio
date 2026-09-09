@@ -32,6 +32,7 @@ import {
   type SlideRange,
 } from '../domain/slides'
 import { buildSlidePreviewDoc, buildLayoutPreviewDoc } from '../domain/previewDoc'
+import { WelcomeScreen } from './WelcomeScreen'
 
 interface SectionDraft {
   name: string
@@ -1231,67 +1232,14 @@ export function Studio() {
   return (
     <div className="h-full w-full flex flex-col bg-background text-foreground">
       {deckPath() === null ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-full max-w-sm flex flex-col items-center gap-4 px-6">
-            <h1 className="text-lg font-semibold">Peitho Studio</h1>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void handleOpenFolder()}
-                disabled={isBusy()}
-                className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
-              >
-                {isBusy() ? 'Opening…' : 'Open Deck…'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleNewDeck()}
-                disabled={isBusy()}
-                className="px-4 py-2 rounded-md border border-border text-sm disabled:opacity-50"
-              >
-                New Deck…
-              </button>
-            </div>
-            {/* `disabled` on the buttons above (and on each Recent entry
-                below) was the only previously-existing feedback while
-                `loadDeck`/`create_deck` are in flight — easy to miss
-                (opacity-50 on an already-plain button) and gives no signal
-                at all once a button is clicked, so a slow open/create read
-                as a frozen window rather than "still working". This is
-                deliberately unconditional layout space (not conditionally
-                rendered) so its appearance doesn't itself shift the
-                surrounding buttons. */}
-            <div className="h-4 text-xs text-muted-foreground">{isBusy() ? 'Opening…' : ''}</div>
-            {errorMessage() ? <div className="text-xs text-destructive text-center">{errorMessage()}</div> : null}
-            {recentDecks().length > 0 ? (
-              <div className="w-full">
-                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Recent</div>
-                <div className="flex flex-col gap-1">
-                  {recentDecks().map(path => (
-                    <button
-                      type="button"
-                      key={path}
-                      onClick={() => void dispatch({ type: 'open-requested', path })}
-                      disabled={isBusy()}
-                      title={path}
-                      // A path's most distinguishing part (the deck's own
-                      // folder name) is at the *end* — plain `truncate`
-                      // elides there first, leaving every entry looking
-                      // like the same shared parent directory. `dir="rtl"`
-                      // flips which side the ellipsis lands on (to the
-                      // left) while the path text itself still renders
-                      // left-to-right, so the tail stays visible instead.
-                      dir="rtl"
-                      className="w-full text-left px-3 py-2 rounded-md border border-border hover:bg-accent text-sm truncate disabled:opacity-50"
-                    >
-                      {path}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
+        <WelcomeScreen
+          isBusy={isBusy()}
+          errorMessage={errorMessage()}
+          recentDecks={recentDecks()}
+          onOpenFolder={() => void handleOpenFolder()}
+          onNewDeck={() => void handleNewDeck()}
+          onOpenRecent={path => void dispatch({ type: 'open-requested', path })}
+        />
       ) : (
         <>
       <header className="h-12 shrink-0 flex items-center gap-3 px-4 border-b border-border">
