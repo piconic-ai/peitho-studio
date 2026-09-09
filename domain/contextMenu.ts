@@ -73,3 +73,15 @@ export function menuItems(menu: ContextMenu, ctx: MenuContext): MenuItem[] {
 export function appendIndex(menu: ContextMenu, slideCount: number): number {
   return indexOf(menu) ?? slideCount - 1
 }
+
+/** Whether a given action is enabled in the given `menuItems()` result. */
+export function menuItemEnabled(items: MenuItem[], action: MenuAction): boolean {
+  return items.find(item => item.action === action)?.enabled ?? false
+}
+
+/** Whether a given action is shown checked in the given `menuItems()`
+ * result — `false` for an action without a `checked` field at all
+ * (most actions), not just for an explicit `false`. */
+export function menuItemChecked(items: MenuItem[], action: MenuAction): boolean {
+  return items.find(item => item.action === action)?.checked ?? false
+}

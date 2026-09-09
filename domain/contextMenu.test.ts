@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { indexOf, positionOf, isLayoutPickerOpen, menuItems, appendIndex, type ContextMenu, type MenuContext } from './contextMenu'
+import { indexOf, positionOf, isLayoutPickerOpen, menuItems, appendIndex, menuItemEnabled, menuItemChecked, type ContextMenu, type MenuContext, type MenuItem } from './contextMenu'
 
 const ctx = (overrides: Partial<MenuContext> = {}): MenuContext => ({
   slideCount: 3,
@@ -119,5 +119,50 @@ describe('appendIndex', () => {
 
   test('adversarial: an empty list still returns a usable (negative) anchor for the caller\'s own Math.min clamp', () => {
     expect(appendIndex({ kind: 'closed' }, 0)).toBe(-1)
+  })
+})
+
+describe('menuItemEnabled', () => {
+  const items: MenuItem[] = [
+    { action: 'cut', enabled: true },
+    { action: 'paste', enabled: false },
+  ]
+
+  test('spec: reports the matching action\'s own enabled flag', () => {
+    expect(menuItemEnabled(items, 'cut')).toBe(true)
+    expect(menuItemEnabled(items, 'paste')).toBe(false)
+  })
+
+  test('adversarial: an action absent from the list is treated as disabled, not thrown on', () => {
+    expect(menuItemEnabled(items, 'delete')).toBe(false)
+  })
+
+  test('adversarial: an empty list disables every action', () => {
+    expect(menuItemEnabled([], 'new-slide')).toBe(false)
+  })
+})
+
+describe('menuItemChecked', () => {
+  const items: MenuItem[] = [
+    { action: 'toggle-draft', enabled: true, checked: true },
+    { action: 'toggle-skip', enabled: true, checked: false },
+    { action: 'toggle-section', enabled: true },
+  ]
+
+  test('spec: reports the matching action\'s own checked flag', () => {
+    expect(menuItemChecked(items, 'toggle-draft')).toBe(true)
+    expect(menuItemChecked(items, 'toggle-skip')).toBe(false)
+  })
+
+  test('adversarial: an action with no checked field at all reports false, not undefined', () => {
+    expect(menuItemChecked(items, 'toggle-section')).toBe(false)
+  })
+
+  test('adversarial: an action absent from the list is treated as unchecked, not thrown on', () => {
+    expect(menuItemChecked(items, 'cut')).toBe(false)
+  })
+
+  test('adversarial: an empty list unchecks every action', () => {
+    expect(menuItemChecked([], 'toggle-draft')).toBe(false)
   })
 })
