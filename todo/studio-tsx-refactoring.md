@@ -928,15 +928,28 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
         `state/*.test.ts`)を追加(spec 4件+adversarial 3件、
         `createRoot(() => { const store = createRenderStore(); ... })`
         パターンを確立)。全236 pass。
-  - [ ] **Step 20-3〜**: `state/editorStore.ts`(editorSession +
-        commitChange/handleSave/selectSlide + autosave effects +
-        ソース/レンジ)、`state/deckStore.ts`(deckLifecycle +
-        dispatch/runOpen/runCreate)を同じ要領で順次切り出す。
-        これらは`state/uiStore.ts`/`state/renderStore.ts`よりさらに
-        結合度が高い(`runOpen`は`applyRenderPayload`と`refreshSource`と
-        通知系を横断する等)ため、ストア間の依存はコールバック注入で
-        表現するか、あるいはオーケストレーション自体を`Studio.tsx`に
-        残すかを都度判断する。
+  - [x] **Step 20-3**完了。`state/editorStore.ts`(新規)に`editorSession`
+        ADTシグナルとその`selectedIndex`/`bodyDraft`/`noteDraft`/
+        `pageConfig`/`isDirty`射影memo、生のソーステキスト/`slideRanges`
+        シグナルとそこから導出する`selectedRange`射影を移動。
+        **このクラスタのオーケストレーション関数
+        (`commitChange`/`selectSlide`/`handleSave`/`refreshSource`/
+        `syncEditorFields`+2つのtextarea ref callback)は全て
+        `Studio.tsx`に残した**——`state/renderStore.ts`の
+        `applyRenderPayload`を呼ぶ、DOMに直接触れる(uncontrolled
+        textarea)、ストア境界を越えて互いを呼び合う
+        (`selectSlide`が`handleSave`を呼ぶ)ため。`uiStore`/
+        `renderStore`と同じく、ストア自身の公開面は状態のみに留めた。
+        **テストは追加しなかった**——`uiStore.ts`と同じ理由
+        (PR #27参照): このストア自身のロジックは全てADTの単純な射影
+        であり新規のオーケストレーションを持たない。
+        Studio.tsx: 1179→1140行。全spec/adversarialテスト通過
+        (236 pass、ロジック変更なし)。
+  - [ ] **Step 20-4〜**: `state/deckStore.ts`(deckLifecycle +
+        dispatch/runOpen/runCreate)を同じ要領で切り出す。`runOpen`は
+        `applyRenderPayload`と`refreshSource`と通知系を横断するため、
+        オーケストレーション自体を`Studio.tsx`に残す設計を踏襲する
+        見込み。
   - [ ] **最終**: 全ストア切り出し後、`Studio.tsx`の行数を確認し
         200〜300行の目標に対する到達度を記録。`CLAUDE.md`の
         「BarefootJSで踏んだ落とし穴」に、このリファクタリング全体
