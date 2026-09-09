@@ -916,6 +916,18 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
         Studio.tsx: 1269→1179行。全spec/adversarialテスト通過
         (229 pass、ロジック変更なし)。`bf debug graph`は他と同様
         `render.xxx()`読み取り全て`(no tracked deps)`。
+        **pullfrogのnitpickを受けて追加対応**: PR #27(uiStore)への
+        レビューで「`docs/architecture.md`の`state/`層は`createRoot`
+        モデルベーステストを想定しているが`uiStore.ts`にはテストが
+        ない」との指摘。`uiStore.ts`は既に`domain/`層でテスト済みの
+        ロジックをラップするだけなので許容と判断したが、
+        `renderStore.ts`の`applyRenderPayload`は新規のオーケストレー
+        ションロジック(等価性ガード付きper-key書き込み、前回manifestに
+        対する`stabilizeByKey`の配線、sectionDraftsの導出)を持つため、
+        `state/renderStore.test.ts`(新規、プロジェクト初の
+        `state/*.test.ts`)を追加(spec 4件+adversarial 3件、
+        `createRoot(() => { const store = createRenderStore(); ... })`
+        パターンを確立)。全236 pass。
   - [ ] **Step 20-3〜**: `state/editorStore.ts`(editorSession +
         commitChange/handleSave/selectSlide + autosave effects +
         ソース/レンジ)、`state/deckStore.ts`(deckLifecycle +
