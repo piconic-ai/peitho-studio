@@ -9,10 +9,12 @@ import { clampMenuPosition } from '../domain/geometry'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type EditorSession, type SlideFields, isDirty as computeIsDirty, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
-import { type DragState, arm, move, dropTarget, cancel } from '../domain/drag'
-import { type ContextMenu, indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, appendIndex as computeAppendIndex } from '../domain/contextMenu'
+import { arm, move, dropTarget, cancel } from '../domain/drag'
+import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems } from '../domain/contextMenu'
 import { type DeckLifecycle, type DeckEvent, decide, isBusy as computeIsBusy } from '../domain/deckLifecycle'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
+import { startColumnResize } from '../dom/columnResize'
+import { createUiStore } from '../state/uiStore'
 import {
   splitSlides,
   extractNote,
@@ -41,9 +43,6 @@ import { SlideEditor } from './SlideEditor'
 import { SlideContextMenu } from './SlideContextMenu'
 import { SlideList } from './SlideList'
 
-const MIN_COLUMN_WIDTH = 180
-const MAX_COLUMN_WIDTH = 640
-const SLIDE_LIST_WIDTH = 176
 // Just the heading — `addSlide` attaches an explicit, collision-free
 // PageComment `key` around this (see its own comment for why).
 const NEW_SLIDE_MARKDOWN = '# New Slide\n'
@@ -223,45 +222,23 @@ export function Studio() {
     return fragmentSignal(key)[0]()
   }
   const [sectionDrafts, setSectionDrafts] = createSignal<Record<number, SectionDraft>>({})
-  // A single `domain/drag.ts` DragState signal, with three independent
-  // memos over it for `draggedIndex`/`dragOverGap`/`dragDeltaY` — reading
-  // the raw DragState directly from every slide row would subscribe all
-  // of them to the whole state and re-render every row on each
-  // `dragOverGap` change during a drag, not just the two rows whose own
-  // border actually flips.
+  // Drag gesture, context menu/layout-picker, in-app clipboard, Present
+  // dropdown, column widths — see `state/uiStore.ts` for what each field
+  // means. Orchestration that spans this store and another concern
+  // (`startSlideDrag` ending in `reorderSlides`, `openContextMenu` also
+  // calling `selectSlide`) stays here in the composition root rather than
+  // moving into the store itself.
   //
-  // The signal/memos live here, not in a `state/uiStore.ts` factory
-  // function, despite that being this refactor's usual pattern for
-  // extracting state out of Studio.tsx (see domain/editorSession.ts,
-  // domain/slideCommands.ts for the logic side of the same split): a
-  // `createDragStore()` returning `{ draggedIndex, ... }` compiled into
-  // JSX bindings with zero tracked deps for every reference to it
-  // (confirmed with `bf debug graph` — `dragStore.draggedIndex()` in JSX
-  // showed `deps: []`), so the row's `class`/`style` never updated during
-  // a drag. Even binding the factory's return values to plain top-level
-  // `const`s in the component (`const draggedIndex = dragStore.draggedIndex`)
-  // didn't help — same empty deps. BarefootJS's compiler resolves a
-  // render's reactive dependencies by static analysis of createSignal/
-  // createMemo calls literally written in the component's own source,
-  // not by tracing values back to a signal through a function call
-  // boundary — so a signal a component uses must be declared with
-  // `createSignal`/`createMemo` directly in that component's file.
-  // `domain/drag.ts`'s pure arm/move/dropTarget/cancel state machine is
-  // still the source of truth for every transition; only the signal
-  // itself had to move back here.
-  const [dragState, setDragState] = createSignal<DragState>({ kind: 'idle' })
-  const draggedIndex = createMemo(() => {
-    const s = dragState()
-    return s.kind === 'dragging' ? s.index : null
-  })
-  const dragOverGap = createMemo(() => {
-    const s = dragState()
-    return s.kind === 'dragging' ? s.gap : null
-  })
-  const dragDeltaY = createMemo(() => {
-    const s = dragState()
-    return s.kind === 'dragging' ? s.deltaY : 0
-  })
+  // A previous version of this comment claimed a `createXxxStore()`
+  // factory couldn't work here — that a signal declared inside a function
+  // called from this component, rather than with `createSignal` literally
+  // written in this file, showed `deps: []` in `bf debug graph` and never
+  // updated the DOM. That was wrong: a later, more careful repro (Step 9
+  // of `todo/studio-tsx-refactoring.md`) showed the exact same factory
+  // shape updating correctly via BarefootJS's dynamic (wrap-by-default)
+  // reactivity tracking, which `bf debug graph`'s static analysis doesn't
+  // capture. See CLAUDE.md's BarefootJS pitfalls for the full account.
+  const ui = createUiStore()
   // Distinct from `isBusy` above (the deck-lifecycle one): this guards
   // `commitChange`'s own in-flight save, which used to share the same
   // `isBusy` signal with the welcome-screen open/create flow. The two
@@ -274,40 +251,6 @@ export function Studio() {
   const [statusMessage, setStatusMessage] = createSignal('')
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null)
   const [errorMessageCopied, setErrorMessageCopied] = createSignal(false)
-  const [slideListWidth, setSlideListWidth] = createSignal(SLIDE_LIST_WIDTH)
-  // `ContextMenu`'s `closed`/`on-empty-space`/`on-slide` distinguish a
-  // right-click on a specific thumbnail from one on empty space in the
-  // slide list — every per-slide action (Cut/Delete/Change Layout/...)
-  // disables itself outside `on-slide` (see `domain/contextMenu.ts`'s
-  // `menuItems`), while actions that don't need an existing slide
-  // (New Slide, Paste) still work. `layoutPickerOpen` only exists on
-  // `on-slide` for the same reason a layout picker can't open with no
-  // slide to change the layout of.
-  const [contextMenu, setContextMenu] = createSignal<ContextMenu>({ kind: 'closed' })
-  // "Change Layout" expands this inline within the thumbnail context menu.
-  // A grid of real rendered previews (Google Slides-style) was attempted
-  // first, backed by `preview_layouts`'s per-layout fragment/CSS render,
-  // but got shelved: a conditional
-  // (`layoutPreviews() === null ? Loading : ... : ...`) sitting in the
-  // context menu's part of the tree never showed its post-mount branches
-  // (confirmed with plain `<div>` content too, so not about the
-  // grid/`.map()`/iframe specifically), while the identical pattern
-  // elsewhere in this file that isn't inside the context menu (e.g.
-  // `manifest() === null ? ... : ...` for the slide list) worked fine.
-  // Fixed since by permanently mounting the whole context-menu subtree
-  // (see the comment above it further down) instead of gating it on
-  // `contextMenu()` — that was the actual remount-on-every-open trigger,
-  // not this conditional's own shape. `layoutPreviewCss` (below) carries
-  // `preview_layouts`'s shared CSS alongside the per-layout fragments —
-  // see `buildLayoutPreviewDoc` for why it's inlined per-iframe rather
-  // than served, unlike a real slide's own `peitho.css`.
-  const [layoutPreviews, setLayoutPreviews] = createSignal<{ name: string; fragment: string }[] | null>(null)
-  const [layoutPreviewCss, setLayoutPreviewCss] = createSignal('')
-  // The thumbnail context menu's Cut/Copy/Paste clipboard. Deliberately not
-  // backed by `navigator.clipboard` — OS clipboard access needs its own
-  // Tauri capability/plugin wiring, and the ask here is standard in-app
-  // cut/copy/paste, not cross-app interop.
-  const [clipboardSlideText, setClipboardSlideText] = createSignal<string | null>(null)
   // Shown centered in place of the whole 3-pane layout until a deck is
   // open. `recentDecks` (full deck.md paths) is persisted Rust-side (see
   // `get_recent_decks`/`remember_recent_deck` in peitho.rs) rather than in
@@ -363,19 +306,16 @@ export function Studio() {
     el.addEventListener('compositionend', () => { noteComposing = false })
   }
 
-  const [editorWidth, setEditorWidth] = createSignal(420)
-  const [presentMenuOpen, setPresentMenuOpen] = createSignal(false)
-
   const sectionStartByIndex = createMemo<Record<number, ManifestSection>>(() => computeSectionStartByIndex(manifest()?.sections ?? []))
   const layoutPickerView = createMemo<'loading' | 'empty' | 'ready'>(() => {
-    const previews = layoutPreviews()
+    const previews = ui.layoutPreviews()
     if (previews === null) return 'loading'
     if (previews.length === 0) return 'empty'
     return 'ready'
   })
-  const currentMenuItems = createMemo(() => computeMenuItems(contextMenu(), {
+  const currentMenuItems = createMemo(() => computeMenuItems(ui.contextMenu(), {
     slideCount: manifest()?.slideCount ?? 0,
-    hasClipboard: clipboardSlideText() !== null,
+    hasClipboard: ui.clipboardSlideText() !== null,
     configOf: slideConfigOf,
   }))
   const selectedRange = createMemo<SlideRange | null>(() => {
@@ -839,16 +779,16 @@ export function Studio() {
       // whatever text/inputs it crosses (most visibly the section-name
       // inputs) at the same time the row is being dragged.
       event.preventDefault()
-      setDragState(arm(index, event.clientX, event.clientY))
+      ui.setDragState(arm(index, event.clientX, event.clientY))
       attachDragListeners({
         onMove(moveEvent) {
-          const wasArmed = dragState().kind === 'armed'
-          setDragState(prev => move(prev, moveEvent.clientX, moveEvent.clientY, gapUnderCursor(moveEvent.clientY)))
-          if (wasArmed && dragState().kind === 'dragging') setDragAffordance(true)
+          const wasArmed = ui.dragState().kind === 'armed'
+          ui.setDragState(prev => move(prev, moveEvent.clientX, moveEvent.clientY, gapUnderCursor(moveEvent.clientY)))
+          if (wasArmed && ui.dragState().kind === 'dragging') setDragAffordance(true)
         },
         onUp() {
-          const target = dropTarget(dragState())
-          setDragState(cancel())
+          const target = dropTarget(ui.dragState())
+          ui.setDragState(cancel())
           setDragAffordance(false)
           if (target && target.from !== target.to) void reorderSlides(target.from, target.to)
         },
@@ -863,15 +803,11 @@ export function Studio() {
         // — unlike a normal `mouseup`, a focus loss isn't a deliberate
         // "drop here" gesture.
         onBlur() {
-          setDragState(cancel())
+          ui.setDragState(cancel())
           setDragAffordance(false)
         },
       })
     }
-  }
-
-  function closeContextMenu(): void {
-    setContextMenu({ kind: 'closed' })
   }
 
   function openContextMenu(index: number | null, event: MouseEvent): void {
@@ -882,16 +818,12 @@ export function Studio() {
     // real index with `null`.
     event.stopPropagation()
     if (index !== null) void selectSlide(index)
-    setContextMenu(
+    ui.setContextMenu(
       index === null
         ? { kind: 'on-empty-space', x: event.clientX, y: event.clientY }
         : { kind: 'on-slide', index, x: event.clientX, y: event.clientY, layoutPickerOpen: false },
     )
     void loadLayoutPreviews()
-  }
-
-  function toggleLayoutPicker(): void {
-    setContextMenu(menu => (menu.kind === 'on-slide' ? { ...menu, layoutPickerOpen: !menu.layoutPickerOpen } : menu))
   }
 
   // Keeps the context menu on-screen: it's positioned at the raw click
@@ -905,12 +837,12 @@ export function Studio() {
   // laid out (at its current, possibly just-toggled height) before
   // `getBoundingClientRect` runs.
   createEffect(() => {
-    if (contextMenu().kind === 'closed') return
+    if (ui.contextMenu().kind === 'closed') return
     requestAnimationFrame(() => {
       // Re-read rather than closing over this run's `contextMenu()` value —
       // it may have moved (a new right-click) or closed by the time this
       // frame actually runs.
-      const menu = contextMenu()
+      const menu = ui.contextMenu()
       if (!contextMenuEl || menu.kind === 'closed') return
       const rect = contextMenuEl.getBoundingClientRect()
       const { x, y } = clampMenuPosition(
@@ -920,31 +852,24 @@ export function Studio() {
         8,
       )
       if (x !== menu.x || y !== menu.y) {
-        setContextMenu(prev => (prev.kind === 'closed' ? prev : { ...prev, x, y }))
+        ui.setContextMenu(prev => (prev.kind === 'closed' ? prev : { ...prev, x, y }))
       }
     })
   })
 
-  // The index a slide-appending action (New Slide, Paste) should insert
-  // after — the right-clicked slide, or the end of the list when the menu
-  // is closed or was opened on empty space.
-  function contextMenuAppendIndex(): number {
-    return computeAppendIndex(contextMenu(), manifest()?.slideCount ?? 1)
-  }
-
   async function loadLayoutPreviews(): Promise<void> {
-    if (layoutPreviews() !== null) return
+    if (ui.layoutPreviews() !== null) return
     try {
       const payload = await deckIpc.previewLayouts()
-      setLayoutPreviewCss(payload.css)
-      setLayoutPreviews(payload.previews)
+      ui.setLayoutPreviewCss(payload.css)
+      ui.setLayoutPreviews(payload.previews)
     } catch {
-      setLayoutPreviews([])
+      ui.setLayoutPreviews([])
     }
   }
 
   function copySlide(index: number): void {
-    setClipboardSlideText(currentSlideText(index))
+    ui.setClipboardSlideText(currentSlideText(index))
   }
 
   // Removes a slide by re-joining every other slide's text — the frontmatter
@@ -961,7 +886,7 @@ export function Studio() {
   async function cutSlide(index: number): Promise<void> {
     const ranges = slideRanges()
     if (ranges.length <= 1) return
-    setClipboardSlideText(currentSlideText(index))
+    ui.setClipboardSlideText(currentSlideText(index))
     await deleteSlide(index)
   }
 
@@ -996,7 +921,7 @@ export function Studio() {
   // heading itself repeats. Re-key explicitly instead, based on the
   // original's own key if it had one, else its heading.
   async function pasteSlideAfter(index: number): Promise<void> {
-    const clip = clipboardSlideText()
+    const clip = ui.clipboardSlideText()
     if (clip === null) return
     const texts = slideRanges().map((_, i) => currentSlideText(i).trim())
     const insertAt = Math.min(index + 1, texts.length)
@@ -1139,9 +1064,9 @@ export function Studio() {
     const unlistenMenuNew = deckIpc.onMenuNewDeck(() => { void handleNewDeck() })
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && contextMenu().kind !== 'closed') {
+      if (event.key === 'Escape' && ui.contextMenu().kind !== 'closed') {
         event.preventDefault()
-        closeContextMenu()
+        ui.closeContextMenu()
         return
       }
       const tag = document.activeElement?.tagName.toLowerCase()
@@ -1222,40 +1147,6 @@ export function Studio() {
     }
   }
 
-  function startResize(
-    getWidth: () => number,
-    setWidth: (next: number) => void,
-    direction: 1 | -1,
-  ) {
-    return (event: MouseEvent) => {
-      event.preventDefault()
-      const startX = event.clientX
-      const startWidth = getWidth()
-      // Dragging the Editor/Preview divider toward the Preview side moves
-      // the cursor over the Preview `<iframe>` — a separate browsing
-      // context, so `mousemove` stops reaching this document's listener
-      // the instant the cursor crosses into it (the drag "stops working"
-      // past that point, but only in that direction, since dragging the
-      // other way never crosses an iframe). Disabling pointer-events on
-      // every iframe for the duration of the drag keeps the cursor's
-      // moves targeted at this document throughout.
-      const iframes = Array.from(document.querySelectorAll('iframe'))
-      for (const frame of iframes) frame.style.pointerEvents = 'none'
-      const onMove = (moveEvent: MouseEvent) => {
-        const delta = (moveEvent.clientX - startX) * direction
-        const next = Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, startWidth + delta))
-        setWidth(next)
-      }
-      const onUp = () => {
-        window.removeEventListener('mousemove', onMove)
-        window.removeEventListener('mouseup', onUp)
-        for (const frame of iframes) frame.style.pointerEvents = ''
-      }
-      window.addEventListener('mousemove', onMove)
-      window.addEventListener('mouseup', onUp)
-    }
-  }
-
   return (
     <div className="h-full w-full flex flex-col bg-background text-foreground">
       {deckPath() === null ? (
@@ -1271,19 +1162,19 @@ export function Studio() {
         <>
       <DeckHeader
         deckPath={deckPath()}
-        presentMenuOpen={presentMenuOpen()}
-        onTogglePresentMenu={() => setPresentMenuOpen(!presentMenuOpen())}
-        onClosePresentMenu={() => setPresentMenuOpen(false)}
+        presentMenuOpen={ui.presentMenuOpen()}
+        onTogglePresentMenu={() => ui.setPresentMenuOpen(!ui.presentMenuOpen())}
+        onClosePresentMenu={() => ui.setPresentMenuOpen(false)}
         onPresent={rehearsal => void handlePresent(rehearsal)}
       />
 
       <div className="flex-1 flex min-h-0">
         <SlideList
           manifest={manifest()}
-          slideListWidth={slideListWidth()}
-          draggedIndex={draggedIndex()}
-          dragOverGap={dragOverGap()}
-          dragDeltaY={dragDeltaY()}
+          slideListWidth={ui.slideListWidth()}
+          draggedIndex={ui.draggedIndex()}
+          dragOverGap={ui.dragOverGap()}
+          dragDeltaY={ui.dragDeltaY()}
           selectedIndex={selectedIndex()}
           sectionStartByIndex={sectionStartByIndex()}
           sectionDrafts={sectionDrafts()}
@@ -1301,12 +1192,12 @@ export function Studio() {
 
         <div
           className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"
-          onMouseDown={startResize(slideListWidth, setSlideListWidth, 1)}
+          onMouseDown={startColumnResize(ui.slideListWidth, ui.setSlideListWidth, 1)}
         />
 
         <div
           className="shrink-0 flex flex-col border-r border-border min-h-0"
-          style={`width: ${editorWidth()}px`}
+          style={`width: ${ui.editorWidth()}px`}
         >
           <SlideEditor
             hasSelection={selectedRange() !== null}
@@ -1319,7 +1210,7 @@ export function Studio() {
 
         <div
           className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"
-          onMouseDown={startResize(editorWidth, setEditorWidth, 1)}
+          onMouseDown={startColumnResize(ui.editorWidth, ui.setEditorWidth, 1)}
         />
 
         <SlidePreview
@@ -1337,29 +1228,29 @@ export function Studio() {
       />
 
       <SlideContextMenu
-        hidden={contextMenu().kind === 'closed'}
-        position={contextMenuPositionOf(contextMenu())}
+        hidden={ui.contextMenu().kind === 'closed'}
+        position={contextMenuPositionOf(ui.contextMenu())}
         menuItems={currentMenuItems()}
-        layoutPickerOpen={isLayoutPickerOpen(contextMenu())}
+        layoutPickerOpen={isLayoutPickerOpen(ui.contextMenu())}
         layoutPickerView={layoutPickerView()}
-        layoutPreviews={layoutPreviews()}
-        layoutPreviewCss={layoutPreviewCss()}
+        layoutPreviews={ui.layoutPreviews()}
+        layoutPreviewCss={ui.layoutPreviewCss()}
         canvasWidth={canvasWidth()}
         canvasHeight={canvasHeight()}
         onMenuRef={el => { contextMenuEl = el }}
-        onClose={closeContextMenu}
-        onNewSlide={() => { void addSlide(contextMenuAppendIndex()); closeContextMenu() }}
-        onCut={() => { void cutSlide(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
-        onCopy={() => { copySlide(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
-        onPaste={() => { void pasteSlideAfter(contextMenuAppendIndex()); closeContextMenu() }}
-        onDelete={() => { void deleteSlide(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
-        onToggleLayoutPicker={toggleLayoutPicker}
-        onChangeLayout={name => { void changeSlideLayout(contextMenuIndexOf(contextMenu())!, name); closeContextMenu() }}
-        onToggleDraft={() => { void toggleSlideDraft(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
-        onToggleSkip={() => { void toggleSlideSkip(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
-        onToggleSection={() => { void toggleSlideSection(contextMenuIndexOf(contextMenu())!); closeContextMenu() }}
-        onMoveUp={() => { void moveSlide(contextMenuIndexOf(contextMenu())!, -1); closeContextMenu() }}
-        onMoveDown={() => { void moveSlide(contextMenuIndexOf(contextMenu())!, 1); closeContextMenu() }}
+        onClose={ui.closeContextMenu}
+        onNewSlide={() => { void addSlide(ui.contextMenuAppendIndex(manifest()?.slideCount ?? 1)); ui.closeContextMenu() }}
+        onCut={() => { void cutSlide(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
+        onCopy={() => { copySlide(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
+        onPaste={() => { void pasteSlideAfter(ui.contextMenuAppendIndex(manifest()?.slideCount ?? 1)); ui.closeContextMenu() }}
+        onDelete={() => { void deleteSlide(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
+        onToggleLayoutPicker={ui.toggleLayoutPicker}
+        onChangeLayout={name => { void changeSlideLayout(contextMenuIndexOf(ui.contextMenu())!, name); ui.closeContextMenu() }}
+        onToggleDraft={() => { void toggleSlideDraft(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
+        onToggleSkip={() => { void toggleSlideSkip(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
+        onToggleSection={() => { void toggleSlideSection(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
+        onMoveUp={() => { void moveSlide(contextMenuIndexOf(ui.contextMenu())!, -1); ui.closeContextMenu() }}
+        onMoveDown={() => { void moveSlide(contextMenuIndexOf(ui.contextMenu())!, 1); ui.closeContextMenu() }}
       />
         </>
       )}
