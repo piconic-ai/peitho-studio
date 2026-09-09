@@ -143,6 +143,19 @@ Tauri v2(Rust) + BarefootJS CSR + UnoCSS。peitho-coreはサブプロセスで�
   (コンパイラの識別子抽出が分割代入を素通りするため)。`const store =
   createFooStore()`と受け取り、プロパティ経由(`store.x()`)で呼ぶ分には
   問題ない。
+- **propsには`Memo<T>`型のgetter自体ではなく、呼び出した値を渡す**
+  (`isBusy={isBusy()}`であって`isBusy={isBusy}`ではない)。後者を渡すと
+  コンパイラが`BF044`(`Signal/Memo getter passed without calling it`)で
+  ビルドエラーにする——`components/WelcomeScreen.tsx`切り出し時に
+  `isBusy: Memo<boolean>`という型で設計して踏んだ。BarefootJSのprops
+  リアクティビティはSolidJSと同じモデルで、`value={count()}`はコンパイラに
+  よって`{ get value() { return count() } }`というgetterプロパティに
+  下げられる。子側は`props.xxx`と直接読む(分割代入すると`BF043`警告——
+  リアクティビティが失われるため。初期値として1回だけ使う意図なら
+  `@bf-ignore props-destructuring`で明示的に黙らせる)。この`props.xxx`型の
+  読み取りも`bf debug graph`の静的グラフには乗らない(`no tracked deps`)
+  ことが多いが、上記の教訓どおり動的追跡で実際には正しく更新される
+  ——Playwrightで確認済み。
 
 ## UnoCSS (Wind4 preset) で踏んだ落とし穴
 

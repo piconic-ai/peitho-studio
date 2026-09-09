@@ -35,9 +35,18 @@
   コールバックだけ(`onSelect(i)`であって`setSelectedIndex`ではない)。
   どの関数がどのシグナルを書くかをストア1箇所に閉じ込め、暗黙の契約が
   複数箇所に散らばるのを防ぐ。
-- **読み取りpropsは`Memo<T>`型で公開する**。BarefootJSのリアクティビティ検出は
-  `Reactive<T>`ブランド型ベースなので、`Memo<T>`を渡せば別ファイルのJSXから
-  読んでも静的にリアクティブと認識される。
+- **読み取りpropsには`Memo<T>`型のgetter自体ではなく、呼び出した値を渡す**
+  (`isBusy={isBusy()}`であって`isBusy={isBusy}`ではない)——後者は
+  コンパイラが`BF044`(`Signal/Memo getter passed without calling it`)で
+  ビルドエラーにする。BarefootJSのpropsリアクティビティはSolidJSと同じ
+  モデルで、`value={count()}`は`{ get value() { return count() } }`という
+  getterプロパティに下げられる。子側は`props.xxx`と直接読む(分割代入
+  すると`BF043`警告——初期値として1回だけ使う意図なら`@bf-ignore
+  props-destructuring`で明示的に黙らせる)。`bf debug graph`は
+  `props.xxx`型の読み取りの依存を静的グラフに乗せない(`no tracked deps`)
+  ことが多いが、これも他の`no tracked deps`ケースと同様、動的追跡
+  (wrap-by-default)で実際には正しく更新される——`components/
+  WelcomeScreen.tsx`切り出し時に実機(Playwright)で確認済み。
 - **`Map`/`Set`/`Function`型はpropsに渡せない**(BF049)。コレクションを渡す
   代わりに`(key) => Getter`のようなアクセサ関数を渡す。
 - **ローカル関数内にJSXは書けない**(BF045)。「JSXを描画ヘルパー関数に切る」
