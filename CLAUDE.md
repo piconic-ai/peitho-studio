@@ -107,7 +107,7 @@ Tauri v2(Rust) + BarefootJS CSR + UnoCSS。peitho-coreはサブプロセスで�
   どれか1つのアイテムが変わるたびに全行が再レンダーされる(チラつきの原因)。
   代わりに`Map<key, [getter, setter]>`をkeyごとに遅延生成し、
   `createEffect`で「値が実際に変わったキーの setter だけ」呼ぶ
-  (`fragmentSignal`/`indexSignal`パターン、`components/Studio.tsx`参照)。
+  (`fragmentSignal`/`indexSignal`パターン、`state/renderStore.ts`参照)。
 - **`.map()`のコールバックは式本体にする。** `(item, i) => (<jsx/>)`の形に
   し、`{ const x = ...; return <jsx/> }`のようなブロック本体は避ける
   ——ブロック本体はコンパイルエラー(`BF021`)になる。インデックスから
