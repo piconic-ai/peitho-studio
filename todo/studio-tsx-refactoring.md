@@ -747,8 +747,13 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       `git branch temp 461dce4`で退避 → `new-deck-modal`を直前のpush済み
       コミットへ`git reset --hard`→`gh stack add deck-header`→
       `git cherry-pick temp`で新ブランチへ移動、という手順で復旧。
-- [ ] **Step 15〜18**: JSXを1PRにつき1コンポーネントずつそのまま移動:
-      `StatusBar` →
+- [x] **Step 15**完了。`components/StatusBar.tsx`(新規)にエラーバナー
+      (Copyボタン付き)とフッターのステータス行をまとめて移動。同じ形
+      ——値渡し+コールバックprops(`onCopyErrorMessage`)。
+      `copyErrorMessage`自体(clipboard書き込み+`errorMessageCopied`の
+      タイマー付きトグル)は副作用のため`Studio.tsx`側に残した。
+      全spec/adversarialテスト通過(222 pass、ロジック変更なし)。
+- [ ] **Step 16〜18**: JSXを1PRにつき1コンポーネントずつそのまま移動:
       `SlidePreview` → `SlideEditor` → `SlideContextMenu`(永続マウント維持) →
       `SlideList`(`dom/thumbnailIframe.ts`へref移動)。
 - [ ] **Step 19**: `Studio.tsx`を合成ルートに整理(目標200〜300行)。
