@@ -1,0 +1,10 @@
+# tagpr config: https://github.com/Songmu/tagpr
+# tagpr may rewrite parts of this file on its first run (e.g. it can
+# auto-detect settings) — that's expected, not a sign this seed is wrong.
+[tagpr]
+	vPrefix = true
+	releaseBranch = "main"
+	versionFile = "src-tauri/Cargo.toml"
+	changelog = true
+	changelogFile = "CHANGELOG.md"
+	postVersionCommand = "bash scripts/sync-tauri-version.sh"
