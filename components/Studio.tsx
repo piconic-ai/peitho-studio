@@ -7,7 +7,7 @@ import { createTauriDeckIpc, type RenderPayload } from '../ipc/deckIpc'
 import { type Manifest, type ManifestSection, type ManifestSlide, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
 import { clampMenuPosition } from '../domain/geometry'
 import { type PageConfig } from '../domain/pageConfig'
-import { type SelectionPlan, selectionAfter } from '../domain/editorSession'
+import { type SelectionPlan, type EditorSession, type SlideFields, isDirty as computeIsDirty, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
 import { type DragState, arm, move, dropTarget, cancel } from '../domain/drag'
 import { type ContextMenu, type MenuAction, type MenuItem, indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, appendIndex as computeAppendIndex } from '../domain/contextMenu'
@@ -61,19 +61,40 @@ export function Studio() {
   const [manifest, setManifest] = createSignal<Manifest | null>(null)
   const [fullSource, setFullSource] = createSignal('')
   const [slideRanges, setSlideRanges] = createSignal<SlideRange[]>([])
-  const [selectedIndex, setSelectedIndex] = createSignal<number | null>(null)
-  const [bodyDraft, setBodyDraft] = createSignal('')
-  const [noteDraft, setNoteDraft] = createSignal('')
-  const [originalBody, setOriginalBody] = createSignal('')
-  const [originalNote, setOriginalNote] = createSignal('')
-  // The selected slide's PageComment JSON, held out of `bodyDraft` entirely
-  // so the body textarea never shows it — the whole point of this app is
+  // The editor pane's entire state — which slide (if any) is open, its
+  // last-saved fields, and the live draft — as one `domain/editorSession.ts`
+  // ADT signal, with memos below projecting the pieces the rest of this
+  // file reads individually (`selectedIndex`/`bodyDraft`/`noteDraft`/
+  // `pageConfig`). Previously five independent signals
+  // (`selectedIndex`/`bodyDraft`/`noteDraft`/`originalBody`/`originalNote`)
+  // plus a separate `pageConfig`, which is exactly the kind of "ADT
+  // scattered across independent fields" this refactor's `docs/
+  // architecture.md` warns against — nothing stopped e.g. `bodyDraft`
+  // pointing at one slide's text while `selectedIndex` had already moved
+  // to another. `pageConfig` is held in `draft.config`/`saved.config`
+  // rather than in `bodyDraft` itself — the whole point of this app is
   // that hand-writing/eyeballing that JSON comment (and telling it apart
   // from the note comment, same HTML-comment syntax) is the wrong way to
-  // edit it. Applied through `buildSlideText` whenever the raw slide text is
-  // reconstructed for saving; edited only via the thumbnail context menu /
-  // section-header inputs, never by hand here.
-  const [pageConfig, setPageConfig] = createSignal<PageConfig>({})
+  // edit it. Applied through `buildSlideText` whenever the raw slide text
+  // is reconstructed for saving; edited only via the thumbnail context
+  // menu / section-header inputs, never by hand in the body textarea.
+  const [editorSession, setEditorSession] = createSignal<EditorSession>({ kind: 'none' })
+  const selectedIndex = createMemo(() => {
+    const s = editorSession()
+    return s.kind === 'editing' ? s.index : null
+  })
+  const bodyDraft = createMemo(() => {
+    const s = editorSession()
+    return s.kind === 'editing' ? s.draft.body : ''
+  })
+  const noteDraft = createMemo(() => {
+    const s = editorSession()
+    return s.kind === 'editing' ? s.draft.note : ''
+  })
+  const pageConfig = createMemo<PageConfig>(() => {
+    const s = editorSession()
+    return s.kind === 'editing' ? s.draft.config : {}
+  })
   // One independent signal per slide key, rather than a single
   // `Record<string, string>` signal — reading `slideFragments()` as a whole
   // record would subscribe every thumbnail's `srcdoc` effect to the *entire*
@@ -245,10 +266,7 @@ export function Studio() {
     if (i === null) return null
     return slideRanges()[i] ?? null
   })
-  const isDirty = createMemo(() => {
-    if (selectedRange() === null) return false
-    return bodyDraft() !== originalBody() || noteDraft() !== originalNote()
-  })
+  const isDirty = createMemo(() => computeIsDirty(editorSession()))
   const selectedSlide = createMemo<ManifestSlide | null>(() => {
     const i = selectedIndex()
     if (i === null) return null
@@ -446,14 +464,14 @@ export function Studio() {
     const ranges = splitSlides(source)
     setSlideRanges(ranges)
     const nextIndex = clampFocusIndex(preserveSelection ? selectedIndex() : null, ranges.length)
-    setSelectedIndex(nextIndex)
-    const { rest: withoutNote, note } = extractNote(nextIndex !== null ? ranges[nextIndex].text : '')
-    const { rest, config } = extractPageComment(withoutNote)
-    setBodyDraft(rest)
-    setNoteDraft(note)
-    setOriginalBody(rest)
-    setOriginalNote(note)
-    setPageConfig(config)
+    if (nextIndex === null) {
+      setEditorSession({ kind: 'none' })
+    } else {
+      const { rest: withoutNote, note } = extractNote(ranges[nextIndex].text)
+      const { rest, config } = extractPageComment(withoutNote)
+      const fields: SlideFields = { body: rest, note, config }
+      setEditorSession({ kind: 'editing', index: nextIndex, saved: fields, draft: fields })
+    }
     syncEditorFields()
   }
 
@@ -609,9 +627,7 @@ export function Studio() {
     plan: SelectionPlan,
     expectedDraft?: { body: string; note: string },
   ): Promise<void> {
-    const selectedBefore = selectedIndex()
-    const bodyBefore = bodyDraft()
-    const noteBefore = noteDraft()
+    const before = editorSession()
     setIsBusy(true)
     setErrorMessage(null)
     try {
@@ -621,42 +637,25 @@ export function Studio() {
       setFullSource(nextSource)
       const ranges = splitSlides(nextSource)
       setSlideRanges(ranges)
-      const nextIndex = selectionAfter(plan, selectedBefore, ranges.length)
-
-      // Only move the user's selection if they haven't already navigated
-      // elsewhere themselves while this was in flight. Every caller passes
-      // a `SelectionPlan` naming its own intent (`keep` for
-      // `handleSave`/`commitSectionEdit`/`updateSlideConfig`, which never
-      // move anything; `follow-move` for `reorderSlides`, which keeps the
-      // open slide's own position even when the slide it moved isn't the
-      // one that's open; `select`/`clamp-after-delete` for insert/paste/
-      // delete) — never the position of whatever the change actually
-      // touched, or this would drag the selection there regardless of
-      // what the user had open.
-      if (selectedIndex() === selectedBefore) {
-        setSelectedIndex(nextIndex)
-      }
-      const activeIndex = selectedIndex()
-      if (activeIndex !== null && activeIndex === nextIndex) {
-        const rawText = ranges[activeIndex]?.text ?? ''
-        const { rest: withoutNote, note: extractedNote } = extractNote(rawText)
-        const { rest: extractedBody, config } = extractPageComment(withoutNote)
-        const { rest, note } = expectedDraft
-          ? { rest: expectedDraft.body, note: expectedDraft.note }
-          : { rest: extractedBody, note: extractedNote }
-        setOriginalBody(rest)
-        setOriginalNote(note)
-        setPageConfig(config)
-        // Only overwrite the live draft if it still matches what we just
-        // sent — if the user typed more in the meantime, leave their newer
-        // text alone; isDirty() stays true against the fresh originalBody
-        // above, so the autosave effect naturally fires again for it.
-        if (bodyDraft() === bodyBefore && noteDraft() === noteBefore) {
-          setBodyDraft(rest)
-          setNoteDraft(note)
-          syncEditorFields()
-        }
-      }
+      // `reconcileAfterCommit` only moves the selection/refreshes `saved`
+      // if the user hasn't already navigated elsewhere themselves while
+      // this was in flight — every caller passes a `SelectionPlan` naming
+      // its own intent (`keep` for `handleSave`/`commitSectionEdit`/
+      // `updateSlideConfig`, which never move anything; `follow-move` for
+      // `reorderSlides`, which keeps the open slide's own position even
+      // when the slide it moved isn't the one that's open;
+      // `select`/`clamp-after-delete` for insert/paste/delete) — never the
+      // position of whatever the change actually touched, or this would
+      // drag the selection there regardless of what the user had open.
+      const now = editorSession()
+      const next = reconcileAfterCommit(before, now, ranges, plan, expectedDraft)
+      setEditorSession(next)
+      // `next === now` means the user moved on (a different selection, or
+      // no change resolved) and this deliberately left it alone — nothing
+      // to push into the textareas. Otherwise `saved` refreshed and/or
+      // `draft` synced to it, so re-sync (a no-op if `draft` itself didn't
+      // actually change, e.g. the user kept typing through the gap).
+      if (next !== now) syncEditorFields()
       setStatusMessage('Saved')
     } catch (err) {
       setErrorMessage(String(err))
@@ -686,12 +685,8 @@ export function Studio() {
     if (isDirty()) await handleSave()
     const { rest: withoutNote, note } = extractNote(slideRanges()[index]?.text ?? '')
     const { rest, config } = extractPageComment(withoutNote)
-    setSelectedIndex(index)
-    setBodyDraft(rest)
-    setNoteDraft(note)
-    setOriginalBody(rest)
-    setOriginalNote(note)
-    setPageConfig(config)
+    const fields: SlideFields = { body: rest, note, config }
+    setEditorSession({ kind: 'editing', index, saved: fields, draft: fields })
     syncEditorFields()
   }
 
@@ -1049,9 +1044,7 @@ export function Studio() {
         if (i !== null && i < ranges.length) {
           const { rest: withoutNote, note } = extractNote(ranges[i].text)
           const { rest, config } = extractPageComment(withoutNote)
-          setOriginalBody(rest)
-          setOriginalNote(note)
-          setPageConfig(config)
+          setEditorSession(session => withRefreshedSaved(session, { body: rest, note, config }))
         }
         await renderPreview(source)
         setStatusMessage('Deck changed on disk elsewhere — merged around your unsaved edit.')
@@ -1849,7 +1842,7 @@ export function Studio() {
                   el.addEventListener('compositionstart', () => { bodyComposing = true })
                   el.addEventListener('compositionend', () => { bodyComposing = false })
                 }}
-                onInput={e => setBodyDraft(e.target.value)}
+                onInput={e => setEditorSession(session => withDraftBody(session, e.target.value))}
                 spellcheck={false}
                 className="flex-1 resize-none p-3 font-mono text-sm bg-background text-foreground outline-none border-b border-border"
               />
@@ -1864,7 +1857,7 @@ export function Studio() {
                     el.addEventListener('compositionstart', () => { noteComposing = true })
                     el.addEventListener('compositionend', () => { noteComposing = false })
                   }}
-                  onInput={e => setNoteDraft(e.target.value)}
+                  onInput={e => setEditorSession(session => withDraftNote(session, e.target.value))}
                   placeholder="Notes for the presenter — not shown to the audience."
                   className="flex-1 resize-none p-3 text-sm bg-background text-foreground outline-none"
                 />
