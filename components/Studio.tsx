@@ -11,6 +11,7 @@ import { type SelectionPlan, type EditorSession, type SlideFields, isDirty as co
 import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
 import { type DragState, arm, move, dropTarget, cancel } from '../domain/drag'
 import { type ContextMenu, type MenuAction, type MenuItem, indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, appendIndex as computeAppendIndex } from '../domain/contextMenu'
+import { type DeckLifecycle, type DeckEvent, decide, isBusy as computeIsBusy } from '../domain/deckLifecycle'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import {
   splitSlides,
@@ -46,7 +47,104 @@ const NEW_SLIDE_MARKDOWN = '# New Slide\n'
 
 export function Studio() {
   const deckIpc = createTauriDeckIpc()
-  const [deckPath, setDeckPath] = createSignal<string | null>(null)
+  // The whole welcome/new-deck/open flow as one `domain/deckLifecycle.ts`
+  // ADT signal, replacing five independently-settable signals
+  // (`deckPath`/`isBusy`/`newDeckModalOpen`/`newDeckParentDir`/
+  // `newDeckName`) that let bug bfa5577 happen: `submitNewDeck` held
+  // `isBusy(true)` across a call into `loadDeck`, whose own separate
+  // `isBusy` guard silently no-opped the load, leaving the folder
+  // created but the editor never shown. `decide`'s `creating` state can
+  // only transition to `opening` (never straight back to `welcome`) on
+  // its `created` event, so that failure mode is unrepresentable now.
+  const [deckLifecycle, setDeckLifecycle] = createSignal<DeckLifecycle>({ kind: 'welcome' })
+  const deckPath = createMemo(() => {
+    const l = deckLifecycle()
+    return l.kind === 'open' ? l.deckPath : null
+  })
+  const isBusy = createMemo(() => computeIsBusy(deckLifecycle()))
+  const newDeckModalOpen = createMemo(() => {
+    const k = deckLifecycle().kind
+    return k === 'naming-new-deck' || k === 'creating'
+  })
+  const newDeckParentDir = createMemo(() => {
+    const l = deckLifecycle()
+    return l.kind === 'naming-new-deck' || l.kind === 'creating' ? l.parentDir : null
+  })
+  const newDeckName = createMemo(() => {
+    const l = deckLifecycle()
+    return l.kind === 'naming-new-deck' || l.kind === 'creating' ? l.name : ''
+  })
+  // Applies `event` to the current lifecycle via `decide`, commits the
+  // resulting state, and runs whichever IPC call the transition implies
+  // — awaited, so a caller that needs to know the outcome (`onMount`'s
+  // pending-deck load) can inspect `deckLifecycle()` right after this
+  // resolves. `rejected` decisions are silently dropped: every caller
+  // already only fires events its own UI state makes reachable (e.g. the
+  // Create button is `disabled` while `isBusy()`), so a rejection here
+  // would mean a caller raced its own guard, not something worth
+  // surfacing to the user.
+  async function dispatch(event: DeckEvent): Promise<void> {
+    const decision = decide(deckLifecycle(), event)
+    if (decision.kind === 'rejected') return
+    const next = decision.next
+    setDeckLifecycle(next)
+    if (decision.effect === 'invoke-open' && next.kind === 'opening') {
+      await runOpen(next.path)
+    } else if (decision.effect === 'invoke-create' && next.kind === 'creating') {
+      await runCreate(next.parentDir, next.name)
+    } else if (decision.effect === 'spawn-window' && event.type === 'open-requested') {
+      await openDeckInNewWindow(event.path)
+    }
+  }
+  // The `invoke-open` effect: opens `path` in *this* window. Feeds its
+  // outcome back through `dispatch` (`opened`/`failed`) rather than
+  // setting `deckLifecycle` directly, so `creating` -> `opening` ->
+  // `open` always goes through the same one state-transition table
+  // regardless of which event started the chain.
+  async function runOpen(path: string): Promise<void> {
+    setErrorMessage(null)
+    try {
+      const info = await deckIpc.openDeck(path)
+      applyRenderPayload(info.render)
+      await refreshSource(false)
+      setStatusMessage(`Opened ${info.deckPath}`)
+      await dispatch({ type: 'opened', deckPath: info.deckPath })
+    } catch (err) {
+      setErrorMessage(String(err))
+      // A failure here often means the path was a Recent entry pointing
+      // at a folder that's since moved or been deleted — re-fetch so a
+      // now-stale entry (Rust prunes it against disk on every read)
+      // isn't still sitting there to fail the exact same way if clicked
+      // again.
+      void refreshRecentDecks()
+      await dispatch({ type: 'failed', message: String(err) })
+    }
+  }
+  // The `invoke-create` effect.
+  async function runCreate(parentDir: string, name: string): Promise<void> {
+    setErrorMessage(null)
+    try {
+      const path = await deckIpc.createDeck(parentDir, name)
+      await dispatch({ type: 'created', path })
+    } catch (err) {
+      setErrorMessage(String(err))
+      await dispatch({ type: 'failed', message: String(err) })
+    }
+  }
+  // The `spawn-window` effect — modeled in `domain/deckLifecycle.ts` for
+  // completeness (an `open` window that somehow receives another
+  // `open-requested` shouldn't lose its own deck), but as of this
+  // writing nothing in this file can actually fire `open-requested`
+  // while `open`: the buttons/Recent entries that dispatch it only
+  // render on the welcome screen, and native "Open Recent" opens a new
+  // window entirely Rust-side without going through this component.
+  async function openDeckInNewWindow(path: string): Promise<void> {
+    try {
+      await deckIpc.openDeckWindow(path)
+    } catch (err) {
+      setErrorMessage(String(err))
+    }
+  }
   const [assetBaseUrl, setAssetBaseUrl] = createSignal<string | null>(null)
   // The deck's native slide canvas size — split out of `manifest` into its
   // own equality-guarded signals (set in `applyRenderPayload`) even though
@@ -153,7 +251,15 @@ export function Studio() {
     const s = dragState()
     return s.kind === 'dragging' ? s.deltaY : 0
   })
-  const [isBusy, setIsBusy] = createSignal(false)
+  // Distinct from `isBusy` above (the deck-lifecycle one): this guards
+  // `commitChange`'s own in-flight save, which used to share the same
+  // `isBusy` signal with the welcome-screen open/create flow. The two
+  // never actually overlapped in practice (the welcome screen only
+  // shows while `deckPath() === null`, and `commitChange` only runs
+  // once a deck is open), but sharing one flag for two unrelated
+  // "something is in flight" meanings was exactly the kind of implicit
+  // coupling this refactor is trying to remove.
+  const [isSavingSlide, setIsSavingSlide] = createSignal(false)
   const [statusMessage, setStatusMessage] = createSignal('')
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null)
   const [errorMessageCopied, setErrorMessageCopied] = createSignal(false)
@@ -197,9 +303,6 @@ export function Studio() {
   // `localStorage`, since the native File > Open Recent submenu needs the
   // same list and has no access to this webview's storage.
   const [recentDecks, setRecentDecks] = createSignal<string[]>([])
-  const [newDeckModalOpen, setNewDeckModalOpen] = createSignal(false)
-  const [newDeckParentDir, setNewDeckParentDir] = createSignal<string | null>(null)
-  const [newDeckName, setNewDeckName] = createSignal('')
 
   // Plain (non-reactive) DOM handles for the two editor textareas — see the
   // note above `syncEditorFields` for why these are *not* driven by a
@@ -389,7 +492,7 @@ export function Studio() {
     let timerId: number
     const attempt = () => {
       if (!live) return
-      if (isBusy()) {
+      if (isSavingSlide()) {
         timerId = window.setTimeout(attempt, 150)
         return
       }
@@ -475,54 +578,6 @@ export function Studio() {
     syncEditorFields()
   }
 
-  // The actual work of loading a deck into *this* window, replacing
-  // whatever it currently shows. Assumes the caller already holds `isBusy`
-  // (set before calling, cleared after) — this has no guard of its own, so
-  // it's only safe to call from a spot that itself enforces "only one of
-  // these in flight at a time". `loadDeck` below is that guard for callers
-  // that aren't already busy; `submitNewDeck` manages its own `isBusy`
-  // across both `create_deck` and the open that follows, so it calls this
-  // directly instead of through `loadDeck` (which would otherwise see
-  // `isBusy()` already true and silently no-op).
-  async function loadDeckCore(path: string): Promise<void> {
-    setErrorMessage(null)
-    try {
-      const info = await deckIpc.openDeck(path)
-      setDeckPath(info.deckPath)
-      applyRenderPayload(info.render)
-      await refreshSource(false)
-      setStatusMessage(`Opened ${info.deckPath}`)
-    } catch (err) {
-      setErrorMessage(String(err))
-      // A failure here often means the path was a Recent entry pointing at
-      // a folder that's since moved or been deleted — re-fetch so a
-      // now-stale entry (Rust prunes it against disk on every read) isn't
-      // still sitting there to fail the exact same way if clicked again.
-      void refreshRecentDecks()
-    }
-  }
-
-  // Loads a deck into *this* window (nothing, on first mount via
-  // `take_pending_deck`/`dev_default_deck` — see `onMount` below; the
-  // welcome screen, via `openDeckPreferringCurrentWindow`). Never call this
-  // directly for a window that might already have a *different* deck open
-  // — that's what `openDeckInNewWindow` is for.
-  async function loadDeck(path: string): Promise<void> {
-    // Same reasoning as the guard at the top of `submitNewDeck` — the
-    // welcome screen's buttons/Recent entries reactively disable on
-    // `isBusy()`, but that's not synchronous, so a rapid double-click
-    // (e.g. two different Recent entries before the first re-render lands)
-    // could otherwise start a second overlapping `open_deck` in the same
-    // window.
-    if (isBusy()) return
-    setIsBusy(true)
-    try {
-      await loadDeckCore(path)
-    } finally {
-      setIsBusy(false)
-    }
-  }
-
   async function refreshRecentDecks(): Promise<void> {
     try {
       setRecentDecks(await deckIpc.getRecentDecks())
@@ -531,65 +586,16 @@ export function Studio() {
     }
   }
 
-  // A window that already has a deck open never loses it just because
-  // another one was picked from, say, the native menu — a user comparing
-  // two decks side by side needs both on screen at once, so that always
-  // spawns a separate window. A window still on the welcome screen has
-  // nothing to lose, though, so filling *that* window beats leaving it
-  // stranded, empty, behind a new one.
-  async function openDeckInNewWindow(path: string): Promise<void> {
-    try {
-      await deckIpc.openDeckWindow(path)
-    } catch (err) {
-      setErrorMessage(String(err))
-    }
-  }
-
-  // `alreadyBusy`: pass true when the caller is already holding `isBusy`
-  // across a call to this (see `submitNewDeck`) so this goes through
-  // `loadDeckCore` instead of the self-guarding `loadDeck`.
-  async function openDeckPreferringCurrentWindow(path: string, alreadyBusy = false): Promise<void> {
-    if (deckPath() === null) {
-      await (alreadyBusy ? loadDeckCore(path) : loadDeck(path))
-    } else {
-      await openDeckInNewWindow(path)
-    }
-  }
-
   async function handleOpenFolder(): Promise<void> {
     const picked = await openDialog({ directory: true, title: 'Open a Peitho deck folder' })
     if (!picked || typeof picked !== 'string') return
-    await openDeckPreferringCurrentWindow(picked)
+    await dispatch({ type: 'open-requested', path: picked })
   }
 
   async function handleNewDeck(): Promise<void> {
     const parent = await openDialog({ directory: true, title: 'Choose a location for the new deck' })
     if (!parent || typeof parent !== 'string') return
-    setNewDeckParentDir(parent)
-    setNewDeckName('')
-    setNewDeckModalOpen(true)
-  }
-
-  async function submitNewDeck(): Promise<void> {
-    const parent = newDeckParentDir()
-    const name = newDeckName().trim()
-    // The `disabled` state on the Create button/input covers this in the
-    // UI, but that's a reactive re-render away, not synchronous — without
-    // this, pressing Enter twice in quick succession (or once from the
-    // input plus once from a queued click) starts a second overlapping
-    // `create_deck` for the same name before the first re-render lands.
-    if (!parent || !name || isBusy()) return
-    setIsBusy(true)
-    setErrorMessage(null)
-    try {
-      const path = await deckIpc.createDeck(parent, name)
-      setNewDeckModalOpen(false)
-      await openDeckPreferringCurrentWindow(path, true)
-    } catch (err) {
-      setErrorMessage(String(err))
-    } finally {
-      setIsBusy(false)
-    }
+    await dispatch({ type: 'new-deck-requested', parentDir: parent })
   }
 
   // Writes a full deck.md replacement to disk, then re-derives every piece
@@ -628,7 +634,7 @@ export function Studio() {
     expectedDraft?: { body: string; note: string },
   ): Promise<void> {
     const before = editorSession()
-    setIsBusy(true)
+    setIsSavingSlide(true)
     setErrorMessage(null)
     try {
       const payload = await deckIpc.renderDraft(nextSource)
@@ -660,7 +666,7 @@ export function Studio() {
     } catch (err) {
       setErrorMessage(String(err))
     } finally {
-      setIsBusy(false)
+      setIsSavingSlide(false)
     }
   }
 
@@ -1067,8 +1073,8 @@ export function Studio() {
     void (async () => {
       const pending = await deckIpc.takePendingDeck()
       if (pending) {
-        await loadDeck(pending)
-        if (deckPath() === null) {
+        await dispatch({ type: 'open-requested', path: pending })
+        if (deckLifecycle().kind !== 'open') {
           // This window exists solely to show `pending` (e.g. a Recent
           // entry that pointed at a folder deleted/moved since it was
           // remembered) — closing it returns focus to whichever window
@@ -1079,7 +1085,7 @@ export function Studio() {
         return
       }
       const devDeck = await deckIpc.devDefaultDeck()
-      if (devDeck) await loadDeck(devDeck)
+      if (devDeck) await dispatch({ type: 'open-requested', path: devDeck })
     })()
 
     const unlistenFileChanged = deckIpc.onDeckFileChanged(() => {
@@ -1254,7 +1260,7 @@ export function Studio() {
                     <button
                       type="button"
                       key={path}
-                      onClick={() => void openDeckPreferringCurrentWindow(path)}
+                      onClick={() => void dispatch({ type: 'open-requested', path })}
                       disabled={isBusy()}
                       title={path}
                       // A path's most distinguishing part (the deck's own
@@ -2075,25 +2081,26 @@ export function Studio() {
         <>
           {/* Closing on a backdrop click/Escape while `create_deck` is still
               in flight would abandon the modal but not the in-flight
-              `submitNewDeck()` call itself — it still finishes and opens
-              the deck once `create_deck` resolves, just with no modal left
-              on screen to have shown that. Guarding these the same way as
+              create itself — `decide`'s `creating` state rejects a
+              `create-cancelled` it doesn't recognize as an event anyway
+              (busy), so this guard is belt-and-suspenders for the UI, not
+              load-bearing for correctness. Guarding these the same way as
               the Cancel/Create buttons below keeps all four exits in sync. */}
-          <div className="fixed top-0 right-0 bottom-0 left-0 z-40 bg-black/40" onClick={() => { if (!isBusy()) setNewDeckModalOpen(false) }} />
+          <div className="fixed top-0 right-0 bottom-0 left-0 z-40 bg-black/40" onClick={() => { if (!isBusy()) void dispatch({ type: 'create-cancelled' }) }} />
           <div className="fixed top-0 right-0 bottom-0 left-0 z-50 flex items-center justify-center">
             <div className="w-full max-w-sm rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-4">
               <div className="text-sm font-medium mb-3">New Deck</div>
               <input
                 type="text"
                 value={newDeckName()}
-                onInput={e => setNewDeckName(e.target.value)}
+                onInput={e => void dispatch({ type: 'name-changed', name: e.target.value })}
                 placeholder="Deck name"
                 autofocus
                 disabled={isBusy()}
                 className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm outline-none mb-1 disabled:opacity-50"
                 onKeyDown={e => {
-                  if (e.key === 'Enter') void submitNewDeck()
-                  if (e.key === 'Escape' && !isBusy()) setNewDeckModalOpen(false)
+                  if (e.key === 'Enter') void dispatch({ type: 'create-confirmed' })
+                  if (e.key === 'Escape' && !isBusy()) void dispatch({ type: 'create-cancelled' })
                 }}
               />
               <div className="text-xs text-muted-foreground mb-3 truncate">{newDeckParentDir()}</div>
@@ -2101,7 +2108,7 @@ export function Studio() {
                 <button
                   type="button"
                   disabled={isBusy()}
-                  onClick={() => setNewDeckModalOpen(false)}
+                  onClick={() => void dispatch({ type: 'create-cancelled' })}
                   className="px-3 py-1.5 rounded-md border border-border text-sm disabled:opacity-50"
                 >
                   Cancel
@@ -2109,7 +2116,7 @@ export function Studio() {
                 <button
                   type="button"
                   disabled={newDeckName().trim() === '' || isBusy()}
-                  onClick={() => void submitNewDeck()}
+                  onClick={() => void dispatch({ type: 'create-confirmed' })}
                   className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
                 >
                   {isBusy() ? 'Creating…' : 'Create'}
