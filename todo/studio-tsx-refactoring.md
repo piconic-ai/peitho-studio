@@ -773,8 +773,30 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       (リロードのちらつきが増えていないか)は静的検証では検知できない
       性質のバグなので、ユーザーの後日まとめての実機確認で優先的に
       見てもらいたい箇所としてここに明記する。
-- [ ] **Step 17〜18**: JSXを1PRにつき1コンポーネントずつそのまま移動:
-      `SlideEditor` → `SlideContextMenu`(永続マウント維持) →
+- [x] **Step 17**完了。`components/SlideEditor.tsx`(新規)に本文/
+      スピーカーノートの2つのtextareaを移動。**このStepはドラフト値
+      propsを一切持たない**——両textareaは意図的にuncontrolled
+      (`Studio.tsx`の`syncEditorFields`コメント参照: 毎キー入力で
+      `.value`を再代入するとWebKitのIME合成バッファとずれる)なので、
+      境界を越えるのは生のDOM ref callbackとキー入力callbackだけ。
+      `bodyTextareaEl`/`noteTextareaEl`/`bodyComposing`/`noteComposing`
+      と初期値セット+IME合成リスナーは全く同じロジックのまま、名前付き
+      関数(`onBodyTextareaRef`/`onNoteTextareaRef`)に切り出して`ref`
+      propsとして渡す形にしただけ——`syncEditorFields`(スライド切替・
+      保存・外部ファイルマージなど複数箇所から呼ばれる)は引き続き
+      `Studio.tsx`側でこれらに直接アクセスする。
+      具体的な関数シグネチャ型(`(el: HTMLTextAreaElement) => void`)の
+      named function をpropsとして渡す形(`onBodyRef={onBodyTextareaRef}`、
+      インラインアロー関数ではなく変数参照)もビルドエラーにならないことを
+      確認——これまでのStep 12〜16のインラインアロー関数コールバックprops
+      と合わせて、具体的シグネチャの関数値であれば渡し方(インライン/
+      変数参照)を問わず問題ないとみられる。`docs/architecture.md`の
+      「Map/Set/Function型はpropsに渡せない」(BF049)ルール自体は
+      未検証のまま(おそらく`Function`という generic 型注釈そのものを
+      指しており、具体的なシグネチャ型とは別の話と考えられるが、
+      今回はそれを積極的に確かめてはいない)。
+      全spec/adversarialテスト通過(222 pass、ロジック変更なし)。
+- [ ] **Step 18**: `SlideContextMenu`(永続マウント維持) →
       `SlideList`(`dom/thumbnailIframe.ts`へref移動)。
 - [ ] **Step 19**: `Studio.tsx`を合成ルートに整理(目標200〜300行)。
       `CLAUDE.md`の「BarefootJSで踏んだ落とし穴」に分割で得た知見を追記。
