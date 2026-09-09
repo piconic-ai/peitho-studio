@@ -50,6 +50,15 @@ const RULES: readonly LayerRule[] = [
     ],
   },
   {
+    dir: 'dom',
+    description: 'DOM operations — no signals, no Tauri IPC',
+    forbidden: [
+      { pattern: /\bcreateSignal\s*\(/, reason: 'calls `createSignal(` (belongs in state/)' },
+      { pattern: /\bcreateEffect\s*\(/, reason: 'calls `createEffect(` (belongs in state/)' },
+      { pattern: /from\s+['"]@tauri-apps/, reason: "imports '@tauri-apps/*' (belongs in ipc/)" },
+    ],
+  },
+  {
     dir: 'components',
     description: 'JSX composition — Tauri IPC only through ipc/, never inline',
     forbidden: [

@@ -9,7 +9,8 @@ Tauri v2(Rust) + BarefootJS CSR + UnoCSS。peitho-coreはサブプロセスで�
 フロントエンドの層構成(domain/state/ipc/dom/components)・ADTでありえない
 状態を排除する原則・Given-When-Thenでの仕様記述・不具合発見手法の方針は
 `docs/architecture.md`に詳しい(`components/Studio.tsx`のリファクタリングを
-機に確立)。実行中の移行計画・進捗は`todo/`配下(完了後は削除/アーカイブ)。
+機に確立)。実行中の移行計画・進捗は`todo/`配下(完了後は削除、または
+訂正の経緯など参考価値がある場合は`todo/archive/`へ移動)。
 
 - **純粋関数を好む。** 入力から出力が決まる関数を既定にし、副作用・状態への
   依存は本当に必要な箇所だけに絞る。
@@ -107,7 +108,7 @@ Tauri v2(Rust) + BarefootJS CSR + UnoCSS。peitho-coreはサブプロセスで�
   どれか1つのアイテムが変わるたびに全行が再レンダーされる(チラつきの原因)。
   代わりに`Map<key, [getter, setter]>`をkeyごとに遅延生成し、
   `createEffect`で「値が実際に変わったキーの setter だけ」呼ぶ
-  (`fragmentSignal`/`indexSignal`パターン、`components/Studio.tsx`参照)。
+  (`fragmentSignal`/`indexSignal`パターン、`state/renderStore.ts`参照)。
 - **`.map()`のコールバックは式本体にする。** `(item, i) => (<jsx/>)`の形に
   し、`{ const x = ...; return <jsx/> }`のようなブロック本体は避ける
   ——ブロック本体はコンパイルエラー(`BF021`)になる。インデックスから
@@ -118,6 +119,44 @@ Tauri v2(Rust) + BarefootJS CSR + UnoCSS。peitho-coreはサブプロセスで�
   正しく読めているのに)。同じJSXを最初からマウントしておく構成に変えたら
   直った。マウント後の状態遷移で特定の分岐だけ描画されないときは、まず
   この可能性(三項演算子の連鎖 vs マウントで出し分け)を疑う。
+- **(訂正済み・下記参照) `bf debug graph`の`(no tracked deps)`だけで
+  「実機で壊れる」と即断しない。** 一時、このセクションに「シグナル/メモは
+  ファクトリ関数(`state/xxxStore.ts`が`{ x, ... }`を返す形)から渡すと
+  壊れる」「ヘルパー関数越しに読むと壊れる」という2つの"制約"を書いていたが、
+  どちらも`domain/drag.ts`の実装をそのまま使った再現(ファクトリ関数の
+  戻り値をJSXから`store.x()`で呼ぶ、`.map()`の中で複数のmemo呼び出しを
+  含む複雑な式で使う、ヘルパー関数が内部でmemoを読んでJSXから
+  `helper('cut')`のように呼ぶ、の3パターン)で実際にブラウザ動作を
+  確認したところ、**全て正しく動的に更新された**——誤りだったと判明。
+  `bf debug graph`はコンパイル時の静的解析結果であり、BarefootJSには
+  それとは別に動的なリアクティビティ追跡(wrap-by-default)があるため、
+  「静的解析で見つからない依存」がそのまま「実行時に更新されない」を
+  意味しない。当時「動かない」と見えたもの(Step 7のドラッグ視覚効果)は、
+  後に判明した別の原因(実機確認時、DevToolsのInspect Elementモードが
+  有効なままクリックがアプリに届いていなかった)による見かけ上の現象
+  だった可能性が高い。**教訓**: `bf debug graph`の`no tracked deps`は
+  「深掘りすべき手がかり」であって「壊れている確定証拠」ではない。実際に
+  壊れているかどうかは、疑わしければ`@barefootjs/test`のIRテストや
+  実ブラウザでの動作確認まで行ってから判断する。唯一実際に確認できた
+  本物の制約は次の1点だけ:
+  **`const { x } = store`という分割代入でシグナルのgetterを取り出すと
+  `ReferenceError: Can't find variable: x`で実行時に落ちる**
+  (コンパイラの識別子抽出が分割代入を素通りするため)。`const store =
+  createFooStore()`と受け取り、プロパティ経由(`store.x()`)で呼ぶ分には
+  問題ない。
+- **propsには`Memo<T>`型のgetter自体ではなく、呼び出した値を渡す**
+  (`isBusy={isBusy()}`であって`isBusy={isBusy}`ではない)。後者を渡すと
+  コンパイラが`BF044`(`Signal/Memo getter passed without calling it`)で
+  ビルドエラーにする——`components/WelcomeScreen.tsx`切り出し時に
+  `isBusy: Memo<boolean>`という型で設計して踏んだ。BarefootJSのprops
+  リアクティビティはSolidJSと同じモデルで、`value={count()}`はコンパイラに
+  よって`{ get value() { return count() } }`というgetterプロパティに
+  下げられる。子側は`props.xxx`と直接読む(分割代入すると`BF043`警告——
+  リアクティビティが失われるため。初期値として1回だけ使う意図なら
+  `@bf-ignore props-destructuring`で明示的に黙らせる)。この`props.xxx`型の
+  読み取りも`bf debug graph`の静的グラフには乗らない(`no tracked deps`)
+  ことが多いが、上記の教訓どおり動的追跡で実際には正しく更新される
+  ——Playwrightで確認済み。
 
 ## UnoCSS (Wind4 preset) で踏んだ落とし穴
 

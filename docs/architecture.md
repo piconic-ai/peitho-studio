@@ -2,8 +2,8 @@
 
 `CLAUDE.md`の「純粋関数を好む」「状態はディレクトリ/ファイル構造で区別する」という
 原則を、巨大コンポーネント(`components/Studio.tsx`)のリファクタリングを機に、
-より具体的な層構成として拡張したもの。実行手順・進捗は`todo/`配下(完了後は削除/
-アーカイブ)、ここには**恒久的な原則・ルールのみ**を書く。
+より具体的な層構成として拡張したもの。実行手順・進捗は`todo/`配下(完了後は
+削除、または`todo/archive/`へ移動)、ここには**恒久的な原則・ルールのみ**を書く。
 
 ## 5層構成
 
@@ -24,6 +24,44 @@
 `scripts/arch-check.test.ts`で機械的に検出する(`domain/`に`@tauri-apps`が
 あれば失敗、`components/`に`invoke(`の直書きがあれば失敗、等)。
 
+## 5層モデルに収まらないもの: 「オーケストレーション」
+
+`Studio.tsx`を`state/`4ストア(`deckStore`/`renderStore`/`editorStore`/
+`uiStore`、Step 20)まで切り出した後も、`commitChange`/`selectSlide`/
+`handleSave`/`refreshSource`/`addSlide`/`reorderSlides`等、目算で
+600行前後が`Studio.tsx`に残った——上の表の原則では合成ルートは「ストア
+生成・IPC/イベント配線・子の配置」のみのはずで、これらは明らかに
+「ビジネスロジック・テキスト操作・状態遷移の判断」に見える。委譲先が
+無かったから残ったのではなく、**この5層のどこにも置けないから残った**、
+というのが実装してみて分かった実際の理由:
+
+- `domain/`には置けない——IPC呼び出しを含み、不純。
+- `state/`には置けない——依存方向が`state → domain`のみで`ipc/`への
+  依存を許さない(`commitChange`は`deckIpc.renderDraft`/
+  `saveDeckSource`を呼ぶ)。
+- `ipc/`には置けない——型付きラッパーの範囲を超えたビジネスロジック
+  (`SelectionPlan`の解決、`reconcileAfterCommit`の呼び出し等)を持つ。
+- `dom/`には置けない——DOM操作(`syncEditorFields`)とIPC呼び出しの両方が
+  絡み、`dom/`はIPCを許さない。
+
+つまり「複数のstateストアを横断し、IPCを呼び、ときにDOMにも触れる
+一連の手続き」は、この4層+合成ルートという設計に**もう1つ、名前の
+付いていない置き場所**を要求している。今回はこれを`components/
+Studio.tsx`にそのまま残す判断をした(新しい層を導入するのは今回の
+リファクタリングのスコープを超える設計変更のため)——ただし表の
+「合成ルートはストア生成・配線・配置のみ」という原則そのものは、
+その通りに実現できなかった、という事実として記録しておく。将来
+この行数をさらに削るなら、選択肢は次の2つ:
+
+1. 明示的に「orchestrator」層を1つ増やし、依存方向を
+   `components → orchestrator → {state, ipc, dom}`に拡張する。
+2. 各ストアに、そのストア自身が呼ばれるべきIPC操作への依存を
+   注入する(`createDeckStore(deckIpc)`のように)——ただし「stateは
+   ipcに依存しない」という現在の原則そのものを変える決定になる。
+
+どちらも今回は選ばず、`Studio.tsx`が「合成ルート+オーケストレーション」
+という2つの役割を兼ねる現状維持とした。
+
 ## BarefootJSの制約が層構成に課す不変条件
 
 (個別の落とし穴の詳細は`CLAUDE.md`の「BarefootJSで踏んだ落とし穴」を参照。
@@ -35,9 +73,18 @@
   コールバックだけ(`onSelect(i)`であって`setSelectedIndex`ではない)。
   どの関数がどのシグナルを書くかをストア1箇所に閉じ込め、暗黙の契約が
   複数箇所に散らばるのを防ぐ。
-- **読み取りpropsは`Memo<T>`型で公開する**。BarefootJSのリアクティビティ検出は
-  `Reactive<T>`ブランド型ベースなので、`Memo<T>`を渡せば別ファイルのJSXから
-  読んでも静的にリアクティブと認識される。
+- **読み取りpropsには`Memo<T>`型のgetter自体ではなく、呼び出した値を渡す**
+  (`isBusy={isBusy()}`であって`isBusy={isBusy}`ではない)——後者は
+  コンパイラが`BF044`(`Signal/Memo getter passed without calling it`)で
+  ビルドエラーにする。BarefootJSのpropsリアクティビティはSolidJSと同じ
+  モデルで、`value={count()}`は`{ get value() { return count() } }`という
+  getterプロパティに下げられる。子側は`props.xxx`と直接読む(分割代入
+  すると`BF043`警告——初期値として1回だけ使う意図なら`@bf-ignore
+  props-destructuring`で明示的に黙らせる)。`bf debug graph`は
+  `props.xxx`型の読み取りの依存を静的グラフに乗せない(`no tracked deps`)
+  ことが多いが、これも他の`no tracked deps`ケースと同様、動的追跡
+  (wrap-by-default)で実際には正しく更新される——`components/
+  WelcomeScreen.tsx`切り出し時に実機(Playwright)で確認済み。
 - **`Map`/`Set`/`Function`型はpropsに渡せない**(BF049)。コレクションを渡す
   代わりに`(key) => Getter`のようなアクセサ関数を渡す。
 - **ローカル関数内にJSXは書けない**(BF045)。「JSXを描画ヘルパー関数に切る」
@@ -45,6 +92,18 @@
 - **モジュールスコープの単一シグナルに頼らない**。各`.tsx`は独立したビルド
   チャンクなので、状態共有は合成ルートでファクトリを呼び、テスト時も
   `createRoot`で明示的に所有・破棄する。
+- **`const { x } = store`という分割代入でシグナルのgetterを取り出さない**
+  (BarefootJSのコンパイラの識別子抽出が分割代入を素通りし、`x`が
+  「宣言されていない変数」として扱われて実行時`ReferenceError`になる
+  ——`state/xxxStore.ts`のファクトリが`{ draggedIndex, ... }`を返す形
+  自体は問題ない。`const store = createXxxStore()`のように受け取り、
+  JSX側で`store.draggedIndex()`とプロパティ経由で呼ぶ分には正しく動く
+  ことを、`domain/drag.ts`の実装をそのまま使った再現で確認済み——
+  一時、逆の教訓(「ファクトリ越しは壊れる」)を誤ってここに書いていた
+  ことがあるので注意。実際には動的なリアクティビティ追跡(wrap-by-default)
+  が`bf debug graph`の静的解析(`no tracked deps`と出ることがある)より
+  広い範囲をカバーする——`bf debug graph`の出力だけで「実機で壊れる」と
+  即断せず、疑わしければ実際にブラウザで動かして確認すること)。
 - **keyedな`.map()`の行を子コンポーネントに切り出した場合の`index`propsの
   鮮度は、着手前にスパイクで検証してから分割方針を確定する**(過去に
   #2859/#2861のクロージャstaleness系バグを踏んでいるため)。
@@ -59,7 +118,7 @@
 真実、購読は射影側**と役割を分けることで解消する。
 
 ```
-domain/drag.ts        DragState (ADT, 1つの値)      ← 純粋な遷移: begin/move/drop/cancel
+domain/drag.ts        DragState (ADT, 1つの値)      ← 純粋な遷移: arm/move/dropTarget/cancel
         ↓
 state/uiStore.ts      const [drag, setDrag] = createSignal<DragState>({kind:'idle'})
                        const draggedIndex = createMemo(() => drag().kind === 'dragging' ? drag().index : null)
@@ -121,10 +180,11 @@ DSLと具体的な記述例は`todo/`配下の実行計画、または実装時�
 - **プロパティベーステスト**(`fast-check`、`bun test`でそのまま動く):
   往復関数(parse/serialize)の恒等性、変換の不変条件(枚数保存、多重集合保存)
   など、個別の例より「性質」で語れるものに使う。
-- **モデルベーステスト**(`fast-check`の`commands`): `state/`層はDOMもIPCも
-  持たないため、純粋なreducerをモデルとして、ランダムな操作列で実装と
-  モデルの一致を検証できる。直近のバグ2件はいずれも「操作列の順序と
-  in-flight状態の組み合わせ」が原因だったため、費用対効果が高い。
+- **モデルベーステスト**(`fast-check`の`commands`): `state/`層の状態遷移は
+  シグナルの読み書きに閉じ、DOM/IPCという外部依存を持たない
+  (`createRoot`で決定的に再現できる)ため、純粋なreducerと同じ要領で
+  モデルベーステストにかけられる。直近のバグ2件はいずれも「操作列の
+  順序とin-flight状態の組み合わせ」が原因だったため、費用対効果が高い。
 - **全数/網羅性テスト**: 遷移関数(`decide`など)は状態×イベントの直積が
   現実的な数(数十程度)に収まるなら、全組み合わせを列挙し「必ず有効な
   結果を返す」(例外・undefinedにならない)ことを検査する。

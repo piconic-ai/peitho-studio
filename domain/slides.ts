@@ -11,6 +11,8 @@
 // blockquote or list continuation line (rare in practice) is not
 // special-cased here.
 
+import { parsePageComment, configOf, serializePageConfig, type PageConfig } from './pageConfig'
+
 export interface SlideRange {
   /** Character offset into the source where this slide's text starts. */
   start: number
@@ -110,19 +112,19 @@ export function injectNote(rest: string, note: string): string {
  * hand-written JSON comment sharing HTML-comment syntax with the speaker
  * note is exactly the "hard to tell apart, easy to fat-finger" problem this
  * app exists to solve. */
-export function extractPageComment(raw: string): { rest: string; config: Record<string, unknown> } {
+export function extractPageComment(raw: string): { rest: string; config: PageConfig } {
   const re = /<!--([\s\S]*?)-->/g
   let match: RegExpExecArray | null
   while ((match = re.exec(raw)) !== null) {
     const trimmed = match[1].trim()
     if (trimmed.startsWith('{')) {
-      try {
-        const config = JSON.parse(trimmed) as Record<string, unknown>
-        const rest = raw.replace(match[0], '').replace(/\n{3,}/g, '\n\n').trim()
-        return { rest, config }
-      } catch {
-        return { rest: raw, config: {} }
-      }
+      const parsed = parsePageComment(trimmed)
+      // A malformed comment is left in place (not stripped out) — same
+      // "leave it, don't guess" contract as before this function
+      // delegated parsing to parsePageComment.
+      if (parsed.kind === 'malformed') return { rest: raw, config: {} }
+      const rest = raw.replace(match[0], '').replace(/\n{3,}/g, '\n\n').trim()
+      return { rest, config: configOf(parsed) }
     }
   }
   return { rest: raw, config: {} }
@@ -130,8 +132,8 @@ export function extractPageComment(raw: string): { rest: string; config: Record<
 
 /** Inverse of `extractPageComment` + `extractNote` combined: reassembles a
  * slide's full raw text from its config, body, and note. */
-export function buildSlideText(config: Record<string, unknown>, body: string, note: string): string {
-  const configComment = Object.keys(config).length > 0 ? `<!-- ${JSON.stringify(config)} -->\n` : ''
+export function buildSlideText(config: PageConfig, body: string, note: string): string {
+  const configComment = Object.keys(config).length > 0 ? `<!-- ${serializePageConfig(config)} -->\n` : ''
   return injectNote(`${configComment}${body.trim()}`, note)
 }
 
@@ -139,23 +141,20 @@ export function buildSlideText(config: Record<string, unknown>, body: string, no
  * whose trimmed body starts with `{`), rewriting that comment in place. If
  * the slide has no PageComment yet, a new one is prepended — `section` and
  * `time` are always set together since peitho requires them paired. */
-export function updatePageComment(raw: string, updates: Record<string, unknown>): string {
+export function updatePageComment(raw: string, updates: Partial<PageConfig>): string {
   const re = /<!--([\s\S]*?)-->/g
   let match: RegExpExecArray | null
-  let existing: { commentText: string; config: Record<string, unknown> } | null = null
+  let existing: { commentText: string; config: PageConfig } | null = null
   while ((match = re.exec(raw)) !== null) {
     const trimmed = match[1].trim()
     if (trimmed.startsWith('{')) {
-      try {
-        existing = { commentText: match[0], config: JSON.parse(trimmed) as Record<string, unknown> }
-      } catch {
-        existing = null
-      }
+      const parsed = parsePageComment(trimmed)
+      if (parsed.kind === 'ok') existing = { commentText: match[0], config: parsed.config }
       break
     }
   }
-  const nextConfig = { ...(existing?.config ?? {}), ...updates }
-  const nextComment = `<!-- ${JSON.stringify(nextConfig)} -->`
+  const nextConfig: PageConfig = { ...(existing?.config ?? {}), ...updates }
+  const nextComment = `<!-- ${serializePageConfig(nextConfig)} -->`
   if (existing) return raw.replace(existing.commentText, nextComment)
   return `${nextComment}\n${raw}`
 }
