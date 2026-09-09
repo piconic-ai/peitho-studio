@@ -866,7 +866,46 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       変えていないため理論上は安全なはずだが、この規模のコピー作業で
       1文字でも転記ミスがあれば実機でしか気づけない。
 - [ ] **Step 20**: `Studio.tsx`を合成ルートに整理(目標200〜300行)。
-      `CLAUDE.md`の「BarefootJSで踏んだ落とし穴」に分割で得た知見を追記。
+      1PRで達成するには残りのビジネスロジックが多すぎるため、
+      サブステップに分割して進める(各サブステップは独立したブランチ/PR):
+  - [x] **Step 20-1**完了。`state/uiStore.ts`(新規)にドラッグジェスチャ・
+        コンテキストメニュー/レイアウトピッカー・アプリ内クリップボード・
+        Presentドロップダウン・カラム幅のシグナル群を移動。
+        **オーケストレーション(複数の関心事にまたがる処理)は
+        `Studio.tsx`側に残した**——`startSlideDrag`が最終的に
+        `reorderSlides`を呼ぶ、`openContextMenu`が`selectSlide`も呼ぶ、
+        といった処理はストア自身に持たせず、合成ルート側の関数として
+        維持。ストアの公開面を「状態のみ」に保つため。
+        `startResize`(既に`getWidth`/`setWidth`を引数で受け取る
+        自己完結した関数だった)を`dom/columnResize.ts`
+        (`startColumnResize`にリネーム)へ移動——当初のファイル構成案
+        どおりの置き場所。
+        **`Studio.tsx`に残っていた誤った過去の記述を削除**:
+        「`state/`ファクトリパターンは`bf debug graph`で
+        `dragStore.draggedIndex()`が`deps: []`になり動かなかった」という
+        Step 7時点の誤った結論が、CLAUDE.md/docs/architecture.mdは
+        Step 9で訂正済みだったにもかかわらず、`Studio.tsx`自身のコメント
+        には訂正が及んでおらず取り残されていた。今回のstate/uiStore.ts
+        自体が"動くファクトリパターン"の実例になったため、このコメントを
+        削除し正しい経緯への参照に置き換えた。
+        Studio.tsx: 1378→1269行。全spec/adversarialテスト通過
+        (229 pass、ロジック変更なし)。`bf debug graph`は他の全ての
+        `props.xxx`/`ui.xxx`読み取りと同様`(no tracked deps)`——訂正済みの
+        教訓どおり動的追跡で正しく更新されるはず。
+  - [ ] **Step 20-2〜**: `state/renderStore.ts`(manifest/fragments/canvas/
+        assetBaseUrl + applyRenderPayload/renderPreview/
+        patchSlidePreviewIframes)、`state/editorStore.ts`
+        (editorSession + commitChange/handleSave/selectSlide + autosave
+        effects + ソース/レンジ)、`state/deckStore.ts`(deckLifecycle +
+        dispatch/runOpen/runCreate)を同じ要領で順次切り出す。
+        これらは`state/uiStore.ts`より結合度が高い(`runOpen`は
+        `applyRenderPayload`と`refreshSource`と通知系を横断する等)ため、
+        ストア間の依存はコールバック注入で表現するか、あるいは
+        オーケストレーション自体を`Studio.tsx`に残すかを都度判断する。
+  - [ ] **最終**: 全ストア切り出し後、`Studio.tsx`の行数を確認し
+        200〜300行の目標に対する到達度を記録。`CLAUDE.md`の
+        「BarefootJSで踏んだ落とし穴」に、このリファクタリング全体
+        (Step 1〜20)を通じて得た知見のサマリを追記。
 
 順序の意図: 1〜5はリスクほぼゼロで行数を減らし、6〜11でバグ源の暗黙契約を
 型に置き換え(この時点で2つのバグクラスは再発不能)、12〜18で初めてJSXに触る。
