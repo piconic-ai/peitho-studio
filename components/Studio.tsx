@@ -33,6 +33,7 @@ import {
 } from '../domain/slides'
 import { buildSlidePreviewDoc, buildLayoutPreviewDoc } from '../domain/previewDoc'
 import { WelcomeScreen } from './WelcomeScreen'
+import { NewDeckModal } from './NewDeckModal'
 
 interface SectionDraft {
   name: string
@@ -2036,55 +2037,15 @@ export function Studio() {
         </>
       )}
 
-      {newDeckModalOpen() ? (
-        <>
-          {/* Closing on a backdrop click/Escape while `create_deck` is still
-              in flight would abandon the modal but not the in-flight
-              create itself — `decide`'s `creating` state rejects a
-              `create-cancelled` it doesn't recognize as an event anyway
-              (busy), so this guard is belt-and-suspenders for the UI, not
-              load-bearing for correctness. Guarding these the same way as
-              the Cancel/Create buttons below keeps all four exits in sync. */}
-          <div className="fixed top-0 right-0 bottom-0 left-0 z-40 bg-black/40" onClick={() => { if (!isBusy()) void dispatch({ type: 'create-cancelled' }) }} />
-          <div className="fixed top-0 right-0 bottom-0 left-0 z-50 flex items-center justify-center">
-            <div className="w-full max-w-sm rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-4">
-              <div className="text-sm font-medium mb-3">New Deck</div>
-              <input
-                type="text"
-                value={newDeckName()}
-                onInput={e => void dispatch({ type: 'name-changed', name: e.target.value })}
-                placeholder="Deck name"
-                autofocus
-                disabled={isBusy()}
-                className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm outline-none mb-1 disabled:opacity-50"
-                onKeyDown={e => {
-                  if (e.key === 'Enter') void dispatch({ type: 'create-confirmed' })
-                  if (e.key === 'Escape' && !isBusy()) void dispatch({ type: 'create-cancelled' })
-                }}
-              />
-              <div className="text-xs text-muted-foreground mb-3 truncate">{newDeckParentDir()}</div>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  disabled={isBusy()}
-                  onClick={() => void dispatch({ type: 'create-cancelled' })}
-                  className="px-3 py-1.5 rounded-md border border-border text-sm disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={newDeckName().trim() === '' || isBusy()}
-                  onClick={() => void dispatch({ type: 'create-confirmed' })}
-                  className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
-                >
-                  {isBusy() ? 'Creating…' : 'Create'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      ) : null}
+      <NewDeckModal
+        isOpen={newDeckModalOpen()}
+        name={newDeckName()}
+        parentDir={newDeckParentDir()}
+        isBusy={isBusy()}
+        onNameChange={name => void dispatch({ type: 'name-changed', name })}
+        onCancel={() => void dispatch({ type: 'create-cancelled' })}
+        onConfirm={() => void dispatch({ type: 'create-confirmed' })}
+      />
     </div>
   )
 }
