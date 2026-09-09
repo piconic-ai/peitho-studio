@@ -820,7 +820,51 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       動的追跡で正しく動作するはずだが、11アクション+レイアウト
       ピッカーという規模の大きさから、実機確認の優先度は高めとして
       おきたい。
-- [ ] **Step 19**: `SlideList`(`dom/thumbnailIframe.ts`へref移動)。
+- [x] **Step 19**完了。このスタックで最大かつ最も繊細な抽出。
+      `components/SlideList.tsx`(新規、518行)にスクロール可能なスライド
+      サムネイル一覧を丸ごと移動——ドラッグ並べ替えのスタイリング、
+      セクションヘッダーのインライン編集、そして過去の複数のバグ修正で
+      積み上げられた詳細なコメント付きiframe sizing `ref`コールバック
+      (ResizeObserver駆動のfit-and-clip計算)を含む。
+      **`dom/thumbnailIframe.ts`へのref移動は今回は行わなかった**——
+      当初の計画(0.2節の一覧)には含まれていたが、この`ref`コールバック
+      内の計算ロジックを触ること自体が過去に複数回実機バグを生んだ
+      経緯があり(iframe sizing/clip-path/overlayの詳細なコメント参照)、
+      実機確認なしにこの計算式を書き換えるのはリスクが高いと判断。
+      今回は「JSXブロックをそのまま`SlideList.tsx`に移動するだけ」に
+      スコープを絞り、ロジック自体(ref内の計算式)は一切変更していない。
+      `dom/thumbnailIframe.ts`への抽出は、ユーザーの実機確認後、
+      別の独立したステップとして改めて検討する。
+      **`.map()`は分割せず1コンポーネント内に維持**——BarefootJSの
+      コンパイラは`.map()`の1行の動的属性を1つの共有`createEffect`に
+      融合させる(この行自身のコメントが「thumbnailのref一時セットが
+      兄弟バインディングの再実行から独立している理由はこの融合」と
+      明記している)。行を個別の子コンポーネントに分割するのは、
+      プロジェクト自身の計画が要求する「着手前にスパイクで検証」を
+      経ていないため見送った。
+      `SectionDraft`型を`Studio.tsx`のローカルinterfaceから
+      `domain/render.ts`へ移動(循環import回避のため)。「子はセッターを
+      受け取らない」原則に従い、`setSectionDrafts`を直接渡す代わりに
+      `onSectionNameInput`/`onSectionTimeInput`という新しいコールバック
+      関数を`Studio.tsx`側に用意した。同様に`fragmentSignal`
+      (setterも露出する)の代わりに読み取り専用の`fragmentOf(key)`
+      アクセサを渡した。
+      **`canvasWidth`/`canvasHeight`は呼び出した値として渡すが、
+      長寿命のResizeObserverクロージャ内では`props.canvasWidth`を
+      直接読む(ローカル変数にキャプチャしない)**——BarefootJSは
+      呼び出したpropsをgetterプロパティにコンパイルするため、
+      マウントよりずっと後にResizeObserverが発火した時点でも
+      `props.canvasWidth`は`Studio.tsx`側の最新のシグナル値を
+      再取得する(mount時点の値に固定されない)。
+      Studio.tsxは2293行(リファクタリング開始時)から1378行まで縮小。
+      全spec/adversarialテスト通過(229 pass、ロジック変更なし)。
+      `bf debug graph`は他と同様全て`(no tracked deps)`。
+      **実機確認を最優先で推奨**——このコンポーネントは複数の
+      「実機でしか踏めなかったバグ」(コーナーのシーム、drag中のstale
+      measurement、KNOWN ISSUEとして明記されている黒帯の不具合)を
+      抱えた最も繊細な部分。機械的なJSX移動のみでロジックは一切
+      変えていないため理論上は安全なはずだが、この規模のコピー作業で
+      1文字でも転記ミスがあれば実機でしか気づけない。
 - [ ] **Step 20**: `Studio.tsx`を合成ルートに整理(目標200〜300行)。
       `CLAUDE.md`の「BarefootJSで踏んだ落とし穴」に分割で得た知見を追記。
 
