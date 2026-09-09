@@ -36,6 +36,7 @@ import { WelcomeScreen } from './WelcomeScreen'
 import { NewDeckModal } from './NewDeckModal'
 import { DeckHeader } from './DeckHeader'
 import { StatusBar } from './StatusBar'
+import { SlidePreview } from './SlidePreview'
 
 interface SectionDraft {
   name: string
@@ -1786,20 +1787,11 @@ export function Studio() {
           onMouseDown={startResize(editorWidth, setEditorWidth, 1)}
         />
 
-        <div className="flex-1 min-w-0 flex flex-col min-h-0">
-          {selectedSlideKey() !== null ? (
-            <iframe
-              title="Selected slide preview"
-              data-slide-preview-key={selectedSlideKey()}
-              srcdoc={buildSelectedSlideDoc(selectedSlideKey())}
-              className="flex-1 w-full border-0"
-            />
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-              {assetBaseUrl() ? 'Select a slide to preview it.' : 'Open a deck to preview it.'}
-            </div>
-          )}
-        </div>
+        <SlidePreview
+          selectedSlideKey={selectedSlideKey()}
+          srcdoc={buildSelectedSlideDoc(selectedSlideKey())}
+          hasDeck={Boolean(assetBaseUrl())}
+        />
       </div>
 
       <StatusBar
