@@ -569,11 +569,42 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
       **実機確認は保留**——確認しようとした時点でmacOSが再びロック中
       だったため、静的検証(typecheck/test/build/`bf debug graph`)のみで
       進めた。
-- [ ] **Step 9**: `domain/editorSession.ts` + `state/editorStore.ts`
-      (fast/slow lane、`reconcileAfterCommit`)。Step 7で判明した
-      BarefootJSの制約(シグナルはコンポーネントファイル直書き必須)を
-      踏まえ、`state/editorStore.ts`はロジック関数のみ、シグナル自体は
-      `Studio.tsx`側に置く設計にする。
+- [x] **Step 9**完了。`domain/editorSession.ts`に§2.1の残りを実装:
+      `EditorSession`ADT(`none`/`editing{index,saved,draft}`)、
+      `isDirty`、`reconcileAfterCommit`、`withRefreshedSaved`、
+      `withDraftBody`/`withDraftNote`。`Studio.tsx`の
+      `selectedIndex`/`bodyDraft`/`noteDraft`/`originalBody`/
+      `originalNote`という5つの独立シグナルと別の`pageConfig`シグナルを、
+      1つの`editorSession`ADTシグナル+4つの射影memo
+      (`selectedIndex`/`bodyDraft`/`noteDraft`/`pageConfig`)に統合——
+      「ADTが複数の独立フィールドに分散する」というdocs/architecture.mdが
+      警告する形そのものだった状態を解消。`commitChange`の本体
+      (fe4aa3fの回帰対策そのもの)を`reconcileAfterCommit`呼び出し1つに
+      置き換え、`refreshSource`/`selectSlide`/`handleExternalChange`の
+      該当箇所も書き換え。
+      `state/editorStore.ts`は作らなかった——Step 7/8同様、シグナル
+      宣言はコンポーネントファイル直書き必須という制約上、`state/`層に
+      置ける実質的な中身がなかった(教訓通り)。
+      **`reconcileAfterCommit`は元の`commitChange`と1点だけ意図的に
+      挙動を変えた**: 元のコードは「選択がin-flight中に変わっても、
+      たまたま`plan`の解決先と同じindexに戻っていればsavedを更新する」
+      という偶然の一致を許していたが、新実装は「選択が一度でも動いたら
+      `now`をそのまま返し、一切触らない」という厳密な条件にした——
+      両者は実用上区別がつかないと判断し、意図が読みやすい方を採用
+      (`reconcileAfterCommit`のdocコメントに記録済み)。
+      `bf debug graph`で`selectedIndex`/`bodyDraft`/`noteDraft`/
+      `pageConfig`が全て`editorSession`memoから正しく派生し、
+      `e1`/`e2`(autosaveのfast/slow lane effect)の依存にも正しく
+      乗ることを確認。全spec/adversarialテスト通過(204 pass)。
+      **実機確認は完了できず**——複数デスクトップ(Mission Control
+      Space)環境で`cliclick`/`osascript`のフォーカス制御が不安定
+      (直前にスクリーンショットで確認したデスクトップとは別の場所に
+      操作が届く)という問題に遭遇し、ユーザーの別セッションへの誤操作
+      (実害なし)を引き起こしたため中止。詳細は
+      `.claude/skills/run-peitho-studio/SKILL.md`に記録。ユーザーの
+      判断により、以降のStepは静的検証(typecheck/test/build/
+      `bf debug graph`)で進め、実機での動作確認はユーザー自身が後日
+      まとめて行う運用にする。
 - [ ] **Step 10**: `domain/deckLifecycle.ts` + `state/deckStore.ts`。
       `isBusy`を派生値に、`loadDeck`/`loadDeckCore`/`alreadyBusy`を廃止。
 - [ ] **Step 11**: `state/renderStore.ts`: `applyRenderPayload`を`batch()`で
