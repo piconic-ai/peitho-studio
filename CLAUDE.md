@@ -9,7 +9,8 @@ Tauri v2(Rust) + BarefootJS CSR + UnoCSS。peitho-coreはサブプロセスで�
 フロントエンドの層構成(domain/state/ipc/dom/components)・ADTでありえない
 状態を排除する原則・Given-When-Thenでの仕様記述・不具合発見手法の方針は
 `docs/architecture.md`に詳しい(`components/Studio.tsx`のリファクタリングを
-機に確立)。実行中の移行計画・進捗は`todo/`配下(完了後は削除/アーカイブ)。
+機に確立)。実行中の移行計画・進捗は`todo/`配下(完了後は削除、または
+訂正の経緯など参考価値がある場合は`todo/archive/`へ移動)。
 
 - **純粋関数を好む。** 入力から出力が決まる関数を既定にし、副作用・状態への
   依存は本当に必要な箇所だけに絞る。
