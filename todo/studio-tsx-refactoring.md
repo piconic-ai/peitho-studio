@@ -892,16 +892,39 @@ diff 300行以下を目安にする。すべてのPRで共通の検証: `bun run
         (229 pass、ロジック変更なし)。`bf debug graph`は他の全ての
         `props.xxx`/`ui.xxx`読み取りと同様`(no tracked deps)`——訂正済みの
         教訓どおり動的追跡で正しく更新されるはず。
-  - [ ] **Step 20-2〜**: `state/renderStore.ts`(manifest/fragments/canvas/
-        assetBaseUrl + applyRenderPayload/renderPreview/
-        patchSlidePreviewIframes)、`state/editorStore.ts`
-        (editorSession + commitChange/handleSave/selectSlide + autosave
-        effects + ソース/レンジ)、`state/deckStore.ts`(deckLifecycle +
+  - [x] **Step 20-2**完了。`state/renderStore.ts`(新規)にmanifest/
+        per-slide fragmentシグナル/canvasサイズ/assetBaseUrl/section
+        draftsと、それらを操作する`applyRenderPayload`/`buildSlideDoc`を
+        移動。
+        **`patchSlidePreviewIframes`(とそれをトリガーするeffect)は
+        `Studio.tsx`に残した**——`document.`に触れる関数は`state/`層に
+        置けない(`scripts/arch-check.test.ts`が強制)ため、ストアは
+        新しいレンダー結果を生成するだけで、DOMへ反映する処理は持たない。
+        `renderPreview`も同様に`Studio.tsx`に残した(IPC呼び出し+
+        エラー通知state+renderStoreを横断するため)。
+        `RenderPayload`型を`ipc/deckIpc.ts`から`domain/render.ts`へ移動
+        (`Manifest`と同じ「IPC境界がたまたま運ぶドメイン概念」という
+        理由付け——`state/`は`ipc/`に依存してはいけない
+        (`components → state → domain`、`components → ipc`の依存方向)
+        ため必要だった)。`deckIpc.ts`は他の型と同様、定義ではなく
+        re-exportに変更。
+        `scripts/arch-check.test.ts`が実際に1件誤検知を検出——
+        `state/renderStore.ts`のコメント文中で"document."という単語を
+        散文として使っていただけなのに、パターンマッチが実コードと
+        区別せず引っかかった。`arch-check-allow`は使わず、単語選びを
+        変えて回避(実際の層違反ではなかったため)。
+        Studio.tsx: 1269→1179行。全spec/adversarialテスト通過
+        (229 pass、ロジック変更なし)。`bf debug graph`は他と同様
+        `render.xxx()`読み取り全て`(no tracked deps)`。
+  - [ ] **Step 20-3〜**: `state/editorStore.ts`(editorSession +
+        commitChange/handleSave/selectSlide + autosave effects +
+        ソース/レンジ)、`state/deckStore.ts`(deckLifecycle +
         dispatch/runOpen/runCreate)を同じ要領で順次切り出す。
-        これらは`state/uiStore.ts`より結合度が高い(`runOpen`は
-        `applyRenderPayload`と`refreshSource`と通知系を横断する等)ため、
-        ストア間の依存はコールバック注入で表現するか、あるいは
-        オーケストレーション自体を`Studio.tsx`に残すかを都度判断する。
+        これらは`state/uiStore.ts`/`state/renderStore.ts`よりさらに
+        結合度が高い(`runOpen`は`applyRenderPayload`と`refreshSource`と
+        通知系を横断する等)ため、ストア間の依存はコールバック注入で
+        表現するか、あるいはオーケストレーション自体を`Studio.tsx`に
+        残すかを都度判断する。
   - [ ] **最終**: 全ストア切り出し後、`Studio.tsx`の行数を確認し
         200〜300行の目標に対する到達度を記録。`CLAUDE.md`の
         「BarefootJSで踏んだ落とし穴」に、このリファクタリング全体
