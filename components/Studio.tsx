@@ -429,8 +429,9 @@ export function Studio() {
   // custom-syntax load, ...).
   // `expectedDraft`: when the caller already knows exactly what it injected
   // for the focus slide (`handleSave` does — it built `nextSource` from
-  // `editor.bodyDraft()`/`editor.noteDraft()` itself), pass those back here so they can be
-  // reused verbatim instead of round-tripping through `extractNote`.
+  // `editor.bodyDraft()`/`editor.noteDraft()` itself), pass those back
+  // here so they can be reused verbatim instead of round-tripping through
+  // `extractNote`.
   // `extractNote` trims/collapses blank lines — appropriate for a *fresh*
   // read from disk, but lossy when looped back into the live draft: it
   // would silently swallow trailing whitespace the user just typed (e.g.
