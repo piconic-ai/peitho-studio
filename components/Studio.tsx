@@ -14,6 +14,7 @@ import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isL
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
+import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
 import { createRenderStore } from '../state/renderStore'
 import { createEditorStore } from '../state/editorStore'
@@ -237,6 +238,26 @@ export function Studio() {
   // selected" without also depending on "has its content changed".
   const selectedSlideKey = createMemo<string | null>(() => selectedSlide()?.key ?? null)
 
+  // The Shadow DOM thumbnail canvases' shared theme style sheet. Lazily
+  // created on first request — `SlideList`'s per-row `ref` callbacks (which
+  // request it via `getSlideStylesheet` below) run as those rows mount,
+  // which can be before this component's own effects have run once — then
+  // kept in sync by `replaceSync` so every already-mounted canvas picks up
+  // a theme change through the one shared object, rather than each row
+  // re-parsing its own copy.
+  let slideStylesheet: CSSStyleSheet | null = null
+  function getSlideStylesheet(): CSSStyleSheet {
+    slideStylesheet ??= createSlideStylesheet(render.slideStylesheetText())
+    return slideStylesheet
+  }
+  createEffect(() => {
+    const cssText = render.slideStylesheetText()
+    if (slideStylesheet) slideStylesheet.replaceSync(cssText)
+  })
+  createEffect(() => {
+    ensureFontFaces(render.fontFaceCss())
+  })
+
   createEffect(() => {
     if (errorMessage() === null) return
     const timer = window.setTimeout(() => setErrorMessage(null), 6000)
@@ -367,9 +388,21 @@ export function Studio() {
     }
   }
 
+  // Mirrors `patchSlidePreviewIframes` above, but for `[data-slide-canvas-
+  // key]` hosts (the Shadow DOM thumbnail rows) instead of `[data-slide-
+  // preview-key]` iframes (still just the preview pane, until PR6).
+  function patchSlideCanvases(key: string, fragmentHtml: string): void {
+    const selector = `[data-slide-canvas-key="${CSS.escape(key)}"]`
+    for (const host of document.querySelectorAll<HTMLElement>(selector)) {
+      patchSlideCanvas(host, fragmentHtml)
+    }
+  }
+
   createEffect(() => {
     for (const slide of render.manifest()?.slides ?? []) {
-      patchSlidePreviewIframes(slide.key, render.fragmentSignal(slide.key)[0]())
+      const fragmentHtml = render.fragmentSignal(slide.key)[0]()
+      patchSlidePreviewIframes(slide.key, fragmentHtml)
+      patchSlideCanvases(slide.key, fragmentHtml)
     }
   })
 
@@ -1029,7 +1062,7 @@ export function Studio() {
           canvasWidth={render.canvasWidth()}
           canvasHeight={render.canvasHeight()}
           fragmentOf={render.fragmentOf}
-          buildSlideDoc={render.buildSlideDoc}
+          slideStylesheet={getSlideStylesheet}
           onContextMenu={openContextMenu}
           onDragStart={startSlideDrag}
           onSelectSlide={index => selectSlide(index)}
