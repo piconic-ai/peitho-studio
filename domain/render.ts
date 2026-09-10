@@ -46,6 +46,7 @@ export interface RenderPayload {
   manifest: Manifest
   fragments: Record<string, string>
   assetBaseUrl: string
+  css: string
 }
 
 /** Indexes a manifest's sections by their starting slide index, for O(1)

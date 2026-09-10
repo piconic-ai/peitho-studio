@@ -21,6 +21,7 @@ function payload(overrides: Partial<RenderPayload> = {}): RenderPayload {
     manifest: { title: 'Deck', slideCount: 1, canvasWidth: 1280, canvasHeight: 720, sections: [], slides: [slide()] },
     fragments: { 'slide-1': '<div class="peitho-slide">one</div>' },
     assetBaseUrl: 'asset://base/',
+    css: '',
     ...overrides,
   }
 }

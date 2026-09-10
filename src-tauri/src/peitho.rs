@@ -82,14 +82,19 @@ pub struct RenderPayload {
     /// Rendered fragment HTML per slide key.
     fragments: std::collections::HashMap<String, String>,
     /// Base URL for the in-process asset server (peitho.css, fonts, images)
-    /// — used as the `<base href>` for `<iframe srcdoc>` slide previews,
-    /// same role `previewUrl` played before.
+    /// — resolves relative `url(...)`/`src="assets/..."` references inside
+    /// `css`/`fragments`.
     asset_base_url: String,
+    /// The deck theme's compiled CSS — same string `engine::serve` writes
+    /// to `peitho.css` on the asset server, carried here too so the
+    /// frontend can render a slide into a scoped style sheet (e.g. a
+    /// Shadow DOM) without a second round trip to fetch it.
+    css: String,
 }
 
 fn to_payload(output: RenderOutput, asset_base_url: String) -> Result<RenderPayload, String> {
     let manifest = serde_json::from_str(&output.manifest_json).map_err(|err| err.to_string())?;
-    Ok(RenderPayload { manifest, fragments: output.fragments, asset_base_url })
+    Ok(RenderPayload { manifest, fragments: output.fragments, asset_base_url, css: output.css })
 }
 
 #[derive(Serialize)]
@@ -553,5 +558,37 @@ mod tests {
     #[test]
     fn resolve_deck_path_adversarial_nonexistent_path_is_an_error() {
         assert!(resolve_deck_path("/definitely/does/not/exist/deck.md").is_err());
+    }
+
+    fn empty_manifest_json() -> String {
+        r#"{"title":"","slideCount":0,"canvasWidth":1280,"canvasHeight":720,"sections":[],"slides":[]}"#.to_string()
+    }
+
+    #[test]
+    fn to_payload_spec_carries_css_and_asset_base_url_through() {
+        let output = RenderOutput {
+            manifest_json: empty_manifest_json(),
+            fragments: HashMap::new(),
+            css: ".peitho-slide { color: red; }".to_string(),
+            has_math: false,
+            image_assets: HashMap::new(),
+            fonts_dir: None,
+        };
+        let payload = to_payload(output, "http://127.0.0.1:1234/".to_string()).unwrap();
+        assert_eq!(payload.css, ".peitho-slide { color: red; }");
+        assert_eq!(payload.asset_base_url, "http://127.0.0.1:1234/");
+    }
+
+    #[test]
+    fn to_payload_adversarial_rejects_invalid_manifest_json() {
+        let output = RenderOutput {
+            manifest_json: "not json".to_string(),
+            fragments: HashMap::new(),
+            css: String::new(),
+            has_math: false,
+            image_assets: HashMap::new(),
+            fonts_dir: None,
+        };
+        assert!(to_payload(output, String::new()).is_err());
     }
 }
