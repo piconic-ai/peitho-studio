@@ -11,8 +11,8 @@ import { containScale, type Size } from '../domain/geometry'
 // once). `flex-shrink: 0` pins `.peitho-slide` at its native canvas size so
 // the transform does 100% of the size reduction: as a flex child it would
 // otherwise be squeezed below that width and re-wrap its own text *before*
-// being scaled (the same pin, for the same reason, as in
-// `domain/previewDoc.ts`). `pointer-events`/`user-select` are inherited
+// being scaled (the same pin, for the same reason, the iframe-era preview
+// document used). `pointer-events`/`user-select` are inherited
 // properties, so declaring them on `:host` covers the slide markup inside
 // it too — that markup is a deck author's arbitrary HTML, and unlike the
 // `<iframe srcdoc>` this replaces it now lives in the app's own document:

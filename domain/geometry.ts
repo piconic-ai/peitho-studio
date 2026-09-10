@@ -17,7 +17,8 @@ export function clampMenuPosition(point: Point, menuSize: Size, viewport: Size, 
  * leaves a hairline gap in WKWebView, whose transform/layout rounding
  * doesn't land on the same ratio this division produces. 2% is the smallest
  * margin that covered that drift while staying inside the theme's own slide
- * padding — see `fit()` in `previewDoc.ts` for the empirical basis. */
+ * padding — empirically tuned against the iframe-era `fit()` script this
+ * replaced. */
 export function containScale(avail: Size, canvas: Size): number {
   return Math.min(avail.width / canvas.width, avail.height / canvas.height) * 1.02
 }

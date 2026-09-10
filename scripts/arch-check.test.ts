@@ -79,13 +79,12 @@ function listSourceFiles(dir: string): string[] {
 /** A file can opt out of a specific forbidden pattern with a top-of-file
  * `// arch-check-allow: <pattern source>` comment plus a reason on the
  * next line — for the rare case where the match is a false positive, not
- * an actual layer violation. E.g. previewDoc.ts (domain/) builds an HTML
- * document whose *embedded <script>* references `document`/`window` —
- * those run inside an iframe, never in this file's own execution
- * context, so the pattern matching the literal text isn't a real
- * violation. A bare exclusion list would silently stop protecting a file
- * the moment unrelated code was added to it; requiring the exact pattern
- * source keeps the allowance scoped to what was actually reviewed. */
+ * an actual layer violation (e.g. a `domain/` file building a string that
+ * happens to contain the literal text `document.` for some *other*
+ * execution context to run later, never this file's own). A bare
+ * exclusion list would silently stop protecting a file the moment
+ * unrelated code was added to it; requiring the exact pattern source keeps
+ * the allowance scoped to what was actually reviewed. */
 export function allowedPatterns(content: string): Set<string> {
   const allowed = new Set<string>()
   const re = /^\/\/ arch-check-allow: (.+)$/gm
