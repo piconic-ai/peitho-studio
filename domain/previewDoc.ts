@@ -8,16 +8,15 @@
 // is scoped to exactly these two patterns.
 //
 // A slide fragment (e.g. `<section class="lt peitho-slide">...`) is just
-// markup — it has no <head>/CSS of its own. `buildSlidePreviewDoc` (below)
-// wraps one into a standalone HTML document for the "selected slide"
-// preview pane's `<iframe>` — a script that scales `.peitho-slide` to fit
-// whatever box the iframe ends up in, plus a `<head>` that loads
-// `peitho.css` from the asset server. Pure string templating — no signals,
-// no DOM, no IPC — so the caller (`Studio.tsx`) is responsible for
+// markup — it has no <head>/CSS of its own, so the "selected slide" preview
+// pane's `<iframe>` needs one built around it. Pure string templating — no
+// signals, no DOM, no IPC — so the caller (`Studio.tsx`) is responsible for
 // resolving `baseUrl`/`canvasWidth`/`canvasHeight` from whatever reactive
-// state it currently has.
-function buildPreviewDoc(fragmentHtml: string, styleTag: string, canvasWidth: number, canvasHeight: number): string {
-  return `<!doctype html><html><head>${styleTag}<style>
+// state it currently has. The `<base href>` is what makes `peitho.css` and
+// the fragment's own image/font URLs resolve against the in-process asset
+// server.
+export function buildSlidePreviewDoc(fragmentHtml: string, baseUrl: string, canvasWidth: number, canvasHeight: number): string {
+  return `<!doctype html><html><head><base href="${baseUrl}"><link rel="stylesheet" href="peitho.css"><style>
       html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; }
       :root { --peitho-canvas-width: ${String(canvasWidth)}px; --peitho-canvas-height: ${String(canvasHeight)}px; }
       /* Without this, being a flex child of <body> lets the browser
@@ -64,11 +63,4 @@ function buildPreviewDoc(fragmentHtml: string, styleTag: string, canvasWidth: nu
         fit()
       })()
     </script></body></html>`
-}
-
-// A real, currently-open deck: CSS lives at the in-process asset server
-// (`<base href>` + `peitho.css`, resolved relative to it) so image/font
-// URLs inside the fragment resolve too.
-export function buildSlidePreviewDoc(fragmentHtml: string, baseUrl: string, canvasWidth: number, canvasHeight: number): string {
-  return buildPreviewDoc(fragmentHtml, `<base href="${baseUrl}"><link rel="stylesheet" href="peitho.css">`, canvasWidth, canvasHeight)
 }

@@ -1,6 +1,7 @@
 import { createSignal, createMemo } from '@barefootjs/client'
 import { type DragState } from '../domain/drag'
 import { type ContextMenu, appendIndex as computeAppendIndex } from '../domain/contextMenu'
+import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 
 const SLIDE_LIST_WIDTH = 176
 const EDITOR_WIDTH = 420
@@ -65,12 +66,20 @@ export function createUiStore() {
   }
 
   // "Change Layout" expands this inline within the thumbnail context menu.
-  // `layoutPreviewCss` carries `preview_layouts`'s shared CSS alongside the
-  // per-layout fragments — see `preview_layouts`'s own Rust doc comment for
-  // why it's never resolved against the real asset server, unlike a real
-  // slide's own `peitho.css`.
   const [layoutPreviews, setLayoutPreviews] = createSignal<{ name: string; fragment: string }[] | null>(null)
   const [layoutPreviewCss, setLayoutPreviewCss] = createSignal('')
+  /** CSS for the picker grid's Shadow DOM canvases. `preview_layouts` runs
+   * the deck's own theme files through `build_theme_css`, which concatenates
+   * them verbatim, so this carries whatever `:root` custom properties the
+   * theme declares and needs the same `:host` rewrite as `renderStore`'s
+   * `slideStylesheetText` to reach a shadow tree at all. Unlike that one it
+   * is never absolutized: `preview_layouts` deliberately stays off the asset
+   * server (see its Rust doc comment), and the only relative `url()`s that
+   * server would have resolved are the `theme-fonts/*` inside the
+   * `@font-face` rules dropped here — `dom/slideCanvas.ts` already keeps one
+   * hoisted, absolutized copy of those in `<head>` from the deck's own
+   * render. */
+  const layoutPreviewStylesheetText = createMemo<string>(() => scopeRootToHost(splitFontFaceRules(layoutPreviewCss()).rest))
 
   // The thumbnail context menu's Cut/Copy/Paste clipboard. Deliberately not
   // backed by `navigator.clipboard` — OS clipboard access needs its own
@@ -86,7 +95,7 @@ export function createUiStore() {
   return {
     dragState, setDragState, draggedIndex, dragOverGap, dragDeltaY,
     contextMenu, setContextMenu, closeContextMenu, toggleLayoutPicker, contextMenuAppendIndex,
-    layoutPreviews, setLayoutPreviews, layoutPreviewCss, setLayoutPreviewCss,
+    layoutPreviews, setLayoutPreviews, layoutPreviewStylesheetText, setLayoutPreviewCss,
     clipboardSlideText, setClipboardSlideText,
     presentMenuOpen, setPresentMenuOpen,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth,

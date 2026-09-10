@@ -259,19 +259,17 @@ export function Studio() {
     ensureFontFaces(render.fontFaceCss())
   })
 
-  // Same shared-object/accessor-prop pattern as `slideStylesheet` above,
-  // for the "Change Layout" picker's own preview grid. A separate sheet
-  // (not `slideStylesheet`) because `preview_layouts` deliberately renders
-  // through a throwaway deck rather than the shared asset server (see its
-  // Rust doc comment) — this CSS is never `@font-face`-hoisted or
-  // asset-URL-absolutized for that reason, same as the iframe version it
-  // replaces.
-  const layoutPreviewStylesheet = createSlideStylesheet(ui.layoutPreviewCss())
+  // The same shared-object/accessor-prop pattern, for the "Change Layout"
+  // picker's grid. Its own sheet rather than `slideStylesheet`: this CSS
+  // comes from `preview_layouts`' separate render, which deliberately never
+  // touches the deck's live asset server (see its Rust doc comment), so it
+  // arrives — and goes stale — independently of the deck's own.
+  const layoutPreviewStylesheet = createSlideStylesheet(ui.layoutPreviewStylesheetText())
   function getLayoutPreviewStylesheet(): CSSStyleSheet {
     return layoutPreviewStylesheet
   }
   createEffect(() => {
-    layoutPreviewStylesheet.replaceSync(ui.layoutPreviewCss())
+    layoutPreviewStylesheet.replaceSync(ui.layoutPreviewStylesheetText())
   })
 
   createEffect(() => {
