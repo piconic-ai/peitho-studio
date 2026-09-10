@@ -259,6 +259,21 @@ export function Studio() {
     ensureFontFaces(render.fontFaceCss())
   })
 
+  // Same shared-object/accessor-prop pattern as `slideStylesheet` above,
+  // for the "Change Layout" picker's own preview grid. A separate sheet
+  // (not `slideStylesheet`) because `preview_layouts` deliberately renders
+  // through a throwaway deck rather than the shared asset server (see its
+  // Rust doc comment) — this CSS is never `@font-face`-hoisted or
+  // asset-URL-absolutized for that reason, same as the iframe version it
+  // replaces.
+  const layoutPreviewStylesheet = createSlideStylesheet(ui.layoutPreviewCss())
+  function getLayoutPreviewStylesheet(): CSSStyleSheet {
+    return layoutPreviewStylesheet
+  }
+  createEffect(() => {
+    layoutPreviewStylesheet.replaceSync(ui.layoutPreviewCss())
+  })
+
   createEffect(() => {
     if (errorMessage() === null) return
     const timer = window.setTimeout(() => setErrorMessage(null), 6000)
@@ -1117,7 +1132,7 @@ export function Studio() {
         layoutPickerOpen={isLayoutPickerOpen(ui.contextMenu())}
         layoutPickerView={layoutPickerView()}
         layoutPreviews={ui.layoutPreviews()}
-        layoutPreviewCss={ui.layoutPreviewCss()}
+        layoutPreviewStylesheet={getLayoutPreviewStylesheet}
         canvasWidth={render.canvasWidth()}
         canvasHeight={render.canvasHeight()}
         onMenuRef={el => { contextMenuEl = el }}

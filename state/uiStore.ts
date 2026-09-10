@@ -66,8 +66,9 @@ export function createUiStore() {
 
   // "Change Layout" expands this inline within the thumbnail context menu.
   // `layoutPreviewCss` carries `preview_layouts`'s shared CSS alongside the
-  // per-layout fragments — see `buildLayoutPreviewDoc` for why it's inlined
-  // per-iframe rather than served, unlike a real slide's own `peitho.css`.
+  // per-layout fragments — see `preview_layouts`'s own Rust doc comment for
+  // why it's never resolved against the real asset server, unlike a real
+  // slide's own `peitho.css`.
   const [layoutPreviews, setLayoutPreviews] = createSignal<{ name: string; fragment: string }[] | null>(null)
   const [layoutPreviewCss, setLayoutPreviewCss] = createSignal('')
 

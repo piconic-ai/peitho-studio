@@ -8,15 +8,14 @@
 // is scoped to exactly these two patterns.
 //
 // A slide fragment (e.g. `<section class="lt peitho-slide">...`) is just
-// markup — it has no <head>/CSS of its own. `buildSlidePreviewDoc`/
-// `buildLayoutPreviewDoc` (below) wrap one into a standalone HTML document
-// — a script that scales `.peitho-slide` to fit whatever box the iframe
-// ends up in, plus a `<head>` that loads its CSS one of two ways depending
-// on the caller — so the same fragment works for both a small list
-// thumbnail and the large Preview pane. Pure string templating — no
-// signals, no DOM, no IPC — so the caller (`Studio.tsx`) is responsible for
-// resolving `baseUrl`/`css`/`canvasWidth`/`canvasHeight` from whatever
-// reactive state it currently has.
+// markup — it has no <head>/CSS of its own. `buildSlidePreviewDoc` (below)
+// wraps one into a standalone HTML document for the "selected slide"
+// preview pane's `<iframe>` — a script that scales `.peitho-slide` to fit
+// whatever box the iframe ends up in, plus a `<head>` that loads
+// `peitho.css` from the asset server. Pure string templating — no signals,
+// no DOM, no IPC — so the caller (`Studio.tsx`) is responsible for
+// resolving `baseUrl`/`canvasWidth`/`canvasHeight` from whatever reactive
+// state it currently has.
 function buildPreviewDoc(fragmentHtml: string, styleTag: string, canvasWidth: number, canvasHeight: number): string {
   return `<!doctype html><html><head>${styleTag}<style>
       html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; }
@@ -72,13 +71,4 @@ function buildPreviewDoc(fragmentHtml: string, styleTag: string, canvasWidth: nu
 // URLs inside the fragment resolve too.
 export function buildSlidePreviewDoc(fragmentHtml: string, baseUrl: string, canvasWidth: number, canvasHeight: number): string {
   return buildPreviewDoc(fragmentHtml, `<base href="${baseUrl}"><link rel="stylesheet" href="peitho.css">`, canvasWidth, canvasHeight)
-}
-
-// A layout preview (the "Change Layout" picker's grid): `css` is rendered
-// from throwaway placeholder content on demand (see `preview_layouts` in
-// peitho.rs) and never served — inlining it directly, instead of a
-// `<base>`/asset-server link, is what keeps this picker's renders from
-// ever touching (and corrupting) the real deck's shared asset server.
-export function buildLayoutPreviewDoc(fragmentHtml: string, css: string, canvasWidth: number, canvasHeight: number): string {
-  return buildPreviewDoc(fragmentHtml, `<style>${css}</style>`, canvasWidth, canvasHeight)
 }
