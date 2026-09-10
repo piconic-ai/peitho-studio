@@ -23,7 +23,7 @@ e.g. a record of how a correction was arrived at).
   assignment:
   - Frontend: `components/*.ts` (not `.tsx`) is exclusively for pure logic
     that never touches signals, the DOM, or IPC (e.g. `domain/slides.ts`,
-    `domain/previewDoc.ts`). `components/*.tsx` is the stateful layer that
+    `domain/slideCss.ts`). `components/*.tsx` is the stateful layer that
     holds BarefootJS signals, effects, and IPC calls. Before embedding new
     pure logic inside a `.tsx`, first consider whether it can be extracted
     into a `.ts` file.
@@ -97,13 +97,17 @@ don't bundle everything into one giant commit.
   `"devtools": false` in the window config in `tauri.conf.json`.
 - An `<iframe>` grabs right-clicks into its own native context menu
   ("Open Frame in New Window", etc.) even with `pointer-events: none` set
-  on it (ordinary clicks/drags pass through correctly). Layer an opaque
-  overlay `<div>` (that doesn't kill pointer-events) on top of the iframe
-  so the iframe can never become the event target.
-- When the cursor passes over an `<iframe>` during a manual drag,
-  `mousemove` stops reaching the parent document because that's a
-  separate browsing context. Temporarily disable `pointer-events` on
-  every `<iframe>` while a drag is in progress.
+  on it (ordinary clicks/drags pass through correctly) — needs an opaque
+  overlay `<div>` (that doesn't kill pointer-events) on top of it so it can
+  never become the event target. Likewise, the cursor passing over an
+  `<iframe>` during a manual drag stops `mousemove` reaching the parent
+  document (a separate browsing context) unless every `<iframe>` gets
+  `pointer-events: none` for the drag's duration. Both hit (and were
+  worked around) for the per-slide thumbnail/preview-pane/layout-picker
+  `<iframe>`s this app used to render slides into — removed in favor of
+  Shadow DOM (`dom/slideCanvas.ts`), which doesn't have either problem
+  (same document, not a separate browsing context). Relevant again only if
+  an `<iframe>` gets reintroduced somewhere.
 - State that should differ per window (the open deck, its file watcher,
   its subprocess) must be kept in a map keyed by `window.label()` rather
   than a single global — otherwise a second window silently overwrites
@@ -203,6 +207,25 @@ don't bundle everything into one giant commit.
   such a value behind an accessor (`function getX() { return x }`) and
   pass *that* — a function identifier is passed by reference
   (`get p() { return getX }`), same as any callback prop.
+- **A `createEffect` called inside a conditional branch's `ref` leaks one
+  effect per re-entry into that branch, forever.** A branch's compiled
+  `bindEvents()` re-runs in full every time the branch is re-entered
+  (confirmed in `dist/assets/components/*.js` and
+  `@barefootjs/client`'s `runtime/index.js`), but the branch's own cleanup
+  is never invoked on re-entry, and `createEffect`'s cleanup doesn't
+  re-run on re-execution either — so a `ref={el => createEffect(() =>
+  ...)}` inside `cond ? <div ref={...}/> : <other/>` leaves the *previous*
+  entry's effect still running against its now-detached `el` every time
+  `cond` flips back to true, one more instance per flip, forever (each one
+  keeps doing real work — e.g. re-mounting a Shadow DOM canvas — against
+  an element nothing references anymore). Confirmed via `SlidePreview.tsx`
+  toggling on `selectedSlideKey`. Fix: keep both branches permanently
+  mounted and toggle visibility (a `hidden` class) instead of branching —
+  same pattern `SlideContextMenu.tsx` already used for an unrelated
+  reason. `ref`-scoped effects are otherwise fine (see `SlideList.tsx`'s
+  thumbnail row, which mounts unconditionally within its `.map()`); the
+  leak is specifically about a `ref` whose *entire host element* is inside
+  a branch that unmounts and remounts.
 
 ## Pitfalls hit with UnoCSS (Wind4 preset)
 

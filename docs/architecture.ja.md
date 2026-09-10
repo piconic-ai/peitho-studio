@@ -20,7 +20,7 @@
 | `domain/` (`.ts`) | 何にも依存しない純粋関数・ADT・遷移関数・例示データ | `@barefootjs/client`, `@tauri-apps/*`, `document`/`window` | `bun test`(spec / adversarial / property / pairwise) |
 | `state/` (`.ts`) | `createSignal`/`createMemo`/`createEffect`/`batch`/`createSelector`、`domain/` | `@tauri-apps/*`、DOM API、JSX | `bun test` + `createRoot`(モデルベーステスト) |
 | `ipc/` (`.ts`) | `invoke`/`listen`/`openDialog`の薄い型付きラッパーと境界の型 | シグナル、DOM、ビジネスロジック | 型のみ。e2e用のフェイク実装を同じインターフェースで用意 |
-| `dom/` (`.ts`) | DOM計測・スタイル書き込み・イベント購読(iframeサイズ同期、ドラッグジェスチャ、textarea同期) | シグナル、IPC、JSX | 数式部分は`domain/`に押し出して`bun test`。残りはIRテスト/e2e |
+| `dom/` (`.ts`) | DOM計測・スタイル書き込み・イベント購読(Shadow DOM canvasのマウント/スケール同期、ドラッグジェスチャ、textarea同期) | シグナル、IPC、JSX | 数式部分は`domain/`に押し出して`bun test`。残りはIRテスト/e2e |
 | `components/` (`.tsx`) | JSX + 上記4層のimport。合成ルートは「ストア生成・IPC/イベント配線・子の配置」のみ | ビジネスロジック、テキスト操作、状態遷移の判断 | `@barefootjs/test`のIRテスト + Playwright(IPCスタブ) |
 
 依存の向きは `components → state → domain`、`components → ipc`、
@@ -203,9 +203,8 @@ DSLと具体的な記述例は`todo/`配下の実行計画、または実装時�
 
 ## 手動検証にせざるを得ないもの
 
-IME合成中のtextarea同期、WKWebView固有のiframe描画(角のシーム・stale
-paint)、iframe上の右クリック奪取、ドラッグ中のiframe通過、ネイティブ
-ダイアログ、フォーカス喪失中のドラッグ、複数ウィンドウのpending deck、
-`peitho present`の起動——これらは実機Tauriウィンドウでしか確認できない。
-`manual: { reason }`付きの例示として台帳化し、検証手順は
-`.claude/skills/run-peitho-studio/SKILL.md`を参照する。
+IME合成中のtextarea同期、プレビュー枠のiframe上をドラッグ中にカーソルが
+通過するケース、ネイティブダイアログ、フォーカス喪失中のドラッグ、複数
+ウィンドウのpending deck、`peitho present`の起動——これらは実機Tauri
+ウィンドウでしか確認できない。`manual: { reason }`付きの例示として台帳化
+し、検証手順は`.claude/skills/run-peitho-studio/SKILL.md`を参照する。
