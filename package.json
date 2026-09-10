@@ -1,6 +1,7 @@
 {
   "name": "peitho-studio",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite build && unocss && concurrently -k -n build,uno,server -c blue,magenta,green \"vite build --watch\" \"unocss --watch\" \"tsx watch server.ts\"",
