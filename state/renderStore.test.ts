@@ -137,4 +137,20 @@ describe('slideStylesheetText / fontFaceCss', () => {
       expect(store.fontFaceCss()).toBe('')
     })
   })
+
+  test('adversarial: a later render re-derives both from the new css *and* the new asset base', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.applyRenderPayload(payload({
+        assetBaseUrl: 'http://localhost:1111/',
+        css: '@font-face { src: url(theme-fonts/A.woff2); } .peitho-slide { color: red; }',
+      }))
+      store.applyRenderPayload(payload({
+        assetBaseUrl: 'http://localhost:2222/',
+        css: '@font-face { src: url(theme-fonts/B.woff2); } .peitho-slide { color: blue; }',
+      }))
+      expect(store.fontFaceCss()).toBe('@font-face { src: url(http://localhost:2222/theme-fonts/B.woff2); }')
+      expect(store.slideStylesheetText()).toBe(' .peitho-slide { color: blue; }')
+    })
+  })
 })

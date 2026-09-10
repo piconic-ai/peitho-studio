@@ -6,23 +6,28 @@
 import { containScale, type Size } from '../domain/geometry'
 
 // Adopted by every mounted canvas alongside its theme sheet — one shared
-// CSSStyleSheet object rather than a `<style>` re-parsed per thumbnail
+// `CSSStyleSheet` rather than a `<style>` re-parsed per thumbnail
 // (`adoptedStyleSheets` accepts the same sheet in many shadow roots at
-// once). `--peitho-thumb-scale` is written per-host by `observeCanvasScale`
-// below; `.peitho-slide`'s own native size (theme CSS) is left alone here
-// and only scaled down to fit.
-const LAYOUT_SHEET = new CSSStyleSheet()
-LAYOUT_SHEET.replaceSync(`
+// once). `flex-shrink: 0` pins `.peitho-slide` at its native canvas size so
+// the transform does 100% of the size reduction: as a flex child it would
+// otherwise be squeezed below that width and re-wrap its own text *before*
+// being scaled (the same pin, for the same reason, as in
+// `domain/previewDoc.ts`).
+const LAYOUT_CSS = `
   :host { display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .peitho-slide { flex-shrink: 0; transform: scale(var(--peitho-thumb-scale, 1)); transform-origin: center center; }
-`)
+`
+// Built on first mount, not at module load: `new CSSStyleSheet()` only
+// exists in a browser, so constructing it eagerly would make this module
+// unimportable from a `bun test` (a component IR test, say) or any other
+// non-DOM context.
+let layoutSheet: CSSStyleSheet | null = null
 
 /** Parses `cssText` (a deck theme's compiled CSS, already absolutized and
- * `@font-face`-stripped — see `state/renderStore.ts`'s `slideStylesheetText`)
- * into a `CSSStyleSheet` for `adoptedStyleSheets`. Call once per distinct
- * CSS string and reuse the result across every mounted canvas — a theme
- * change then only needs `sheet.replaceSync(next)`, not a re-parse per
- * thumbnail. */
+ * `@font-face`-stripped — see `state/renderStore.ts`'s
+ * `slideStylesheetText`) for `adoptedStyleSheets`. Call once per distinct
+ * CSS string and share the result across every mounted canvas, so a theme
+ * change costs one `replaceSync` instead of a re-parse per thumbnail. */
 export function createSlideStylesheet(cssText: string): CSSStyleSheet {
   const sheet = new CSSStyleSheet()
   sheet.replaceSync(cssText)
@@ -42,29 +47,38 @@ export function ensureFontFaces(fontFaceCss: string): void {
     styleEl.setAttribute(FONT_FACE_STYLE_ATTR, '')
     document.head.appendChild(styleEl)
   }
+  // Rewriting identical text would drop and re-add the same `@font-face`
+  // rules, re-resolving fonts that are already loaded and drawn.
   if (styleEl.textContent !== fontFaceCss) styleEl.textContent = fontFaceCss
 }
 
-/** Mounts `fragmentHtml` into `host`'s Shadow root, creating it on first
- * call, adopting the theme `sheet` alongside the shared layout rules
- * above. Pair with `observeCanvasScale` to keep it fitted as `host`
- * resizes. */
-export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragmentHtml: string): void {
+/** Mounts `fragmentHtml` into `host`'s Shadow root, reusing that root if it
+ * already has one (a second `attachShadow` throws). `canvas` is the deck's
+ * native slide size: the theme sizes `.peitho-slide` off
+ * `--peitho-canvas-width/height`, which peitho only ever emits on the
+ * `:root` of a document it generates itself, so a shadow-rendered slide
+ * needs the host to carry it — otherwise every non-1280x720 deck silently
+ * renders at the theme's `var()` fallback. Pair with `observeCanvasScale`
+ * to keep it fitted as `host` resizes. */
+export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragmentHtml: string, canvas: Size): void {
   const shadow = host.shadowRoot ?? host.attachShadow({ mode: 'open' })
-  shadow.adoptedStyleSheets = [sheet, LAYOUT_SHEET]
+  layoutSheet ??= createSlideStylesheet(LAYOUT_CSS)
+  shadow.adoptedStyleSheets = [sheet, layoutSheet]
+  host.style.setProperty('--peitho-canvas-width', `${String(canvas.width)}px`)
+  host.style.setProperty('--peitho-canvas-height', `${String(canvas.height)}px`)
   shadow.innerHTML = fragmentHtml
 }
 
-/** Swaps in fresh fragment HTML for an already-mounted canvas, replacing
- * only the existing `.peitho-slide` element rather than the whole subtree
- * — mirrors `Studio.tsx`'s `patchSlidePreviewIframes`. Returns whether a
- * swap actually happened, so a caller sweeping every mounted canvas on
- * every edit can tell which ones changed. A host with no shadow root yet
- * (mount hasn't run) or no `.peitho-slide` inside it is a safe no-op. */
+/** Swaps fresh fragment HTML into an already-mounted canvas, and reports
+ * whether anything actually changed. Only ever *replaces* an existing
+ * `.peitho-slide`, never inserts one, so a patch that reaches a host that
+ * isn't mounted yet is a safe no-op rather than a duplicated slide —
+ * mirrors `Studio.tsx`'s `patchSlidePreviewIframes`, minus its `resize`
+ * dispatch: the fit lives in a custom property on `host`, which the
+ * replacement inherits untouched. */
 export function patchSlideCanvas(host: HTMLElement, fragmentHtml: string): boolean {
-  const shadow = host.shadowRoot
-  const current = shadow?.querySelector('.peitho-slide')
-  if (!shadow || !current || current.outerHTML === fragmentHtml) return false
+  const current = host.shadowRoot?.querySelector('.peitho-slide')
+  if (!current || current.outerHTML === fragmentHtml) return false
   const wrapper = document.createElement('div')
   wrapper.innerHTML = fragmentHtml
   const next = wrapper.firstElementChild
@@ -76,19 +90,30 @@ export function patchSlideCanvas(host: HTMLElement, fragmentHtml: string): boole
 const canvasSizes = new WeakMap<Element, Size>()
 let sharedObserver: ResizeObserver | null = null
 
-function handleResize(entries: ResizeObserverEntry[]): void {
+function handleResize(entries: ResizeObserverEntry[], observer: ResizeObserver): void {
   for (const entry of entries) {
     const host = entry.target as HTMLElement
+    // A `ResizeObserver` holds its targets strongly and this one is never
+    // disconnected, so a thumbnail the slide list has since destroyed would
+    // stay pinned (with its whole shadow tree) for the app's lifetime.
+    // Removal drops the host to 0x0, which is itself a notification — the
+    // one chance to let go of it. Connectedness is read here, after layout,
+    // so a row merely *moved* by a reorder still reads as connected.
+    if (!host.isConnected) {
+      observer.unobserve(host)
+      continue
+    }
     const canvas = canvasSizes.get(host)
     if (!canvas) continue
     host.style.setProperty('--peitho-thumb-scale', String(containScale(entry.contentRect, canvas)))
   }
 }
 
-/** Keeps `host`'s `.peitho-slide` scaled to fit as `host` resizes, via one
- * `ResizeObserver` shared across every mounted canvas instead of one per
- * thumbnail. `canvas` is the deck's native slide size
- * (`RenderPayload.manifest.canvasWidth/Height`), not `host`'s own box. */
+/** Keeps `host`'s slide scaled to fit as `host` resizes, through a single
+ * `ResizeObserver` shared by every mounted canvas rather than one each.
+ * `canvas` is the deck's native slide size, not `host`'s own box. Fitting
+ * against `contentRect` keeps a transform applied to `host` itself (the
+ * `scale(0.95)` a drag puts on a row) out of the measurement. */
 export function observeCanvasScale(host: HTMLElement, canvas: Size): void {
   canvasSizes.set(host, canvas)
   sharedObserver ??= new ResizeObserver(handleResize)

@@ -28,24 +28,18 @@ export function createRenderStore() {
   const sectionStartByIndex = createMemo<Record<number, ManifestSection>>(() => computeSectionStartByIndex(manifest()?.sections ?? []))
   const [sectionDrafts, setSectionDrafts] = createSignal<Record<number, SectionDraft>>({})
 
-  // The deck theme's raw compiled CSS. Equality-guarded like canvas size
-  // above — every mounted Shadow DOM canvas (a later PR) re-parses
-  // `slideStylesheetText()` into its adopted `CSSStyleSheet` on change, so
-  // an unguarded set would force that reparse on every edit even though
-  // the theme itself rarely changes.
   const [css, setCss] = createSignal('')
-  // `absolutizeCssUrls` needs `assetBaseUrl()`, so this is a memo (not
-  // computed once in `applyRenderPayload`) to stay current if the asset
-  // server's URL ever changes independently of the CSS itself.
+  // A memo, rather than something computed once in `applyRenderPayload`,
+  // because the result depends on `assetBaseUrl()` too — the asset server's
+  // URL can change independently of the CSS itself.
   const absolutizedCss = createMemo<string>(() => absolutizeCssUrls(css(), assetBaseUrl() ?? ''))
   const splitCss = createMemo<{ fontFaces: string; rest: string }>(() => splitFontFaceRules(absolutizedCss()))
-  /** CSS for a Shadow DOM canvas's adopted style sheet — `@font-face`
-   * stripped out (see `fontFaceCss` below) and `:root` rewritten to
-   * `:host` so the theme's custom properties still reach `.peitho-slide`
-   * inside the shadow tree. */
+  /** CSS for a Shadow DOM canvas's adopted style sheet: `:root` rewritten
+   * to `:host`, since `:root` resolves to the *document* root and so would
+   * never reach `.peitho-slide` inside a shadow tree, and `@font-face`
+   * split off into `fontFaceCss` for `dom/slideCanvas.ts` to hoist into
+   * `<head>` instead. */
   const slideStylesheetText = createMemo<string>(() => scopeRootToHost(splitCss().rest))
-  /** `@font-face` rules extracted from the theme CSS, for
-   * `dom/slideCanvas.ts`'s `ensureFontFaces` to hoist into `<head>`. */
   const fontFaceCss = createMemo<string>(() => splitCss().fontFaces)
 
   // One independent signal per slide key, rather than a single
