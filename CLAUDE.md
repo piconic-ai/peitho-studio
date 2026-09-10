@@ -208,7 +208,9 @@ don't bundle everything into one giant commit.
   pass *that* — a function identifier is passed by reference
   (`get p() { return getX }`), same as any callback prop.
 - **A `createEffect` called inside a conditional branch's `ref` leaks one
-  effect per re-entry into that branch, forever.** A branch's compiled
+  effect per re-entry into that branch, forever** (reported as
+  [piconic-ai/barefootjs#2927](https://github.com/piconic-ai/barefootjs/issues/2927),
+  with a minimal repro and root-cause trace). A branch's compiled
   `bindEvents()` re-runs in full every time the branch is re-entered
   (confirmed in `dist/assets/components/*.js` and
   `@barefootjs/client`'s `runtime/index.js`), but the branch's own cleanup
