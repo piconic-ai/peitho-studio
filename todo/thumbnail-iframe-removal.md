@@ -173,7 +173,19 @@ Pullfrogレビュー対応。
       pointer-events対策も不要と判断し削除(Shadow DOMは別の
       browsing contextではないため、mousemoveが遮られる問題自体が
       発生しない)。iframe時代の古いコメント(`docs/architecture.md`
-      の手動検証項目含む)も更新。(実機検証は他項目とまとめて後日)。
+      の手動検証項目、`docs/architecture.ja.md`、CLAUDE.md含む)も更新。
+      レビューで見つかった重大バグ2件を修正: (1)
+      `ref`内で条件分岐された要素に対し`createEffect`を呼ぶと、
+      BarefootJSはbranch再突入のたびに古いeffectをdisposeせず
+      増殖させる(選択スライド切替のたびにeffectが1つずつ増え、
+      detachされたhostへのmountSlideCanvas/observeCanvasScaleを
+      永久に実行し続けるリーク)。両方の子を常時マウントし`hidden`
+      で切り替える方式に変更して解消、CLAUDE.mdに新pitfallとして
+      記録。(2) `patchSlideCanvas`の`outerHTML`比較によるno-op判定が、
+      `breaks: true`のデッキで常に不一致になり、打鍵のたびに全
+      サムネイル+プレビュー枠が再構築されていた(PR3/PR4由来の
+      既存バグ)。適用済みfragment文字列を`WeakMap`で保持する方式に
+      修正。(実機検証は他項目とまとめて後日)。
 
 ## 5. 完了条件
 
