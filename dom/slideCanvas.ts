@@ -11,8 +11,8 @@ import { containScale, type Size } from '../domain/geometry'
 // once). `flex-shrink: 0` pins `.peitho-slide` at its native canvas size so
 // the transform does 100% of the size reduction: as a flex child it would
 // otherwise be squeezed below that width and re-wrap its own text *before*
-// being scaled (the same pin, for the same reason, the iframe-era preview
-// document used). `pointer-events`/`user-select` are inherited
+// being scaled (the same pin the iframe-era preview document used, for the
+// same reason). `pointer-events`/`user-select` are inherited
 // properties, so declaring them on `:host` covers the slide markup inside
 // it too — that markup is a deck author's arbitrary HTML, and unlike the
 // `<iframe srcdoc>` this replaces it now lives in the app's own document:
@@ -79,6 +79,15 @@ export function ensureFontFaces(fontFaceCss: string): void {
 const MAX_MOUNT_RETRIES = 5
 const mountRetryCounts = new WeakMap<HTMLElement, number>()
 
+// What each host's shadow root was last given, so `patchSlideCanvas` can
+// recognize an unchanged fragment. Re-serializing the mounted DOM
+// (`.outerHTML`) instead would compare two different spellings of the same
+// markup: peitho emits pulldown-cmark's `<br />` and keeps `&lt;` inside
+// attribute values, both of which the browser serializes back differently
+// (`<br>`, a literal `<`) — so any deck using `breaks: true` would fail the
+// check on every slide and rebuild every canvas on every keystroke.
+const appliedFragments = new WeakMap<Element, string>()
+
 /** Mounts `fragmentHtml` into `host`'s Shadow root, reusing that root if it
  * already has one (a second `attachShadow` throws). `canvas` is the deck's
  * native slide size: the theme sizes `.peitho-slide` off
@@ -118,23 +127,25 @@ export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragme
   host.style.setProperty('--peitho-canvas-width', `${String(canvas.width)}px`)
   host.style.setProperty('--peitho-canvas-height', `${String(canvas.height)}px`)
   shadow.innerHTML = fragmentHtml
+  appliedFragments.set(host, fragmentHtml)
 }
 
 /** Swaps fresh fragment HTML into an already-mounted canvas, and reports
  * whether anything actually changed. Only ever *replaces* an existing
  * `.peitho-slide`, never inserts one, so a patch that reaches a host that
- * isn't mounted yet is a safe no-op rather than a duplicated slide —
- * mirrors `Studio.tsx`'s `patchSlidePreviewIframes`, minus its `resize`
- * dispatch: the fit lives in a custom property on `host`, which the
- * replacement inherits untouched. */
+ * isn't mounted yet is a safe no-op rather than a duplicated slide. No
+ * re-fit is needed after the swap: the scale lives in a custom property on
+ * `host`, which the replacement inherits untouched. */
 export function patchSlideCanvas(host: HTMLElement, fragmentHtml: string): boolean {
+  if (appliedFragments.get(host) === fragmentHtml) return false
   const current = host.shadowRoot?.querySelector('.peitho-slide')
-  if (!current || current.outerHTML === fragmentHtml) return false
+  if (!current) return false
   const wrapper = document.createElement('div')
   wrapper.innerHTML = fragmentHtml
   const next = wrapper.firstElementChild
   if (!next) return false
   current.replaceWith(next)
+  appliedFragments.set(host, fragmentHtml)
   return true
 }
 
