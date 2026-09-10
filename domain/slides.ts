@@ -286,9 +286,9 @@ export function sumSectionTimesMs(slideTexts: string[]): number {
  * (its thumbnail `<iframe srcdoc>` in particular — a real reload, not just
  * wasted work, since `.srcdoc` re-assignment reloads the frame even when
  * set to an identical string) from re-running on an edit to some *other*
- * slide. See [[barefootjs-per-key-signal-pattern]] for the same fix at a
- * different data shape (a signal holding a whole collection, vs. object
- * identity for one `.map()`'s items). */
+ * slide. Same fix as `state/renderStore.ts`'s per-slide `fragmentSignal`,
+ * applied to a different data shape (a signal holding a whole collection,
+ * vs. object identity for one `.map()`'s items). */
 export function stabilizeByKey<T extends { key: string }>(previous: T[], next: T[]): T[] {
   const byKey = new Map(previous.map(item => [item.key, item]))
   return next.map(item => {

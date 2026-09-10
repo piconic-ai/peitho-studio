@@ -3,184 +3,194 @@ name: run-peitho-studio
 description: Launch the Peitho Studio Tauri desktop app and drive its native window with GUI automation (osascript/System Events/cliclick) to manually verify a change end-to-end. Use before claiming a frontend/Rust fix works, when browser-only e2e (e2e/*.e2e.ts) can't reach past the welcome screen.
 ---
 
-# Peitho Studio を実機で動かして確認する
+# Running Peitho Studio on a real device to verify a change
 
-`e2e/*.e2e.ts` は Tauri IPC のないプレーンブラウザ相手のスモークテストで、
-Welcome画面より先(デッキを開く/編集する等)は検証できない
-(`e2e/welcome.e2e.ts` のコメント参照)。それより先の動作を確認するには、
-実際の Tauri ネイティブウィンドウを起動してGUI操作するしかない。
-`tauri-driver` を使った本格的なe2eはまだ無い(`CLAUDE.md` の
-「e2eもほしいが、段階的でよい」参照)ので、当面はこの手順で代替する。
+`e2e/*.e2e.ts` is a smoke test against a plain browser with no Tauri IPC,
+so it can't verify anything past the Welcome screen (opening/editing a
+deck, etc.) — see the comment in `e2e/welcome.e2e.ts`. Verifying anything
+past that point requires actually launching a real Tauri native window
+and driving it via GUI. There's no real e2e via `tauri-driver` yet (see
+"e2e is wanted too, but it's fine to get there incrementally" in
+`CLAUDE.md`), so this procedure substitutes for now.
 
-## 0. 事前チェック — ユーザーが既に起動していないか
+## 0. Preflight check — is the user already running it?
 
-自分で `tauri dev` を起動する前に、必ず確認する。
+Always check before launching `tauri dev` yourself.
 
 ```bash
 lsof -i :3003 -sTCP:LISTEN
 ps aux | grep -iE "tauri dev|target/debug/app" | grep -v grep
 ```
 
-- 既に動いている(ユーザー自身の開発セッション)場合は、そのウィンドウを
-  使って確認する。新たに起動すると `EADDRINUSE`(ポート3003競合)で
-  失敗するだけでなく、フロントエンドのビルドが失敗した状態で
-  Rustプロセスだけ孤児として残る(`tauri dev` の子プロセスをkillしても、
-  ネイティブウィンドウ本体の `target/debug/app` は生き残る)ことがある。
-  重複起動に気づいたら、自分が起動した分だけを起動時刻で見分けてkillする
-  ——ユーザーの既存プロセスを巻き込まないこと。
-- GUI自動操作(マウス移動・クリック)はOS全体のフォーカスを奪う。
-  ユーザーが別ウィンドウ/別セッションで並行作業している可能性を
-  念頭に置き、疑わしければ一度スクリーンショットで状況を確認してから
-  進める。
-- **(未解決・要注意) 複数デスクトップ(Mission Control Space)がある環境では、
-  `osascript`の`set frontmost`や`cliclick`の座標クリックが、直前に
-  スクリーンショットで確認したデスクトップとは別の場所に届くことがある。**
-  実際に踏んだ事故: PIDを指定して`set frontmost`しPeitho Studio単体の
-  デスクトップへの切り替えに成功したことをスクリーンショットで確認した
-  直後、その次の`cliclick`がなぜか別デスクトップ上の全く別のアプリ
-  (ユーザーの別セッション)に届き、そこのコンテキストメニューを開いて
-  しまった。続けて送った`Escape`キーも、今度はさらに別のウィンドウ
-  (このエージェント自身が動いているターミナル)にフォーカスを移した。
-  「直前のスクリーンショットで見えていた見た目」と「次の操作が実際に
-  届く先」が一致しない、という信頼できない状態になったら、それ以上
-  座標操作を重ねて頑張らず、いったん中止してユーザーに委ねる
-  (ユーザー自身の手元での確認に切り替えてもらう、また試すなら次回
-  Cmd+Tab/Mission Control操作を避けフォーカスを固定した状態で臨む、
-  など)。原因は特定できていない — Spacesを跨ぐ`osascript`の
-  `frontmost`設定と実際のポインタ座標系の対応関係の何らかの不整合が
-  疑わしいが未検証。
+- If it's already running (the user's own dev session), verify against
+  that window. Launching a new one doesn't just fail with `EADDRINUSE`
+  (port 3003 conflict) — it can also leave an orphaned Rust process
+  behind with the frontend build in a failed state (killing `tauri dev`'s
+  child process doesn't kill the native window binary itself,
+  `target/debug/app`, which survives). If you notice a duplicate launch,
+  identify and kill only the one you started by its launch time — don't
+  take down the user's existing process.
+- GUI automation (mouse movement/clicks) steals OS-wide focus. Keep in
+  mind the user may be working concurrently in another window/session —
+  if in doubt, check a screenshot of the current state before proceeding.
+- **(Unresolved — watch out) In an environment with multiple desktops
+  (Mission Control Spaces), `osascript`'s `set frontmost` or `cliclick`'s
+  coordinate clicks can land somewhere other than the desktop just
+  confirmed via screenshot.** An actual incident: after specifying a PID
+  with `set frontmost` and confirming via screenshot that it had
+  successfully switched to the desktop with Peitho Studio alone, the very
+  next `cliclick` landed, for some reason, on a completely different app
+  on a different desktop (the user's other session), opening its context
+  menu there. The following `Escape` keystroke then moved focus to yet
+  another window (the terminal this very agent was running in). If you
+  hit this untrustworthy state — "what the last screenshot showed" no
+  longer matching "where the next action actually lands" — don't keep
+  pushing more coordinate-based actions; stop and hand it back to the
+  user (switch to having the user verify by hand, or if trying again,
+  avoid Cmd+Tab/Mission Control operations next time and keep focus
+  pinned). The root cause hasn't been identified — some mismatch between
+  `osascript`'s cross-Spaces `frontmost` setting and the actual pointer
+  coordinate system is suspected but unverified.
 
-## 1. 起動
+## 1. Launch
 
 ```bash
-cd /Users/kfly8/src/github.com/kfly8/peitho-studio
+cd /Users/kfly8/src/github.com/piconic-ai/peitho-studio
 nohup bunx tauri dev > /tmp/tauri-dev.log 2>&1 &
 ```
 
-`[build] ... Running target/debug/app` がログに出たら起動完了
-(初回 or Rust側変更時はcargoビルドが走るので数十秒〜数分かかる。
-フロントエンドだけの変更ならキャッシュが効いて数秒)。
+Launch is done once `[build] ... Running target/debug/app` appears in the
+log (a cargo build runs on the first launch or after a Rust-side change,
+taking tens of seconds to a few minutes; a frontend-only change hits the
+cache and takes a few seconds).
 
-ネイティブウィンドウのPIDを特定する
-(Cargo.tomlの `[package] name = "app"` なのでプロセス名は `app`):
+Identify the native window's PID (the process name is `app`, per
+`[package] name = "app"` in Cargo.toml):
 
 ```bash
 ps aux | grep -i "target/debug/app" | grep -v grep
 ```
 
-## 2. ウィンドウを最前面にしてスクリーンショット
+## 2. Bring the window to the front and screenshot it
 
 ```bash
 osascript -e 'tell application "System Events" to set frontmost of (first process whose unix id is <PID>) to true'
 screencapture -x <path>.png
 ```
 
-Readツールでスクリーンショットを見て状態を確認する。
+Check the state by viewing the screenshot with the Read tool.
 
-## 3. クリック操作は座標ベースで(AXツリーは使えない)
+## 3. Clicks have to be coordinate-based (the AX tree doesn't work)
 
-`tell application "System Events" to tell (first process whose unix id
-is <PID>) to get name of every button of window 1` のような
-アクセシビリティツリー越しのUI要素取得は、この WKWebView ベースの
-Tauriウィンドウでは `count of windows` が **0** を返し機能しない
-(通常のネイティブアプリなら効くはずのやり方なので、詰まったら真っ先に
-これを疑う)。ボタン名指定のクリックは諦め、`cliclick` で座標クリックする。
+Getting UI elements via the accessibility tree — something like `tell
+application "System Events" to tell (first process whose unix id is
+<PID>) to get name of every button of window 1` — doesn't work on this
+WKWebView-based Tauri window: `count of windows` returns **0** (this
+approach would normally work on a regular native app, so suspect this
+first when stuck). Give up on clicking by button name and click by
+coordinate with `cliclick` instead.
 
-座標変換(`screencapture` は物理ピクセル、`cliclick`/`osascript` の
-クリック座標は論理point):
+Coordinate conversion (`screencapture` uses physical pixels;
+`cliclick`/`osascript` click coordinates use logical points):
 
 ```bash
-system_profiler SPDisplaysDataType | grep -i resolution   # 物理解像度 (例: 5120x2880)
-osascript -e 'tell application "Finder" to get bounds of window of desktop'  # 論理解像度 (例: 0,0,2560,1440)
+system_profiler SPDisplaysDataType | grep -i resolution   # physical resolution (e.g. 5120x2880)
+osascript -e 'tell application "Finder" to get bounds of window of desktop'  # logical resolution (e.g. 0,0,2560,1440)
 ```
 
-Readツールがスクリーンショットを縮小表示するので、その表示座標
-`(dx, dy)` から実クリック座標へは:
+Since the Read tool shows the screenshot scaled down, converting its
+displayed coordinates `(dx, dy)` to the real click coordinates:
 
 ```
-point_x = dx * (論理解像度の幅 / 表示画像の幅)
+point_x = dx * (logical resolution width / displayed image width)
 ```
 
-例: 物理5120、表示2000、論理2560 なら倍率は `2560/2000 = 1.28`。
+Example: physical 5120, displayed 2000, logical 2560 → the ratio is
+`2560/2000 = 1.28`.
 
 ```bash
 cliclick c:<point_x>,<point_y>
 ```
 
-クリック後は必ずスクリーンショットで結果を確認してから次に進む
-(座標がずれていても失敗が分かりにくいため)。
+Always confirm the result with a screenshot after clicking before moving
+on — an off-target coordinate is otherwise hard to notice as a failure.
 
-## 4. テキスト入力はIME経由で化けるので clipboard 経由にする
+## 4. Route text input through the clipboard — IME mangles it otherwise
 
-日本語IMEが有効な環境で `System Events` の
-`keystroke "some/path"` を使うと、英数字だけの文字列でも変換候補として
-扱われて文字化けする(パスに日本語が一文字も無くても発生した)。
+With a Japanese IME enabled, using `System Events`'s `keystroke
+"some/path"` gets treated as conversion candidates and garbled, even for
+a string that's plain ASCII (this happened even with not a single
+Japanese character in the path).
 
 ```bash
 printf '%s' "$TEXT" | pbcopy
 osascript -e 'tell application "System Events" to keystroke "v" using {command down}'
 ```
 
-フィールドにフォーカスが当たっているか(カーソルが点滅しているか)を
-スクリーンショットで確認してからペーストする——クリック座標がずれて
-フォーカスが外れたままだと、ペーストしても何も入力されない。
+Confirm via screenshot that the field is actually focused (the cursor is
+blinking) before pasting — if the click coordinate was off and focus
+never landed there, pasting does nothing.
 
-## 5. ネイティブのファイル選択ダイアログでパスを直接指定する
+## 5. Enter a path directly in the native file picker dialog
 
-`openDialog({ directory: true })` が開くネイティブダイアログは、
-`Cmd+Shift+G` (Go to Folder) でパスを直接入力できる。テキスト入力は
-上記のclipboard経由で。1回で反映されないことがあるので、入力後は
-スクリーンショットでダイアログのタイトルバー(現在のフォルダ名)と
-「Open」ボタンが有効化されているかを確認し、反映されていなければ
-`Cmd+Shift+G` からやり直す。
+The native dialog opened by `openDialog({ directory: true })` accepts a
+direct path via `Cmd+Shift+G` (Go to Folder). Enter text through the
+clipboard as above. It doesn't always take effect on the first try, so
+after entering it, check via screenshot whether the dialog's title bar
+(current folder name) updated and the "Open" button is enabled; if not,
+redo it via `Cmd+Shift+G`.
 
-## 6. 独自コンテキストメニュー/キーボードショートカットが`cliclick`で反応しないとき
+## 6. When the app's own context menu/keyboard shortcuts don't respond to `cliclick`
 
-アプリ独自の右クリックメニュー(New Slide/Delete/Change Layoutなど)の
-項目に対して`cliclick c:x,y`でクリックしても、メニューが閉じるだけで
-アクションが実行されないことがある。矢印キー+Enterでの選択、
-`Delete`/`Fn+Delete`キーの直接送信も同様に効かないことがあった
-(挙動としては、キー入力が最前面のメニューではなく背後のドキュメントに
-届いてしまい、スライドの選択を動かすだけだった)。
+Clicking an item in the app's own right-click menu (New Slide/Delete/
+Change Layout, etc.) with `cliclick c:x,y` sometimes just closes the menu
+without the action firing. Selecting via arrow keys + Enter, or sending
+the `Delete`/`Fn+Delete` key directly, failed the same way (the
+observed behavior was that the keystroke reached the document behind the
+menu instead of the frontmost menu, only moving the slide selection).
 
-切り分け・確認手順:
+Isolation/verification steps:
 
-1. `tauri.conf.json`の`"devtools": false`を一時的に`true`に変更し、
-   `tauri dev`を再起動する(CLAUDE.mdの「開発ビルドではdevtools=trueだと
-   ネイティブの要素検証メニューが優先される」を逆用する)。
-2. 空白領域を右クリック → 「Inspect Element」を選ぶとWeb Inspectorが
-   開く。ただし選択した要素がスライドプレビューの`<iframe>`内なら、
-   Consoleパネル右下のコンテキスト表示(`about:srcdoc`)を
-   `localhost`に切り替えないと、メインドキュメントのグローバル
-   (`document`/`window`)を参照できない。
-3. Console欄に直接JSを打ち込み、`dispatchEvent`でmousedown/mousemoveを
-   合成してロジック自体が動くか確認する(実装のバグか、自動操作の限界か
-   を切り分けられる)。`pbcopy`経由で複数行のコードを貼ると改行が
-   スペースに変換され構文エラーになるので、`;`区切りの1行にまとめる。
-   例:
+1. Temporarily flip `"devtools": false` to `true` in `tauri.conf.json`
+   and restart `tauri dev` (turning CLAUDE.md's "in dev builds, devtools
+   = true makes the native element-inspection menu take priority" to
+   your advantage here).
+2. Right-click blank space → choosing "Inspect Element" opens the Web
+   Inspector. If the selected element is inside the slide preview
+   `<iframe>`, though, you need to switch the context indicator at the
+   bottom right of the Console panel (`about:srcdoc`) to `localhost`
+   before you can reference the main document's globals
+   (`document`/`window`).
+3. Type JS directly into the Console and synthesize mousedown/mousemove
+   via `dispatchEvent` to check whether the logic itself works (this
+   separates an implementation bug from a limitation of the automation).
+   Pasting multi-line code via `pbcopy` turns newlines into spaces and
+   causes a syntax error, so join it into one `;`-separated line.
+   Example:
    ```js
    (() => { const row = document.querySelectorAll('[data-slide-row]')[0]; const r = row.getBoundingClientRect(); row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: r.left + r.width/2, clientY: r.top + r.height/2, button: 0 })); return document.body.style.cursor; })()
    ```
-4. **重要な発見**: `dispatchEvent`では正しく動くのに`cliclick`の物理
-   クリックでは無反応、という場合、原因はロジックではなく
-   **Web Inspectorの「Inspect Element」選択モードが有効なままになって
-   いること**だった。DevToolsパネル左上の閉じるボタン(×)でパネルを
-   閉じてから同じ`cliclick`操作を再試行したところ、正常に動作した
-   (物理マウスイベントが要素選択モードに奪われ、アプリ本体の
-   `mousedown`ハンドラに届いていなかったとみられる)。DevToolsで検証し
-   終えたら、次の`cliclick`操作の前に必ずパネルを閉じること。
-5. 検証が終わったら`tauri.conf.json`の`"devtools"`を`false`に戻す
-   ——独自の右クリックメニュー自体が機能しなくなるため、`true`のまま
-   コミットしない。
+4. **Key finding**: when it works correctly via `dispatchEvent` but not
+   with a physical `cliclick` click, the cause turned out not to be the
+   logic but **the Web Inspector's "Inspect Element" selection mode being
+   left active**. Closing the DevTools panel via the close button (×) at
+   its top left and retrying the same `cliclick` action then worked
+   correctly (the physical mouse event was apparently being captured by
+   element-selection mode instead of reaching the app's own `mousedown`
+   handler). Once done verifying with DevTools, always close the panel
+   before the next `cliclick` action.
+5. Once verification is done, flip `"devtools"` back to `false` in
+   `tauri.conf.json` — the app's own right-click menu stops working while
+   it's `true`, so don't commit it that way.
 
-## 7. 後片付け
+## 7. Cleanup
 
-自分が起動した `tauri dev` とその子プロセス(`concurrently`,
-`vite build --watch`, `unocss --watch`, `tsx watch server.ts`,
-`target/debug/app`)は確認が終わったら明示的に `kill` する。
-`ps aux` で起動時刻を突き合わせ、ユーザーが元々動かしていたプロセスを
-誤って殺さないこと。テスト用に作ったデッキフォルダも削除する。
+Once verification is done, explicitly `kill` the `tauri dev` you started
+and its child processes (`concurrently`, `vite build --watch`, `unocss
+--watch`, `tsx watch server.ts`, `target/debug/app`). Cross-check launch
+times via `ps aux` so you don't accidentally kill a process the user
+already had running. Also delete any deck folder created for testing.
 
 ```bash
-lsof -i :3003 -sTCP:LISTEN   # ポートが解放されたか最終確認
+lsof -i :3003 -sTCP:LISTEN   # final check that the port was freed
 ```

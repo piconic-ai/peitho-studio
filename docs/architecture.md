@@ -1,207 +1,251 @@
-# フロントエンド アーキテクチャ原則
+# Frontend architecture principles
 
-`CLAUDE.md`の「純粋関数を好む」「状態はディレクトリ/ファイル構造で区別する」という
-原則を、巨大コンポーネント(`components/Studio.tsx`)のリファクタリングを機に、
-より具体的な層構成として拡張したもの。実行手順・進捗は`todo/`配下(完了後は
-削除、または`todo/archive/`へ移動)、ここには**恒久的な原則・ルールのみ**を書く。
+An extension of `CLAUDE.md`'s "prefer pure functions" and "distinguish
+state by directory/file structure" principles into a more concrete layer
+structure, prompted by refactoring the large `components/Studio.tsx`
+component. Execution steps and progress live under `todo/` (delete once
+done, or move to `todo/archive/`) — this document holds **only permanent
+principles and rules**.
 
-## 5層構成
+## Five-layer structure
 
-`.ts`=純粋 / `.tsx`=状態あり という2値だけでは、「シグナルは持つがDOM/IPCには
-触れない層」「DOMには触れるがシグナルは持たない層」を表現できず、それが結局
-すべてを`.tsx`に押し込む圧力になる。ディレクトリで5層に分ける。
+A binary of `.ts` = pure / `.tsx` = stateful can't express "a layer that
+holds signals but never touches the DOM/IPC" or "a layer that touches the
+DOM but holds no signals," and that ends up as pressure to cram
+everything into `.tsx`. Split into five layers by directory.
 
-| ディレクトリ | 使ってよいもの | 使ってはいけないもの | テスト手段 |
+| Directory | Allowed | Forbidden | Testing |
 |---|---|---|---|
-| `domain/` (`.ts`) | 何にも依存しない純粋関数・ADT・遷移関数・例示データ | `@barefootjs/client`, `@tauri-apps/*`, `document`/`window` | `bun test`(spec / adversarial / property / pairwise) |
-| `state/` (`.ts`) | `createSignal`/`createMemo`/`createEffect`/`batch`/`createSelector`、`domain/` | `@tauri-apps/*`、DOM API、JSX | `bun test` + `createRoot`(モデルベーステスト) |
-| `ipc/` (`.ts`) | `invoke`/`listen`/`openDialog`の薄い型付きラッパーと境界の型 | シグナル、DOM、ビジネスロジック | 型のみ。e2e用のフェイク実装を同じインターフェースで用意 |
-| `dom/` (`.ts`) | DOM計測・スタイル書き込み・イベント購読(iframeサイズ同期、ドラッグジェスチャ、textarea同期) | シグナル、IPC、JSX | 数式部分は`domain/`に押し出して`bun test`。残りはIRテスト/e2e |
-| `components/` (`.tsx`) | JSX + 上記4層のimport。合成ルートは「ストア生成・IPC/イベント配線・子の配置」のみ | ビジネスロジック、テキスト操作、状態遷移の判断 | `@barefootjs/test`のIRテスト + Playwright(IPCスタブ) |
+| `domain/` (`.ts`) | Pure functions, ADTs, transition functions, and example data with no dependencies | `@barefootjs/client`, `@tauri-apps/*`, `document`/`window` | `bun test` (spec / adversarial / property / pairwise) |
+| `state/` (`.ts`) | `createSignal`/`createMemo`/`createEffect`/`batch`/`createSelector`, `domain/` | `@tauri-apps/*`, DOM API, JSX | `bun test` + `createRoot` (model-based tests) |
+| `ipc/` (`.ts`) | Thin typed wrappers around `invoke`/`listen`/`openDialog`, plus boundary types | Signals, DOM, business logic | Types only. Provide a fake implementation with the same interface for e2e |
+| `dom/` (`.ts`) | DOM measurement, style writes, event subscriptions (iframe size sync, drag gestures, textarea sync) | Signals, IPC, JSX | Push any formula/calculation part out to `domain/` and test with `bun test`. The rest is covered by IR tests/e2e |
+| `components/` (`.tsx`) | JSX + imports from the four layers above. A composition root does only "store creation, IPC/event wiring, and placing children" | Business logic, text manipulation, state-transition decisions | `@barefootjs/test` IR tests + Playwright (with IPC stubs) |
 
-依存の向きは `components → state → domain`、`components → ipc`、
-`components → dom → domain` の一方向。層をまたぐ禁止importは
-`scripts/arch-check.test.ts`で機械的に検出する(`domain/`に`@tauri-apps`が
-あれば失敗、`components/`に`invoke(`の直書きがあれば失敗、等)。
+The dependency direction is one-way: `components → state → domain`,
+`components → ipc`, `components → dom → domain`. Imports that cross
+layers in a forbidden direction are mechanically detected by
+`scripts/arch-check.test.ts` (fails if `domain/` has `@tauri-apps`, fails
+if `components/` writes `invoke(` directly, etc.).
 
-## 5層モデルに収まらないもの: 「オーケストレーション」
+## What doesn't fit the five-layer model: "orchestration"
 
-`Studio.tsx`を`state/`4ストア(`deckStore`/`renderStore`/`editorStore`/
-`uiStore`、Step 20)まで切り出した後も、`commitChange`/`selectSlide`/
-`handleSave`/`refreshSource`/`addSlide`/`reorderSlides`等、目算で
-600行前後が`Studio.tsx`に残った——上の表の原則では合成ルートは「ストア
-生成・IPC/イベント配線・子の配置」のみのはずで、これらは明らかに
-「ビジネスロジック・テキスト操作・状態遷移の判断」に見える。委譲先が
-無かったから残ったのではなく、**この5層のどこにも置けないから残った**、
-というのが実装してみて分かった実際の理由:
+Even after extracting `Studio.tsx` down to the four `state/` stores
+(`deckStore`/`renderStore`/`editorStore`/`uiStore`, Step 20), roughly 600
+lines — things like `commitChange`/`selectSlide`/`handleSave`/
+`refreshSource`/`addSlide`/`reorderSlides` — remained in `Studio.tsx`. By
+the table's principle, a composition root should do only "store creation,
+IPC/event wiring, and placing children," and these clearly look like
+"business logic, text manipulation, state-transition decisions." They
+didn't remain because there was nowhere to delegate them to — the actual
+reason, discovered while implementing this, is that **they remained
+because there is nowhere in these five layers they could go**:
 
-- `domain/`には置けない——IPC呼び出しを含み、不純。
-- `state/`には置けない——依存方向が`state → domain`のみで`ipc/`への
-  依存を許さない(`commitChange`は`deckIpc.renderDraft`/
-  `saveDeckSource`を呼ぶ)。
-- `ipc/`には置けない——型付きラッパーの範囲を超えたビジネスロジック
-  (`SelectionPlan`の解決、`reconcileAfterCommit`の呼び出し等)を持つ。
-- `dom/`には置けない——DOM操作(`syncEditorFields`)とIPC呼び出しの両方が
-  絡み、`dom/`はIPCを許さない。
+- Can't go in `domain/` — it includes IPC calls, so it's impure.
+- Can't go in `state/` — its allowed dependency direction is only
+  `state → domain`, which doesn't permit a dependency on `ipc/`
+  (`commitChange` calls `deckIpc.renderDraft`/`saveDeckSource`).
+- Can't go in `ipc/` — it carries business logic beyond the scope of a
+  typed wrapper (resolving a `SelectionPlan`, calling
+  `reconcileAfterCommit`, etc.).
+- Can't go in `dom/` — it entangles both DOM manipulation
+  (`syncEditorFields`) and IPC calls, and `dom/` doesn't permit IPC.
 
-つまり「複数のstateストアを横断し、IPCを呼び、ときにDOMにも触れる
-一連の手続き」は、この4層+合成ルートという設計に**もう1つ、名前の
-付いていない置き場所**を要求している。今回はこれを`components/
-Studio.tsx`にそのまま残す判断をした(新しい層を導入するのは今回の
-リファクタリングのスコープを超える設計変更のため)——ただし表の
-「合成ルートはストア生成・配線・配置のみ」という原則そのものは、
-その通りに実現できなかった、という事実として記録しておく。将来
-この行数をさらに削るなら、選択肢は次の2つ:
+In other words, "a procedure that crosses multiple state stores, calls
+IPC, and sometimes touches the DOM too" demands **one more, unnamed place
+to live** in this four-layers-plus-composition-root design. For now the
+decision was to leave this as-is inside `components/Studio.tsx`
+(introducing a new layer would be a design change beyond this
+refactoring's scope) — but it's worth recording as fact that the table's
+principle of "a composition root does only store creation, wiring, and
+placement" was not, in fact, achieved as stated. If this line count is
+trimmed further in the future, there are two options:
 
-1. 明示的に「orchestrator」層を1つ増やし、依存方向を
-   `components → orchestrator → {state, ipc, dom}`に拡張する。
-2. 各ストアに、そのストア自身が呼ばれるべきIPC操作への依存を
-   注入する(`createDeckStore(deckIpc)`のように)——ただし「stateは
-   ipcに依存しない」という現在の原則そのものを変える決定になる。
+1. Add one explicit "orchestrator" layer, extending the dependency
+   direction to `components → orchestrator → {state, ipc, dom}`.
+2. Inject into each store a dependency on the IPC operations it should
+   call itself (like `createDeckStore(deckIpc)`) — though this would be
+   a decision to change the current principle itself that "state doesn't
+   depend on ipc."
 
-どちらも今回は選ばず、`Studio.tsx`が「合成ルート+オーケストレーション」
-という2つの役割を兼ねる現状維持とした。
+Neither was chosen this time; the status quo stands, with `Studio.tsx`
+serving both roles — "composition root" and "orchestration" — at once.
 
-## BarefootJSの制約が層構成に課す不変条件
+## Invariants BarefootJS's constraints impose on the layer structure
 
-(個別の落とし穴の詳細は`CLAUDE.md`の「BarefootJSで踏んだ落とし穴」を参照。
-ここでは、それが今回の層構成の**設計判断**にどう影響したかだけを書く。)
+(See `CLAUDE.md`'s "Pitfalls hit with BarefootJS" for details on each
+individual pitfall. This section only covers how they influenced this
+layer structure's **design decisions**.)
 
-- **Context APIはファイルをまたげない**(バンドルごとに`createContext()`が別
-  Symbolになる)ので使わない。親→子は**props**、子→親は**コールバックprops**。
-- **子はセッターを受け取らない**。受け取るのは「何が起きたか」を表す
-  コールバックだけ(`onSelect(i)`であって`setSelectedIndex`ではない)。
-  どの関数がどのシグナルを書くかをストア1箇所に閉じ込め、暗黙の契約が
-  複数箇所に散らばるのを防ぐ。
-- **読み取りpropsには`Memo<T>`型のgetter自体ではなく、呼び出した値を渡す**
-  (`isBusy={isBusy()}`であって`isBusy={isBusy}`ではない)——後者は
-  コンパイラが`BF044`(`Signal/Memo getter passed without calling it`)で
-  ビルドエラーにする。BarefootJSのpropsリアクティビティはSolidJSと同じ
-  モデルで、`value={count()}`は`{ get value() { return count() } }`という
-  getterプロパティに下げられる。子側は`props.xxx`と直接読む(分割代入
-  すると`BF043`警告——初期値として1回だけ使う意図なら`@bf-ignore
-  props-destructuring`で明示的に黙らせる)。`bf debug graph`は
-  `props.xxx`型の読み取りの依存を静的グラフに乗せない(`no tracked deps`)
-  ことが多いが、これも他の`no tracked deps`ケースと同様、動的追跡
-  (wrap-by-default)で実際には正しく更新される——`components/
-  WelcomeScreen.tsx`切り出し時に実機(Playwright)で確認済み。
-- **`Map`/`Set`/`Function`型はpropsに渡せない**(BF049)。コレクションを渡す
-  代わりに`(key) => Getter`のようなアクセサ関数を渡す。
-- **ローカル関数内にJSXは書けない**(BF045)。「JSXを描画ヘルパー関数に切る」
-  形の分割はできない。分割は必ず本物のサブコンポーネントで行う。
-- **モジュールスコープの単一シグナルに頼らない**。各`.tsx`は独立したビルド
-  チャンクなので、状態共有は合成ルートでファクトリを呼び、テスト時も
-  `createRoot`で明示的に所有・破棄する。
-- **`const { x } = store`という分割代入でシグナルのgetterを取り出さない**
-  (BarefootJSのコンパイラの識別子抽出が分割代入を素通りし、`x`が
-  「宣言されていない変数」として扱われて実行時`ReferenceError`になる
-  ——`state/xxxStore.ts`のファクトリが`{ draggedIndex, ... }`を返す形
-  自体は問題ない。`const store = createXxxStore()`のように受け取り、
-  JSX側で`store.draggedIndex()`とプロパティ経由で呼ぶ分には正しく動く
-  ことを、`domain/drag.ts`の実装をそのまま使った再現で確認済み——
-  一時、逆の教訓(「ファクトリ越しは壊れる」)を誤ってここに書いていた
-  ことがあるので注意。実際には動的なリアクティビティ追跡(wrap-by-default)
-  が`bf debug graph`の静的解析(`no tracked deps`と出ることがある)より
-  広い範囲をカバーする——`bf debug graph`の出力だけで「実機で壊れる」と
-  即断せず、疑わしければ実際にブラウザで動かして確認すること)。
-- **keyedな`.map()`の行を子コンポーネントに切り出した場合の`index`propsの
-  鮮度は、着手前にスパイクで検証してから分割方針を確定する**(過去に
-  #2859/#2861のクロージャstaleness系バグを踏んでいるため)。
-- **ビュー切替はネストした三項演算子で書かない**(未解決の描画バグの温床)。
-  兄弟の単独条件(`{kind() === 'x' ? <X/> : null}`を並べる)か、
-  永続マウント + `hidden`クラストグルで書く。
+- **The Context API can't cross files** (`createContext()` produces a
+  different Symbol per bundle), so it isn't used. Parent → child is
+  **props**; child → parent is **callback props**.
+- **A child never receives a setter.** It only receives a callback
+  describing "what happened" (`onSelect(i)`, not `setSelectedIndex`).
+  This confines which function writes which signal to a single place —
+  the store — preventing an implicit contract from scattering across
+  multiple locations.
+- **Pass a read-only prop the called value, not the `Memo<T>` getter
+  itself** (`isBusy={isBusy()}`, not `isBusy={isBusy}`) — the latter is a
+  compiler build error, `BF044` (`Signal/Memo getter passed without
+  calling it`). BarefootJS's props reactivity follows the same model as
+  SolidJS: `value={count()}` is lowered into a getter property,
+  `{ get value() { return count() } }`. The child reads it directly as
+  `props.xxx` (destructuring triggers the `BF043` warning — mute it
+  explicitly with `@bf-ignore props-destructuring` if the intent really
+  is to use it once as an initial value). `bf debug graph` often doesn't
+  put a `props.xxx`-style read's dependency on the static graph (`no
+  tracked deps`), but as with other `no tracked deps` cases, dynamic
+  tracking (wrap-by-default) actually updates it correctly — confirmed
+  on a real device (Playwright) when extracting
+  `components/WelcomeScreen.tsx`.
+- **`Map`/`Set`/`Function` types can't be passed as props** (BF049).
+  Instead of passing a collection, pass an accessor function like
+  `(key) => Getter`.
+- **JSX can't be written inside a local function** (BF045). You can't
+  split things out in the shape of "a render helper function containing
+  JSX." Splitting must always be done with a real subcomponent.
+- **Don't rely on a single module-scope signal.** Each `.tsx` is an
+  independent build chunk, so state sharing calls a factory at the
+  composition root, and tests also explicitly own/dispose it via
+  `createRoot`.
+- **Don't destructure a signal's getter out with `const { x } =
+  store`** (BarefootJS's compiler identifier extraction doesn't see
+  through destructuring, so `x` is treated as an "undeclared variable"
+  and throws a runtime `ReferenceError` — the factory shape in
+  `state/xxxStore.ts` returning `{ draggedIndex, ... }` is itself fine.
+  Confirmed, by reproducing it exactly as implemented in `domain/drag.ts`,
+  that receiving it as `const store = createXxxStore()` and calling it
+  via the property on the JSX side, `store.draggedIndex()`, works
+  correctly — note that this section once mistakenly stated the opposite
+  lesson here, that "going through a factory breaks it." In reality,
+  dynamic reactivity tracking (wrap-by-default) covers a wider range than
+  `bf debug graph`'s static analysis (which can report `no tracked
+  deps`) — don't jump straight to "this breaks on a real device" from
+  `bf debug graph`'s output alone; when in doubt, actually run it in a
+  browser and check).
+- **When splitting a keyed `.map()`'s row out into a child component,
+  verify the freshness of the `index` prop with a spike before settling
+  on the split** (because of past closure-staleness bugs, #2859/#2861).
+- **Don't write view switching as nested ternaries** (a breeding ground
+  for the unresolved rendering bug above). Write it as sibling standalone
+  conditions (lining up `{kind() === 'x' ? <X/> : null}`) or as permanent
+  mounting + a `hidden` class toggle.
 
-## 状態の流れ: ADT → ストア → memo射影 → props
+## State flow: ADT → store → memo projection → props
 
-「状態はADTで一箇所にまとめて表現したいが、コレクション/複合値を1シグナルに
-持つと、それを読む全行が再レンダーされる」という背反は、**ADTはロジック側の
-真実、購読は射影側**と役割を分けることで解消する。
+The tension between "wanting to represent state as a single ADT in one
+place" and "holding a collection/composite value in one signal causes
+every row that reads it to re-render" is resolved by splitting the
+roles: **the ADT is the source of truth on the logic side, subscription
+happens on the projection side**.
 
 ```
-domain/drag.ts        DragState (ADT, 1つの値)      ← 純粋な遷移: arm/move/dropTarget/cancel
+domain/drag.ts        DragState (ADT, single value)  ← pure transitions: arm/move/dropTarget/cancel
         ↓
 state/uiStore.ts      const [drag, setDrag] = createSignal<DragState>({kind:'idle'})
                        const draggedIndex = createMemo(() => drag().kind === 'dragging' ? drag().index : null)
                        const isDragged    = createSelector(draggedIndex)
         ↓
-components/SlideList   行は isDragged(i) だけ購読 → 無関係な変化(dragDeltaYなど)では再評価されない
+components/SlideList   Rows subscribe only to isDragged(i) → unrelated changes (e.g. dragDeltaY) don't trigger re-evaluation
 ```
 
-`createMemo`は出力を`Object.is`比較してから通知するので、ADTの一部分だけが
-変わっても、無関係な射影memoへは通知が伝播しない。
+`createMemo` compares its output with `Object.is` before notifying, so
+even when only part of the ADT changes, the notification doesn't
+propagate to unrelated projection memos.
 
-## ADTでありえない状態を排除する
+## Eliminating unrepresentable states with ADTs
 
-型で表現できてしまう「ありえない組み合わせ」(例: `selectedIndex === null`なのに
-`bodyDraft !== ''`、`layoutPickerOpen`が空白右クリック時にも開ける)は、
-複数の独立したシグナル/フィールドの直積として状態を持つときに必ず発生する。
-判別可能なUnion(ADT)で「実際にありうる状態」だけを列挙し、遷移は`switch`の
-`_exhaustive: never`で網羅性をコンパイル時に強制する。
+"Impossible combinations" that the types can still express (e.g.
+`selectedIndex === null` while `bodyDraft !== ''`, or `layoutPickerOpen`
+able to open even on a right-click over blank space) always arise when
+state is held as the cartesian product of several independent
+signals/fields. Enumerate only the "states that can actually occur" with
+a discriminated union (an ADT), and enforce transition exhaustiveness at
+compile time with a `switch`'s `_exhaustive: never`.
 
 ```ts
-// 悪い例: 5つの独立フィールドの直積(2^5 - 実際にありうるのはごく一部)
+// Bad: the cartesian product of 5 independent fields (2^5 — only a
+// small fraction can actually occur)
 interface State { open: boolean; loading: boolean; index: number | null; ... }
 
-// 良い例: ありうる状態だけを列挙
+// Good: enumerate only the states that can occur
 type EditorSession =
   | { kind: 'none' }
   | { kind: 'editing'; index: number; saved: SlideFields; draft: SlideFields }
 ```
 
-新しい状態/操作を追加するときの変更点は「ADTのvariantを1つ足す」→
-「網羅性チェックがコンパイルエラーで未対応箇所を指摘する」→
-「例示テストを1件追加する」の3手順に閉じる。これが開放閉鎖原則の実践形。
+Adding a new state/operation is closed to three steps: "add one ADT
+variant" → "the exhaustiveness check flags the unhandled spot as a
+compile error" → "add one example test." This is the practical form of
+the open-closed principle.
 
 ## Examples by Specification / Given-When-Then
 
-- 例示は**データ**として`domain/<module>.examples.ts`に置く(テストファイルでは
-  ない)。これが機能要件のSingle Source of Truth。
-- `<module>.test.ts`がその例示を`test.each`で回す(runner)。既存の
-  `test('spec: ...')` / `test('adversarial: ...')`命名はそのまま維持し、
-  例示由来のテストは`example: ...`プレフィクスにする。
-- 自動化できない例には必ず`manual: { reason }`を付ける。「自動化されている」
-  「理由付きで手動」のどちらでもない例が存在しないことをテストで検査する。
-- `*.spec.ts`は使わない(`bun test`が拾ってしまい`*.test.ts`と二重の慣習に
-  なるため)。例示データを非テストファイルに分離しておくと、ドキュメント
-  生成の入力としても再利用できる。
+- Examples live as **data** in `domain/<module>.examples.ts` (not a test
+  file). This is the single source of truth for functional
+  requirements.
+- `<module>.test.ts` runs those examples through `test.each` (the
+  runner). Keep the existing `test('spec: ...')` /
+  `test('adversarial: ...')` naming as-is, and prefix example-derived
+  tests with `example: ...`.
+- Any example that can't be automated must carry `manual: { reason }`. A
+  test checks that no example exists that is neither "automated" nor
+  "manual with a reason."
+- `*.spec.ts` isn't used (`bun test` would pick it up, creating a
+  duplicate convention alongside `*.test.ts`). Keeping example data
+  separated into a non-test file also lets it be reused as input for
+  documentation generation.
 
-DSLと具体的な記述例は`todo/`配下の実行計画、または実装時に`domain/spec.ts`
-として導入する。
+The DSL and concrete examples are introduced in the execution plan under
+`todo/`, or as `domain/spec.ts` at implementation time.
 
-## 不具合発見手法の方針
+## Approach to bug discovery
 
-自動テストに最大限投資する(手動検証はAI Agentの自律性を損なうため最小化する)。
+Invest maximally in automated tests (minimize manual verification since
+it undermines an AI agent's autonomy).
 
-- **敵対的テスト**: 型ごとに意地悪な値のカタログ(空文字列、HTML/XSS的文字列、
-  絵文字・サロゲートペア、境界値のインデックス等)を用意し、OFAT(1点ずつ
-  差し替え)で「落ちない」「不変条件を満たす」ことを検証する。
-- **ペアワイズテスト**: 独立した軸が3つ以上絡む判断関数(コミット後の選択
-  追従、コンテキストメニューの有効/無効判定など)に適用する。
-- **プロパティベーステスト**(`fast-check`、`bun test`でそのまま動く):
-  往復関数(parse/serialize)の恒等性、変換の不変条件(枚数保存、多重集合保存)
-  など、個別の例より「性質」で語れるものに使う。
-- **モデルベーステスト**(`fast-check`の`commands`): `state/`層の状態遷移は
-  シグナルの読み書きに閉じ、DOM/IPCという外部依存を持たない
-  (`createRoot`で決定的に再現できる)ため、純粋なreducerと同じ要領で
-  モデルベーステストにかけられる。直近のバグ2件はいずれも「操作列の
-  順序とin-flight状態の組み合わせ」が原因だったため、費用対効果が高い。
-- **全数/網羅性テスト**: 遷移関数(`decide`など)は状態×イベントの直積が
-  現実的な数(数十程度)に収まるなら、全組み合わせを列挙し「必ず有効な
-  結果を返す」(例外・undefinedにならない)ことを検査する。
-- **IRテスト**(`@barefootjs/test`): 全`.tsx`をコンパイルし、診断ゼロ・
-  シグナル一覧・イベント配線をコードとして固定する。BarefootJSの
-  コンパイラ制約(BF021/BF045/BF049など)の退行をCIで捕まえる。
-- **アーキテクチャテスト**: 上記の層をまたぐimportを機械的に禁止する。
+- **Adversarial tests**: build a catalog of nasty values per type (empty
+  strings, HTML/XSS-like strings, emoji/surrogate pairs, boundary-value
+  indices, etc.) and verify, via OFAT (swapping one value at a time),
+  that it "doesn't crash" and "satisfies its invariants."
+- **Pairwise tests**: apply to decision functions involving three or
+  more independent axes (e.g. selection follow-up after a commit,
+  context-menu enabled/disabled determination).
+- **Property-based tests** (`fast-check`, runs as-is under `bun test`):
+  used for things better stated as a "property" than as individual
+  examples — e.g. round-trip identity for parse/serialize functions, or
+  transformation invariants (count preservation, multiset preservation).
+- **Model-based tests** (`fast-check`'s `commands`): the `state/` layer's
+  state transitions are closed over reading/writing signals and have no
+  external dependency on the DOM/IPC (they can be reproduced
+  deterministically with `createRoot`), so they can be model-tested the
+  same way as a pure reducer. Both of the two most recent bugs were
+  caused by "a combination of operation-sequence order and in-flight
+  state," so this pays off well.
+- **Exhaustive/coverage tests**: when a transition function's (e.g.
+  `decide`) state × event cartesian product fits within a realistic
+  number (on the order of dozens), enumerate every combination and check
+  that it "always returns a valid result" (never throws or returns
+  `undefined`).
+- **IR tests** (`@barefootjs/test`): compile every `.tsx` and pin down
+  zero diagnostics, the signal list, and event wiring as code. Catches
+  regressions against BarefootJS's compiler constraints (BF021/BF045/
+  BF049, etc.) in CI.
+- **Architecture tests**: mechanically forbid imports that cross the
+  layers described above.
 
-導入したが優先度が低い手法(ミューテーションテスト等)や、個々の敵対的値
-カタログの中身は、実装時に該当する`domain/*.ts`/`*.test.ts`自体に置く
-(このドキュメントには複製しない)。
+Lower-priority techniques that have been adopted (e.g. mutation testing)
+and the contents of individual adversarial-value catalogs live in the
+relevant `domain/*.ts`/`*.test.ts` file itself at implementation time
+(not duplicated in this document).
 
-## 手動検証にせざるを得ないもの
+## What has to be verified manually
 
-IME合成中のtextarea同期、WKWebView固有のiframe描画(角のシーム・stale
-paint)、iframe上の右クリック奪取、ドラッグ中のiframe通過、ネイティブ
-ダイアログ、フォーカス喪失中のドラッグ、複数ウィンドウのpending deck、
-`peitho present`の起動——これらは実機Tauriウィンドウでしか確認できない。
-`manual: { reason }`付きの例示として台帳化し、検証手順は
-`.claude/skills/run-peitho-studio/SKILL.md`を参照する。
+Textarea sync during IME composition, WKWebView-specific iframe
+rendering (corner seams, stale paint), right-click hijacking on an
+iframe, cursor passing over an iframe during a drag, native dialogs,
+dragging while focus is lost, a pending deck across multiple windows,
+launching `peitho present` — these can only be confirmed with a real
+Tauri window. Log them as examples carrying `manual: { reason }`, and see
+`.claude/skills/run-peitho-studio/SKILL.md` for the verification steps.
