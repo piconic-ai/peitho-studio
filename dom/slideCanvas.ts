@@ -12,21 +12,29 @@ import { containScale, type Size } from '../domain/geometry'
 // the transform does 100% of the size reduction: as a flex child it would
 // otherwise be squeezed below that width and re-wrap its own text *before*
 // being scaled (the same pin, for the same reason, as in
-// `domain/previewDoc.ts`). `:host`'s `text-align: left` blocks an inherited
-// property from leaking in from wherever `host` happens to sit in the light
-// DOM — unlike the `<iframe>` this replaces (a separate document, so
-// nothing about its parent's cascade ever reached its content), a shadow
-// tree inherits ordinary inherited properties straight from its host's
-// computed style. `SlideList.tsx` mounts a canvas inside a `<button>`,
-// whose UA stylesheet default is `text-align: center`; left un-reset, a
-// deck's `<h1>`/`<ul>` centered instead of left-aligned, and — since
-// `list-style-position: outside` markers aren't subject to `text-align` —
-// each `<li>`'s bullet stayed pinned at the far left while its now-centered
-// text visibly detached from it. Confirmed via a synthetic host wrapped in
-// the same button/span/span chain `SlideList.tsx` actually uses; the theme
-// itself sets no `text-align` for this to override.
+// `domain/previewDoc.ts`). `pointer-events`/`user-select` are inherited
+// properties, so declaring them on `:host` covers the slide markup inside
+// it too — that markup is a deck author's arbitrary HTML, and unlike the
+// `<iframe srcdoc>` this replaces it now lives in the app's own document:
+// an `<a href>` in a slide would navigate the whole app when its thumbnail
+// is clicked, and an `<img>` would start a native drag that fights the
+// manual reorder gesture. Hit-testing falls through to the element behind
+// the host, so the row's own click/contextmenu handlers still fire.
+// `text-align: left` similarly blocks an inherited property from leaking
+// in from wherever `host` happens to sit in the light DOM: unlike the
+// `<iframe>` this replaces (a separate document, so nothing about its
+// parent's cascade ever reached its content), a shadow tree inherits
+// ordinary inherited properties straight from its host's computed style.
+// `SlideList.tsx` mounts a canvas inside a `<button>`, whose UA stylesheet
+// default is `text-align: center`; left un-reset, a deck's `<h1>`/`<ul>`
+// centered instead of left-aligned, and — since `list-style-position:
+// outside` markers aren't subject to `text-align` — each `<li>`'s bullet
+// stayed pinned at the far left while its now-centered text visibly
+// detached from it. Confirmed via a synthetic host wrapped in the same
+// button/span/span chain `SlideList.tsx` actually uses; the theme itself
+// sets no `text-align` for this to override.
 const LAYOUT_CSS = `
-  :host { display: flex; align-items: center; justify-content: center; overflow: hidden; text-align: left; }
+  :host { display: flex; align-items: center; justify-content: center; overflow: hidden; pointer-events: none; user-select: none; text-align: left; }
   .peitho-slide { flex-shrink: 0; transform: scale(var(--peitho-thumb-scale, 1)); transform-origin: center center; }
 `
 // Built on first mount, not at module load: `new CSSStyleSheet()` only
