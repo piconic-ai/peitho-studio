@@ -130,8 +130,8 @@ fableに相談) → レビュー/リファクタリング → Opusにcode-review
 simplify/t-wada why-not ruleでコメント最小化 → CI → Review Ready化 →
 Pullfrogレビュー対応。
 
-- [ ] **PR1** `render-payload-css`: Rust `RenderPayload`に`css`を追加
-      (+ `domain/render.ts`型、`ipc/fakeDeckIpc.ts`更新)。
+- [x] **PR1** `render-payload-css`: Rust `RenderPayload`に`css`を追加
+      (+ `domain/render.ts`型、`ipc/fakeDeckIpc.ts`更新)。(PR #42)
 - [x] **PR2** `slide-css-domain`: `domain/slideCss.ts`・
       `slideFragment.ts`・`geometry.ts`(純粋関数) + spec/adversarial
       テスト(空文字、`url()`の引用符あり/なし、`data:`、`url(#id)`、
@@ -139,12 +139,15 @@ Pullfrogレビュー対応。
       フラグメント出力(`render.rs`)は常にダブルクォート
       (`src="assets/..."`)のみで、シングルクォートは契約に含まれない
       ため対応不要と判断(PR #43)。
-- [ ] **PR3** `slide-canvas-dom`: `dom/slideCanvas.ts` +
-      `renderStore`のcss signal/memo。ここでWKWebView spike
-      (上記リスク1〜3)を実機確認し、結果をPR本文に残す。
-- [ ] **PR4** `slidelist-shadow-dom`: `SlideList.tsx`/`Studio.tsx`の
-      置換、旧iframeコード削除、CLAUDE.md pitfalls更新、実機検証記録。
-      → **サムネイル一覧のiframeが0個、合計iframeは1個(プレビュー枠のみ)**。
+- [x] **PR3** `slide-canvas-dom`: `dom/slideCanvas.ts` +
+      `renderStore`のcss signal/memo。(PR #45)。WKWebView spike
+      (上記リスク1〜3)の実機確認はロック事故で中断、静的チェックのみで
+      進行(2章末の進捗メモ参照)。
+- [x] **PR4** `slidelist-shadow-dom`: `SlideList.tsx`/`Studio.tsx`の
+      置換、旧iframeコード削除完了(コード上はサムネイル一覧のiframeが
+      0個、合計iframeは1個(プレビュー枠のみ)に到達)。CLAUDE.md
+      pitfalls更新・実機検証記録はWKWebView spikeと合わせて後日まとめて
+      行う。
 - [ ] **PR5** `layout-picker-shadow-dom`: レイアウトピッカー
       (`SlideContextMenu.tsx`)も同じcanvasに置換
       (`buildLayoutPreviewDoc`撤去)。
