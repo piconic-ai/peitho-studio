@@ -43,3 +43,7 @@ bunx tauri build
 Not yet built: a structured form for the rest of each slide's PageComment (`layout`, `key`, `draft`/`skip`/`page_number`) — those still need to be hand-edited as the raw JSON comment in the editor.
 
 Not yet supported by the embedded renderer (falls back to peitho CLI for these — Present is unaffected): decks that use external code-image commands (Graphviz `dot`, etc.), card/screenshot embeds, or oEmbed. Frontmatter-explicit asset path overrides also aren't implemented yet (only the deck-adjacent `layouts/`/`css/`/`syntaxes/`/`fonts/` convention and the built-in fallback).
+
+## License
+
+The source code is licensed under the [MIT License](LICENSE) — fork it, build it, ship it. The "Peitho Studio" name and app icon are not covered by that grant and remain reserved as trademarks/branding of this project.
