@@ -98,7 +98,11 @@ CLAUDE.md既知の制約)。
    許容してCLAUDE.mdのpitfallsに記載する。
 5. 50枚級デッキでのメモリ・初期描画時間(Activity Monitorでbefore/
    after比較)。
-6. 実機検証は`run-peitho-studio` skill、Cmd+Shift+Dスナップショットで
+6. (PR6追加) プレビュー枠でテキスト選択ができる/`http(s)`・相対パス・
+   `mailto:`リンクをクリックしても何も起きない(アプリが意図せず遷移
+   しない)/サムネイル一覧・レイアウトピッカーの選択・右クリック・
+   ドラッグ並べ替えが従来通り機能する、の3点。
+7. 実機検証は`run-peitho-studio` skill、Cmd+Shift+Dスナップショットで
    行う。Playwright(ブラウザ)ではWKWebView固有挙動は再現しない。
 
 **進捗メモ(PR3時点)**: `run-peitho-studio`での実機起動を試みたが、
@@ -185,7 +189,15 @@ Pullfrogレビュー対応。
       `breaks: true`のデッキで常に不一致になり、打鍵のたびに全
       サムネイル+プレビュー枠が再構築されていた(PR3/PR4由来の
       既存バグ)。適用済みfragment文字列を`WeakMap`で保持する方式に
-      修正。(実機検証は他項目とまとめて後日)。
+      修正。Pullfrogレビュー(#48)で重大な見落としを指摘: サムネイル用の
+      `pointer-events:none; user-select:none`が無条件で全呼び出しに
+      適用されており、プレビュー枠(旧iframeでは完全にインタラクティブ
+      だった)がテキスト選択・クリック不可になっていた。fableに設計相談
+      の上、`mountSlideCanvas`に`mode: 'thumbnail' | 'interactive'`を
+      追加し、interactiveでは制約CSSを外しつつ、スライド内`<a href>`の
+      クリックだけJSでpreventDefault(Shadow DOMはiframeと違い同一
+      documentなので、リンクにアプリ全体が遷移してしまうのを防ぐため)。
+      (実機検証は他項目とまとめて後日)。
 
 ## 5. 完了条件
 
