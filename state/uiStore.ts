@@ -20,7 +20,7 @@ const EDITOR_WIDTH = 420
  * A factory function (not signals declared at module scope) so `bun
  * test`/multiple windows each get their own independent instance, created
  * explicitly with `createRoot` in tests — see docs/architecture.md's
- * "状態の流れ" section. */
+ * "State flow" section. */
 export function createUiStore() {
   // A single `domain/drag.ts` DragState signal, with three independent
   // memos over it for `draggedIndex`/`dragOverGap`/`dragDeltaY` — reading

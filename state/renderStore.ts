@@ -19,7 +19,8 @@ export function createRenderStore() {
   // (for its `<iframe>` doc and its aspect-ratio style) — reading it via
   // `manifest()` directly made *every* row's reactive bindings depend on
   // *every* edit, forcing a real `.srcdoc` reassignment (a visible reload)
-  // on rows whose own content never changed. See [[barefootjs-per-key-signal-pattern]].
+  // on rows whose own content never changed — same problem, and same fix,
+  // as `fragmentSignal` below.
   const [canvasWidth, setCanvasWidth] = createSignal(1280)
   const [canvasHeight, setCanvasHeight] = createSignal(720)
   const [manifest, setManifest] = createSignal<Manifest | null>(null)

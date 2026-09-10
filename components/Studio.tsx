@@ -98,7 +98,6 @@ export function Studio() {
       await dispatch({ type: 'failed', message: String(err) })
     }
   }
-  // The `invoke-create` effect.
   async function runCreate(parentDir: string, name: string): Promise<void> {
     setErrorMessage(null)
     try {
