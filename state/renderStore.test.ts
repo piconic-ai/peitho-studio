@@ -105,3 +105,36 @@ describe('buildSlideDoc', () => {
     })
   })
 })
+
+describe('slideStylesheetText / fontFaceCss', () => {
+  test('spec: splits @font-face out of the theme CSS, absolutized and :root-scoped', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.applyRenderPayload(payload({
+        assetBaseUrl: 'http://localhost:1234/',
+        css: '@font-face { src: url("theme-fonts/Inter.woff2"); }\n:root { --x: 1px; } .peitho-slide { color: red; }',
+      }))
+      expect(store.fontFaceCss()).toContain('url("http://localhost:1234/theme-fonts/Inter.woff2")')
+      expect(store.slideStylesheetText()).not.toContain('@font-face')
+      expect(store.slideStylesheetText()).toContain(':host { --x: 1px; }')
+      expect(store.slideStylesheetText()).toContain('.peitho-slide { color: red; }')
+    })
+  })
+
+  test('adversarial: theme CSS with no @font-face leaves fontFaceCss empty', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.applyRenderPayload(payload({ css: '.peitho-slide { color: red; }' }))
+      expect(store.fontFaceCss()).toBe('')
+      expect(store.slideStylesheetText()).toBe('.peitho-slide { color: red; }')
+    })
+  })
+
+  test('adversarial: no render yet reads as empty stylesheet text, not throwing', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      expect(store.slideStylesheetText()).toBe('')
+      expect(store.fontFaceCss()).toBe('')
+    })
+  })
+})

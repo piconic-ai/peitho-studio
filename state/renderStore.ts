@@ -1,6 +1,7 @@
 import { createSignal, createMemo, batch } from '@barefootjs/client'
 import { type Manifest, type ManifestSection, type SectionDraft, type RenderPayload, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
 import { buildSlidePreviewDoc } from '../domain/previewDoc'
+import { absolutizeCssUrls, scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { formatDurationMs, stabilizeByKey } from '../domain/slides'
 
 /** The deck's last-rendered state: manifest, per-slide fragment HTML, canvas
@@ -26,6 +27,26 @@ export function createRenderStore() {
   const [manifest, setManifest] = createSignal<Manifest | null>(null)
   const sectionStartByIndex = createMemo<Record<number, ManifestSection>>(() => computeSectionStartByIndex(manifest()?.sections ?? []))
   const [sectionDrafts, setSectionDrafts] = createSignal<Record<number, SectionDraft>>({})
+
+  // The deck theme's raw compiled CSS. Equality-guarded like canvas size
+  // above — every mounted Shadow DOM canvas (a later PR) re-parses
+  // `slideStylesheetText()` into its adopted `CSSStyleSheet` on change, so
+  // an unguarded set would force that reparse on every edit even though
+  // the theme itself rarely changes.
+  const [css, setCss] = createSignal('')
+  // `absolutizeCssUrls` needs `assetBaseUrl()`, so this is a memo (not
+  // computed once in `applyRenderPayload`) to stay current if the asset
+  // server's URL ever changes independently of the CSS itself.
+  const absolutizedCss = createMemo<string>(() => absolutizeCssUrls(css(), assetBaseUrl() ?? ''))
+  const splitCss = createMemo<{ fontFaces: string; rest: string }>(() => splitFontFaceRules(absolutizedCss()))
+  /** CSS for a Shadow DOM canvas's adopted style sheet — `@font-face`
+   * stripped out (see `fontFaceCss` below) and `:root` rewritten to
+   * `:host` so the theme's custom properties still reach `.peitho-slide`
+   * inside the shadow tree. */
+  const slideStylesheetText = createMemo<string>(() => scopeRootToHost(splitCss().rest))
+  /** `@font-face` rules extracted from the theme CSS, for
+   * `dom/slideCanvas.ts`'s `ensureFontFaces` to hoist into `<head>`. */
+  const fontFaceCss = createMemo<string>(() => splitCss().fontFaces)
 
   // One independent signal per slide key, rather than a single
   // `Record<string, string>` signal — reading `slideFragments()` as a whole
@@ -85,6 +106,7 @@ export function createRenderStore() {
         if (get() !== html) set(html)
       }
       setAssetBaseUrl(payload.assetBaseUrl)
+      if (css() !== payload.css) setCss(payload.css)
       if (canvasWidth() !== payload.manifest.canvasWidth) setCanvasWidth(payload.manifest.canvasWidth)
       if (canvasHeight() !== payload.manifest.canvasHeight) setCanvasHeight(payload.manifest.canvasHeight)
       const previousSlides = manifest()?.slides ?? []
@@ -105,5 +127,6 @@ export function createRenderStore() {
     assetBaseUrl, canvasWidth, canvasHeight, manifest, sectionStartByIndex,
     sectionDrafts, setSectionDrafts,
     fragmentSignal, fragmentOf, applyRenderPayload, buildSlideDoc,
+    slideStylesheetText, fontFaceCss,
   }
 }
