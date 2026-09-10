@@ -136,17 +136,6 @@ describe('canvasFragmentOf', () => {
   })
 })
 
-describe('buildSlideDoc', () => {
-  test('spec: reflects the store\'s own current assetBaseUrl/canvas size, not a frozen snapshot', () => {
-    createRoot(() => {
-      const store = createRenderStore()
-      store.applyRenderPayload(payload())
-      const doc = store.buildSlideDoc('<div class="peitho-slide">x</div>')
-      expect(doc).toContain('asset://base/')
-    })
-  })
-})
-
 describe('slideStylesheetText / fontFaceCss', () => {
   test('spec: splits @font-face out of the theme CSS, absolutized and :root-scoped', () => {
     createRoot(() => {

@@ -1,17 +1,16 @@
 import { createSignal, createMemo, batch } from '@barefootjs/client'
 import { type Manifest, type ManifestSection, type SectionDraft, type RenderPayload, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
-import { buildSlidePreviewDoc } from '../domain/previewDoc'
 import { absolutizeCssUrls, scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { absolutizeFragmentUrls } from '../domain/slideFragment'
 import { formatDurationMs, stabilizeByKey } from '../domain/slides'
 
 /** The deck's last-rendered state: manifest, per-slide fragment HTML, canvas
  * size, asset base URL, and the section-header drafts a fresh render resets.
- * DOM effects that *consume* this state (patching an already-loaded
- * thumbnail iframe's content in place) stay in `Studio.tsx` — they touch
- * the DOM, which `state/` isn't allowed to (see `scripts/
- * arch-check.test.ts`) — so this store only ever produces new values,
- * never reaches into the page to push them anywhere itself. */
+ * DOM effects that *consume* this state (patching an already-mounted
+ * canvas's content in place) stay in `Studio.tsx` — they touch the DOM,
+ * which `state/` isn't allowed to (see `scripts/arch-check.test.ts`) — so
+ * this store only ever produces new values, never reaches into the page to
+ * push them anywhere itself. */
 export function createRenderStore() {
   const [assetBaseUrl, setAssetBaseUrl] = createSignal<string | null>(null)
   // The deck's native slide canvas size — split out of `manifest` into its
@@ -65,9 +64,7 @@ export function createRenderStore() {
    * never crosses the component boundary, per docs/architecture.md's
    * "children never receive a setter" rule) and absolutized, since a shadow
    * root has no `<base href>` to resolve a slide's `src="assets/…"` against
-   * — those would otherwise resolve against the app's own document URL.
-   * The `<iframe>` preview pane still wants the raw fragment: its document
-   * carries a `<base>` of its own (see `buildSlideDoc`). */
+   * — those would otherwise resolve against the app's own document URL. */
   function canvasFragmentOf(key: string): string {
     return absolutizeFragmentUrls(fragmentSignal(key)[0](), assetBaseUrl() ?? '')
   }
@@ -83,11 +80,11 @@ export function createRenderStore() {
     // *before* `setManifest` below, not after. A brand-new row (this deck's
     // first render, or a slide that didn't exist a moment ago) does that
     // read synchronously as part of reacting to the manifest update that
-    // creates it, and it is never repeated (a `ref` callback for the
-    // thumbnail canvas, an `untrack`ed `srcdoc` for the preview pane), so
-    // setting it up in the other order let a fresh row capture an empty
-    // fragment permanently, before this function ever reached the loop that
-    // would have given it real content.
+    // creates it, and it is never repeated (a `ref`-scoped effect that only
+    // tracks `selectedSlideKey`, not the fragment itself — see
+    // `SlidePreview.tsx`), so setting it up in the other order let a fresh
+    // row capture an empty fragment permanently, before this function ever
+    // reached the loop that would have given it real content.
     //
     // Wrapped in `batch()` so the DOM-patching effect that watches both
     // `manifest()` and every slide's own `fragmentSignal` (see Studio.tsx)
@@ -116,14 +113,10 @@ export function createRenderStore() {
     })
   }
 
-  function buildSlideDoc(fragmentHtml: string): string {
-    return buildSlidePreviewDoc(fragmentHtml, assetBaseUrl() ?? '', canvasWidth(), canvasHeight())
-  }
-
   return {
     assetBaseUrl, canvasWidth, canvasHeight, manifest, sectionStartByIndex,
     sectionDrafts, setSectionDrafts,
-    fragmentSignal, canvasFragmentOf, applyRenderPayload, buildSlideDoc,
+    fragmentSignal, canvasFragmentOf, applyRenderPayload,
     slideStylesheetText, fontFaceCss,
   }
 }

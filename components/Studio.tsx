@@ -1,6 +1,6 @@
 'use client'
 
-import { createSignal, createMemo, createEffect, untrack, onMount, onCleanup } from '@barefootjs/client'
+import { createSignal, createMemo, createEffect, onMount, onCleanup } from '@barefootjs/client'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
@@ -356,53 +356,12 @@ export function Studio() {
     }
   })
 
-  // `srcdoc={...}` always reloads the iframe (a visible flash) when
-  // reassigned, even to a value that's byte-identical to what's already
-  // there (confirmed empirically — reassigning the exact same string three
-  // times in a row fires three `load` events) — so the only real fix is to
-  // never reassign it after the first load. All *later* content updates
-  // flow through `patchSlidePreviewIframes` (a plain effect below) instead,
-  // which mutates the already-loaded iframe's document in place — no
-  // `.srcdoc` write, no reload.
-  //
-  // For the "selected slide" preview pane (a single iframe reused across
-  // whichever slide is selected) `key` must be read by the *caller*, in
-  // normal (tracked) context, so switching slides still reloads this pane;
-  // only the fragment lookup itself is untracked (see the canvas host's
-  // `ref` in `SlideList.tsx` for why a thumbnail row, whose bindings all
-  // share one effect, needs a stronger fix than `untrack`).
-  function buildSelectedSlideDoc(key: string | null): string {
-    if (key === null) return ''
-    return render.buildSlideDoc(untrack(() => render.fragmentSignal(key)[0]()))
-  }
-
-  // Swaps in fresh fragment HTML for the "selected slide" preview pane
-  // (`data-slide-preview-key`, the last remaining iframe) without touching
-  // `.srcdoc`. Only ever *replaces* an existing `.peitho-slide` — never
-  // inserts one — so a patch that lands before the iframe's own initial
-  // `srcdoc` load has finished (a real possibility: that load is async,
-  // this effect isn't) is a safe no-op instead of risking a duplicated
-  // slide; the in-flight `srcdoc` navigation already carries the correct
-  // content for that case, and the next keystroke's patch (a beat later)
-  // catches up.
-  function patchSlidePreviewIframes(key: string, fragmentHtml: string): void {
-    const selector = `[data-slide-preview-key="${CSS.escape(key)}"]`
-    for (const iframe of document.querySelectorAll<HTMLIFrameElement>(selector)) {
-      const doc = iframe.contentDocument
-      const current = doc?.querySelector('.peitho-slide')
-      if (!current || current.outerHTML === fragmentHtml) continue
-      const wrapper = doc!.createElement('div')
-      wrapper.innerHTML = fragmentHtml
-      const next = wrapper.firstElementChild
-      if (!next) continue
-      current.replaceWith(next)
-      // The fit() script embedded in buildSlidePreviewDoc only re-scales on
-      // its own `resize` listener — nothing else re-invokes it after a
-      // direct content swap like this.
-      doc!.defaultView?.dispatchEvent(new Event('resize'))
-    }
-  }
-
+  // Every mounted canvas showing `key` (a thumbnail row and/or the
+  // "selected slide" preview pane both carry `data-slide-canvas-key`) gets
+  // its fragment patched in place. Fed the *absolutized* fragment, not the
+  // raw one — a shadow root has no `<base href>`, and `patchSlideCanvas`'s
+  // `outerHTML` equality check only bails on a no-op if compared against
+  // the same form that was mounted.
   function patchSlideCanvases(key: string, fragmentHtml: string): void {
     const selector = `[data-slide-canvas-key="${CSS.escape(key)}"]`
     for (const host of document.querySelectorAll<HTMLElement>(selector)) {
@@ -410,13 +369,8 @@ export function Studio() {
     }
   }
 
-  // The two take *different* HTML for the same slide: a canvas needs its
-  // asset URLs absolutized (no `<base href>` in a shadow root), and its
-  // `outerHTML` equality check only bails on a no-op if it's compared
-  // against the same form that was mounted.
   createEffect(() => {
     for (const slide of render.manifest()?.slides ?? []) {
-      patchSlidePreviewIframes(slide.key, render.fragmentSignal(slide.key)[0]())
       patchSlideCanvases(slide.key, render.canvasFragmentOf(slide.key))
     }
   })
@@ -1111,8 +1065,11 @@ export function Studio() {
 
         <SlidePreview
           selectedSlideKey={selectedSlideKey()}
-          srcdoc={buildSelectedSlideDoc(selectedSlideKey())}
           hasDeck={Boolean(render.assetBaseUrl())}
+          canvasFragmentOf={render.canvasFragmentOf}
+          slideStylesheet={getSlideStylesheet}
+          canvasWidth={render.canvasWidth()}
+          canvasHeight={render.canvasHeight()}
         />
       </div>
 
