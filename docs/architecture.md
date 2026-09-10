@@ -242,9 +242,10 @@ relevant `domain/*.ts`/`*.test.ts` file itself at implementation time
 
 ## What has to be verified manually
 
-Textarea sync during IME composition, cursor passing over the preview
-pane's iframe during a drag, native dialogs, dragging while focus is
-lost, a pending deck across multiple windows, launching `peitho
+Textarea sync during IME composition, WKWebView's handling of a slide
+canvas's shadow root (`@font-face` registration, `adoptedStyleSheets`,
+`border-radius` clipping a scaled child), native dialogs, dragging while
+focus is lost, a pending deck across multiple windows, launching `peitho
 present` — these can only be confirmed with a real Tauri window. Log
 them as examples carrying `manual: { reason }`, and see
 `.claude/skills/run-peitho-studio/SKILL.md` for the verification steps.

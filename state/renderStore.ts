@@ -43,14 +43,12 @@ export function createRenderStore() {
   const fontFaceCss = createMemo<string>(() => splitCss().fontFaces)
 
   // One independent signal per slide key, rather than a single
-  // `Record<string, string>` signal — reading `slideFragments()` as a whole
-  // record would subscribe every thumbnail's `srcdoc` effect to the *entire*
-  // record, so editing one slide reassigned every other thumbnail's
-  // `<iframe srcdoc>` too (same value, but `.srcdoc` always forces a
-  // navigate/reload on assignment regardless of whether the string actually
-  // changed) — the visible flicker across the whole slide list on every
-  // keystroke. Keying a separate signal per slide means only the row whose
-  // fragment actually changed re-touches its own DOM.
+  // `Record<string, string>` signal — a whole-record signal hands out a new
+  // record on every render, so every reader was notified for every slide on
+  // every keystroke, and each one re-touched its slide's DOM (the visible
+  // flicker across the whole slide list this was introduced to fix). Per-key
+  // signals are `Object.is`-guarded one slide at a time, so a render that
+  // leaves a slide's fragment byte-identical notifies nobody for it.
   const fragmentSignals = new Map<string, [() => string, (value: string) => void]>()
   function fragmentSignal(key: string): [() => string, (value: string) => void] {
     let entry = fragmentSignals.get(key)
@@ -91,9 +89,9 @@ export function createRenderStore() {
     // flushes once per call to this function instead of once per signal
     // write inside it — a multi-slide deck's first render used to fire
     // that effect once per fragment plus once more for `setManifest`,
-    // each pass a no-op past the first (its own `outerHTML` equality
-    // check bails immediately), but still a `querySelectorAll` sweep over
-    // every mounted thumbnail repeated for nothing.
+    // each pass a no-op past the first (`patchSlideCanvas` bails on an
+    // unchanged fragment), but still a `querySelectorAll` sweep over every
+    // mounted thumbnail repeated for nothing.
     batch(() => {
       for (const [key, html] of Object.entries(payload.fragments)) {
         const [get, set] = fragmentSignal(key)

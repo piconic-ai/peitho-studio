@@ -234,7 +234,7 @@ export function Studio() {
   // own output is compared by value before it notifies anyone, and two
   // strings that read the same are `Object.is`-equal regardless of which
   // slide object produced them. Deriving just the key through a memo is
-  // what lets the preview iframe (below) depend on "which slide is
+  // what lets the preview pane (below) depend on "which slide is
   // selected" without also depending on "has its content changed".
   const selectedSlideKey = createMemo<string | null>(() => selectedSlide()?.key ?? null)
 
@@ -356,12 +356,11 @@ export function Studio() {
     }
   })
 
-  // Every mounted canvas showing `key` (a thumbnail row and/or the
-  // "selected slide" preview pane both carry `data-slide-canvas-key`) gets
-  // its fragment patched in place. Fed the *absolutized* fragment, not the
-  // raw one — a shadow root has no `<base href>`, and `patchSlideCanvas`'s
-  // `outerHTML` equality check only bails on a no-op if compared against
-  // the same form that was mounted.
+  // One key can match two hosts: a thumbnail row and the "selected slide"
+  // pane both carry `data-slide-canvas-key`. Fed the *absolutized*
+  // fragment, not the raw one — a shadow root has no `<base href>` to
+  // resolve `src="assets/…"` against, and a spelling other than the one
+  // mounted would defeat `patchSlideCanvas`'s unchanged-fragment check.
   function patchSlideCanvases(key: string, fragmentHtml: string): void {
     const selector = `[data-slide-canvas-key="${CSS.escape(key)}"]`
     for (const host of document.querySelectorAll<HTMLElement>(selector)) {

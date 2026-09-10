@@ -3,9 +3,10 @@
 //! (only when the deck uses math), and `assets/<hash>-<name>` (resolved
 //! images). Replaces fetching these from a `peitho preview` subprocess.
 //!
-//! The frontend's `<iframe srcdoc>` wrapper (`buildSlideDoc` in
-//! Studio.tsx) sets `<base href>` to this server's URL exactly like it did
-//! for `peitho preview`, so that part of the frontend is unchanged.
+//! The frontend renders slides into shadow roots, which have no
+//! `<base href>` to resolve those relative URLs against, so it rewrites
+//! them to absolute URLs under this server's base itself (see
+//! `domain/slideCss.ts` and `domain/slideFragment.ts`).
 
 use std::collections::HashMap;
 use std::path::PathBuf;

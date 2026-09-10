@@ -436,8 +436,8 @@ pub struct LayoutPreviewsPayload {
 /// render's own (built from throwaway content, and thus reflecting only
 /// whichever CSS slot classes *that* content happens to use) would corrupt
 /// the real deck's on-screen rendering until the next real edit. The CSS
-/// returned here is only ever inlined directly into the picker's own
-/// preview iframes, never served.
+/// returned here is only ever adopted directly by the picker's own
+/// preview canvases, never served.
 #[tauri::command]
 pub fn preview_layouts(window: WebviewWindow, session: State<PeithoSession>) -> Result<LayoutPreviewsPayload, String> {
     let (deck_path, deck_dir) = {
