@@ -3,11 +3,13 @@
 // `engine::pipeline`) — a Shadow root has no `<base href>` to resolve them
 // against, unlike the iframe `srcdoc` documents this replaces.
 
-const FRAGMENT_ASSET_SRC_PATTERN = /\bsrc="assets\/([^"]*)"/g
+// The leading `\s` keeps this to a real `src` attribute: a bare `\b` also
+// matches the tail of `data-src="…"`, which is not part of that contract.
+const FRAGMENT_ASSET_SRC_PATTERN = /(\s)src="(assets\/[^"]*)"/g
 
-/** Rewrites every `src="assets/..."` in `html` against `baseUrl`. `baseUrl`
- * empty (no asset server resolved yet) is a no-op. */
+/** An empty `baseUrl` (no asset server resolved yet) is a no-op — there's
+ * nothing to resolve against, and `new URL` would throw on it. */
 export function absolutizeFragmentUrls(html: string, baseUrl: string): string {
   if (!baseUrl) return html
-  return html.replace(FRAGMENT_ASSET_SRC_PATTERN, (_match, rest: string) => `src="${new URL(`assets/${rest}`, baseUrl).href}"`)
+  return html.replace(FRAGMENT_ASSET_SRC_PATTERN, (_match, space: string, path: string) => `${space}src="${new URL(path, baseUrl).href}"`)
 }

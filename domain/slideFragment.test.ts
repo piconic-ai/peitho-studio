@@ -14,6 +14,14 @@ describe('absolutizeFragmentUrls', () => {
     expect(result).toContain('src="http://localhost/assets/b.png"')
   })
 
+  test('spec: a real rendered <img> keeps its surrounding attributes', () => {
+    const html = '<section data-slide-key="s1" class="peitho-slide"><div class="slot-hero">'
+      + '<img src="assets/0123456789abcdef-hero.png" alt="Hero image"></div></section>'
+    expect(absolutizeFragmentUrls(html, 'http://127.0.0.1:1234/')).toBe(
+      '<section data-slide-key="s1" class="peitho-slide"><div class="slot-hero">'
+      + '<img src="http://127.0.0.1:1234/assets/0123456789abcdef-hero.png" alt="Hero image"></div></section>')
+  })
+
   test('adversarial: a src that does not start with assets/ is left untouched', () => {
     const html = '<img src="https://cdn.example.com/a.png">'
     expect(absolutizeFragmentUrls(html, 'http://localhost/')).toBe(html)
@@ -22,6 +30,11 @@ describe('absolutizeFragmentUrls', () => {
   test('adversarial: an empty base URL is a no-op', () => {
     const html = '<img src="assets/a.png">'
     expect(absolutizeFragmentUrls(html, '')).toBe(html)
+  })
+
+  test('adversarial: an attribute merely ending in "src" is not mistaken for src', () => {
+    const html = '<img data-src="assets/a.png" srcset="assets/a.png 1x">'
+    expect(absolutizeFragmentUrls(html, 'http://localhost/')).toBe(html)
   })
 
   test('adversarial: HTML with no img tags passes through unchanged', () => {

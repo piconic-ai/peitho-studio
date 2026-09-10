@@ -33,9 +33,7 @@ describe('clampMenuPosition', () => {
 
 describe('containScale', () => {
   test('spec: a wider-than-canvas box is limited by height, not width', () => {
-    // 2000x720 available against a 1280x720 canvas: height is the tight
-    // axis (scale 1), width has slack (scale 1.5625) — contain uses the
-    // smaller of the two.
+    // The tight axis is an exact 1:1 fit, so 1.02 here is purely the overscan.
     expect(containScale({ width: 2000, height: 720 }, { width: 1280, height: 720 })).toBeCloseTo(1.02, 5)
   })
 

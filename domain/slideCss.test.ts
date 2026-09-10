@@ -1,10 +1,27 @@
 import { describe, expect, test } from 'bun:test'
 import { absolutizeCssUrls, splitFontFaceRules, scopeRootToHost } from './slideCss'
 
+// The exact `@font-face` shape emitted by the bundled base theme
+// (`src-tauri/src/engine/builtin/base.css`), which `theme-fonts/*` on the
+// in-process asset server serves.
+const REAL_FONT_FACE = `@font-face {
+  font-family: "Inter";
+  src: url("theme-fonts/Inter-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}`
+
 describe('absolutizeCssUrls', () => {
   test('spec: a double-quoted relative url() is resolved against the base', () => {
     expect(absolutizeCssUrls('src: url("theme-fonts/Inter.woff2")', 'http://localhost:1234/'))
       .toBe('src: url("http://localhost:1234/theme-fonts/Inter.woff2")')
+  })
+
+  test("spec: a real @font-face src is resolved and its format() left alone", () => {
+    const result = absolutizeCssUrls(REAL_FONT_FACE, 'http://127.0.0.1:1234/')
+    expect(result).toContain('src: url("http://127.0.0.1:1234/theme-fonts/Inter-Regular.woff2") format("woff2");')
+    expect(result).toContain('font-display: swap;')
   })
 
   test('spec: single-quoted and unquoted url() are both resolved', () => {
@@ -43,6 +60,20 @@ describe('absolutizeCssUrls', () => {
     expect(absolutizeCssUrls('url()', 'http://localhost/')).toBe('url()')
   })
 
+  test('adversarial: a same-document url(#id) is left untouched', () => {
+    const css = '.peitho-slide { filter: url(#blur); mask: url("#cut"); }'
+    expect(absolutizeCssUrls(css, 'http://localhost/')).toBe(css)
+  })
+
+  test('adversarial: an uppercase URL( ... ) is resolved too', () => {
+    expect(absolutizeCssUrls('URL("a.png")', 'http://localhost/')).toBe('url("http://localhost/a.png")')
+  })
+
+  test('adversarial: whitespace inside url( ... ) does not leak into the result', () => {
+    expect(absolutizeCssUrls('url( "a.png" )', 'http://localhost/')).toBe('url("http://localhost/a.png")')
+    expect(absolutizeCssUrls('url(  a.png  )', 'http://localhost/')).toBe('url(http://localhost/a.png)')
+  })
+
   test('adversarial: CSS with no url() at all passes through unchanged', () => {
     const css = '.peitho-slide { color: red; }'
     expect(absolutizeCssUrls(css, 'http://localhost/')).toBe(css)
@@ -64,6 +95,18 @@ describe('splitFontFaceRules', () => {
     const { fontFaces, rest } = splitFontFaceRules(css)
     expect(fontFaces).toContain('font-family: "A"')
     expect(fontFaces).toContain('font-family: "B"')
+    expect(rest.trim()).toBe('.x {}')
+  })
+
+  test('spec: a real multi-declaration @font-face block is lifted out whole', () => {
+    const { fontFaces, rest } = splitFontFaceRules(`${REAL_FONT_FACE}\n\n.peitho-slide { color: red; }`)
+    expect(fontFaces).toBe(REAL_FONT_FACE)
+    expect(rest.trim()).toBe('.peitho-slide { color: red; }')
+  })
+
+  test('adversarial: an uppercase @FONT-FACE block is lifted out too', () => {
+    const { fontFaces, rest } = splitFontFaceRules('@FONT-FACE { font-family: "A"; }\n.x {}')
+    expect(fontFaces).toBe('@FONT-FACE { font-family: "A"; }')
     expect(rest.trim()).toBe('.x {}')
   })
 
@@ -96,6 +139,10 @@ describe('scopeRootToHost', () => {
 
   test('adversarial: a class name merely containing "root" is left untouched', () => {
     expect(scopeRootToHost('.root-element { color: red; }')).toBe('.root-element { color: red; }')
+  })
+
+  test('adversarial: an uppercase :ROOT is rewritten too', () => {
+    expect(scopeRootToHost(':ROOT { --x: 1px; }')).toBe(':host { --x: 1px; }')
   })
 
   test('adversarial: no :root present passes through unchanged', () => {
