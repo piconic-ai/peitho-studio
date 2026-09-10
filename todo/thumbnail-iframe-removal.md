@@ -110,10 +110,13 @@ Pullfrogレビュー対応。
 
 - [ ] **PR1** `render-payload-css`: Rust `RenderPayload`に`css`を追加
       (+ `domain/render.ts`型、`ipc/fakeDeckIpc.ts`更新)。
-- [ ] **PR2** `slide-css-domain`: `domain/slideCss.ts`・
+- [x] **PR2** `slide-css-domain`: `domain/slideCss.ts`・
       `slideFragment.ts`・`geometry.ts`(純粋関数) + spec/adversarial
-      テスト(空文字、`url()`の引用符あり/なし、`data:`、
-      `:root:not()`、`src='assets/`等)。
+      テスト(空文字、`url()`の引用符あり/なし、`data:`、`url(#id)`、
+      大文字小文字、`:root:not()`等)。実装時判明: peitho-coreの
+      フラグメント出力(`render.rs`)は常にダブルクォート
+      (`src="assets/..."`)のみで、シングルクォートは契約に含まれない
+      ため対応不要と判断(PR #43)。
 - [ ] **PR3** `slide-canvas-dom`: `dom/slideCanvas.ts` +
       `renderStore`のcss signal/memo。ここでWKWebView spike
       (上記リスク1〜3)を実機確認し、結果をPR本文に残す。
