@@ -85,10 +85,9 @@ pub struct RenderPayload {
     /// — resolves relative `url(...)`/`src="assets/..."` references inside
     /// `css`/`fragments`.
     asset_base_url: String,
-    /// The deck theme's compiled CSS — same string `engine::serve` writes
-    /// to `peitho.css` on the asset server, carried here too so the
-    /// frontend can render a slide into a scoped style sheet (e.g. a
-    /// Shadow DOM) without a second round trip to fetch it.
+    /// Duplicates the `peitho.css` the asset server already serves —
+    /// carried in the payload so a slide can be rendered into a scoped
+    /// style sheet (Shadow DOM) without a second round trip to fetch it.
     css: String,
 }
 
