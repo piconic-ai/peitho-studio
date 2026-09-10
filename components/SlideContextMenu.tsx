@@ -134,7 +134,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
                         <div
                           ref={el => {
                             const canvas = { width: props.canvasWidth, height: props.canvasHeight }
-                            mountSlideCanvas(el, props.layoutPreviewStylesheet(), preview.fragment, canvas)
+                            mountSlideCanvas(el, props.layoutPreviewStylesheet(), preview.fragment, canvas, 'thumbnail')
                             observeCanvasScale(el, canvas)
                           }}
                           className="absolute top-0 right-0 bottom-0 left-0"

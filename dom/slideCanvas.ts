@@ -12,17 +12,9 @@ import { containScale, type Size } from '../domain/geometry'
 // the transform does 100% of the size reduction: as a flex child it would
 // otherwise be squeezed below that width and re-wrap its own text *before*
 // being scaled (the same pin the iframe-era preview document used, for the
-// same reason). `pointer-events`/`user-select` are inherited
-// properties, so declaring them on `:host` covers the slide markup inside
-// it too — that markup is a deck author's arbitrary HTML, and unlike the
-// `<iframe srcdoc>` this replaces it now lives in the app's own document:
-// an `<a href>` in a slide would navigate the whole app when its thumbnail
-// is clicked, and an `<img>` would start a native drag that fights the
-// manual reorder gesture. Hit-testing falls through to the element behind
-// the host, so the row's own click/contextmenu handlers still fire.
-// `text-align: left` similarly blocks an inherited property from leaking
-// in from wherever `host` happens to sit in the light DOM: unlike the
-// `<iframe>` this replaces (a separate document, so nothing about its
+// same reason). `text-align: left` blocks an inherited property from
+// leaking in from wherever `host` happens to sit in the light DOM: unlike
+// the `<iframe>` this replaces (a separate document, so nothing about its
 // parent's cascade ever reached its content), a shadow tree inherits
 // ordinary inherited properties straight from its host's computed style.
 // `SlideList.tsx` mounts a canvas inside a `<button>`, whose UA stylesheet
@@ -32,16 +24,32 @@ import { containScale, type Size } from '../domain/geometry'
 // stayed pinned at the far left while its now-centered text visibly
 // detached from it. Confirmed via a synthetic host wrapped in the same
 // button/span/span chain `SlideList.tsx` actually uses; the theme itself
-// sets no `text-align` for this to override.
-const LAYOUT_CSS = `
-  :host { display: flex; align-items: center; justify-content: center; overflow: hidden; pointer-events: none; user-select: none; text-align: left; }
+// sets no `text-align` for this to override. Applies to both modes (unlike
+// `THUMBNAIL_CONSTRAINT_CSS` below) since any host's ancestor chain could
+// carry an inherited `text-align`, not just a thumbnail row's `<button>`.
+const BASE_LAYOUT_CSS = `
+  :host { display: flex; align-items: center; justify-content: center; overflow: hidden; text-align: left; }
   .peitho-slide { flex-shrink: 0; transform: scale(var(--peitho-thumb-scale, 1)); transform-origin: center center; }
+`
+// `mode: 'thumbnail'` only — a thumbnail/layout-picker host is itself the
+// click/right-click/drag-reorder target, and the slide markup inside it is
+// a deck author's arbitrary HTML (unlike the `<iframe srcdoc>` this
+// replaces, it now lives in the app's own document): unconstrained, an
+// `<a href>` would eat the click meant for the row and an `<img>` would
+// start a native drag fighting the manual reorder gesture.
+// `pointer-events`/`user-select` are inherited, so declaring them on
+// `:host` covers that markup too, and hit-testing falls through to the row
+// element behind the host. `mode: 'interactive'` (the standalone preview
+// pane) skips this sheet on purpose — see `mountSlideCanvas`.
+const THUMBNAIL_CONSTRAINT_CSS = `
+  :host { pointer-events: none; user-select: none; }
 `
 // Built on first mount, not at module load: `new CSSStyleSheet()` only
 // exists in a browser, so constructing it eagerly would make this module
 // unimportable from a `bun test` (a component IR test, say) or any other
 // non-DOM context.
-let layoutSheet: CSSStyleSheet | null = null
+let baseLayoutSheet: CSSStyleSheet | null = null
+let thumbnailConstraintSheet: CSSStyleSheet | null = null
 
 /** Parses `cssText` (a deck theme's compiled CSS, already absolutized and
  * `@font-face`-stripped — see `state/renderStore.ts`'s
@@ -88,6 +96,12 @@ const mountRetryCounts = new WeakMap<HTMLElement, number>()
 // check on every slide and rebuild every canvas on every keystroke.
 const appliedFragments = new WeakMap<Element, string>()
 
+// Shadow roots that already have the interactive-mode link guard attached
+// — `mountSlideCanvas` re-runs on every selection change for the same
+// preview-pane host (a fresh `srcdoc`-style remount, not a `patchSlideCanvas`
+// in-place update), so this stops a second listener from stacking on top.
+const linkGuardedRoots = new WeakSet<ShadowRoot>()
+
 /** Mounts `fragmentHtml` into `host`'s Shadow root, reusing that root if it
  * already has one (a second `attachShadow` throws). `canvas` is the deck's
  * native slide size: the theme sizes `.peitho-slide` off
@@ -96,6 +110,16 @@ const appliedFragments = new WeakMap<Element, string>()
  * needs the host to carry it — otherwise every non-1280x720 deck silently
  * renders at the theme's `var()` fallback. Pair with `observeCanvasScale`
  * to keep it fitted as `host` resizes.
+ *
+ * `mode: 'thumbnail'` (a slide-list row or layout-picker cell) constrains
+ * the mounted slide to a non-target, non-selectable image — see
+ * `THUMBNAIL_CONSTRAINT_CSS`. `mode: 'interactive'` (the standalone preview
+ * pane) leaves it selectable and clickable like the `<iframe>` it replaces
+ * did, except an in-slide `<a href>` click is suppressed: unlike that
+ * iframe (a separate document, so a link navigating it never touched the
+ * app), a Shadow root shares this document, and letting a slide's link
+ * navigate the whole app is worse than the iframe-era behavior it would
+ * otherwise regress from.
  *
  * A brand-new `.map()` row's `ref` runs while its element is still part of
  * the detached "template contents" document the row was parsed into — not
@@ -109,7 +133,7 @@ const appliedFragments = new WeakMap<Element, string>()
  * removed again within that same tick (before the retry runs), `host` never
  * connects at all. `MAX_MOUNT_RETRIES` caps the resulting retry loop so an
  * abandoned row's closure gets dropped instead of rescheduling forever. */
-export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragmentHtml: string, canvas: Size): void {
+export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragmentHtml: string, canvas: Size, mode: 'thumbnail' | 'interactive'): void {
   if (!host.isConnected) {
     const attempt = mountRetryCounts.get(host) ?? 0
     if (attempt >= MAX_MOUNT_RETRIES) {
@@ -117,13 +141,28 @@ export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragme
       return
     }
     mountRetryCounts.set(host, attempt + 1)
-    queueMicrotask(() => mountSlideCanvas(host, sheet, fragmentHtml, canvas))
+    queueMicrotask(() => mountSlideCanvas(host, sheet, fragmentHtml, canvas, mode))
     return
   }
   mountRetryCounts.delete(host)
   const shadow = host.shadowRoot ?? host.attachShadow({ mode: 'open' })
-  layoutSheet ??= createSlideStylesheet(LAYOUT_CSS)
-  shadow.adoptedStyleSheets = [sheet, layoutSheet]
+  baseLayoutSheet ??= createSlideStylesheet(BASE_LAYOUT_CSS)
+  const sheets = [sheet, baseLayoutSheet]
+  if (mode === 'thumbnail') {
+    thumbnailConstraintSheet ??= createSlideStylesheet(THUMBNAIL_CONSTRAINT_CSS)
+    sheets.push(thumbnailConstraintSheet)
+  } else if (!linkGuardedRoots.has(shadow)) {
+    // Capture phase: a click inside .peitho-slide never bubbles past the
+    // shadow boundary anyway (retargeted to `host` first), so a bubble-
+    // phase listener on `shadow` itself would never see the original
+    // target. `closest` still works on the retargeted-within-the-root
+    // target since that's this same shadow tree.
+    shadow.addEventListener('click', event => {
+      if ((event.target as Element).closest('a[href]')) event.preventDefault()
+    }, true)
+    linkGuardedRoots.add(shadow)
+  }
+  shadow.adoptedStyleSheets = sheets
   host.style.setProperty('--peitho-canvas-width', `${String(canvas.width)}px`)
   host.style.setProperty('--peitho-canvas-height', `${String(canvas.height)}px`)
   shadow.innerHTML = fragmentHtml

@@ -135,7 +135,7 @@ export function SlideList(props: SlideListProps) {
                         ref={el => {
                           el.dataset.slideCanvasKey = slide.key
                           const canvas = { width: props.canvasWidth, height: props.canvasHeight }
-                          mountSlideCanvas(el, props.slideStylesheet(), props.canvasFragmentOf(slide.key), canvas)
+                          mountSlideCanvas(el, props.slideStylesheet(), props.canvasFragmentOf(slide.key), canvas, 'thumbnail')
                           observeCanvasScale(el, canvas)
                         }}
                         className="absolute top-0 right-0 bottom-0 left-0"

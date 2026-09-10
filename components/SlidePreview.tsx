@@ -36,7 +36,7 @@ export function SlidePreview(props: SlidePreviewProps) {
             if (key === null) return
             el.dataset.slideCanvasKey = key
             const canvas = { width: props.canvasWidth, height: props.canvasHeight }
-            mountSlideCanvas(el, props.slideStylesheet(), untrack(() => props.canvasFragmentOf(key)), canvas)
+            mountSlideCanvas(el, props.slideStylesheet(), untrack(() => props.canvasFragmentOf(key)), canvas, 'interactive')
             observeCanvasScale(el, canvas)
           })
         }}
