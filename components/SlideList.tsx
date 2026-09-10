@@ -27,7 +27,11 @@ export interface SlideListProps {
   sectionDrafts: Record<number, SectionDraft>
   canvasWidth: number
   canvasHeight: number
-  fragmentOf: (key: string) => string
+  /** Pre-absolutized fragment HTML for `key` — a shadow root has no `<base
+   * href>`, so this must already have its `src="assets/..."` resolved
+   * (see `state/renderStore.ts`'s `canvasFragmentOf`, which this is always
+   * meant to be). */
+  canvasFragmentOf: (key: string) => string
   slideStylesheet: () => CSSStyleSheet
   onContextMenu: (index: number | null, event: MouseEvent) => void
   onDragStart: (index: number) => (event: MouseEvent) => void
@@ -122,7 +126,7 @@ export function SlideList(props: SlideListProps) {
                         // attributes: this row's whole `.map()` iteration
                         // shares one `createEffect`, so a binding here would
                         // re-run — re-mounting the canvas from a stale
-                        // `fragmentOf` snapshot — on every *sibling* edit. A
+                        // `canvasFragmentOf` snapshot — on every *sibling* edit. A
                         // `ref` runs exactly once, at creation; later content
                         // updates arrive through `patchSlideCanvas`
                         // (Studio.tsx's always-tracked effect), which finds
@@ -131,7 +135,7 @@ export function SlideList(props: SlideListProps) {
                         ref={el => {
                           el.dataset.slideCanvasKey = slide.key
                           const canvas = { width: props.canvasWidth, height: props.canvasHeight }
-                          mountSlideCanvas(el, props.slideStylesheet(), props.fragmentOf(slide.key), canvas)
+                          mountSlideCanvas(el, props.slideStylesheet(), props.canvasFragmentOf(slide.key), canvas)
                           observeCanvasScale(el, canvas)
                         }}
                         className="absolute top-0 right-0 bottom-0 left-0"

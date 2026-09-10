@@ -1063,7 +1063,7 @@ export function Studio() {
           sectionDrafts={render.sectionDrafts()}
           canvasWidth={render.canvasWidth()}
           canvasHeight={render.canvasHeight()}
-          fragmentOf={render.canvasFragmentOf}
+          canvasFragmentOf={render.canvasFragmentOf}
           slideStylesheet={getSlideStylesheet}
           onContextMenu={openContextMenu}
           onDragStart={startSlideDrag}
