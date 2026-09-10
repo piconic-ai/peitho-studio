@@ -145,9 +145,14 @@ Pullfrogレビュー対応。
       進行(2章末の進捗メモ参照)。
 - [x] **PR4** `slidelist-shadow-dom`: `SlideList.tsx`/`Studio.tsx`の
       置換、旧iframeコード削除完了(コード上はサムネイル一覧のiframeが
-      0個、合計iframeは1個(プレビュー枠のみ)に到達)。CLAUDE.md
-      pitfalls更新・実機検証記録はWKWebView spikeと合わせて後日まとめて
-      行う。
+      0個、合計iframeは1個(プレビュー枠のみ)に到達)。実機検証記録は
+      WKWebView spikeと合わせて後日まとめて行う。レビューで補った3点:
+      PR2の`absolutizeFragmentUrls`が未配線だった
+      (`renderStore.canvasFragmentOf`として配線)、`:host`の
+      `pointer-events`/`user-select`が抜けていた(2章の「引き続き必要」
+      通りに復元)、外側/内側2重spanを1要素に統合(2章の「簡素化できる」)。
+      あわせてCLAUDE.mdに新pitfall(propに`const`を直接渡すと初期化式ごと
+      インライン展開される)を追記。
 - [ ] **PR5** `layout-picker-shadow-dom`: レイアウトピッカー
       (`SlideContextMenu.tsx`)も同じcanvasに置換
       (`buildLayoutPreviewDoc`撤去)。
