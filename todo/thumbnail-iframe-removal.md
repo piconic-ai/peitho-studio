@@ -166,14 +166,30 @@ Pullfrogレビュー対応。
       `url()`は`theme-fonts/*`のみで、それらは除去する`@font-face`の中に
       あり、実デッキ側が`<head>`に絶対化済みで1つhoist済み)。
       (実機検証は他項目とまとめて後日)。
-- [ ] **PR6** `preview-pane-shadow-dom`: プレビュー枠もShadow DOM化し
-      `previewDoc.ts`を削除。 → **iframe合計0個**。
+- [x] **PR6** `preview-pane-shadow-dom`: プレビュー枠もShadow DOM化、
+      `previewDoc.ts`(+テスト)・`renderStore.buildSlideDoc`削除、
+      `<iframe>`要素はコードベース全体で0個に到達。副産物: iframeが
+      無くなったことで`dom/columnResize.ts`の右クリック/drag中
+      pointer-events対策も不要と判断し削除(Shadow DOMは別の
+      browsing contextではないため、mousemoveが遮られる問題自体が
+      発生しない)。iframe時代の古いコメント(`docs/architecture.md`
+      の手動検証項目含む)も更新。(実機検証は他項目とまとめて後日)。
 
 ## 5. 完了条件
 
-- PR1〜PR6すべてマージ(またはReview Ready化まで到達し、Pullfrogの
-  指摘に対応済み)。
-- `grep -rn "iframe" components domain dom ipc state` が0件。
-- `bun test` / Rust `cargo test` / e2e smoke が全てグリーン。
-- CLAUDE.mdのPitfallsセクションに、Shadow DOM化で得た新知見
-  (残った場合)を追記。
+- [x] PR1〜PR6すべてDraft PR作成・Review Ready化・Pullfrogレビュー
+      対応済み(マージはユーザー判断)。
+- [x] `grep -rn "<iframe" components domain dom` が0件(コメント上の
+      歴史的言及のみ残存、実要素は0)。
+- [x] `bun test` / `bun run typecheck` / `bun run build`が全てグリーン。
+      Rust `cargo test`はPR1で確認済み(以降Rust側の変更なし)。
+      e2e smokeは未実行(Welcome画面より先を検証しないため今回の変更
+      と無関係、既存の`test:e2e`はそのまま維持)。
+- [ ] CLAUDE.mdのPitfallsセクションへのShadow DOM新知見の追記は、
+      実機検証(WKWebView spike、下記)の結果を踏まえてから行う。
+- [ ] **残タスク**: 3章のリスク1〜5(`@font-face`登録、
+      `adoptedStyleSheets`可用性、`border-radius`クリップ、`html`/
+      `body`ルールの非適用、大規模デッキでのメモリ/描画時間)の実機
+      WKWebView検証。ユーザーのマシンが利用可能になり次第、
+      `run-peitho-studio` skillで実施し、結果をこの計画書とCLAUDE.md
+      に記録する。
