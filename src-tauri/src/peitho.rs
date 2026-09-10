@@ -559,35 +559,38 @@ mod tests {
         assert!(resolve_deck_path("/definitely/does/not/exist/deck.md").is_err());
     }
 
-    fn empty_manifest_json() -> String {
-        r#"{"title":"","slideCount":0,"canvasWidth":1280,"canvasHeight":720,"sections":[],"slides":[]}"#.to_string()
-    }
-
-    #[test]
-    fn to_payload_spec_carries_css_and_asset_base_url_through() {
-        let output = RenderOutput {
-            manifest_json: empty_manifest_json(),
-            fragments: HashMap::new(),
-            css: ".peitho-slide { color: red; }".to_string(),
+    fn render_output(manifest_json: &str, css: &str) -> RenderOutput {
+        RenderOutput {
+            manifest_json: manifest_json.to_string(),
+            fragments: HashMap::from([("slide-1".to_string(), "<section>one</section>".to_string())]),
+            css: css.to_string(),
             has_math: false,
             image_assets: HashMap::new(),
             fonts_dir: None,
-        };
+        }
+    }
+
+    #[test]
+    fn to_payload_spec_carries_manifest_fragments_css_and_asset_base_url_through() {
+        let output = render_output(
+            r#"{"title":"Deck","slideCount":1,"canvasWidth":1280,"canvasHeight":720,"sections":[],"slides":[]}"#,
+            ".peitho-slide { color: red; }",
+        );
         let payload = to_payload(output, "http://127.0.0.1:1234/".to_string()).unwrap();
+        assert_eq!(payload.manifest["title"], "Deck");
+        assert_eq!(payload.fragments["slide-1"], "<section>one</section>");
         assert_eq!(payload.css, ".peitho-slide { color: red; }");
         assert_eq!(payload.asset_base_url, "http://127.0.0.1:1234/");
     }
 
     #[test]
+    fn to_payload_adversarial_empty_css_stays_empty() {
+        let payload = to_payload(render_output(r#"{"title":""}"#, ""), String::new()).unwrap();
+        assert_eq!(payload.css, "");
+    }
+
+    #[test]
     fn to_payload_adversarial_rejects_invalid_manifest_json() {
-        let output = RenderOutput {
-            manifest_json: "not json".to_string(),
-            fragments: HashMap::new(),
-            css: String::new(),
-            has_math: false,
-            image_assets: HashMap::new(),
-            fonts_dir: None,
-        };
-        assert!(to_payload(output, String::new()).is_err());
+        assert!(to_payload(render_output("not json", ""), String::new()).is_err());
     }
 }
