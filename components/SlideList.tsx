@@ -11,8 +11,8 @@ import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 // `.map()` over `manifest.slides` stays entirely inside this one component
 // (rows are NOT split into further per-row child components) because
 // BarefootJS's compiler fuses a whole `.map()` row's dynamic attributes into
-// one shared `createEffect` per row — see the comment above the thumbnail
-// iframe's own `ref` below for why that fusion is load-bearing here, and
+// one shared `createEffect` per row — see the comment above the canvas
+// host's own `ref` below for why that fusion is load-bearing here, and
 // `todo/archive/studio-tsx-refactoring.md`'s Step 19 entry for why a per-row
 // component split was deliberately avoided without a spike to validate it
 // first.
@@ -103,30 +103,31 @@ export function SlideList(props: SlideListProps) {
                       under the border area by default — so it looked black instead of
                       gray. `muted-foreground` is used solid (no alpha) to avoid that. */}
                   <span className="flex-1 flex flex-col gap-0.5 min-w-0">
-                    {/* `aspect-ratio` and the border must stay on the same
-                        (inner) span: the canvas host below fills it via
-                        `top/right/bottom/left: 0`, and `observeCanvasScale`
-                        measures that same span's `contentRect` — splitting
-                        them across the two spans would size/measure against
-                        different content-boxes (the outer span has no
-                        border of its own to subtract). */}
-                    <span className="block relative rounded-md overflow-hidden">
+                    {/* `aspect-ratio`, the border and `overflow-hidden` all
+                        belong on this one span: the canvas host fills its
+                        *content* box (`top/right/bottom/left: 0`), which is
+                        the box `aspect-ratio` locks to the canvas only
+                        because `box-sizing: content-box` keeps the border
+                        out of it, and the host's own corners are square, so
+                        without a rounded clip here the slide would poke
+                        through the border's inner curve. */}
                     <span
                       className={props.selectedIndex === i
-                        ? 'block relative rounded-md border-4 border-[#eab308] bg-black'
-                        : 'block relative rounded-md border-2 border-border bg-black hover:border-4 hover:border-muted-foreground'}
+                        ? 'block relative rounded-md overflow-hidden border-4 border-[#eab308] bg-black'
+                        : 'block relative rounded-md overflow-hidden border-2 border-border bg-black hover:border-4 hover:border-muted-foreground'}
                       style={`aspect-ratio: ${String(props.canvasWidth)} / ${String(props.canvasHeight)}; box-sizing: content-box`}
                     >
                       <div
-                        // A `ref` callback (not reactive JSX attributes)
-                        // for the same reason the iframe version used one:
-                        // this row's whole `.map()` iteration shares one
-                        // `createEffect`, so a reactive binding here would
-                        // re-run — and, for the initial mount call, re-fetch
-                        // a stale `fragmentOf` snapshot — on every sibling
-                        // edit. Later content updates flow through
-                        // `patchSlideCanvas` (Studio.tsx's always-tracked
-                        // effect), found via `data-slide-canvas-key`.
+                        // A `ref` callback rather than reactive JSX
+                        // attributes: this row's whole `.map()` iteration
+                        // shares one `createEffect`, so a binding here would
+                        // re-run — re-mounting the canvas from a stale
+                        // `fragmentOf` snapshot — on every *sibling* edit. A
+                        // `ref` runs exactly once, at creation; later content
+                        // updates arrive through `patchSlideCanvas`
+                        // (Studio.tsx's always-tracked effect), which finds
+                        // this element by the `data-slide-canvas-key` set
+                        // here.
                         ref={el => {
                           el.dataset.slideCanvasKey = slide.key
                           const canvas = { width: props.canvasWidth, height: props.canvasHeight }
@@ -135,7 +136,6 @@ export function SlideList(props: SlideListProps) {
                         }}
                         className="absolute top-0 right-0 bottom-0 left-0"
                       />
-                    </span>
                     </span>
                     {slide.skip ? <span className="text-xs text-destructive">skip</span> : null}
                   </span>

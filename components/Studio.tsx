@@ -238,21 +238,22 @@ export function Studio() {
   // selected" without also depending on "has its content changed".
   const selectedSlideKey = createMemo<string | null>(() => selectedSlide()?.key ?? null)
 
-  // The Shadow DOM thumbnail canvases' shared theme style sheet. Lazily
-  // created on first request — `SlideList`'s per-row `ref` callbacks (which
-  // request it via `getSlideStylesheet` below) run as those rows mount,
-  // which can be before this component's own effects have run once — then
-  // kept in sync by `replaceSync` so every already-mounted canvas picks up
-  // a theme change through the one shared object, rather than each row
-  // re-parsing its own copy.
-  let slideStylesheet: CSSStyleSheet | null = null
+  // One `CSSStyleSheet` shared by every Shadow DOM thumbnail canvas, so a
+  // theme change costs a single `replaceSync` here instead of a re-parse
+  // per thumbnail. Sharing the *object* is also what makes mount order
+  // irrelevant: a row whose `ref` adopts this sheet before the effect below
+  // has ever run still picks the CSS up when it lands, with no remount.
+  // `SlideList` gets the accessor, never `slideStylesheet` itself: the
+  // compiler inlines a `const`'s initializer into the prop getter it lowers
+  // (that's what keeps a derived prop reactive), which for an initializer
+  // that *constructs* something hands every reader its own fresh instance —
+  // here, a separately-parsed sheet per row that no `replaceSync` reaches.
+  const slideStylesheet = createSlideStylesheet(render.slideStylesheetText())
   function getSlideStylesheet(): CSSStyleSheet {
-    slideStylesheet ??= createSlideStylesheet(render.slideStylesheetText())
     return slideStylesheet
   }
   createEffect(() => {
-    const cssText = render.slideStylesheetText()
-    if (slideStylesheet) slideStylesheet.replaceSync(cssText)
+    slideStylesheet.replaceSync(render.slideStylesheetText())
   })
   createEffect(() => {
     ensureFontFaces(render.fontFaceCss())
@@ -354,22 +355,23 @@ export function Studio() {
   // For the "selected slide" preview pane (a single iframe reused across
   // whichever slide is selected) `key` must be read by the *caller*, in
   // normal (tracked) context, so switching slides still reloads this pane;
-  // only the fragment lookup itself is untracked (see the thumbnail row's
-  // `ref` below for why a thumbnail needs a stronger fix than `untrack`).
+  // only the fragment lookup itself is untracked (see the canvas host's
+  // `ref` in `SlideList.tsx` for why a thumbnail row, whose bindings all
+  // share one effect, needs a stronger fix than `untrack`).
   function buildSelectedSlideDoc(key: string | null): string {
     if (key === null) return ''
     return render.buildSlideDoc(untrack(() => render.fragmentSignal(key)[0]()))
   }
 
-  // Swaps in fresh fragment HTML for every iframe currently showing `key`
-  // (its thumbnail row and/or the "selected slide" preview pane both carry
-  // `data-slide-preview-key`), without touching `.srcdoc`. Only ever
-  // *replaces* an existing `.peitho-slide` — never inserts one — so a
-  // patch that lands before an iframe's own initial `srcdoc` load has
-  // finished (a real possibility: that load is async, this effect isn't)
-  // is a safe no-op instead of risking a duplicated slide; the in-flight
-  // `srcdoc` navigation already carries the correct content for that case,
-  // and the next keystroke's patch (a beat later) catches up.
+  // Swaps in fresh fragment HTML for the "selected slide" preview pane
+  // (`data-slide-preview-key`, the last remaining iframe) without touching
+  // `.srcdoc`. Only ever *replaces* an existing `.peitho-slide` — never
+  // inserts one — so a patch that lands before the iframe's own initial
+  // `srcdoc` load has finished (a real possibility: that load is async,
+  // this effect isn't) is a safe no-op instead of risking a duplicated
+  // slide; the in-flight `srcdoc` navigation already carries the correct
+  // content for that case, and the next keystroke's patch (a beat later)
+  // catches up.
   function patchSlidePreviewIframes(key: string, fragmentHtml: string): void {
     const selector = `[data-slide-preview-key="${CSS.escape(key)}"]`
     for (const iframe of document.querySelectorAll<HTMLIFrameElement>(selector)) {
@@ -388,9 +390,6 @@ export function Studio() {
     }
   }
 
-  // Mirrors `patchSlidePreviewIframes` above, but for `[data-slide-canvas-
-  // key]` hosts (the Shadow DOM thumbnail rows) instead of `[data-slide-
-  // preview-key]` iframes (still just the preview pane, until PR6).
   function patchSlideCanvases(key: string, fragmentHtml: string): void {
     const selector = `[data-slide-canvas-key="${CSS.escape(key)}"]`
     for (const host of document.querySelectorAll<HTMLElement>(selector)) {
@@ -398,11 +397,14 @@ export function Studio() {
     }
   }
 
+  // The two take *different* HTML for the same slide: a canvas needs its
+  // asset URLs absolutized (no `<base href>` in a shadow root), and its
+  // `outerHTML` equality check only bails on a no-op if it's compared
+  // against the same form that was mounted.
   createEffect(() => {
     for (const slide of render.manifest()?.slides ?? []) {
-      const fragmentHtml = render.fragmentSignal(slide.key)[0]()
-      patchSlidePreviewIframes(slide.key, fragmentHtml)
-      patchSlideCanvases(slide.key, fragmentHtml)
+      patchSlidePreviewIframes(slide.key, render.fragmentSignal(slide.key)[0]())
+      patchSlideCanvases(slide.key, render.canvasFragmentOf(slide.key))
     }
   })
 
@@ -1061,7 +1063,7 @@ export function Studio() {
           sectionDrafts={render.sectionDrafts()}
           canvasWidth={render.canvasWidth()}
           canvasHeight={render.canvasHeight()}
-          fragmentOf={render.fragmentOf}
+          fragmentOf={render.canvasFragmentOf}
           slideStylesheet={getSlideStylesheet}
           onContextMenu={openContextMenu}
           onDragStart={startSlideDrag}

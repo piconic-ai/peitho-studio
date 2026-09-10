@@ -35,7 +35,7 @@ describe('applyRenderPayload', () => {
       expect(store.assetBaseUrl()).toBe('asset://base/')
       expect(store.canvasWidth()).toBe(1280)
       expect(store.canvasHeight()).toBe(720)
-      expect(store.fragmentOf('slide-1')).toBe('<div class="peitho-slide">one</div>')
+      expect(store.canvasFragmentOf('slide-1')).toBe('<div class="peitho-slide">one</div>')
     })
   })
 
@@ -65,7 +65,7 @@ describe('applyRenderPayload', () => {
   test('adversarial: an unrendered key reads as an empty fragment, not undefined/throwing', () => {
     createRoot(() => {
       const store = createRenderStore()
-      expect(store.fragmentOf('never-rendered')).toBe('')
+      expect(store.canvasFragmentOf('never-rendered')).toBe('')
     })
   })
 
@@ -91,6 +91,47 @@ describe('applyRenderPayload', () => {
       const second = store.manifest()!.slides[0]
       expect(second).not.toBe(first)
       expect(second.text.title).toBe('Changed')
+    })
+  })
+})
+
+describe('canvasFragmentOf', () => {
+  test('spec: absolutizes a slide\'s asset URLs against the current asset base', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.applyRenderPayload(payload({
+        assetBaseUrl: 'http://localhost:1234/',
+        fragments: { 'slide-1': '<section class="peitho-slide"><img src="assets/a.png"></section>' },
+      }))
+      expect(store.canvasFragmentOf('slide-1'))
+        .toBe('<section class="peitho-slide"><img src="http://localhost:1234/assets/a.png"></section>')
+    })
+  })
+
+  test('spec: re-derives from the new asset base after a later render, not a frozen one', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      const fragments = { 'slide-1': '<img src="assets/a.png">' }
+      store.applyRenderPayload(payload({ assetBaseUrl: 'http://localhost:1111/', fragments }))
+      store.applyRenderPayload(payload({ assetBaseUrl: 'http://localhost:2222/', fragments }))
+      expect(store.canvasFragmentOf('slide-1')).toBe('<img src="http://localhost:2222/assets/a.png">')
+    })
+  })
+
+  test('adversarial: a fragment with no asset reference comes back byte-identical', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      const html = '<section class="peitho-slide"><img src="https://cdn.example.com/a.png"></section>'
+      store.applyRenderPayload(payload({ assetBaseUrl: 'http://localhost:1234/', fragments: { 'slide-1': html } }))
+      expect(store.canvasFragmentOf('slide-1')).toBe(html)
+    })
+  })
+
+  test('adversarial: no asset server resolved yet leaves the fragment alone instead of throwing', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.applyRenderPayload(payload({ assetBaseUrl: '', fragments: { 'slide-1': '<img src="assets/a.png">' } }))
+      expect(store.canvasFragmentOf('slide-1')).toBe('<img src="assets/a.png">')
     })
   })
 })

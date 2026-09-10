@@ -182,6 +182,20 @@ don't bundle everything into one giant commit.
   style read also often doesn't show up in `bf debug graph`'s static
   graph (`no tracked deps`), but per the lesson above, dynamic tracking
   actually updates it correctly — confirmed with Playwright.
+- **A `const` local passed as a prop is lowered by *inlining its
+  initializer*, not by referencing the binding.** `const x = f(sig());
+  <Child p={x}/>` compiles to `get p() { return f(sig()) }` — which is
+  exactly right for a derived value (it's how the prop stays reactive),
+  and wrong for anything whose initializer *constructs* something: every
+  read of `props.p` builds a brand-new instance. Hit when passing a
+  shared `CSSStyleSheet` (`createSlideStylesheet(...)`) down to
+  `SlideList`: each thumbnail row's `ref` got its own separately-parsed
+  sheet, and the `replaceSync` effect updated an object no shadow root
+  had adopted, so a theme change would never have reached the mounted
+  thumbnails. Verified by reading `dist/assets/components/*.js`. Keep
+  such a value behind an accessor (`function getX() { return x }`) and
+  pass *that* — a function identifier is passed by reference
+  (`get p() { return getX }`), same as any callback prop.
 
 ## Pitfalls hit with UnoCSS (Wind4 preset)
 
