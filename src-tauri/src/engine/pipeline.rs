@@ -214,8 +214,8 @@ mod tests {
     fn render_source_spec_deck_after_deleting_a_section_slide_stays_valid() {
         // Studio.tsx's deleteSlide removes the "Problem" slide (1m) and
         // resyncs frontmatter time to the remaining sections' sum (14m) —
-        // this is the exact bug (tmp/todo.md: "時間指定されていると、
-        // エラーになる") this test guards against regressing.
+        // this is the exact bug (tmp/todo.md: "it errors when a time is
+        // specified") this test guards against regressing.
         let source = "---\ntime: 14m\n---\n\
 <!-- {\"key\":\"approach\",\"section\":\"Approach\",\"time\":\"2m\"} -->\n# Two\n\n---\n\n\
 <!-- {\"key\":\"wrapup\",\"section\":\"Wrap-up\",\"time\":\"1m\"} -->\n# Three\n\n---\n\n\
