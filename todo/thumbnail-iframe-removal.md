@@ -209,11 +209,15 @@ Pullfrogレビュー対応。
       Rust `cargo test`はPR1で確認済み(以降Rust側の変更なし)。
       e2e smokeは未実行(Welcome画面より先を検証しないため今回の変更
       と無関係、既存の`test:e2e`はそのまま維持)。
-- [ ] CLAUDE.mdのPitfallsセクションへのShadow DOM新知見の追記は、
-      実機検証(WKWebView spike、下記)の結果を踏まえてから行う。
-- [ ] **残タスク**: 3章のリスク1〜5(`@font-face`登録、
+- [x] CLAUDE.mdのPitfallsセクションに、静的レビューで判明した新知見は
+      既に追記済み(propに`const`を直接渡すと初期化式ごとインライン
+      展開される問題、条件分岐された`ref`内の`createEffect`がbranch
+      再突入のたびにリークする問題)。実機でしか分からない知見
+      (`@font-face`/`adoptedStyleSheets`等)は下記の実機検証後に追記する。
+- [ ] **残タスク**: 3章のリスク1〜6(`@font-face`登録、
       `adoptedStyleSheets`可用性、`border-radius`クリップ、`html`/
-      `body`ルールの非適用、大規模デッキでのメモリ/描画時間)の実機
-      WKWebView検証。ユーザーのマシンが利用可能になり次第、
+      `body`ルールの非適用、大規模デッキでのメモリ/描画時間、プレビュー
+      枠のテキスト選択・リンク無効化・サムネイル操作の非デグレ確認)の
+      実機WKWebView検証。ユーザーのマシンが利用可能になり次第、
       `run-peitho-studio` skillで実施し、結果をこの計画書とCLAUDE.md
       に記録する。
