@@ -15,16 +15,6 @@ export function startColumnResize(
     event.preventDefault()
     const startX = event.clientX
     const startWidth = getWidth()
-    // Dragging the Editor/Preview divider toward the Preview side moves
-    // the cursor over the Preview `<iframe>` — a separate browsing
-    // context, so `mousemove` stops reaching this document's listener
-    // the instant the cursor crosses into it (the drag "stops working"
-    // past that point, but only in that direction, since dragging the
-    // other way never crosses an iframe). Disabling pointer-events on
-    // every iframe for the duration of the drag keeps the cursor's
-    // moves targeted at this document throughout.
-    const iframes = Array.from(document.querySelectorAll('iframe'))
-    for (const frame of iframes) frame.style.pointerEvents = 'none'
     const onMove = (moveEvent: MouseEvent) => {
       const delta = (moveEvent.clientX - startX) * direction
       const next = Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, startWidth + delta))
@@ -33,7 +23,6 @@ export function startColumnResize(
     const onUp = () => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
-      for (const frame of iframes) frame.style.pointerEvents = ''
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
