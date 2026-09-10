@@ -153,9 +153,12 @@ Pullfrogレビュー対応。
       通りに復元)、外側/内側2重spanを1要素に統合(2章の「簡素化できる」)。
       あわせてCLAUDE.mdに新pitfall(propに`const`を直接渡すと初期化式ごと
       インライン展開される)を追記。
-- [ ] **PR5** `layout-picker-shadow-dom`: レイアウトピッカー
-      (`SlideContextMenu.tsx`)も同じcanvasに置換
-      (`buildLayoutPreviewDoc`撤去)。
+- [x] **PR5** `layout-picker-shadow-dom`: レイアウトピッカー
+      (`SlideContextMenu.tsx`)も同じcanvasに置換完了、
+      `buildLayoutPreviewDoc`撤去。プレビュー用CSSは
+      `preview_layouts`の設計上アセットサーバーを経由しないため、
+      absolutize/font-face hoistは行わず既存挙動どおりインライン
+      (実機検証は他項目とまとめて後日)。
 - [ ] **PR6** `preview-pane-shadow-dom`: プレビュー枠もShadow DOM化し
       `previewDoc.ts`を削除。 → **iframe合計0個**。
 
