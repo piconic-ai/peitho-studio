@@ -155,9 +155,16 @@ Pullfrogレビュー対応。
       インライン展開される)を追記。
 - [x] **PR5** `layout-picker-shadow-dom`: レイアウトピッカー
       (`SlideContextMenu.tsx`)も同じcanvasに置換完了、
-      `buildLayoutPreviewDoc`撤去。プレビュー用CSSは
-      `preview_layouts`の設計上アセットサーバーを経由しないため、
-      absolutize/font-face hoistは行わず既存挙動どおりインライン
+      `buildLayoutPreviewDoc`撤去。レビューで補った点: プレビュー用CSSも
+      `scopeRootToHost` + `@font-face`除去を通す
+      (`uiStore.layoutPreviewStylesheetText`)。`preview_layouts`は
+      `build_theme_css`(deckのcssファイルをそのまま連結)を経由するので
+      実スライドと同じテーマCSS = `:root`宣言も同じように入りうる。
+      旧iframe版は完全なHTML文書だったため`:root`が効いていた =
+      無変換のままだとテーマ変数がShadow DOM内で落ちるデグレになる。
+      absolutizeだけは引き続き不要(アセットサーバーが解決できる相対
+      `url()`は`theme-fonts/*`のみで、それらは除去する`@font-face`の中に
+      あり、実デッキ側が`<head>`に絶対化済みで1つhoist済み)。
       (実機検証は他項目とまとめて後日)。
 - [ ] **PR6** `preview-pane-shadow-dom`: プレビュー枠もShadow DOM化し
       `previewDoc.ts`を削除。 → **iframe合計0個**。
