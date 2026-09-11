@@ -21,6 +21,7 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
+use crate::engine::builtin;
 use crate::engine::pipeline::{self, RenderOutput};
 use crate::engine::serve::AssetServer;
 
@@ -157,6 +158,12 @@ const STARTER_DECK: &str = "---\ntime: 1m\n---\n\
 # New Presentation\n\n\
 Start writing your slides here.\n";
 
+/// Mirrors the header `peitho new` prepends to its scaffolded
+/// `css/base.css` (see `crates/peitho/src/new_cmd.rs::BASE_CSS_HEADER` in
+/// the peitho repo) — explains why the file exists before the copied
+/// built-in rules.
+const BASE_CSS_HEADER: &str = "/*\n  This file replaces peitho's embedded themes/base.css for this deck.\n  Edit it as your deck's complete theme.\n*/\n\n";
+
 /// `name` becomes a directory name picked by the user in a plain text
 /// field, not a path — rejected outright if it could act like one, rather
 /// than trying to sanitize it into something safe. Split out of
@@ -173,9 +180,26 @@ fn validate_deck_name(name: &str) -> Result<&str, String> {
     Ok(trimmed)
 }
 
-/// Creates `<parent_dir>/<name>/deck.md` with a minimal starter deck and
-/// returns its path (for the frontend to hand straight to
-/// `open_deck_window`).
+/// The file set `create_deck` writes into a freshly created deck
+/// directory — the same shape as `peitho new`'s default scaffold
+/// (default layout, light theme): a starter `deck.md` plus its own
+/// `layouts/`/`css/base.css` to customize instead of silently depending
+/// on peitho-core's built-in fallback, and a `.gitignore` for the
+/// directories `peitho build`/`preview`/`present` write into. Split out
+/// of `create_deck` as its own pure function so the scaffold's shape is
+/// unit-testable without touching the filesystem.
+fn scaffold_deck_files() -> Vec<(&'static str, String)> {
+    vec![
+        ("deck.md", STARTER_DECK.to_string()),
+        ("layouts/title-body-code.html", builtin::LAYOUT_HTML.to_string()),
+        ("css/base.css", format!("{BASE_CSS_HEADER}{}", builtin::BASE_CSS)),
+        (".gitignore", builtin::GITIGNORE.to_string()),
+    ]
+}
+
+/// Creates `<parent_dir>/<name>` scaffolded the way `peitho new` would
+/// (see `scaffold_deck_files`) and returns the new `deck.md`'s path (for
+/// the frontend to hand straight to `open_deck_window`).
 #[tauri::command]
 pub fn create_deck(parent_dir: String, name: String) -> Result<String, String> {
     let trimmed = validate_deck_name(&name)?;
@@ -185,11 +209,15 @@ pub fn create_deck(parent_dir: String, name: String) -> Result<String, String> {
     }
     std::fs::create_dir_all(&dir).map_err(|err| format!("failed to create {}: {err}", dir.display()))?;
 
-    let deck_path = dir.join("deck.md");
-    std::fs::write(&deck_path, STARTER_DECK)
-        .map_err(|err| format!("failed to write {}: {err}", deck_path.display()))?;
+    for (relative_path, content) in scaffold_deck_files() {
+        let path = dir.join(relative_path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+        }
+        std::fs::write(&path, content).map_err(|err| format!("failed to write {}: {err}", path.display()))?;
+    }
 
-    Ok(deck_path.display().to_string())
+    Ok(dir.join("deck.md").display().to_string())
 }
 
 /// Windows spawned by `open_deck_window`, keyed by their (not-yet-loaded)
@@ -529,6 +557,55 @@ mod tests {
         // Only a name that is *exactly* "." or ".." after trimming is
         // rejected — "v1.2" legitimately contains a dot.
         assert_eq!(validate_deck_name("v1.2").unwrap(), "v1.2");
+    }
+
+    #[test]
+    fn scaffold_deck_files_spec_matches_peitho_news_default_scaffold_shape() {
+        let files = scaffold_deck_files();
+        let paths: Vec<&str> = files.iter().map(|(path, _)| *path).collect();
+        assert_eq!(
+            paths,
+            vec!["deck.md", "layouts/title-body-code.html", "css/base.css", ".gitignore"]
+        );
+
+        let base_css = &files.iter().find(|(path, _)| *path == "css/base.css").unwrap().1;
+        assert!(base_css.starts_with(BASE_CSS_HEADER));
+        assert!(base_css.contains(builtin::BASE_CSS));
+
+        let layout = &files.iter().find(|(path, _)| *path == "layouts/title-body-code.html").unwrap().1;
+        assert_eq!(layout, builtin::LAYOUT_HTML);
+
+        let gitignore = &files.iter().find(|(path, _)| *path == ".gitignore").unwrap().1;
+        assert_eq!(gitignore, builtin::GITIGNORE);
+    }
+
+    #[test]
+    fn scaffold_deck_files_adversarial_every_file_has_nonempty_content() {
+        for (path, content) in scaffold_deck_files() {
+            assert!(!content.is_empty(), "{path} scaffolded with empty content");
+        }
+    }
+
+    #[test]
+    fn create_deck_spec_writes_the_full_scaffold_and_returns_the_deck_md_path() {
+        let parent = tempfile::tempdir().unwrap();
+        let deck_path = create_deck(parent.path().to_str().unwrap().to_string(), "my-talk".to_string()).unwrap();
+
+        let dir = parent.path().join("my-talk");
+        assert_eq!(deck_path, dir.join("deck.md").display().to_string());
+        assert!(dir.join("deck.md").is_file());
+        assert!(dir.join("layouts/title-body-code.html").is_file());
+        assert!(dir.join("css/base.css").is_file());
+        assert!(dir.join(".gitignore").is_file());
+    }
+
+    #[test]
+    fn create_deck_adversarial_refuses_to_overwrite_an_existing_directory() {
+        let parent = tempfile::tempdir().unwrap();
+        std::fs::create_dir(parent.path().join("my-talk")).unwrap();
+
+        let err = create_deck(parent.path().to_str().unwrap().to_string(), "my-talk".to_string()).unwrap_err();
+        assert!(err.contains("already exists"));
     }
 
     #[test]
