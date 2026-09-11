@@ -282,13 +282,13 @@ export function sumSectionTimesMs(slideTexts: string[]): number {
  * check of its own), but the signal itself skips notifying subscribers
  * when the new value is `Object.is`-equal to the old one — so reusing the
  * *same reference* for an unchanged slide (rather than handing over a new,
- * merely-equal-by-value one) is what actually stops that row's bindings
- * (its thumbnail `<iframe srcdoc>` in particular — a real reload, not just
- * wasted work, since `.srcdoc` re-assignment reloads the frame even when
- * set to an identical string) from re-running on an edit to some *other*
- * slide. Same fix as `state/renderStore.ts`'s per-slide `fragmentSignal`,
- * applied to a different data shape (a signal holding a whole collection,
- * vs. object identity for one `.map()`'s items). */
+ * merely-equal-by-value one) is what actually stops that row's other
+ * reactive bindings (`title`, its selection/drag classes — the fused
+ * effect BarefootJS compiles per `.map()` row, see `SlideList.tsx`) from
+ * re-running on an edit to some *other* slide. Same fix as
+ * `state/renderStore.ts`'s per-slide `fragmentSignal`, applied to a
+ * different data shape (a signal holding a whole collection, vs. object
+ * identity for one `.map()`'s items). */
 export function stabilizeByKey<T extends { key: string }>(previous: T[], next: T[]): T[] {
   const byKey = new Map(previous.map(item => [item.key, item]))
   return next.map(item => {

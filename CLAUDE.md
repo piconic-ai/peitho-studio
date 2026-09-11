@@ -23,7 +23,7 @@ e.g. a record of how a correction was arrived at).
   assignment:
   - Frontend: `components/*.ts` (not `.tsx`) is exclusively for pure logic
     that never touches signals, the DOM, or IPC (e.g. `domain/slides.ts`,
-    `domain/previewDoc.ts`). `components/*.tsx` is the stateful layer that
+    `domain/slideCss.ts`). `components/*.tsx` is the stateful layer that
     holds BarefootJS signals, effects, and IPC calls. Before embedding new
     pure logic inside a `.tsx`, first consider whether it can be extracted
     into a `.ts` file.
@@ -52,14 +52,21 @@ e.g. a record of how a correction was arrived at).
     that depend on `AppHandle`/`State` aren't unit-tested directly for
     now (that needs Tauri's test harness) — extract the state-independent
     logic out of the command as a function and test that instead.
-- **e2e is wanted too, but it's fine to get there incrementally.** Start
-  the Playwright smoke tests under `e2e/` thin: they bypass Tauri
-  entirely and only check, against the dev server (the frontend half of
-  `bun run dev`), that "it launches and the main screen shows up." Real
-  e2e that drives an actual Tauri window (via `tauri-driver`) is queued in
-  `tmp/todo.md` as a Scope1+ concern. Until then, the steps for manually
-  verifying what's past the Welcome screen (opening/editing a deck, etc.)
-  on a real device are collected in
+- **e2e is wanted too, but it's fine to get there incrementally.** The
+  Playwright suite under `e2e/` runs against the dev server (the frontend
+  half of `bun run dev`), no Tauri window involved. `welcome.e2e.ts` is a
+  bare smoke test with no IPC bridge at all. `e2e/helpers/mockTauri.ts`
+  stubs `window.__TAURI_INTERNALS__.invoke` (via `page.exposeFunction`) so
+  a test can get past the welcome screen and drive the real frontend
+  logic — `domain/slides.ts` run in Node stands in for peitho-core, close
+  enough to exercise the app's own reactive/DOM code (this caught and
+  fixed a real bug, see `new-slide.e2e.ts`). What it *can't* catch:
+  anything that depends on peitho-core's actual output or a real WKWebView
+  (rendering fidelity, `adoptedStyleSheets`/`@font-face` support, native
+  right-click, drag). Real e2e that drives an actual Tauri window (via
+  `tauri-driver`) is still queued in `tmp/todo.md` as a Scope1+ concern;
+  until then, the steps for verifying WKWebView-specific behavior on a
+  real device are collected in
   `.claude/skills/run-peitho-studio/SKILL.md`.
 
 ## Commit granularity
@@ -90,13 +97,37 @@ don't bundle everything into one giant commit.
   `"devtools": false` in the window config in `tauri.conf.json`.
 - An `<iframe>` grabs right-clicks into its own native context menu
   ("Open Frame in New Window", etc.) even with `pointer-events: none` set
-  on it (ordinary clicks/drags pass through correctly). Layer an opaque
-  overlay `<div>` (that doesn't kill pointer-events) on top of the iframe
-  so the iframe can never become the event target.
-- When the cursor passes over an `<iframe>` during a manual drag,
-  `mousemove` stops reaching the parent document because that's a
-  separate browsing context. Temporarily disable `pointer-events` on
-  every `<iframe>` while a drag is in progress.
+  on it (ordinary clicks/drags pass through correctly) — needs an opaque
+  overlay `<div>` (that doesn't kill pointer-events) on top of it so it can
+  never become the event target. Likewise, the cursor passing over an
+  `<iframe>` during a manual drag stops `mousemove` reaching the parent
+  document (a separate browsing context) unless every `<iframe>` gets
+  `pointer-events: none` for the drag's duration. Both hit (and were
+  worked around) for the per-slide thumbnail/preview-pane/layout-picker
+  `<iframe>`s this app used to render slides into — removed in favor of
+  Shadow DOM (`dom/slideCanvas.ts`), which doesn't have either problem
+  (same document, not a separate browsing context). Relevant again only if
+  an `<iframe>` gets reintroduced somewhere.
+- Trading that `<iframe>` for Shadow DOM traded away one isolation
+  guarantee along with the two problems above: an `<iframe>`'s content is a
+  separate document, so nothing about its embedding page's cascade ever
+  reached it, but a shadow tree inherits ordinary inherited CSS properties
+  (e.g. `text-align`, `color`, `font-family`) straight from its host
+  element's computed style, same as any other descendant would. Hit on a
+  real device: `SlideList.tsx` mounts a canvas inside a `<button>`, whose
+  UA-stylesheet default is `text-align: center`; a deck's `<h1>`/`<ul>`
+  inherited it and centered, and since `list-style-position: outside`
+  bullet markers aren't subject to `text-align`, each `<li>`'s bullet
+  stayed pinned at the far left while its own now-centered text visibly
+  detached from it. Fixed by declaring `text-align: left` on `dom/
+  slideCanvas.ts`'s shared `:host` rule — reproduced first in an isolated
+  page by wrapping a synthetic host in the same `<button><span><span>`
+  chain `SlideList.tsx` actually uses, confirming the bug required that
+  exact ancestor and vanished once `:host` set its own value (this
+  reproduces in any Chromium-family engine, including Playwright's — it
+  simply hadn't been exercised with real `<ul>` content before). Any other
+  inherited property `.peitho-slide`'s CSS doesn't already pin should be
+  treated with the same suspicion.
 - State that should differ per window (the open deck, its file watcher,
   its subprocess) must be kept in a map keyed by `window.label()` rather
   than a single global — otherwise a second window silently overwrites
@@ -182,6 +213,41 @@ don't bundle everything into one giant commit.
   style read also often doesn't show up in `bf debug graph`'s static
   graph (`no tracked deps`), but per the lesson above, dynamic tracking
   actually updates it correctly — confirmed with Playwright.
+- **A `const` local passed as a prop is lowered by *inlining its
+  initializer*, not by referencing the binding.** `const x = f(sig());
+  <Child p={x}/>` compiles to `get p() { return f(sig()) }` — which is
+  exactly right for a derived value (it's how the prop stays reactive),
+  and wrong for anything whose initializer *constructs* something: every
+  read of `props.p` builds a brand-new instance. Hit when passing a
+  shared `CSSStyleSheet` (`createSlideStylesheet(...)`) down to
+  `SlideList`: each thumbnail row's `ref` got its own separately-parsed
+  sheet, and the `replaceSync` effect updated an object no shadow root
+  had adopted, so a theme change would never have reached the mounted
+  thumbnails. Verified by reading `dist/assets/components/*.js`. Keep
+  such a value behind an accessor (`function getX() { return x }`) and
+  pass *that* — a function identifier is passed by reference
+  (`get p() { return getX }`), same as any callback prop.
+- **A `createEffect` called inside a conditional branch's `ref` leaks one
+  effect per re-entry into that branch, forever** (reported as
+  [piconic-ai/barefootjs#2927](https://github.com/piconic-ai/barefootjs/issues/2927),
+  with a minimal repro and root-cause trace). A branch's compiled
+  `bindEvents()` re-runs in full every time the branch is re-entered
+  (confirmed in `dist/assets/components/*.js` and
+  `@barefootjs/client`'s `runtime/index.js`), but the branch's own cleanup
+  is never invoked on re-entry, and `createEffect`'s cleanup doesn't
+  re-run on re-execution either — so a `ref={el => createEffect(() =>
+  ...)}` inside `cond ? <div ref={...}/> : <other/>` leaves the *previous*
+  entry's effect still running against its now-detached `el` every time
+  `cond` flips back to true, one more instance per flip, forever (each one
+  keeps doing real work — e.g. re-mounting a Shadow DOM canvas — against
+  an element nothing references anymore). Confirmed via `SlidePreview.tsx`
+  toggling on `selectedSlideKey`. Fix: keep both branches permanently
+  mounted and toggle visibility (a `hidden` class) instead of branching —
+  same pattern `SlideContextMenu.tsx` already used for an unrelated
+  reason. `ref`-scoped effects are otherwise fine (see `SlideList.tsx`'s
+  thumbnail row, which mounts unconditionally within its `.map()`); the
+  leak is specifically about a `ref` whose *entire host element* is inside
+  a branch that unmounts and remounts.
 
 ## Pitfalls hit with UnoCSS (Wind4 preset)
 

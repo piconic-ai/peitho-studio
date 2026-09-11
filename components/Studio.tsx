@@ -1,6 +1,6 @@
 'use client'
 
-import { createSignal, createMemo, createEffect, untrack, onMount, onCleanup } from '@barefootjs/client'
+import { createSignal, createMemo, createEffect, onMount, onCleanup } from '@barefootjs/client'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
@@ -14,6 +14,7 @@ import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isL
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
+import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
 import { createRenderStore } from '../state/renderStore'
 import { createEditorStore } from '../state/editorStore'
@@ -233,9 +234,43 @@ export function Studio() {
   // own output is compared by value before it notifies anyone, and two
   // strings that read the same are `Object.is`-equal regardless of which
   // slide object produced them. Deriving just the key through a memo is
-  // what lets the preview iframe (below) depend on "which slide is
+  // what lets the preview pane (below) depend on "which slide is
   // selected" without also depending on "has its content changed".
   const selectedSlideKey = createMemo<string | null>(() => selectedSlide()?.key ?? null)
+
+  // One `CSSStyleSheet` shared by every Shadow DOM thumbnail canvas, so a
+  // theme change costs a single `replaceSync` here instead of a re-parse
+  // per thumbnail. Sharing the *object* is also what makes mount order
+  // irrelevant: a row whose `ref` adopts this sheet before the effect below
+  // has ever run still picks the CSS up when it lands, with no remount.
+  // `SlideList` gets the accessor, never `slideStylesheet` itself: the
+  // compiler inlines a `const`'s initializer into the prop getter it lowers
+  // (that's what keeps a derived prop reactive), which for an initializer
+  // that *constructs* something hands every reader its own fresh instance —
+  // here, a separately-parsed sheet per row that no `replaceSync` reaches.
+  const slideStylesheet = createSlideStylesheet(render.slideStylesheetText())
+  function getSlideStylesheet(): CSSStyleSheet {
+    return slideStylesheet
+  }
+  createEffect(() => {
+    slideStylesheet.replaceSync(render.slideStylesheetText())
+  })
+  createEffect(() => {
+    ensureFontFaces(render.fontFaceCss())
+  })
+
+  // The same shared-object/accessor-prop pattern, for the "Change Layout"
+  // picker's grid. Its own sheet rather than `slideStylesheet`: this CSS
+  // comes from `preview_layouts`' separate render, which deliberately never
+  // touches the deck's live asset server (see its Rust doc comment), so it
+  // arrives — and goes stale — independently of the deck's own.
+  const layoutPreviewStylesheet = createSlideStylesheet(ui.layoutPreviewStylesheetText())
+  function getLayoutPreviewStylesheet(): CSSStyleSheet {
+    return layoutPreviewStylesheet
+  }
+  createEffect(() => {
+    layoutPreviewStylesheet.replaceSync(ui.layoutPreviewStylesheetText())
+  })
 
   createEffect(() => {
     if (errorMessage() === null) return
@@ -321,55 +356,21 @@ export function Studio() {
     }
   })
 
-  // `srcdoc={...}` always reloads the iframe (a visible flash) when
-  // reassigned, even to a value that's byte-identical to what's already
-  // there (confirmed empirically — reassigning the exact same string three
-  // times in a row fires three `load` events) — so the only real fix is to
-  // never reassign it after the first load. All *later* content updates
-  // flow through `patchSlidePreviewIframes` (a plain effect below) instead,
-  // which mutates the already-loaded iframe's document in place — no
-  // `.srcdoc` write, no reload.
-  //
-  // For the "selected slide" preview pane (a single iframe reused across
-  // whichever slide is selected) `key` must be read by the *caller*, in
-  // normal (tracked) context, so switching slides still reloads this pane;
-  // only the fragment lookup itself is untracked (see the thumbnail row's
-  // `ref` below for why a thumbnail needs a stronger fix than `untrack`).
-  function buildSelectedSlideDoc(key: string | null): string {
-    if (key === null) return ''
-    return render.buildSlideDoc(untrack(() => render.fragmentSignal(key)[0]()))
-  }
-
-  // Swaps in fresh fragment HTML for every iframe currently showing `key`
-  // (its thumbnail row and/or the "selected slide" preview pane both carry
-  // `data-slide-preview-key`), without touching `.srcdoc`. Only ever
-  // *replaces* an existing `.peitho-slide` — never inserts one — so a
-  // patch that lands before an iframe's own initial `srcdoc` load has
-  // finished (a real possibility: that load is async, this effect isn't)
-  // is a safe no-op instead of risking a duplicated slide; the in-flight
-  // `srcdoc` navigation already carries the correct content for that case,
-  // and the next keystroke's patch (a beat later) catches up.
-  function patchSlidePreviewIframes(key: string, fragmentHtml: string): void {
-    const selector = `[data-slide-preview-key="${CSS.escape(key)}"]`
-    for (const iframe of document.querySelectorAll<HTMLIFrameElement>(selector)) {
-      const doc = iframe.contentDocument
-      const current = doc?.querySelector('.peitho-slide')
-      if (!current || current.outerHTML === fragmentHtml) continue
-      const wrapper = doc!.createElement('div')
-      wrapper.innerHTML = fragmentHtml
-      const next = wrapper.firstElementChild
-      if (!next) continue
-      current.replaceWith(next)
-      // The fit() script embedded in buildSlidePreviewDoc only re-scales on
-      // its own `resize` listener — nothing else re-invokes it after a
-      // direct content swap like this.
-      doc!.defaultView?.dispatchEvent(new Event('resize'))
+  // One key can match two hosts: a thumbnail row and the "selected slide"
+  // pane both carry `data-slide-canvas-key`. Fed the *absolutized*
+  // fragment, not the raw one — a shadow root has no `<base href>` to
+  // resolve `src="assets/…"` against, and a spelling other than the one
+  // mounted would defeat `patchSlideCanvas`'s unchanged-fragment check.
+  function patchSlideCanvases(key: string, fragmentHtml: string): void {
+    const selector = `[data-slide-canvas-key="${CSS.escape(key)}"]`
+    for (const host of document.querySelectorAll<HTMLElement>(selector)) {
+      patchSlideCanvas(host, fragmentHtml)
     }
   }
 
   createEffect(() => {
     for (const slide of render.manifest()?.slides ?? []) {
-      patchSlidePreviewIframes(slide.key, render.fragmentSignal(slide.key)[0]())
+      patchSlideCanvases(slide.key, render.canvasFragmentOf(slide.key))
     }
   })
 
@@ -1028,8 +1029,8 @@ export function Studio() {
           sectionDrafts={render.sectionDrafts()}
           canvasWidth={render.canvasWidth()}
           canvasHeight={render.canvasHeight()}
-          fragmentOf={render.fragmentOf}
-          buildSlideDoc={render.buildSlideDoc}
+          canvasFragmentOf={render.canvasFragmentOf}
+          slideStylesheet={getSlideStylesheet}
           onContextMenu={openContextMenu}
           onDragStart={startSlideDrag}
           onSelectSlide={index => selectSlide(index)}
@@ -1063,8 +1064,11 @@ export function Studio() {
 
         <SlidePreview
           selectedSlideKey={selectedSlideKey()}
-          srcdoc={buildSelectedSlideDoc(selectedSlideKey())}
           hasDeck={Boolean(render.assetBaseUrl())}
+          canvasFragmentOf={render.canvasFragmentOf}
+          slideStylesheet={getSlideStylesheet}
+          canvasWidth={render.canvasWidth()}
+          canvasHeight={render.canvasHeight()}
         />
       </div>
 
@@ -1082,7 +1086,7 @@ export function Studio() {
         layoutPickerOpen={isLayoutPickerOpen(ui.contextMenu())}
         layoutPickerView={layoutPickerView()}
         layoutPreviews={ui.layoutPreviews()}
-        layoutPreviewCss={ui.layoutPreviewCss()}
+        layoutPreviewStylesheet={getLayoutPreviewStylesheet}
         canvasWidth={render.canvasWidth()}
         canvasHeight={render.canvasHeight()}
         onMenuRef={el => { contextMenuEl = el }}

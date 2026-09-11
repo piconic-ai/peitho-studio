@@ -1,7 +1,7 @@
 'use client'
 
 import { menuItemEnabled, menuItemChecked, type MenuItem } from '../domain/contextMenu'
-import { buildLayoutPreviewDoc } from '../domain/previewDoc'
+import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 
 export interface SlideContextMenuProps {
   hidden: boolean
@@ -10,7 +10,7 @@ export interface SlideContextMenuProps {
   layoutPickerOpen: boolean
   layoutPickerView: 'loading' | 'empty' | 'ready'
   layoutPreviews: { name: string; fragment: string }[] | null
-  layoutPreviewCss: string
+  layoutPreviewStylesheet: () => CSSStyleSheet
   canvasWidth: number
   canvasHeight: number
   onMenuRef: (el: HTMLElement) => void
@@ -131,19 +131,14 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
                       style={`aspect-ratio: ${String(props.canvasWidth)} / ${String(props.canvasHeight)}`}
                     >
                       {preview.fragment ? (
-                        <>
-                          <iframe
-                            title={preview.name}
-                            srcdoc={buildLayoutPreviewDoc(preview.fragment, props.layoutPreviewCss, props.canvasWidth, props.canvasHeight)}
-                            className="absolute top-0 right-0 bottom-0 left-0 w-full h-full border-0"
-                          />
-                          {/* Keeps the iframe from ever being the click/
-                              right-click target — plain `pointer-events:
-                              none` on an iframe still loses a right-click
-                              to its own native context menu (see
-                              CLAUDE.md's Tauri pitfalls). */}
-                          <span className="absolute top-0 right-0 bottom-0 left-0" />
-                        </>
+                        <div
+                          ref={el => {
+                            const canvas = { width: props.canvasWidth, height: props.canvasHeight }
+                            mountSlideCanvas(el, props.layoutPreviewStylesheet(), preview.fragment, canvas, 'thumbnail')
+                            observeCanvasScale(el, canvas)
+                          }}
+                          className="absolute top-0 right-0 bottom-0 left-0"
+                        />
                       ) : null}
                     </span>
                     <span className="text-[10px] text-muted-foreground truncate">{preview.name}</span>

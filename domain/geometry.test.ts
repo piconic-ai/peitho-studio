@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { clampMenuPosition } from './geometry'
+import { clampMenuPosition, containScale } from './geometry'
 
 describe('clampMenuPosition', () => {
   test('spec: a point that already fits within the viewport is left unchanged', () => {
@@ -28,5 +28,28 @@ describe('clampMenuPosition', () => {
 
   test('adversarial: zero margin still keeps the menu flush with the viewport edge, not past it', () => {
     expect(clampMenuPosition({ x: 950, y: 50 }, { width: 200, height: 100 }, { width: 1000, height: 800 }, 0)).toEqual({ x: 800, y: 50 })
+  })
+})
+
+describe('containScale', () => {
+  test('spec: a wider-than-canvas box is limited by height, not width', () => {
+    // The tight axis is an exact 1:1 fit, so 1.02 here is purely the overscan.
+    expect(containScale({ width: 2000, height: 720 }, { width: 1280, height: 720 })).toBeCloseTo(1.02, 5)
+  })
+
+  test('spec: a taller-than-canvas box is limited by width, not height', () => {
+    expect(containScale({ width: 1280, height: 2000 }, { width: 1280, height: 720 })).toBeCloseTo(1.02, 5)
+  })
+
+  test('spec: half-size available box halves the scale (plus overscan)', () => {
+    expect(containScale({ width: 640, height: 360 }, { width: 1280, height: 720 })).toBeCloseTo(0.51, 5)
+  })
+
+  test('adversarial: a zero-size available box scales to zero, not NaN/Infinity', () => {
+    expect(containScale({ width: 0, height: 0 }, { width: 1280, height: 720 })).toBe(0)
+  })
+
+  test('adversarial: a zero-size canvas produces Infinity rather than throwing', () => {
+    expect(containScale({ width: 100, height: 100 }, { width: 0, height: 0 })).toBe(Infinity)
   })
 })

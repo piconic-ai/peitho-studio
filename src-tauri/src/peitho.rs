@@ -82,14 +82,18 @@ pub struct RenderPayload {
     /// Rendered fragment HTML per slide key.
     fragments: std::collections::HashMap<String, String>,
     /// Base URL for the in-process asset server (peitho.css, fonts, images)
-    /// — used as the `<base href>` for `<iframe srcdoc>` slide previews,
-    /// same role `previewUrl` played before.
+    /// — resolves relative `url(...)`/`src="assets/..."` references inside
+    /// `css`/`fragments`.
     asset_base_url: String,
+    /// Duplicates the `peitho.css` the asset server already serves —
+    /// carried in the payload so a slide can be rendered into a scoped
+    /// style sheet (Shadow DOM) without a second round trip to fetch it.
+    css: String,
 }
 
 fn to_payload(output: RenderOutput, asset_base_url: String) -> Result<RenderPayload, String> {
     let manifest = serde_json::from_str(&output.manifest_json).map_err(|err| err.to_string())?;
-    Ok(RenderPayload { manifest, fragments: output.fragments, asset_base_url })
+    Ok(RenderPayload { manifest, fragments: output.fragments, asset_base_url, css: output.css })
 }
 
 #[derive(Serialize)]
@@ -432,8 +436,8 @@ pub struct LayoutPreviewsPayload {
 /// render's own (built from throwaway content, and thus reflecting only
 /// whichever CSS slot classes *that* content happens to use) would corrupt
 /// the real deck's on-screen rendering until the next real edit. The CSS
-/// returned here is only ever inlined directly into the picker's own
-/// preview iframes, never served.
+/// returned here is only ever adopted directly by the picker's own
+/// preview canvases, never served.
 #[tauri::command]
 pub fn preview_layouts(window: WebviewWindow, session: State<PeithoSession>) -> Result<LayoutPreviewsPayload, String> {
     let (deck_path, deck_dir) = {
@@ -553,5 +557,40 @@ mod tests {
     #[test]
     fn resolve_deck_path_adversarial_nonexistent_path_is_an_error() {
         assert!(resolve_deck_path("/definitely/does/not/exist/deck.md").is_err());
+    }
+
+    fn render_output(manifest_json: &str, css: &str) -> RenderOutput {
+        RenderOutput {
+            manifest_json: manifest_json.to_string(),
+            fragments: HashMap::from([("slide-1".to_string(), "<section>one</section>".to_string())]),
+            css: css.to_string(),
+            has_math: false,
+            image_assets: HashMap::new(),
+            fonts_dir: None,
+        }
+    }
+
+    #[test]
+    fn to_payload_spec_carries_manifest_fragments_css_and_asset_base_url_through() {
+        let output = render_output(
+            r#"{"title":"Deck","slideCount":1,"canvasWidth":1280,"canvasHeight":720,"sections":[],"slides":[]}"#,
+            ".peitho-slide { color: red; }",
+        );
+        let payload = to_payload(output, "http://127.0.0.1:1234/".to_string()).unwrap();
+        assert_eq!(payload.manifest["title"], "Deck");
+        assert_eq!(payload.fragments["slide-1"], "<section>one</section>");
+        assert_eq!(payload.css, ".peitho-slide { color: red; }");
+        assert_eq!(payload.asset_base_url, "http://127.0.0.1:1234/");
+    }
+
+    #[test]
+    fn to_payload_adversarial_empty_css_stays_empty() {
+        let payload = to_payload(render_output(r#"{"title":""}"#, ""), String::new()).unwrap();
+        assert_eq!(payload.css, "");
+    }
+
+    #[test]
+    fn to_payload_adversarial_rejects_invalid_manifest_json() {
+        assert!(to_payload(render_output("not json", ""), String::new()).is_err());
     }
 }

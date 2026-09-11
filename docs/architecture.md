@@ -19,7 +19,7 @@ everything into `.tsx`. Split into five layers by directory.
 | `domain/` (`.ts`) | Pure functions, ADTs, transition functions, and example data with no dependencies | `@barefootjs/client`, `@tauri-apps/*`, `document`/`window` | `bun test` (spec / adversarial / property / pairwise) |
 | `state/` (`.ts`) | `createSignal`/`createMemo`/`createEffect`/`batch`/`createSelector`, `domain/` | `@tauri-apps/*`, DOM API, JSX | `bun test` + `createRoot` (model-based tests) |
 | `ipc/` (`.ts`) | Thin typed wrappers around `invoke`/`listen`/`openDialog`, plus boundary types | Signals, DOM, business logic | Types only. Provide a fake implementation with the same interface for e2e |
-| `dom/` (`.ts`) | DOM measurement, style writes, event subscriptions (iframe size sync, drag gestures, textarea sync) | Signals, IPC, JSX | Push any formula/calculation part out to `domain/` and test with `bun test`. The rest is covered by IR tests/e2e |
+| `dom/` (`.ts`) | DOM measurement, style writes, event subscriptions (Shadow DOM canvas mount/scale sync, drag gestures, textarea sync) | Signals, IPC, JSX | Push any formula/calculation part out to `domain/` and test with `bun test`. The rest is covered by IR tests/e2e |
 | `components/` (`.tsx`) | JSX + imports from the four layers above. A composition root does only "store creation, IPC/event wiring, and placing children" | Business logic, text manipulation, state-transition decisions | `@barefootjs/test` IR tests + Playwright (with IPC stubs) |
 
 The dependency direction is one-way: `components → state → domain`,
@@ -242,10 +242,10 @@ relevant `domain/*.ts`/`*.test.ts` file itself at implementation time
 
 ## What has to be verified manually
 
-Textarea sync during IME composition, WKWebView-specific iframe
-rendering (corner seams, stale paint), right-click hijacking on an
-iframe, cursor passing over an iframe during a drag, native dialogs,
-dragging while focus is lost, a pending deck across multiple windows,
-launching `peitho present` — these can only be confirmed with a real
-Tauri window. Log them as examples carrying `manual: { reason }`, and see
+Textarea sync during IME composition, WKWebView's handling of a slide
+canvas's shadow root (`@font-face` registration, `adoptedStyleSheets`,
+`border-radius` clipping a scaled child), native dialogs, dragging while
+focus is lost, a pending deck across multiple windows, launching `peitho
+present` — these can only be confirmed with a real Tauri window. Log
+them as examples carrying `manual: { reason }`, and see
 `.claude/skills/run-peitho-studio/SKILL.md` for the verification steps.

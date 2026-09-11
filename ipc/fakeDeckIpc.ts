@@ -21,6 +21,7 @@ const emptyRenderPayload: RenderPayload = {
   manifest: { title: '', slideCount: 0, canvasWidth: 1280, canvasHeight: 720, sections: [], slides: [] },
   fragments: {},
   assetBaseUrl: '',
+  css: '',
 }
 
 export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc {
