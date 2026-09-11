@@ -408,6 +408,7 @@ export function Studio() {
   async function handleNewDeck(): Promise<void> {
     const parent = await openDialog({ directory: true, title: 'Choose a location for the new deck' })
     if (!parent || typeof parent !== 'string') return
+    setErrorMessage(null)
     await dispatch({ type: 'new-deck-requested', parentDir: parent })
   }
 
@@ -1122,8 +1123,9 @@ export function Studio() {
         name={deck.newDeckName()}
         parentDir={deck.newDeckParentDir()}
         isBusy={deck.isBusy()}
+        errorMessage={errorMessage()}
         onNameChange={name => void dispatch({ type: 'name-changed', name })}
-        onCancel={() => void dispatch({ type: 'create-cancelled' })}
+        onCancel={() => { setErrorMessage(null); void dispatch({ type: 'create-cancelled' }) }}
         onConfirm={() => void dispatch({ type: 'create-confirmed' })}
       />
     </div>
