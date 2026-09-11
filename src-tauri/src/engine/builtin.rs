@@ -10,3 +10,8 @@
 
 pub const LAYOUT_HTML: &str = include_str!("builtin/title-body-code.html");
 pub const BASE_CSS: &str = include_str!("builtin/base.css");
+
+/// Matches `crates/peitho/templates/new/gitignore` in the peitho repo —
+/// `dist/` and `.peitho/` are directories `peitho build`/`preview`/`present`
+/// write into, so a scaffolded deck should ignore them from the start.
+pub const GITIGNORE: &str = "dist/\n.peitho/\n";
