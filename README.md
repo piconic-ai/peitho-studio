@@ -1,8 +1,8 @@
 # Peitho Studio
 
-A desktop GUI wrapper around the [Peitho](https://github.com/mizzy/peitho) presentation engine, built with [Tauri](https://tauri.app) and [BarefootJS](https://barefootjs.dev).
+An editor for [Peitho](https://github.com/mizzy/peitho) decks, built with [Tauri](https://tauri.app) and [BarefootJS](https://barefootjs.dev).
 
-Peitho decks are plain Markdown. Peitho Studio adds a 3-column GUI (slide list / editor / live preview) on top of Peitho, while leaving the deck file editable by other tools at the same time (it watches the file on disk and reloads automatically).
+Peitho decks are plain Markdown. Peitho Studio adds a 3-column GUI (slide list / editor / live preview) on top of Peitho, while leaving the deck file editable by other tools at the same time (it watches the file on disk and reloads automatically). It currently ships as a desktop app.
 
 ## Development
 
