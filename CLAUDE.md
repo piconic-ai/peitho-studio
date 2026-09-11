@@ -52,14 +52,21 @@ e.g. a record of how a correction was arrived at).
     that depend on `AppHandle`/`State` aren't unit-tested directly for
     now (that needs Tauri's test harness) — extract the state-independent
     logic out of the command as a function and test that instead.
-- **e2e is wanted too, but it's fine to get there incrementally.** Start
-  the Playwright smoke tests under `e2e/` thin: they bypass Tauri
-  entirely and only check, against the dev server (the frontend half of
-  `bun run dev`), that "it launches and the main screen shows up." Real
-  e2e that drives an actual Tauri window (via `tauri-driver`) is queued in
-  `tmp/todo.md` as a Scope1+ concern. Until then, the steps for manually
-  verifying what's past the Welcome screen (opening/editing a deck, etc.)
-  on a real device are collected in
+- **e2e is wanted too, but it's fine to get there incrementally.** The
+  Playwright suite under `e2e/` runs against the dev server (the frontend
+  half of `bun run dev`), no Tauri window involved. `welcome.e2e.ts` is a
+  bare smoke test with no IPC bridge at all. `e2e/helpers/mockTauri.ts`
+  stubs `window.__TAURI_INTERNALS__.invoke` (via `page.exposeFunction`) so
+  a test can get past the welcome screen and drive the real frontend
+  logic — `domain/slides.ts` run in Node stands in for peitho-core, close
+  enough to exercise the app's own reactive/DOM code (this caught and
+  fixed a real bug, see `new-slide.e2e.ts`). What it *can't* catch:
+  anything that depends on peitho-core's actual output or a real WKWebView
+  (rendering fidelity, `adoptedStyleSheets`/`@font-face` support, native
+  right-click, drag). Real e2e that drives an actual Tauri window (via
+  `tauri-driver`) is still queued in `tmp/todo.md` as a Scope1+ concern;
+  until then, the steps for verifying WKWebView-specific behavior on a
+  real device are collected in
   `.claude/skills/run-peitho-studio/SKILL.md`.
 
 ## Commit granularity
