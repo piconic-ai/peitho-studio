@@ -47,7 +47,28 @@ export function SlideList(props: SlideListProps) {
       className="shrink-0 flex flex-col border-r border-border min-h-0"
       style={`width: ${String(props.slideListWidth)}px`}
     >
-      <div className="flex-1 overflow-y-auto p-2" onContextMenu={e => props.onContextMenu(null, e)}>
+      <div
+        className="flex-1 overflow-y-auto p-2"
+        // Skip when the click landed inside a row: that row's own
+        // `onContextMenu` below already reports the real index, but a
+        // `.map()` row's handler compiles to a delegated listener on this
+        // very container element, so this directly-authored handler ends
+        // up as a *second*, separate listener on that same node —
+        // `event.stopPropagation()` in the row's handler can't stop a
+        // sibling listener already registered on the same element (see
+        // piconic-ai/barefootjs#2930), so this one still runs right after
+        // it. Unguarded, it silently overwrote the just-set `on-slide` menu
+        // state with `on-empty-space`, which is why Cut/Copy/Delete looked
+        // permanently disabled no matter which thumbnail was right-clicked.
+        // `closest` only needs to detect *whether* the click was inside a
+        // row, not read `data-slide-row`'s value, so it's unaffected by
+        // that attribute's own staleness risk after a keyed reorder (see
+        // CLAUDE.md's keyed-`.map()` pitfall).
+        onContextMenu={e => {
+          if ((e.target as Element).closest('[data-slide-row]')) return
+          props.onContextMenu(null, e)
+        }}
+      >
         {props.manifest === null ? (
           <p className="text-sm text-muted-foreground">Open a deck to see its slides.</p>
         ) : (
