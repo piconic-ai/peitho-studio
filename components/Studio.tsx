@@ -272,8 +272,14 @@ export function Studio() {
     layoutPreviewStylesheet.replaceSync(ui.layoutPreviewStylesheetText())
   })
 
+  // Skipped while the New Deck modal is open: this timer was designed for
+  // WelcomeScreen/StatusBar's transient toast-style banner, but the same
+  // signal now also drives the modal's persistent inline error — an error
+  // shown there should stay until the user dismisses the modal or retries
+  // (both already clear it explicitly), not vanish on a fixed timer while
+  // still unread.
   createEffect(() => {
-    if (errorMessage() === null) return
+    if (errorMessage() === null || deck.newDeckModalOpen()) return
     const timer = window.setTimeout(() => setErrorMessage(null), 6000)
     return () => window.clearTimeout(timer)
   })
@@ -408,6 +414,7 @@ export function Studio() {
   async function handleNewDeck(): Promise<void> {
     const parent = await openDialog({ directory: true, title: 'Choose a location for the new deck' })
     if (!parent || typeof parent !== 'string') return
+    setErrorMessage(null)
     await dispatch({ type: 'new-deck-requested', parentDir: parent })
   }
 
@@ -1122,8 +1129,9 @@ export function Studio() {
         name={deck.newDeckName()}
         parentDir={deck.newDeckParentDir()}
         isBusy={deck.isBusy()}
+        errorMessage={errorMessage()}
         onNameChange={name => void dispatch({ type: 'name-changed', name })}
-        onCancel={() => void dispatch({ type: 'create-cancelled' })}
+        onCancel={() => { setErrorMessage(null); void dispatch({ type: 'create-cancelled' }) }}
         onConfirm={() => void dispatch({ type: 'create-confirmed' })}
       />
     </div>

@@ -11,6 +11,7 @@ export interface NewDeckModalProps {
   name: string
   parentDir: string | null
   isBusy: boolean
+  errorMessage: string | null
   onNameChange: (name: string) => void
   onCancel: () => void
   onConfirm: () => void
@@ -46,7 +47,10 @@ export function NewDeckModal(props: NewDeckModalProps) {
               if (e.key === 'Escape' && !props.isBusy) props.onCancel()
             }}
           />
-          <div className="text-xs text-muted-foreground mb-3 truncate">{props.parentDir}</div>
+          <div className="mb-3">
+            <div className="text-xs text-muted-foreground truncate">{props.parentDir}</div>
+            {props.errorMessage ? <div className="text-xs text-destructive">{props.errorMessage}</div> : null}
+          </div>
           <div className="flex justify-end gap-2">
             <button
               type="button"
