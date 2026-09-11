@@ -108,6 +108,26 @@ don't bundle everything into one giant commit.
   Shadow DOM (`dom/slideCanvas.ts`), which doesn't have either problem
   (same document, not a separate browsing context). Relevant again only if
   an `<iframe>` gets reintroduced somewhere.
+- Trading that `<iframe>` for Shadow DOM traded away one isolation
+  guarantee along with the two problems above: an `<iframe>`'s content is a
+  separate document, so nothing about its embedding page's cascade ever
+  reached it, but a shadow tree inherits ordinary inherited CSS properties
+  (e.g. `text-align`, `color`, `font-family`) straight from its host
+  element's computed style, same as any other descendant would. Hit on a
+  real device: `SlideList.tsx` mounts a canvas inside a `<button>`, whose
+  UA-stylesheet default is `text-align: center`; a deck's `<h1>`/`<ul>`
+  inherited it and centered, and since `list-style-position: outside`
+  bullet markers aren't subject to `text-align`, each `<li>`'s bullet
+  stayed pinned at the far left while its own now-centered text visibly
+  detached from it. Fixed by declaring `text-align: left` on `dom/
+  slideCanvas.ts`'s shared `:host` rule — reproduced first in an isolated
+  page by wrapping a synthetic host in the same `<button><span><span>`
+  chain `SlideList.tsx` actually uses, confirming the bug required that
+  exact ancestor and vanished once `:host` set its own value (this
+  reproduces in any Chromium-family engine, including Playwright's — it
+  simply hadn't been exercised with real `<ul>` content before). Any other
+  inherited property `.peitho-slide`'s CSS doesn't already pin should be
+  treated with the same suspicion.
 - State that should differ per window (the open deck, its file watcher,
   its subprocess) must be kept in a map keyed by `window.label()` rather
   than a single global — otherwise a second window silently overwrites
