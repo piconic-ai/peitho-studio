@@ -272,8 +272,14 @@ export function Studio() {
     layoutPreviewStylesheet.replaceSync(ui.layoutPreviewStylesheetText())
   })
 
+  // Skipped while the New Deck modal is open: this timer was designed for
+  // WelcomeScreen/StatusBar's transient toast-style banner, but the same
+  // signal now also drives the modal's persistent inline error — an error
+  // shown there should stay until the user dismisses the modal or retries
+  // (both already clear it explicitly), not vanish on a fixed timer while
+  // still unread.
   createEffect(() => {
-    if (errorMessage() === null) return
+    if (errorMessage() === null || deck.newDeckModalOpen()) return
     const timer = window.setTimeout(() => setErrorMessage(null), 6000)
     return () => window.clearTimeout(timer)
   })
