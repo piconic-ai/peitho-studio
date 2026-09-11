@@ -59,8 +59,23 @@ export function ensureFontFaces(fontFaceCss: string): void {
  * `:root` of a document it generates itself, so a shadow-rendered slide
  * needs the host to carry it — otherwise every non-1280x720 deck silently
  * renders at the theme's `var()` fallback. Pair with `observeCanvasScale`
- * to keep it fitted as `host` resizes. */
+ * to keep it fitted as `host` resizes.
+ *
+ * A brand-new `.map()` row's `ref` runs while its element is still part of
+ * the detached "template contents" document the row was parsed into — not
+ * yet `host.ownerDocument`, which stays the real page document throughout.
+ * A `CSSStyleSheet` can only be adopted by shadow roots/documents that
+ * share its origin document (`DOMException: Sharing constructed
+ * stylesheets in multiple documents is not allowed`), so mounting here
+ * would throw for every fresh row. The insert that reparents `host` into
+ * the real document happens synchronously, immediately after this `ref`
+ * returns, so deferring one microtask is enough — never observed to need
+ * a second pass. */
 export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragmentHtml: string, canvas: Size): void {
+  if (!host.isConnected) {
+    queueMicrotask(() => mountSlideCanvas(host, sheet, fragmentHtml, canvas))
+    return
+  }
   const shadow = host.shadowRoot ?? host.attachShadow({ mode: 'open' })
   layoutSheet ??= createSlideStylesheet(LAYOUT_CSS)
   shadow.adoptedStyleSheets = [sheet, layoutSheet]
