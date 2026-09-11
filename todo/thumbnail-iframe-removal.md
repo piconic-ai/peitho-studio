@@ -199,6 +199,30 @@ Pullfrogレビュー対応。
       documentなので、リンクにアプリ全体が遷移してしまうのを防ぐため)。
       (実機検証は他項目とまとめて後日)。
 
+**PR1〜PR6 Review Ready化後に見つかった重大バグ(実機検証中)**:
+ユーザーが実機でNew Slide機能(右クリック→New Slide)を試したところ、
+サムネイルが増えないという報告があった。実機での対話的デバッグは
+手間がかかりすぎるため、Playwrightで`window.__TAURI_INTERNALS__.invoke`
+をモックする恒久的なe2eテスト基盤(`e2e/helpers/mockTauri.ts`、
+`domain/slides.ts`をNode側でpeitho-core代替として動かす)を新設し、
+自律的に再現・特定した。原因はPR3の`mountSlideCanvas`: `SlideList.tsx`の
+新規行の`ref`は、その要素がまだBarefootJSの`.map()`が構築中の
+detached「template contents document」に属した状態で呼ばれ(`host.
+ownerDocument`は実文書のままだが`host.isConnected`はfalse)、その状態で
+`CSSStyleSheet`を`adoptedStyleSheets`に代入すると`NotAllowedError:
+Sharing constructed stylesheets in multiple documents is not allowed`が
+投げられる。`StatusBar`のエラー表示スロット自身も同じdetached-row問題を
+初回条件分岐レンダリングで抱えているため、このエラーは画面上どこにも
+表示されず、New Slideのコミット処理全体が黙って中断していた。
+`mountSlideCanvas`冒頭に`host.isConnected`チェックを追加し、未接続なら
+`queueMicrotask`で1回遅延させる修正をPR3に追加、PR4に回帰テスト
+(`e2e/new-slide.e2e.ts`)を追加し、`gh stack rebase --upstack`で
+PR4〜PR6に反映・再検証した。Pullfrogレビュー(#45)がさらに、同一
+synchronous tick内で行が追加後すぐ削除された場合に`isConnected`が
+永久にfalseのままとなり`queueMicrotask`の再試行が無限ループする
+(クロージャの永久リーク)ケースを指摘、`MAX_MOUNT_RETRIES`(5回)を
+上限とする修正を追加PR3コミットとして反映した。
+
 ## 5. 完了条件
 
 - [x] PR1〜PR6すべてDraft PR作成・Review Ready化・Pullfrogレビュー
