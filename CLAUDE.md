@@ -1,8 +1,9 @@
 # peitho-studio design rules
 
-A Tauri desktop GUI wrapping Peitho (a Markdown-driven presentation engine).
-Tauri v2 (Rust) + BarefootJS CSR + UnoCSS. `peitho-core` is embedded
-in-process under `src-tauri/src/engine/` rather than run as a subprocess.
+An editor for Peitho decks (Peitho is a Markdown-driven presentation engine),
+currently shipped as a Tauri desktop app. Tauri v2 (Rust) + BarefootJS CSR +
+UnoCSS. `peitho-core` is embedded in-process under `src-tauri/src/engine/`
+rather than run as a subprocess.
 
 ## Design principles
 
