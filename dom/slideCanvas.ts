@@ -52,6 +52,13 @@ export function ensureFontFaces(fontFaceCss: string): void {
   if (styleEl.textContent !== fontFaceCss) styleEl.textContent = fontFaceCss
 }
 
+// How many queued-microtask retries `mountSlideCanvas` allows before giving
+// up on a host that never connects — see the function's doc comment. Sized
+// generously above the observed single-retry case, not tuned to any
+// specific number of ticks.
+const MAX_MOUNT_RETRIES = 5
+const mountRetryCounts = new WeakMap<HTMLElement, number>()
+
 /** Mounts `fragmentHtml` into `host`'s Shadow root, reusing that root if it
  * already has one (a second `attachShadow` throws). `canvas` is the deck's
  * native slide size: the theme sizes `.peitho-slide` off
@@ -67,15 +74,24 @@ export function ensureFontFaces(fontFaceCss: string): void {
  * A `CSSStyleSheet` can only be adopted by shadow roots/documents that
  * share its origin document (`DOMException: Sharing constructed
  * stylesheets in multiple documents is not allowed`), so mounting here
- * would throw for every fresh row. The insert that reparents `host` into
- * the real document happens synchronously, immediately after this `ref`
- * returns, so deferring one microtask is enough — never observed to need
- * a second pass. */
+ * would throw for every fresh row. The insert that reparents `host` typically
+ * lands within the same synchronous tick this `ref` returns in, so one
+ * deferred microtask is normally enough — but if the row is added and then
+ * removed again within that same tick (before the retry runs), `host` never
+ * connects at all. `MAX_MOUNT_RETRIES` caps the resulting retry loop so an
+ * abandoned row's closure gets dropped instead of rescheduling forever. */
 export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragmentHtml: string, canvas: Size): void {
   if (!host.isConnected) {
+    const attempt = mountRetryCounts.get(host) ?? 0
+    if (attempt >= MAX_MOUNT_RETRIES) {
+      mountRetryCounts.delete(host)
+      return
+    }
+    mountRetryCounts.set(host, attempt + 1)
     queueMicrotask(() => mountSlideCanvas(host, sheet, fragmentHtml, canvas))
     return
   }
+  mountRetryCounts.delete(host)
   const shadow = host.shadowRoot ?? host.attachShadow({ mode: 'open' })
   layoutSheet ??= createSlideStylesheet(LAYOUT_CSS)
   shadow.adoptedStyleSheets = [sheet, layoutSheet]
