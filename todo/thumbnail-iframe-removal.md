@@ -223,6 +223,32 @@ synchronous tick内で行が追加後すぐ削除された場合に`isConnected`
 (クロージャの永久リーク)ケースを指摘、`MAX_MOUNT_RETRIES`(5回)を
 上限とする修正を追加PR3コミットとして反映した。
 
+**実機WKWebView検証で見つかった重大バグ(2件目)**: ユーザーが実機で
+サムネイル一覧のスタイル崩れ(タイトル・本文が中央寄せになる一方、
+箇条書きマーカーだけ左端に取り残されて浮いて見える)を報告。開いていた
+実デッキ(`~/Desktop/demo/deck.md`)の`.peitho/present-cache/`に残る
+実際のfragment HTML・テーマCSSを読み、Playwrightで
+`SlideList.tsx`の実際の祖先構造(`<button><span><span>`)を再現した
+最小テストページを作って初めて再現できた(単に`mountSlideCanvas`を
+プレーンな`<div>`から呼ぶだけの再現では発生しなかった)。原因:
+`<button>`要素はUAスタイルシートの既定で`text-align: center`を持つ。
+旧`<iframe>`は別ドキュメントだったため祖先のcascadeが一切届かなかったが、
+Shadow DOMは`text-align`のような通常の継承プロパティをhost要素の
+computed styleからそのまま継承する。テーマCSS(`base.css`)は
+`text-align`を一切指定していないため、この継承された`center`が
+`.peitho-slide`内の`<h1>`/`<ul>`にまで及び、`list-style-position:
+outside`のため`text-align`の影響を受けない箇条書きマーカーだけが
+左端に取り残されて見えた。`dom/slideCanvas.ts`共有の`:host`ルールに
+`text-align: left`を追加(PR3コミット)し、`gh stack rebase
+--upstack`でPR4〜PR6に反映・再検証(型チェック・単体テスト・e2e・
+Playwrightでの再現テストいずれもグリーン)。CLAUDE.mdのTauri
+pitfallsセクションに一般化した知見として追記済み(Shadow DOM移行で
+`<iframe>`が持っていた祖先からの継承遮断が失われたこと、他の継承
+プロパティも同様に疑うべきこと)。3章のリスク4「theme CSSの
+`html`/`body`ルールはShadow内で無効」は誤りではなかったが、実際に
+実機で顕在化したのは「ホスト側(アプリ自身のUI)からの継承汚染」という
+逆方向の問題だった — リスク一覧に無かった観点として教訓化。
+
 ## 5. 完了条件
 
 - [x] PR1〜PR6すべてDraft PR作成・Review Ready化・Pullfrogレビュー
