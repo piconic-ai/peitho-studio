@@ -661,10 +661,20 @@ export function Studio() {
 
   function openContextMenu(index: number | null, event: MouseEvent): void {
     event.preventDefault()
-    // Without this, a right-click on a thumbnail bubbles up to the slide
-    // list container's own `onContextMenu` (added so right-clicking empty
-    // space still opens a menu) and immediately overwrites this call's
-    // real index with `null`.
+    // `stopPropagation()` here does NOT stop `SlideList.tsx`'s own
+    // container-level `onContextMenu` from also firing for the same
+    // right-click: a `.map()` row's handler is compiled as a delegated
+    // listener on the container (not a real per-element listener), so the
+    // container's own directly-authored handler ends up as a *second*
+    // listener on that identical node — `stopPropagation()` only blocks
+    // reaching other elements, never a sibling listener already registered
+    // on the same one (see piconic-ai/barefootjs#2930). Confirmed by
+    // logging both calls landing (`index` then `null`) for one physical
+    // click. `SlideList.tsx`'s container handler guards against this
+    // itself, by skipping the `null` call whenever the click actually
+    // landed inside a row — so by the time this function runs at all,
+    // `index` reflects that row (or truly is empty space) and doesn't get
+    // overwritten afterward.
     event.stopPropagation()
     if (index !== null) void selectSlide(index)
     ui.setContextMenu(

@@ -249,6 +249,28 @@ don't bundle everything into one giant commit.
   thumbnail row, which mounts unconditionally within its `.map()`); the
   leak is specifically about a `ref` whose *entire host element* is inside
   a branch that unmounts and remounts.
+- **`event.stopPropagation()` inside a `.map()` row's event handler doesn't
+  stop a sibling handler on the row's static parent** (reported as
+  [piconic-ai/barefootjs#2930](https://github.com/piconic-ai/barefootjs/issues/2930),
+  with a minimal repro and root-cause trace). A `.map()` row's handler
+  isn't a real per-element `addEventListener` — it's a single delegated
+  listener on the `.map()`'s nearest static ancestor that resolves
+  `event.target` back to a row via `closest()`/DOM position. When that
+  same static ancestor *also* has its own directly-authored handler for
+  the same event, the two end up as two separate listeners on the
+  identical DOM node — and `stopPropagation()` only blocks propagation to
+  *other elements*, never a sibling listener already registered on the
+  *same* element, so both fire regardless of which one calls it. Hit in
+  `SlideList.tsx`: the slide-list container's own `onContextMenu` (for
+  right-clicking empty space) and each row's `onContextMenu` (for
+  right-clicking a slide, calling `stopPropagation()` for exactly this
+  reason) both fired on every row right-click, with the container's
+  `null`-index call always overwriting the row's real index right after —
+  Cut/Copy/Delete looked permanently disabled no matter which slide was
+  clicked. Fix: don't rely on `stopPropagation()` between a `.map()` row
+  and its own static parent's handler for the same event — have the
+  parent's handler explicitly skip itself when the click landed inside a
+  row (e.g. `event.target.closest('[data-slide-row]')`) instead.
 
 ## Pitfalls hit with UnoCSS (Wind4 preset)
 
