@@ -13,6 +13,11 @@ import type { Manifest, ManifestSlide, RenderPayload } from '../../domain/render
 
 export interface MockDeck {
   source: string
+  /** When set, `render_draft` rejects with the returned message instead of
+   * succeeding, for any `content` this returns non-null for — lets a test
+   * simulate a peitho-core build error (e.g. an ambiguous-layout slide)
+   * without this helper needing to model real layout dispatch itself. */
+  renderDraftError?: (content: string) => string | null
 }
 
 function buildManifest(source: string): { manifest: Manifest; fragments: Record<string, string> } {
@@ -53,8 +58,12 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'get_recent_decks': return []
       case 'open_deck':
         return { deckPath: deck.source, deckDir: '/fake', render: renderPayloadFor(deck.source) }
-      case 'render_draft':
-        return renderPayloadFor(args.content as string)
+      case 'render_draft': {
+        const content = args.content as string
+        const error = deck.renderDraftError?.(content)
+        if (error !== null && error !== undefined) throw new Error(error)
+        return renderPayloadFor(content)
+      }
       case 'read_deck_source': return deck.source
       case 'save_deck_source':
         deck.source = args.content as string
