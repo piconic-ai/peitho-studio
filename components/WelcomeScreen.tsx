@@ -52,7 +52,12 @@ export function WelcomeScreen(props: WelcomeScreenProps) {
             rendered) so its appearance doesn't itself shift the
             surrounding buttons. */}
         <div className="h-4 text-xs text-muted-foreground">{props.isBusy ? 'Opening…' : ''}</div>
-        {props.errorMessage ? <div className="text-xs text-destructive text-center">{props.errorMessage}</div> : null}
+        {/* Always mounted, visibility toggled by `hidden` rather than
+            `{errorMessage ? <div/> : null}` — see CLAUDE.md's BarefootJS
+            pitfalls (a failed open/create while this screen stays mounted
+            is exactly the null-to-string, well-after-mount transition that
+            pattern silently drops). */}
+        <div hidden={props.errorMessage === null} className="text-xs text-destructive text-center">{props.errorMessage}</div>
         {props.recentDecks.length > 0 ? (
           <div className="w-full">
             <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Recent</div>

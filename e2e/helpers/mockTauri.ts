@@ -13,6 +13,25 @@ import type { Manifest, ManifestSlide, RenderPayload } from '../../domain/render
 
 export interface MockDeck {
   source: string
+  /** Paths `get_recent_decks` returns — defaults to none. */
+  recentDecks?: string[]
+  /** What `dev_default_deck` returns — defaults to `deck.source`'s own
+   * fake path (auto-opening it, past the welcome screen, before a test's
+   * first assertion). Pass `null` for a test that needs to actually land
+   * on the welcome screen (e.g. to exercise a failed `open_deck`/
+   * `create_deck` from there). */
+  devDefaultDeck?: string | null
+  /** What the native folder-picker (`plugin:dialog|open`) resolves to —
+   * defaults to `null` (cancelled), matching a real dialog nothing has
+   * driven. Set a fake directory path for a test that needs "Open Deck…"/
+   * "New Deck…" to proceed past the picker. */
+  dialogPath?: string | null
+  /** When this returns non-null for a given command + args, that
+   * `invoke()` call rejects with the message instead of succeeding — lets
+   * a test simulate any backend failure (a peitho-core build error on
+   * `render_draft`, a failed `open_deck`/`create_deck`, ...) without this
+   * helper needing to model the real failure condition itself. */
+  commandError?: (cmd: string, args: Record<string, unknown>) => string | null
 }
 
 function buildManifest(source: string): { manifest: Manifest; fragments: Record<string, string> } {
@@ -47,10 +66,12 @@ function renderPayloadFor(source: string): RenderPayload {
  * `page.goto('/')`. */
 export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
   await page.exposeFunction('__mockInvoke', (cmd: string, args: Record<string, unknown>) => {
+    const error = deck.commandError?.(cmd, args)
+    if (error !== null && error !== undefined) throw new Error(error)
     switch (cmd) {
-      case 'dev_default_deck': return '/fake/deck.md'
+      case 'dev_default_deck': return deck.devDefaultDeck === undefined ? '/fake/deck.md' : deck.devDefaultDeck
       case 'take_pending_deck': return null
-      case 'get_recent_decks': return []
+      case 'get_recent_decks': return deck.recentDecks ?? []
       case 'open_deck':
         return { deckPath: deck.source, deckDir: '/fake', render: renderPayloadFor(deck.source) }
       case 'render_draft':
@@ -61,6 +82,8 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         return null
       case 'preview_layouts': return { previews: [], css: '' }
       case 'present_deck': return null
+      case 'create_deck': return '/fake/new-deck/deck.md'
+      case 'plugin:dialog|open': return deck.dialogPath ?? null
       default: return null
     }
   })
@@ -78,7 +101,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
     w.__TAURI_INTERNALS__ = w.__TAURI_INTERNALS__ ?? {}
     w.__TAURI_EVENT_PLUGIN_INTERNALS__ = w.__TAURI_EVENT_PLUGIN_INTERNALS__ ?? {}
     w.__TAURI_INTERNALS__.invoke = async (cmd: string, args: Record<string, unknown> = {}) => {
-      if (cmd.startsWith('plugin:event|') || cmd === 'plugin:dialog|open') return null
+      if (cmd.startsWith('plugin:event|')) return null
       return w.__mockInvoke(cmd, args)
     }
     let nextCallbackId = 1

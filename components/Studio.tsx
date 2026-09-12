@@ -27,6 +27,7 @@ import {
   updatePageComment,
   slugifyTitle,
   uniqueSlideKey,
+  newSlideConfig,
   clampFocusIndex,
   extractHeadingText,
   parseDurationToMs,
@@ -774,7 +775,9 @@ export function Studio() {
     const texts = editor.slideRanges().map((_, i) => currentSlideText(i).trim())
     const insertAt = Math.min(index + 1, texts.length)
     const key = uniqueSlideKey(slugifyTitle('New Slide'), existingSlideKeys())
-    const cmd: SlideCommand = { type: 'insert', at: insertAt, text: buildSlideText({ key }, NEW_SLIDE_MARKDOWN, '') }
+    const { config: previousConfig } = extractPageComment(texts[index] ?? '')
+    const config = newSlideConfig(previousConfig, key)
+    const cmd: SlideCommand = { type: 'insert', at: insertAt, text: buildSlideText(config, NEW_SLIDE_MARKDOWN, '') }
     if (validate(texts, cmd)) return
     const nextTexts = applyCommand(texts, cmd)
     await commitChange(sourceFor(nextTexts, cmd), selectionPlanFor(cmd))

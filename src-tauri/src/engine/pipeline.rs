@@ -190,6 +190,54 @@ mod tests {
         assert!(!output.css.is_empty());
     }
 
+    // A deck with two layouts where one ("cover") is a strict subset of the
+    // other ("title-body-code", every slot but title optional) makes a bare
+    // title-only slide structurally match both — peitho-core refuses to
+    // guess and requires an explicit `"layout"` in that case. Discovered via
+    // a real "New Slide" doing nothing on such a deck (the frontend's
+    // `newSlideConfig` in `domain/slides.ts` now carries over the previous
+    // slide's explicit layout for exactly this reason). This deck shape,
+    // not a hand-picked minimal one, is what actually caught the bug.
+    fn write_two_layout_deck(dir: &std::path::Path, second_slide_comment: &str) -> std::path::PathBuf {
+        let layouts_dir = dir.join("layouts");
+        std::fs::create_dir_all(&layouts_dir).unwrap();
+        std::fs::write(
+            layouts_dir.join("cover.html"),
+            "<section class=\"peitho-slide\"><h1><slot name=\"title\" accepts=\"inline\" arity=\"1\"></slot></h1></section>",
+        )
+        .unwrap();
+        std::fs::write(layouts_dir.join("title-body-code.html"), crate::engine::builtin::LAYOUT_HTML).unwrap();
+
+        let deck_path = dir.join("deck.md");
+        let source = format!(
+            "<!-- {{\"key\":\"cover\",\"layout\":\"cover\"}} -->\n# Cover\n\n---\n\n{second_slide_comment}\n# New Slide\n"
+        );
+        std::fs::write(&deck_path, source).unwrap();
+        deck_path
+    }
+
+    #[test]
+    fn render_source_adversarial_a_title_only_slide_with_no_explicit_layout_is_ambiguous() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = write_two_layout_deck(dir.path(), "<!-- {\"key\":\"new-slide\"} -->");
+        let source = std::fs::read_to_string(&deck_path).unwrap();
+
+        match render_source(&deck_path, &source) {
+            Ok(_) => panic!("expected a layout-ambiguity error, got Ok"),
+            Err(err) => assert!(err.contains("matches multiple layouts"), "unexpected error: {err}"),
+        }
+    }
+
+    #[test]
+    fn render_source_spec_an_explicit_layout_disambiguates_a_title_only_slide() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = write_two_layout_deck(dir.path(), "<!-- {\"key\":\"new-slide\",\"layout\":\"cover\"} -->");
+        let source = std::fs::read_to_string(&deck_path).unwrap();
+
+        let output = render_source(&deck_path, &source).expect("an explicit layout should resolve the ambiguity");
+        assert_eq!(output.fragments.len(), 2);
+    }
+
     #[test]
     fn render_source_adversarial_duplicate_keys_is_a_build_error() {
         let dir = tempfile::tempdir().unwrap();

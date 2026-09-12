@@ -164,14 +164,38 @@ don't bundle everything into one giant commit.
   `{ const x = ...; return <jsx/> }` — a block body is a compile error
   (`BF021`). If you need to derive something from the index, precompute
   it outside the `.map()` with `createMemo`.
-- **(Unresolved — watch out)** When JSX uses a chain of ternaries and a
-  later branch only becomes visible after a signal transitions from
-  `null` to having data post-mount, that branch's contents sometimes
-  failed to render (even though the data itself was read correctly).
-  Restructuring so the same JSX is mounted from the start fixed it. When
-  a specific branch fails to render only after a post-mount state
-  transition, suspect this (a chain of ternaries vs. branching at mount
-  time) first.
+- **(Unresolved, narrower than first thought — watch out)** A ternary
+  whose `null` branch was selected at mount sometimes never updates when
+  the other branch later becomes active — no thrown error, no warning,
+  the underlying signal/prop reads correctly throughout, the DOM update
+  just never happens. Confirmed directly in `StatusBar.tsx`:
+  `{errorMessage ? <div>...</div> : null}` with `errorMessage` starting
+  `null` meant every failed operation set the message internally but the
+  error banner never appeared in `document.body.innerHTML` — not even as
+  an empty `<!--bf-cond-start/end-->` anchor pair, unlike a sibling
+  ternary elsewhere in the same app whose initial branch is non-null
+  (which does get those markers and does update later). **This does not
+  reproduce in isolation** — three separate minimal repros (a bare
+  Fragment-root component, a single-`<div>`-root component, and an exact
+  prop-for-prop copy of `StatusBar.tsx` itself, each in its own file) all
+  updated correctly. (A fourth attempt, with the child defined in the
+  *same file* as its parent, seemed to confirm the bug — but that was
+  actually a red herring: hydrating a same-file child crashes with
+  `TypeError: __scope.getAttribute is not a function` before its own
+  reactivity ever runs, which was reported as
+  [piconic-ai/barefootjs#2948](https://github.com/piconic-ai/barefootjs/issues/2948)
+  and then closed once this was discovered — the issue's own comments
+  have the full trace.) So the real trigger depends on something about
+  the larger app's context (surrounding component tree, `state/
+  uiStore.ts`'s specific signal wiring, or something else) not yet
+  isolated. Fix either way: keep the branch permanently mounted and
+  toggle visibility with the `hidden` attribute instead of conditionally
+  mounting it (same pattern `SlideContextMenu.tsx`/`SlidePreview.tsx`
+  already use for the *conditional-`ref`* leak below — a different root
+  cause, same "always mount, toggle `hidden`" fix). When a branch fails
+  to render only after a post-mount transition, apply this fix on sight
+  rather than trying to isolate the trigger first — it wasn't isolable in
+  a reasonable amount of time even with the real, working code in hand.
 - **(Corrected — see below) Don't jump to "this breaks at runtime" from
   `bf debug graph`'s `(no tracked deps)` alone.** This section used to
   claim two "constraints": that signals/memos break when passed from a
