@@ -13,17 +13,14 @@ export function StatusBar(props: StatusBarProps) {
   return (
     <>
       {/* Always mounted, visibility toggled by `hidden` rather than
-          `{errorMessage ? <div/> : null}`. Root cause (confirmed by
-          inspecting the rendered DOM): when a ternary's *initially selected*
-          branch is `null`, the compiler emits no anchor comment for that
-          region at all (a non-`null` branch gets `<!--bf-cond-start/end-->`
-          markers the runtime later swaps content into; `null` gets nothing),
-          so a later transition to the other branch has no DOM location to
-          insert into and silently never happens — confirmed via Playwright:
-          `errorMessage()` held the right value throughout, no JS error was
-          thrown, the div just never appeared. `errorMessage` starts `null`
-          and only turns into a string well after mount, on the first
-          `commitChange`/`runOpen`/etc. failure, so it always hit this. */}
+          `{errorMessage ? <div/> : null}` — confirmed via Playwright that
+          the conditional-mount form left `errorMessage()` correctly set,
+          threw no error, but never painted (see CLAUDE.md's BarefootJS
+          pitfalls; the exact trigger wasn't isolated down to a minimal
+          repro, so treat any JSX shaped like this with the same
+          suspicion). `errorMessage` starts `null` and only turns into a
+          string well after mount, on the first `commitChange`/`runOpen`/
+          etc. failure, so it always hit this. */}
       <div
         hidden={props.errorMessage === null}
         className="px-3 py-1.5 bg-destructive/10 text-destructive text-xs shrink-0 border-t border-destructive/30 flex items-start gap-2"
