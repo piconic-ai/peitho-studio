@@ -164,14 +164,26 @@ don't bundle everything into one giant commit.
   `{ const x = ...; return <jsx/> }` — a block body is a compile error
   (`BF021`). If you need to derive something from the index, precompute
   it outside the `.map()` with `createMemo`.
-- **(Unresolved — watch out)** When JSX uses a chain of ternaries and a
-  later branch only becomes visible after a signal transitions from
-  `null` to having data post-mount, that branch's contents sometimes
-  failed to render (even though the data itself was read correctly).
-  Restructuring so the same JSX is mounted from the start fixed it. When
-  a specific branch fails to render only after a post-mount state
-  transition, suspect this (a chain of ternaries vs. branching at mount
-  time) first.
+- **A ternary whose `null` branch is selected at mount never updates when
+  the other branch later becomes active** (reported as
+  [piconic-ai/barefootjs#2948](https://github.com/piconic-ai/barefootjs/issues/2948),
+  with a minimal repro and root-cause trace; this section previously
+  called the pattern "Unresolved"). Confirmed by inspecting the rendered
+  DOM directly: a ternary whose initially-selected branch is *non-null*
+  gets `<!--bf-cond-start/end-->` anchor comments the runtime later swaps
+  content into, but when the initial branch is `null` (renders to
+  nothing), **no anchor is emitted at all** — so a later transition to the
+  non-null branch has nowhere to insert into and silently does nothing (no
+  thrown error, no warning; the underlying signal/prop is read correctly
+  throughout). Hit in `StatusBar.tsx`: `{errorMessage ? <div>...</div> :
+  null}` with `errorMessage` starting `null` meant every failed operation
+  set the message internally but the error banner never appeared — a
+  real backend build error looked exactly like "nothing happened" instead
+  of showing an actionable error. Fix: keep the branch permanently mounted
+  and toggle visibility with the `hidden` attribute instead of
+  conditionally mounting it (same pattern `SlideContextMenu.tsx`/
+  `SlidePreview.tsx` already use for the *conditional-`ref`* leak below —
+  a different root cause, same "always mount, toggle `hidden`" fix).
 - **(Corrected — see below) Don't jump to "this breaks at runtime" from
   `bf debug graph`'s `(no tracked deps)` alone.** This section used to
   claim two "constraints": that signals/memos break when passed from a
