@@ -8,6 +8,7 @@ import {
   updatePageComment,
   slugifyTitle,
   uniqueSlideKey,
+  newSlideConfig,
   indexAfterMove,
   clampFocusIndex,
   gapToIndex,
@@ -215,6 +216,22 @@ describe('uniqueSlideKey', () => {
 
   test('adversarial: an empty base key that also collides still numbers from "slide"', () => {
     expect(uniqueSlideKey('', ['slide'])).toBe('slide-2')
+  })
+})
+
+describe('newSlideConfig', () => {
+  test('spec: carries over an explicit layout from the previous slide', () => {
+    expect(newSlideConfig({ layout: 'cover' }, 'new-slide')).toEqual({ key: 'new-slide', layout: 'cover' })
+  })
+
+  test('adversarial: no layout on the previous slide means no layout field at all (not undefined)', () => {
+    expect(newSlideConfig({}, 'new-slide')).toEqual({ key: 'new-slide' })
+    expect('layout' in newSlideConfig({}, 'new-slide')).toBe(false)
+  })
+
+  test('adversarial: other fields on the previous slide (section, key, draft) are never carried over', () => {
+    expect(newSlideConfig({ key: 'old', section: 'Intro', draft: true, layout: 'cover' }, 'new-slide'))
+      .toEqual({ key: 'new-slide', layout: 'cover' })
   })
 })
 

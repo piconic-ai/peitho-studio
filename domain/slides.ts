@@ -185,6 +185,20 @@ export function uniqueSlideKey(baseKey: string, existingKeys: readonly string[])
   return `${base}-${String(n)}`
 }
 
+/** The `PageConfig` for a freshly inserted blank slide: always the new
+ * `key`, plus `previousConfig`'s `layout` when it has one explicitly set.
+ * A bare title-only slide (no body) structurally matches *every* layout
+ * whose other slots are all optional, which peitho-core refuses to guess
+ * between once a deck's `layouts/` directory holds more than one such
+ * layout ("slide matches multiple layouts: ..."). Deliberately does NOT
+ * inherit an *implicit* layout (one peitho only resolved by structural
+ * dispatch, never written to the previous slide's own comment) — only
+ * carrying over what's already explicit keeps a single-layout deck's new
+ * slide exactly as unlabeled as before. */
+export function newSlideConfig(previousConfig: PageConfig, key: string): PageConfig {
+  return previousConfig.layout ? { key, layout: previousConfig.layout } : { key }
+}
+
 /** Where slide index `i` ends up after moving the slide at `from` to `to`
  * (the same two-step `splice(from, 1)` then `splice(to, 0, moved)` a
  * drag-reorder performs). `i === from` maps to `to` — the moved slide
