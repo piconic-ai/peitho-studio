@@ -49,7 +49,12 @@ export function NewDeckModal(props: NewDeckModalProps) {
           />
           <div className="mb-3">
             <div className="text-xs text-muted-foreground truncate">{props.parentDir}</div>
-            {props.errorMessage ? <div className="text-xs text-destructive">{props.errorMessage}</div> : null}
+            {/* Always mounted, visibility toggled by `hidden` rather than
+                `{errorMessage ? <div/> : null}` — see CLAUDE.md's
+                BarefootJS pitfalls (a `commitChange`/`create_deck` failure
+                while this modal stays open is exactly the null-to-string,
+                well-after-mount transition that pattern silently drops). */}
+            <div hidden={props.errorMessage === null} className="text-xs text-destructive">{props.errorMessage}</div>
           </div>
           <div className="flex justify-end gap-2">
             <button
