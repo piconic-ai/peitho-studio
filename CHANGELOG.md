@@ -1,0 +1,50 @@
+# Changelog
+
+## [v0.1.0](https://github.com/piconic-ai/peitho-studio/commits/v0.1.0) - 2026-09-12
+
+- Tune pullfrog.yml to match barefootjs's pinned-SHA convention by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/7
+- Add frontend architecture principles and Studio.tsx refactoring plan by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/2
+- test infrastructure by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/3
+- remove debug snapshot by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/5
+- move domain modules by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/6
+- extract deck ipc by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/8
+- extract domain logic by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/9
+- extract page config by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/11
+- slide commands by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/12
+- drag refactor by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/14
+- context menu by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/15
+- editor session by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/16
+- deck lifecycle by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/17
+- render store by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/18
+- welcome screen by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/19
+- new deck modal by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/20
+- deck header by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/21
+- status bar by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/22
+- slide preview by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/23
+- slide editor by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/24
+- slide context menu by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/25
+- slide list by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/26
+- ui store by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/27
+- render store 2 by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/28
+- editor store by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/29
+- deck store by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/30
+- studio refactor wrapup by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/31
+- Archive the completed Studio.tsx refactoring plan by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/32
+- Fix stale todo/ path references after the archive move by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/33
+- Add tagpr release automation by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/34
+- Add MIT license by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/35
+- Translate living Japanese docs to English by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/36
+- Translate the last Japanese comment fragment in the Rust engine to English by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/37
+- Trim frontend comments to the why-not rule, translate the last Japanese fragment by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/38
+- Simplify README by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/41
+- Carry the deck's compiled CSS through RenderPayload by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/42
+- Add pure CSS/fragment helpers for Shadow DOM slide rendering by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/43
+- Add dom/slideCanvas.ts and renderStore CSS plumbing for Shadow DOM by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/45
+- Replace the per-slide thumbnail <iframe> with a Shadow DOM canvas by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/46
+- Replace the layout picker's preview <iframe> with a Shadow DOM canvas by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/47
+- Replace the preview pane's <iframe> with a Shadow DOM canvas — iframe count: 0 by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/48
+- Describe Peitho Studio as "an editor for Peitho decks" by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/49
+- Fix Cut/Copy/Delete disabled on the thumbnail context menu by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/50
+- Scaffold new decks the way peitho new does by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/51
+- Show New Deck errors inside the modal instead of behind it by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/52
+- Fix New Slide silently failing on decks with more than one layout by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/53
