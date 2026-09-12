@@ -39,8 +39,9 @@ test('New Slide inherits the previous slide\'s explicit layout, avoiding a multi
     // A layout-less new slide would be ambiguous once a deck has more than
     // one layout — simulates peitho-core's real "slide matches multiple
     // layouts" build error for exactly that shape.
-    renderDraftError: content => {
-      const secondSlide = content.split(/^---$/m)[1] ?? ''
+    commandError: (cmd, args) => {
+      if (cmd !== 'render_draft') return null
+      const secondSlide = (args.content as string).split(/^---$/m)[1] ?? ''
       const hasExplicitLayout = /"layout"\s*:/.test(secondSlide)
       return secondSlide.includes('# New Slide') && !hasExplicitLayout
         ? "slide 2 ('new-slide'): slide matches multiple layouts: cover, title-body-code"

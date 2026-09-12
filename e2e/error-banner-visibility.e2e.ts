@@ -15,7 +15,8 @@ import { mockTauri, type MockDeck } from './helpers/mockTauri'
 test('a render_draft failure actually paints the error banner', async ({ page }) => {
   const deck: MockDeck = {
     source: '# Slide One\n',
-    renderDraftError: content => (content.includes('# New Slide') ? 'slide 2: simulated build error' : null),
+    commandError: (cmd, args) =>
+      cmd === 'render_draft' && (args.content as string).includes('# New Slide') ? 'slide 2: simulated build error' : null,
   }
   await mockTauri(page, deck)
 
