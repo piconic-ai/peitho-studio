@@ -164,47 +164,41 @@ don't bundle everything into one giant commit.
   `{ const x = ...; return <jsx/> }` — a block body is a compile error
   (`BF021`). If you need to derive something from the index, precompute
   it outside the `.map()` with `createMemo`.
-- **(Unresolved, but the failure point is now pinned down — watch out)**
-  A ternary whose `null` branch was selected at mount sometimes never
-  updates when the other branch later becomes active — no thrown error,
-  no warning, the underlying signal/prop reads correctly throughout, the
-  DOM update just never happens. Confirmed directly in `StatusBar.tsx`:
+- **(Fixed upstream in `@barefootjs/client@0.35.7` — history kept for
+  context)** A ternary whose `null` branch was selected at mount sometimes
+  never updated when the other branch later became active — no thrown
+  error, no warning, the underlying signal/prop read correctly
+  throughout, the DOM update just never happened. Hit in `StatusBar.tsx`:
   `{errorMessage ? <div>...</div> : null}` with `errorMessage` starting
   `null` meant every failed operation set the message internally but the
-  error banner never appeared. **Confirmed via direct runtime
-  instrumentation** (temporarily patching `@barefootjs/client`'s
-  `dist/runtime/index.js` `insert()` — the function compiled ternaries
-  lower to — with logging, rebuilding, and running against the real app):
-  `insert()`'s own `createEffect` for this specific conditional ran
-  exactly once (`isFirstRun: true`) and **never ran again**, even though
-  a separate, plain reactive text binding on the *same* `props.
-  errorMessage` in the *same* render pass updated correctly every time —
-  ruling out "the prop isn't reactive" and pointing instead at something
-  about this particular effect losing its live subscription. `StatusBar`
-  sits inside the non-initial branch of an ancestor conditional
-  (`Studio.tsx`'s `deckPath() === null ? <WelcomeScreen/> : (<>...
-  <StatusBar/>...</>)`) — i.e. its own `insert()` effect is itself created
-  while *another* `insert()`'s effect is running its first-run branch-swap
-  — which looks like the likely shape of the trigger. **Still not isolated
-  to a minimal repro**: reproducing that exact nesting (an outer ternary
-  whose late branch contains a component with the same inner ternary) in
-  a fresh scaffold, in both `vite dev` and a real `vite build` bundle, and
-  even an exact prop-for-prop copy of `StatusBar.tsx` itself, all updated
-  correctly — so something about the surrounding app's larger reactive
-  graph (far more concurrent effects/signals than any repro built so far)
-  seems to be a necessary ingredient. Do not re-file an upstream issue
-  over this without a repro that actually reproduces end to end — an
-  earlier attempt ([piconic-ai/barefootjs#2948](https://github.com/piconic-ai/barefootjs/issues/2948))
-  was closed after its "confirmation" turned out to be an unrelated
-  same-file-child hydration crash (`TypeError: __scope.getAttribute is
-  not a function`), not this bug. Fix either way: keep the branch
-  permanently mounted and toggle visibility with the `hidden` attribute
-  instead of conditionally mounting it (same pattern
-  `SlideContextMenu.tsx`/`SlidePreview.tsx` already use for the
-  *conditional-`ref`* leak below — a different root cause, same "always
-  mount, toggle `hidden`" fix). When a branch fails to render only after
-  a post-mount transition, apply this fix on sight rather than trying to
-  isolate the trigger first.
+  error banner never appeared. Root cause and a minimal repro were pinned
+  down and filed as
+  [piconic-ai/barefootjs#2959](https://github.com/piconic-ai/barefootjs/issues/2959)
+  (a `fragmentRoot` child mounted via the plain `initChild` path never
+  registered its own `commentScopeRegistry` entry, so its *own* internal
+  conditional's marker search was wrongly confined to the wrong element's
+  subtree) and
+  [piconic-ai/barefootjs#2960](https://github.com/piconic-ai/barefootjs/issues/2960)
+  (a related but distinct bug hit while isolating #2959: an ancestor
+  ternary with asymmetric branch shapes — one plain element, one
+  multi-child fragment — silently drops every DOM node but the first on
+  branch swap). Both fixed in `@barefootjs/client@0.35.7`; **confirmed
+  fixed** by temporarily reverting `StatusBar.tsx` back to the
+  `{errorMessage ? <div>...</div> : null}` shape against 0.35.7 and
+  re-running `error-banner-visibility.e2e.ts` — it now passes. An earlier,
+  premature report of what looked like the same symptom
+  ([piconic-ai/barefootjs#2948](https://github.com/piconic-ai/barefootjs/issues/2948))
+  had been closed after its "confirmation" turned out to be an unrelated
+  hydration crash — unlike that attempt, #2959/#2960 had repros that
+  reproduced end to end and were fixed as filed.
+
+  `StatusBar.tsx` still uses the `hidden`-attribute workaround (keep the
+  branch permanently mounted, toggle visibility with `hidden` instead of
+  conditionally mounting it) rather than the ternary — no need to revert
+  it now that the underlying bug is fixed, but there's no urgency to
+  switch back either. When a *new* branch fails to render only after a
+  post-mount transition on some future BarefootJS version, don't assume
+  it's the same bug; verify first.
 - **(Corrected — see below) Don't jump to "this breaks at runtime" from
   `bf debug graph`'s `(no tracked deps)` alone.** This section used to
   claim two "constraints": that signals/memos break when passed from a
