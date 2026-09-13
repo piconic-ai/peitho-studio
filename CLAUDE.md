@@ -164,13 +164,6 @@ don't bundle everything into one giant commit.
   `{ const x = ...; return <jsx/> }` — a block body is a compile error
   (`BF021`). If you need to derive something from the index, precompute
   it outside the `.map()` with `createMemo`.
-- Ternary conditional-mount (`cond ? <div/> : null`) could silently fail
-  to update a branch that first appears after mount, on
-  `@barefootjs/client` < 0.35.7
-  ([piconic-ai/barefootjs#2959](https://github.com/piconic-ai/barefootjs/issues/2959),
-  [#2960](https://github.com/piconic-ai/barefootjs/issues/2960); fixed in
-  0.35.7). `StatusBar.tsx`'s `hidden`-attribute pattern predates the fix
-  and doesn't need to change.
 - **(Corrected — see below) Don't jump to "this breaks at runtime" from
   `bf debug graph`'s `(no tracked deps)` alone.** This section used to
   claim two "constraints": that signals/memos break when passed from a
