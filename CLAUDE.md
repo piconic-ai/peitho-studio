@@ -164,41 +164,13 @@ don't bundle everything into one giant commit.
   `{ const x = ...; return <jsx/> }` — a block body is a compile error
   (`BF021`). If you need to derive something from the index, precompute
   it outside the `.map()` with `createMemo`.
-- **(Fixed upstream in `@barefootjs/client@0.35.7` — history kept for
-  context)** A ternary whose `null` branch was selected at mount sometimes
-  never updated when the other branch later became active — no thrown
-  error, no warning, the underlying signal/prop read correctly
-  throughout, the DOM update just never happened. Hit in `StatusBar.tsx`:
-  `{errorMessage ? <div>...</div> : null}` with `errorMessage` starting
-  `null` meant every failed operation set the message internally but the
-  error banner never appeared. Root cause and a minimal repro were pinned
-  down and filed as
-  [piconic-ai/barefootjs#2959](https://github.com/piconic-ai/barefootjs/issues/2959)
-  (a `fragmentRoot` child mounted via the plain `initChild` path never
-  registered its own `commentScopeRegistry` entry, so its *own* internal
-  conditional's marker search was wrongly confined to the wrong element's
-  subtree) and
-  [piconic-ai/barefootjs#2960](https://github.com/piconic-ai/barefootjs/issues/2960)
-  (a related but distinct bug hit while isolating #2959: an ancestor
-  ternary with asymmetric branch shapes — one plain element, one
-  multi-child fragment — silently drops every DOM node but the first on
-  branch swap). Both fixed in `@barefootjs/client@0.35.7`; **confirmed
-  fixed** by temporarily reverting `StatusBar.tsx` back to the
-  `{errorMessage ? <div>...</div> : null}` shape against 0.35.7 and
-  re-running `error-banner-visibility.e2e.ts` — it now passes. An earlier,
-  premature report of what looked like the same symptom
-  ([piconic-ai/barefootjs#2948](https://github.com/piconic-ai/barefootjs/issues/2948))
-  had been closed after its "confirmation" turned out to be an unrelated
-  hydration crash — unlike that attempt, #2959/#2960 had repros that
-  reproduced end to end and were fixed as filed.
-
-  `StatusBar.tsx` still uses the `hidden`-attribute workaround (keep the
-  branch permanently mounted, toggle visibility with `hidden` instead of
-  conditionally mounting it) rather than the ternary — no need to revert
-  it now that the underlying bug is fixed, but there's no urgency to
-  switch back either. When a *new* branch fails to render only after a
-  post-mount transition on some future BarefootJS version, don't assume
-  it's the same bug; verify first.
+- Ternary conditional-mount (`cond ? <div/> : null`) could silently fail
+  to update a branch that first appears after mount, on
+  `@barefootjs/client` < 0.35.7
+  ([piconic-ai/barefootjs#2959](https://github.com/piconic-ai/barefootjs/issues/2959),
+  [#2960](https://github.com/piconic-ai/barefootjs/issues/2960); fixed in
+  0.35.7). `StatusBar.tsx`'s `hidden`-attribute pattern predates the fix
+  and doesn't need to change.
 - **(Corrected — see below) Don't jump to "this breaks at runtime" from
   `bf debug graph`'s `(no tracked deps)` alone.** This section used to
   claim two "constraints": that signals/memos break when passed from a
