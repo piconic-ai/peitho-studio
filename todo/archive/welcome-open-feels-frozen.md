@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: WelcomeScreenのOpen Deck/Recentクリックが実機で「フリーズして見える」問題の切り分けと対処
 tags: [ui, feedback]
 ---
@@ -112,8 +112,14 @@ PR #55のスコープには含めず本ファイルとして切り出した。
       得た。Chromeベースの検証(下記実装メモ参照)で原因を再現・特定
       できたため、上記(a)/(b)の切り分けは(a)寄りの原因(後述)で
       決着し、WKWebView固有要因の追加調査は不要と判断。
-- [ ] 対処実装後、実機で「フリーズして見えない」ことを再確認する
-      (Chromeベースの検証のみで未確認)
+- [x] 対処実装後、実機で「フリーズして見えない」ことを再確認する —
+      `tauri-plugin-playwright`(`docs/tauri-playwright-spike.md`)経由で
+      実際のWKWebViewウィンドウに対して`e2e-tauri/tests/
+      welcome-busy-floor.tauri.e2e.ts`を実行し、Recentエントリクリック
+      →エディタ表示までフリーズ・エラーなく遷移することを確認。ただし
+      ソケット越しの通信自体に数百ms〜秒単位の遅延があり、400msの
+      フロア時間を実機側でミリ秒精度で検証することはできなかった
+      (その精度はモック版e2eテストで担保)。
 
 ## 先送り事項
 
