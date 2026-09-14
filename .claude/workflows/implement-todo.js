@@ -6,7 +6,10 @@ export const meta = {
   ],
 }
 
-const todoPaths = args?.todoPaths ?? ['todo/action-click-feedback.md']
+if (!args?.todoPaths?.length) {
+  throw new Error('args.todoPaths is required — pass one or more todo/*.md paths, e.g. { todoPaths: ["todo/action-click-feedback.md"] }')
+}
+const todoPaths = args.todoPaths
 
 function taskPrompt(todoPath, index, total) {
   return `peitho-studio(このリポジトリ)の改善タスク計画 \`${todoPath}\` を、
