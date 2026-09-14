@@ -91,6 +91,17 @@ don't bundle everything into one giant commit.
 
 ## Pitfalls hit with Tauri (v2 / WKWebView)
 
+- A non-`async` `#[tauri::command]` runs on the UI thread, and while it
+  runs the window can't repaint: the frontend's DOM still updates, but
+  nothing reaches the screen until the command returns. A slow command
+  (`open_deck`'s first render after launch takes ~5s) therefore looks
+  like a frozen app, and DOM-based tests — mocked `e2e/` and
+  `e2e-tauri/` alike — still pass. Mark slow commands
+  `#[tauri::command(async)]`, unless concurrent runs would break shared
+  state (`render_draft` updates the `AssetServer`). To check what was
+  actually painted, record native frames with tauri-playwright's
+  `startRecording`, and keep the window visible — an occluded WKWebView
+  may not paint.
 - `window.confirm()` / `window.prompt()` aren't reliable on Tauri's
   WKWebView (they can silently behave as if cancelled). Build any
   operation that needs confirmation with the app's own in-app UI rather
