@@ -57,7 +57,9 @@ ${total > 1 ? `- 今回は複数タスクの同時実行(${total}件中${index +
 - \`${todoPath}\` のfrontmatterの \`status\` を \`wip\` に更新する(まだ
   kfly8の最終確認が残っているため \`done\` にはしない)。
 - レビュアーの割り当ては行わない(GitHubはPR作成者自身をレビュアーに
-  指定できない仕様上の制約があるため)。
+  指定できない仕様上の制約があるため)。代わりに \`gh pr comment\` で
+  「@kfly8 Pullfrogレビュー完了、マージ準備ができました」という趣旨の
+  コメントを投稿する(GitHub通知をトリガーするため)。
 
 ## 7. 報告
 最後に、PRのURL・実装内容の要約・残っている「人間の判断が必要な項目」を
@@ -68,7 +70,7 @@ const results = await pipeline(
   todoPaths,
   (todoPath, _item, index) => agent(
     taskPrompt(todoPath, index, todoPaths.length),
-    { label: `implement:${todoPath}`, phase: 'Implement' }
+    { label: `implement:${todoPath}`, phase: 'Implement', isolation: 'worktree' }
   )
 )
 
