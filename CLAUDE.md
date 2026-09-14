@@ -233,6 +233,23 @@ don't bundle everything into one giant commit.
   such a value behind an accessor (`function getX() { return x }`) and
   pass *that* — a function identifier is passed by reference
   (`get p() { return getX }`), same as any callback prop.
+- **Unlike the prop case above, a `const` local used directly as a native
+  DOM element's JSX attribute (not passed down to a child) is evaluated
+  once and stays frozen — no reactive inlining happens.** `const x =
+  props.a || props.b; <button disabled={x}/>` compiles `x` to a plain
+  variable computed once in the component's init function; the JSX
+  attribute's own compiled effect references that already-resolved value,
+  never re-reading `props.a`/`props.b`. The compiler's props-to-child
+  inlining (previous entry) doesn't apply here — only an expression
+  written directly inline in the JSX (`disabled={!props.a || props.b}`,
+  duplicated per usage if needed) or wrapped in `createMemo` and called
+  (`disabled={x()}`) stays reactive. Hit extracting `DeckHeader.tsx`'s
+  duplicated `!props.deckPath || props.presentPending` into one local —
+  `bf debug graph` still reported both DOM bindings as tracking
+  `props.deckPath`/`props.presentPending` (a false positive for this
+  specific case), and it silently stopped updating at runtime, caught
+  only by `e2e/present-click-feedback.e2e.ts`. Verified by reading
+  `dist/assets/components/*.js`.
 - **A `createEffect` called inside a conditional branch's `ref` leaks one
   effect per re-entry into that branch, forever** (reported as
   [piconic-ai/barefootjs#2927](https://github.com/piconic-ai/barefootjs/issues/2927),
