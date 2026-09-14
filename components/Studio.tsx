@@ -287,6 +287,42 @@ export function Studio() {
     return () => window.clearTimeout(timer)
   })
 
+  // `deck.isBusy()` drives WelcomeScreen's "Open Deck…"/Recent feedback
+  // and NewDeckModal's Create feedback below — both disabled+"…ing" for
+  // as long as it's true. In-process open/create can finish within a
+  // single frame for a small deck, making that feedback flash too
+  // briefly to register as "still working" rather than reading as a dead
+  // click (real-device report, see todo/welcome-open-feels-frozen.md).
+  // This wraps it with a floor on total visible duration: appears
+  // instantly when busy starts, but never disappears sooner than
+  // `MIN_WELCOME_BUSY_DISPLAY_MS` after it appeared.
+  //
+  // Also gates *which screen renders* below (`deck.deckPath() === null ||
+  // welcomeBusyDisplay()`), not just the `isBusy` prop — measured directly
+  // (a throwaway Playwright probe against openDeckDelayMs: 0): once
+  // `open_deck` resolves, `deckLifecycle` reaches `open` and the editor
+  // replaces WelcomeScreen in the very same tick, with WelcomeScreen
+  // never actually painted in its busy state at all — so floor-ing just
+  // the prop value would have been silently ineffective, since the
+  // component showing it would already be unmounted before any of the
+  // floor's extra time could be observed.
+  const MIN_WELCOME_BUSY_DISPLAY_MS = 400
+  const [welcomeBusyDisplay, setWelcomeBusyDisplay] = createSignal(false)
+  let welcomeBusyStartedAt: number | null = null
+  createEffect(() => {
+    if (deck.isBusy()) {
+      welcomeBusyStartedAt = Date.now()
+      setWelcomeBusyDisplay(true)
+      return
+    }
+    if (welcomeBusyStartedAt === null) return
+    const remaining = remainingMinDisplayMs(welcomeBusyStartedAt, Date.now(), MIN_WELCOME_BUSY_DISPLAY_MS)
+    welcomeBusyStartedAt = null
+    if (remaining === 0) { setWelcomeBusyDisplay(false); return }
+    const timer = window.setTimeout(() => setWelcomeBusyDisplay(false), remaining)
+    return () => window.clearTimeout(timer)
+  })
+
   async function copyErrorMessage(): Promise<void> {
     const message = errorMessage()
     if (message === null) return
@@ -1043,9 +1079,9 @@ export function Studio() {
 
   return (
     <div className="h-full w-full flex flex-col bg-background text-foreground">
-      {deck.deckPath() === null ? (
+      {deck.deckPath() === null || welcomeBusyDisplay() ? (
         <WelcomeScreen
-          isBusy={deck.isBusy()}
+          isBusy={welcomeBusyDisplay()}
           errorMessage={errorMessage()}
           recentDecks={recentDecks()}
           onOpenFolder={() => void handleOpenFolder()}
@@ -1157,7 +1193,7 @@ export function Studio() {
         isOpen={deck.newDeckModalOpen()}
         name={deck.newDeckName()}
         parentDir={deck.newDeckParentDir()}
-        isBusy={deck.isBusy()}
+        isBusy={welcomeBusyDisplay()}
         errorMessage={errorMessage()}
         onNameChange={name => void dispatch({ type: 'name-changed', name })}
         onCancel={() => { setErrorMessage(null); void dispatch({ type: 'create-cancelled' }) }}
