@@ -32,6 +32,17 @@ export interface MockDeck {
    * `render_draft`, a failed `open_deck`/`create_deck`, ...) without this
    * helper needing to model the real failure condition itself. */
   commandError?: (cmd: string, args: Record<string, unknown>) => string | null
+  /** Milliseconds `present_deck` waits before resolving/rejecting —
+   * defaults to 0 (settles on the same tick). A real present-window launch
+   * takes long enough for a user to wonder whether the click landed at
+   * all; setting this lets a test observe the click-feedback state
+   * (`DeckHeader.tsx`'s `presentPending`) while the call is still in
+   * flight instead of it settling before any assertion can see it. */
+  presentDeckDelayMs?: number
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 function buildManifest(source: string): { manifest: Manifest; fragments: Record<string, string> } {
@@ -65,8 +76,9 @@ function renderPayloadFor(source: string): RenderPayload {
  * read it back afterward to assert on the persisted content. Call before
  * `page.goto('/')`. */
 export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
-  await page.exposeFunction('__mockInvoke', (cmd: string, args: Record<string, unknown>) => {
+  await page.exposeFunction('__mockInvoke', async (cmd: string, args: Record<string, unknown>) => {
     const error = deck.commandError?.(cmd, args)
+    if (cmd === 'present_deck' && deck.presentDeckDelayMs) await sleep(deck.presentDeckDelayMs)
     if (error !== null && error !== undefined) throw new Error(error)
     switch (cmd) {
       case 'dev_default_deck': return deck.devDefaultDeck === undefined ? '/fake/deck.md' : deck.devDefaultDeck
