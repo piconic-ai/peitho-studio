@@ -56,7 +56,11 @@ tags: [ui, feedback]
 
 ## 先送り事項
 
-(実装時に見つかった、本筋と無関係な改善点があればここに書き出す)
+- WelcomeScreenの"Open Deck…"/Recentクリックも実機で「フリーズして
+  見える」との指摘をユーザーから受けたが、本タスクの範囲外(Present
+  ボタン固有の話ではない、別コンポーネントの既存機能)のため
+  [[welcome-open-feels-frozen]](`todo/welcome-open-feels-frozen.md`)
+  として切り出した。
 
 ## 実装メモ (PR #55)
 
@@ -73,4 +77,48 @@ tags: [ui, feedback]
   ことが判明(`bf debug graph`は追跡ありと誤検出、実際はe2eテストで
   検出)。元の重複式に戻し、`CLAUDE.md`にBarefootJSの新しい落とし穴
   として記録した。
+
+### 追記: 実機フィードバック後の根本修正
+
+初回実装をユーザーが実機検証したところ、「Presentボタンが一瞬何かを
+表示するがバグっぽい」と指摘。調査の結果、`present_deck`は
+`peitho present`サブプロセスの`spawn()`が通った時点で即returnして
+おり、`presentPending`は実質「spawnが受理されるまでの数ミリ秒」しか
+trueにならないことが判明(重いデッキで遅いのは`spawn()`の**後**、
+サブプロセス自身のレンダリング〜サーバ起動の中で起きており、そこは
+一切見ていなかった)。`mizzy/peitho`側の`peitho present`が実際に
+レンダリング完了後・ブラウザ起動前に`"serving presentation at {url}"`
+をstdoutへ出力していることを確認し、これを本物の完了シグナルとして
+使う方式に変更した:
+
+- Rust側(`src-tauri/src/peitho.rs`): `present_deck`の子プロセスの
+  stdoutを`Stdio::piped()`にし、バックグラウンドスレッドで行単位に
+  読み取って`"serving presentation at "`を検知したら`present-ready`
+  イベントをemit(`watch_present_readiness`/`is_present_ready_line`、
+  後者はRust側のunit testあり)。パイプが詰まって子プロセスをブロック
+  しないよう、検知後もプロセス終了まで読み続ける。
+- フロント側: `ipc/deckIpc.ts`/`ipc/fakeDeckIpc.ts`に`onPresentReady`
+  を追加。`domain/eventRace.ts`の`waitForEventOrTimeout`(イベント発火
+  とタイムアウトの早い方で解決する汎用関数、spec+adversarialテスト
+  あり)を新設し、`Studio.tsx`の`handlePresent`は`present_deck`成功後
+  にこれを15秒タイムアウト付きで待ってから`presentPending`を解除する
+  よう変更。タイムアウトは`peitho`バイナリのバージョンスキュー等で
+  シグナルが来ない場合のフォールバック(エラー表示はせず黙って
+  busy解除)。
+- `e2e/helpers/mockTauri.ts`に`plugin:event|listen`/
+  `transformCallback`/`unregisterListener`の実物に近い実装を追加
+  (これまでは常時no-op — イベントを実際に受け取る必要がこれまで
+  なかったため)。`MockDeck`に`presentReadyDelayMs`を追加し、
+  `present-ready`をシミュレート。`present-click-feedback.e2e.ts`を
+  この新しいアーキテクチャに合わせて更新。
+- 「本当にmin-duration(最小表示時間)だけで直るのか」というユーザーの
+  懸念は正当だった — spawnからサブプロセスの実完了までの時間は
+  デッキの重さに依存し、固定タイマーでは重いデッキの場合に早すぎる
+  busy解除を招くため、実際の完了シグナルを使う方式にした。
+- ユーザーからの提案(ログを垂れ流すstatus line)は、Rust側でstdout/
+  stderrをTauriイベントとして継続的に流しStatusBar相当に表示する、
+  より大きな変更になるため今回は見送り(必要になれば別todoとして
+  起票する)。
+- 全テストグリーン: `bun test` 289 pass / `bun run typecheck` clean /
+  `bun run test:e2e` 9/9 pass / `cargo test --lib` 34 pass。
 - 人間の判断が必要な項目(実機での多重起動確認)は未着手のまま。
