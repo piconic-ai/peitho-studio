@@ -1,3 +1,9 @@
+---
+status: wip
+description: サムネイル一覧・プレビュー枠のiframeをShadow DOM描画に置き換える(実装完了、実機WKWebView検証の一部項目が未了、5章参照)
+tags: [architecture, thumbnail, shadow-dom]
+---
+
 # サムネイル一覧の iframe 撤廃 実行計画
 
 進捗管理用の作業台帳 — **完了したら削除ないし`todo/archive/`へ移動する**。
