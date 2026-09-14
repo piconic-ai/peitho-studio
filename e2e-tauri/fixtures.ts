@@ -3,7 +3,8 @@
 // via tauri-plugin-playwright's Unix-socket bridge — no OS-level clicks, no
 // screen coordinates. The Tauri app must already be running with the
 // e2e-testing feature (its Cargo.toml only links the plugin then) — see
-// e2e-tauri/README.md for how to launch it.
+// docs/tauri-playwright-spike.md's "How to try it" section for how to
+// launch it.
 import { createTauriTest } from '@srsholmes/tauri-playwright'
 
 export const { test, expect } = createTauriTest({
