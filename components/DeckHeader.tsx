@@ -5,6 +5,7 @@
 export interface DeckHeaderProps {
   deckPath: string | null
   presentMenuOpen: boolean
+  presentPending: boolean
   onTogglePresentMenu: () => void
   onClosePresentMenu: () => void
   onPresent: (rehearsal: boolean) => void
@@ -27,9 +28,15 @@ export function DeckHeader(props: DeckHeaderProps) {
               : 'flex items-center rounded-full bg-primary text-primary-foreground overflow-hidden opacity-50'
           }
         >
+          {/* `presentPending` disables both buttons and swaps the label —
+              same click-to-completion pattern as WelcomeScreen's
+              isBusy/"Opening…" — so a slow present launch reads as "still
+              working" instead of a dead click, and a repeat click can't
+              queue a second `present_deck` call while the first is still
+              in flight. */}
           <button
             type="button"
-            disabled={!props.deckPath}
+            disabled={!props.deckPath || props.presentPending}
             onClick={() => {
               props.onClosePresentMenu()
               props.onPresent(false)
@@ -37,11 +44,11 @@ export function DeckHeader(props: DeckHeaderProps) {
             className="pl-4 pr-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed flex items-center gap-1.5"
           >
             <span aria-hidden="true">▶</span>
-            Present
+            {props.presentPending ? 'Presenting…' : 'Present'}
           </button>
           <button
             type="button"
-            disabled={!props.deckPath}
+            disabled={!props.deckPath || props.presentPending}
             onClick={() => props.onTogglePresentMenu()}
             aria-label="Present options"
             className="pl-2 pr-3 py-1.5 border-l border-primary-foreground/25 disabled:cursor-not-allowed"

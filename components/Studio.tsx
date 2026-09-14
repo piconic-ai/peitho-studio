@@ -1007,12 +1007,19 @@ export function Studio() {
   })
 
   async function handlePresent(rehearsal: boolean): Promise<void> {
+    // Guards against a second `present_deck` firing while the first is
+    // still in flight even if some caller reaches this past the button's
+    // own `disabled` — same defensive pattern as `deck.isBusy()` above.
+    if (ui.presentPending()) return
     setErrorMessage(null)
+    ui.setPresentPending(true)
     try {
       await deckIpc.presentDeck(rehearsal)
       setStatusMessage(rehearsal ? 'Presenting (rehearsal)…' : 'Presenting…')
     } catch (err) {
       setErrorMessage(String(err))
+    } finally {
+      ui.setPresentPending(false)
     }
   }
 
@@ -1032,6 +1039,7 @@ export function Studio() {
       <DeckHeader
         deckPath={deck.deckPath()}
         presentMenuOpen={ui.presentMenuOpen()}
+        presentPending={ui.presentPending()}
         onTogglePresentMenu={() => ui.setPresentMenuOpen(!ui.presentMenuOpen())}
         onClosePresentMenu={() => ui.setPresentMenuOpen(false)}
         onPresent={rehearsal => void handlePresent(rehearsal)}
