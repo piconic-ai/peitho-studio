@@ -1,6 +1,6 @@
 export const meta = {
   name: 'implement-todo',
-  description: 'Implement peitho-studio todo/*.md plans end-to-end: PR, Pullfrog review, code-review/simplify, GWT tests, reviewer assignment, stacked if multiple',
+  description: 'Implement peitho-studio todo/*.md plans end-to-end: PR, Pullfrog review, code-review/simplify, GWT tests, stacked if multiple',
   phases: [
     { title: 'Implement', detail: 'plan → implement → test → PR → review loop, per todo' },
   ],
@@ -54,9 +54,10 @@ ${total > 1 ? `- 今回は複数タスクの同時実行(${total}件中${index +
   プッシュし、レビューが通るまで繰り返す。
 
 ## 6. 仕上げ
-- \`gh pr edit --add-reviewer kfly8\` でレビュアーに kfly8 をアサインする。
 - \`${todoPath}\` のfrontmatterの \`status\` を \`wip\` に更新する(まだ
   kfly8の最終確認が残っているため \`done\` にはしない)。
+- レビュアーの割り当ては行わない(GitHubはPR作成者自身をレビュアーに
+  指定できない仕様上の制約があるため)。
 
 ## 7. 報告
 最後に、PRのURL・実装内容の要約・残っている「人間の判断が必要な項目」を
