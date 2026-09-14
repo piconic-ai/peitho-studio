@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: Presentボタンのクリック直後に視覚的フィードバックを追加する
 tags: [ui, feedback]
 ---
@@ -46,9 +46,9 @@ tags: [ui, feedback]
 ## 完了条件
 
 自動で確認できる項目:
-- [ ] `state/uiStore.ts`にPresent実行中フラグを追加
-- [ ] `DeckHeader.tsx`にフィードバックUIを追加
-- [ ] `bun test` / `bun run typecheck` グリーン
+- [x] `state/uiStore.ts`にPresent実行中フラグを追加
+- [x] `DeckHeader.tsx`にフィードバックUIを追加
+- [x] `bun test` / `bun run typecheck` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機で「連打しても多重にプレゼンウィンドウが開かない」ことを確認
@@ -57,3 +57,20 @@ tags: [ui, feedback]
 ## 先送り事項
 
 (実装時に見つかった、本筋と無関係な改善点があればここに書き出す)
+
+## 実装メモ (PR #55)
+
+- `state/uiStore.ts`に`presentPending`フラグ(プレーンなbooleanシグナル、
+  既存の`presentMenuOpen`と同パターン)を追加。
+- `DeckHeader.tsx`のPresentボタン/オプションのシェブロンをクリック直後
+  disabled化し、ラベルを"Presenting…"に変更(`WelcomeScreen.tsx`の
+  `isBusy`/"Opening…"と同パターン)。`Studio.tsx`の`handlePresent`は
+  `presentPending`のガード + try/finallyで成功/失敗どちらでも解除する。
+- `e2e/present-click-feedback.e2e.ts`にGiven-When-Thenのe2eテストを追加
+  (成功パス・失敗パス双方でフィードバック状態の出現/解除を検証)。
+- 実装中、`DeckHeader.tsx`の重複したdisabled式を1つのlocal constに
+  まとめる簡略化を試みたところ、BarefootJSのリアクティビティが壊れる
+  ことが判明(`bf debug graph`は追跡ありと誤検出、実際はe2eテストで
+  検出)。元の重複式に戻し、`CLAUDE.md`にBarefootJSの新しい落とし穴
+  として記録した。
+- 人間の判断が必要な項目(実機での多重起動確認)は未着手のまま。
