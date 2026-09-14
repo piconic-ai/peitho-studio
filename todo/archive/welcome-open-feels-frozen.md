@@ -167,3 +167,38 @@ PR #55のスコープには含めず本ファイルとして切り出した。
   (`disabled=true`)がその間ずっと視認可能であることを確認。ただし
   これは開発サーバー+モックIPC上の検証であり、実機(WKWebView)での
   再確認はまだ。
+
+## 追記: min-durationフロア方式は後日撤回し、楽観的遷移に作り直した
+
+上記のmin-durationフロア方式を実機(`tauri-plugin-playwright`経由、
+`docs/tauri-playwright-spike.md`参照)で検証したところ機能はしていた
+(`e2e-tauri/tests/welcome-open.tauri.e2e.ts`旧版でグリーン)ものの、
+その後ユーザー本人が実際にクリックして「ボタンを押せたこと」
+「処理中になったこと」を示すインタラクションがなく不安になる、との
+フィードバックを受けた。技術的には正しく描画されていても、変化が
+`disabled:opacity-50`+一部だけのラベル変化と地味すぎて、人間が
+気づいて安心できるレベルには達していなかった。
+
+さらにユーザー自身の発案(Android Studioの体感を参照)で、根本的な
+方針転換に至った: 「表示時間を引き伸ばして気づかせる」のではなく、
+「クリックした瞬間に次の画面(エディタ)へ即座に遷移し、裏で
+`open_deck`を完了させる」楽観的(optimistic)遷移にする方が良い、と。
+`open_deck`自体は実測でほぼ一瞬(in-processレンダリングのため)で
+終わっており、「処理を速くする」余地はほとんどなかったため、
+「画面遷移そのものをフィードバックにする」方針の方が理にかなっていた。
+
+実装は`state/deckStore.ts`に`showEditor`(lifecycleが`opening`|`open`で
+true)を追加し、`Studio.tsx`の画面分岐を`deckPath() === null`ベースから
+`showEditor()`ベースに変更。`deckPath()`がまだnull(=`opening`中)の間は
+エディタの中身の代わりに「Loading deck…」プレースホルダーを表示する。
+これにより`welcomeBusyDisplay`/`MIN_WELCOME_BUSY_DISPLAY_MS`/
+`domain/minDisplayDuration.ts`一式は不要になり削除した。失敗時
+(`open_deck`が reject)は`decide()`の既存の`opening`→`failed`→
+`welcome`遷移により自動的にWelcomeScreenへ戻り、エラーバナーが出る
+(追加コードなしでそのまま動作)。
+
+`e2e/welcome-busy-feedback.e2e.ts`を新アーキテクチャ用に書き換え
+(即座の画面遷移 + ローディングプレースホルダー + 失敗時のフォール
+バックの3ケース)、実機テスト`e2e-tauri/tests/welcome-open.tauri.e2e.ts`
+でも再検証しグリーン。詳細は`components/Studio.tsx`・
+`state/deckStore.ts`の該当コミットを参照。

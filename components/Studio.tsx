@@ -13,7 +13,6 @@ import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems } from '../domain/contextMenu'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
 import { waitForEventOrTimeout } from '../domain/eventRace'
-import { remainingMinDisplayMs } from '../domain/minDisplayDuration'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas } from '../dom/slideCanvas'
@@ -284,42 +283,6 @@ export function Studio() {
   createEffect(() => {
     if (errorMessage() === null || deck.newDeckModalOpen()) return
     const timer = window.setTimeout(() => setErrorMessage(null), 6000)
-    return () => window.clearTimeout(timer)
-  })
-
-  // `deck.isBusy()` drives WelcomeScreen's "Open Deck…"/Recent feedback
-  // and NewDeckModal's Create feedback below — both disabled+"…ing" for
-  // as long as it's true. In-process open/create can finish within a
-  // single frame for a small deck, making that feedback flash too
-  // briefly to register as "still working" rather than reading as a dead
-  // click (real-device report, see todo/welcome-open-feels-frozen.md).
-  // This wraps it with a floor on total visible duration: appears
-  // instantly when busy starts, but never disappears sooner than
-  // `MIN_WELCOME_BUSY_DISPLAY_MS` after it appeared.
-  //
-  // Also gates *which screen renders* below (`deck.deckPath() === null ||
-  // welcomeBusyDisplay()`), not just the `isBusy` prop — measured directly
-  // (a throwaway Playwright probe against openDeckDelayMs: 0): once
-  // `open_deck` resolves, `deckLifecycle` reaches `open` and the editor
-  // replaces WelcomeScreen in the very same tick, with WelcomeScreen
-  // never actually painted in its busy state at all — so floor-ing just
-  // the prop value would have been silently ineffective, since the
-  // component showing it would already be unmounted before any of the
-  // floor's extra time could be observed.
-  const MIN_WELCOME_BUSY_DISPLAY_MS = 400
-  const [welcomeBusyDisplay, setWelcomeBusyDisplay] = createSignal(false)
-  let welcomeBusyStartedAt: number | null = null
-  createEffect(() => {
-    if (deck.isBusy()) {
-      welcomeBusyStartedAt = Date.now()
-      setWelcomeBusyDisplay(true)
-      return
-    }
-    if (welcomeBusyStartedAt === null) return
-    const remaining = remainingMinDisplayMs(welcomeBusyStartedAt, Date.now(), MIN_WELCOME_BUSY_DISPLAY_MS)
-    welcomeBusyStartedAt = null
-    if (remaining === 0) { setWelcomeBusyDisplay(false); return }
-    const timer = window.setTimeout(() => setWelcomeBusyDisplay(false), remaining)
     return () => window.clearTimeout(timer)
   })
 
@@ -1079,9 +1042,9 @@ export function Studio() {
 
   return (
     <div className="h-full w-full flex flex-col bg-background text-foreground">
-      {deck.deckPath() === null || welcomeBusyDisplay() ? (
+      {!deck.showEditor() ? (
         <WelcomeScreen
-          isBusy={welcomeBusyDisplay()}
+          isBusy={deck.isBusy()}
           errorMessage={errorMessage()}
           recentDecks={recentDecks()}
           onOpenFolder={() => void handleOpenFolder()}
@@ -1099,6 +1062,18 @@ export function Studio() {
         onPresent={rehearsal => void handlePresent(rehearsal)}
       />
 
+      {deck.deckPath() === null ? (
+        // `showEditor()` went true the instant `open-requested`/`created`
+        // was dispatched — before `deckIpc.openDeck()` has even started,
+        // let alone resolved. Landing here immediately (rather than
+        // staying on WelcomeScreen until data arrives) is the whole
+        // point: the screen change itself is the "you pressed it and it's
+        // doing something" signal, which held up far better on a real
+        // device than any busy-indicator design bolted onto WelcomeScreen
+        // did (see todo/archive/welcome-open-feels-frozen.md). Usually
+        // gone within a frame or two, since `open_deck` itself is fast.
+        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Loading deck…</div>
+      ) : (
       <div className="flex-1 flex min-h-0">
         <SlideList
           manifest={render.manifest()}
@@ -1153,6 +1128,7 @@ export function Studio() {
           canvasHeight={render.canvasHeight()}
         />
       </div>
+      )}
 
       <StatusBar
         errorMessage={errorMessage()}
@@ -1193,7 +1169,7 @@ export function Studio() {
         isOpen={deck.newDeckModalOpen()}
         name={deck.newDeckName()}
         parentDir={deck.newDeckParentDir()}
-        isBusy={welcomeBusyDisplay()}
+        isBusy={deck.isBusy()}
         errorMessage={errorMessage()}
         onNameChange={name => void dispatch({ type: 'name-changed', name })}
         onCancel={() => { setErrorMessage(null); void dispatch({ type: 'create-cancelled' }) }}
