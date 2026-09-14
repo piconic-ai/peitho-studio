@@ -19,7 +19,30 @@ entirely: it embeds a control server in the app that Playwright talks to
 over a Unix socket, which calls `WKWebView.evaluateJavaScript` directly —
 no screen coordinates, no risk of hitting the wrong window.
 
-## Status: integration works; one real environmental blocker found
+## Status: a green run against the real window, with one caveat and one gotcha
+
+A follow-up session, with the display actually awake throughout, reached a
+genuine green run: `npx playwright test --config e2e-tauri/playwright.config.ts`
+passes against the real WKWebView window (`e2e-tauri/tests/welcome.tauri.e2e.ts`).
+The display-sleep issue below turned out to be exactly that — display sleep,
+not a deeper bug — confirmed by relaunching with the display awake and
+getting the socket up in ~2s, same as the very first launch.
+
+One real npm-package bug found along the way: **`getByText`/`getByRole` +
+`expect(...).toBeVisible()` don't work against the real window**, even
+though the element is provably visible. Confirmed by hand — with the app on
+the welcome screen, `document.body.innerText` and
+`tauriPage.isVisible('h1')` (a plain CSS selector) both agree the `<h1>`
+holding "Peitho Studio" is there and visible, but
+`tauriPage.getByText('Peitho Studio', { exact: true }).isVisible()` returns
+`false`, and the corresponding `expect(...).toBeVisible()` times out.
+`tauriPage.locator(cssSelector)` — plain `document.querySelectorAll` under
+the hood, confirmed by reading `dist/index.js` — works correctly. Every
+real-window test here now uses `locator()` with a CSS selector instead of
+the semantic `getByText`/`getByRole` helpers; see the comment in
+`e2e-tauri/tests/welcome.tauri.e2e.ts`.
+
+## Status: one real environmental blocker found (resolved — see above)
 
 What's actually been verified, each rebuilt and re-run to confirm (not
 assumed from reading the README):
@@ -109,8 +132,6 @@ Committed on this branch (`feat/tauri-playwright-e2e`, based on `main`,
 
 **Not yet done** — this was a feasibility spike, not the full rollout:
 
-- Never actually got a green test run against the real window (blocked by
-  the display-sleep issue above, discovered late in the session).
 - No CI wiring, no `PEITHO_STUDIO_DEV_DECK`-based seam for tests that need
   to skip the native folder-picker dialog (`plugin:dialog|open` isn't
   mockable in `tauri` mode the way it is in `browser` mode/`e2e/`'s
