@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: Presentボタンのクリック直後に視覚的フィードバックを追加する
 tags: [ui, feedback]
 ---
@@ -51,8 +51,16 @@ tags: [ui, feedback]
 - [x] `bun test` / `bun run typecheck` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機で「連打しても多重にプレゼンウィンドウが開かない」ことを確認
-      (フィードバックのついでに、そもそも多重起動が起きうるかも要確認)
+- [x] 実機で「連打しても多重にプレゼンウィンドウが開かない」ことを確認 —
+      `tauri-plugin-playwright`(`docs/tauri-playwright-spike.md`)経由で
+      実際のWKWebViewウィンドウに対して`e2e-tauri/tests/
+      present-double-click.tauri.e2e.ts`を実行し、Presentボタンを連続
+      クリックした後も`peitho present`プロセスが1つだけ(Chrome
+      プレゼンウィンドウも1つだけ、`~/.peitho/chrome-profile-slides`の
+      専用プロファイルで)起動していることを`ps aux`で確認。フロント側の
+      `presentPending`ガードに加え、Rust側`present_deck`にも「新規spawn
+      前に前回の子プロセスをkillする」防御があり、二重の保護になって
+      いることも確認できた。
 
 ## 先送り事項
 
