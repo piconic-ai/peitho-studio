@@ -24,6 +24,7 @@
     "@barefootjs/test": "^0.35.7",
     "@barefootjs/vite": "^0.35.7",
     "@playwright/test": "^1.63.0",
+    "@srsholmes/tauri-playwright": "^0.4.1",
     "@tauri-apps/cli": "^2.11.4",
     "@types/bun": "^1.1.0",
     "@types/node": "^22.0.0",

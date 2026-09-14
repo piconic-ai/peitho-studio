@@ -17,6 +17,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 
+[features]
+# Off by default — pulls in a Unix-socket control server (tokio) purely for
+# Playwright's "tauri" mode to drive the real WKWebView window in e2e tests.
+# See docs/tauri-playwright-spike.md.
+e2e-testing = ["tauri-plugin-playwright"]
+
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
@@ -24,6 +30,7 @@ log = "0.4"
 tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-playwright = { version = "0.4", optional = true }
 notify = "6"
 tiny_http = "0.12"
 sha2 = "0.10"
