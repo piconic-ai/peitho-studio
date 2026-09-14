@@ -80,9 +80,9 @@ produced the "listening on unix:..." log line at all — not a timeout, no
 log output whatsoever — even though `ps`/`lsof` showed the process
 genuinely running and loading WebKit resources. The very first launch
 earlier in this spike, while the display was awake, worked in ~2 seconds.
-This is consistent with (though not proven to be exactly)
-[[tauri-macos-window-automation]]'s note (from the kfly8/notes repo,
-sourced from a `tophatch/swift-pwa` issue) that a hidden/occluded WKWebView
+This is consistent with (though not proven to be exactly) a note from
+[an investigation of the same class of macOS issue](https://notes.kobaken.co/tauri-macos-window-automation)
+(sourced from a `tophatch/swift-pwa` issue) that a hidden/occluded WKWebView
 throttles rendering to 0fps — here it looks like *process startup itself*
 stalls with the display off, not just steady-state rendering. Not
 re-investigated further in this session; the process was killed rather
