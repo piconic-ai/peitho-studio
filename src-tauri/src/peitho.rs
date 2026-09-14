@@ -382,7 +382,11 @@ fn watch_deck_file(window: WebviewWindow, deck_path: &Path) -> notify::Result<Re
     Ok(watcher)
 }
 
-#[tauri::command]
+// `async`: a plain command runs on the UI thread, and the first render after
+// launch takes seconds, during which the window can't repaint at all.
+// `render_draft` stays sync on purpose — it updates the shared `AssetServer`,
+// so concurrent runs could leave an older render being served.
+#[tauri::command(async)]
 pub fn open_deck(
     path: String,
     app: AppHandle,
