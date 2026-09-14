@@ -12,6 +12,8 @@ import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, val
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems } from '../domain/contextMenu'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
+import { waitForEventOrTimeout } from '../domain/eventRace'
+import { remainingMinDisplayMs } from '../domain/minDisplayDuration'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas } from '../dom/slideCanvas'
@@ -1006,6 +1008,21 @@ export function Studio() {
     })
   })
 
+  // `present_deck` resolving only means the OS accepted spawning the
+  // `peitho present` subprocess — near-instant regardless of deck size,
+  // well before that subprocess has actually rendered anything. Clearing
+  // `presentPending` right there (the original version of this function)
+  // made the busy state flash for a single frame on every click, reading
+  // as a glitch rather than feedback, and — worse — never actually covered
+  // the slow part a heavy deck spends rendering, which is exactly the lag
+  // this feature exists to cover. `onPresentReady` fires once the
+  // subprocess's own stdout shows it actually started serving (see
+  // `watch_present_readiness` in peitho.rs); the fixed timeout is only a
+  // fallback for a `peitho` binary that, for whatever reason, never prints
+  // that line (e.g. a version mismatch) — busy state just clears silently
+  // in that case rather than hanging forever with no way out.
+  const PRESENT_READY_TIMEOUT_MS = 15_000
+
   async function handlePresent(rehearsal: boolean): Promise<void> {
     // Guards against a second `present_deck` firing while the first is
     // still in flight even if some caller reaches this past the button's
@@ -1015,6 +1032,7 @@ export function Studio() {
     ui.setPresentPending(true)
     try {
       await deckIpc.presentDeck(rehearsal)
+      await waitForEventOrTimeout(deckIpc.onPresentReady, PRESENT_READY_TIMEOUT_MS)
       setStatusMessage(rehearsal ? 'Presenting (rehearsal)…' : 'Presenting…')
     } catch (err) {
       setErrorMessage(String(err))

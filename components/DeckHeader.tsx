@@ -33,7 +33,8 @@ export function DeckHeader(props: DeckHeaderProps) {
               isBusy/"Opening…" — so a slow present launch reads as "still
               working" instead of a dead click, and a repeat click can't
               queue a second `present_deck` call while the first is still
-              in flight. */}
+              in flight. "In flight" here outlasts the `present_deck` call
+              itself — see `handlePresent` in Studio.tsx for why. */}
           <button
             type="button"
             disabled={!props.deckPath || props.presentPending}

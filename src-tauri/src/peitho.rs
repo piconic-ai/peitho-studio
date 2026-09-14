@@ -10,8 +10,9 @@
 // comparing two decks side by side is the whole point of that feature.
 
 use std::collections::HashMap;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::sync::Mutex;
@@ -29,6 +30,41 @@ use crate::engine::serve::AssetServer;
 /// after it changes on disk — from an external editor, an AI agent, `git
 /// checkout`, anything other than this app's own `save_deck_source`.
 const DECK_FILE_CHANGED_EVENT: &str = "deck-file-changed";
+
+/// Event name the frontend listens for (see Studio.tsx's `handlePresent`)
+/// once the `peitho present` subprocess has actually rendered the deck and
+/// started serving it — see `watch_present_readiness` for where this fires.
+const PRESENT_READY_EVENT: &str = "present-ready";
+
+/// The line `peitho present` (see `crates/peitho/src/main.rs` in the
+/// `peitho` repo) prints to stdout right after the deck finishes rendering
+/// and its local server starts, just before it launches the presentation
+/// browser windows — the closest thing this process has to "the click
+/// actually did something," since `present_deck` returning only means
+/// `spawn()` succeeded, well before rendering even starts. Exact prefix
+/// match rather than a full line comparison since the line also carries the
+/// server URL.
+fn is_present_ready_line(line: &str) -> bool {
+    line.starts_with("serving presentation at ")
+}
+
+/// Runs for the child's whole lifetime (not just until the readiness line
+/// appears) so a full stdout pipe buffer can never block the child from
+/// writing further output once we've stopped caring about individual
+/// lines. `None` (stdout wasn't piped) is a silent no-op.
+fn watch_present_readiness(stdout: Option<ChildStdout>, window: WebviewWindow) {
+    let Some(stdout) = stdout else { return };
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        let mut emitted = false;
+        for line in reader.lines().map_while(Result::ok) {
+            if !emitted && is_present_ready_line(&line) {
+                let _ = window.emit(PRESENT_READY_EVENT, ());
+                emitted = true;
+            }
+        }
+    });
+}
 
 /// Live session state for every open window with a deck loaded, keyed by
 /// that window's label. Absent entries mean "no deck open in this window"
@@ -514,11 +550,18 @@ pub fn present_deck(rehearsal: bool, window: WebviewWindow, session: State<Peith
         command.arg("--rehearsal");
     }
 
-    let child = command
-        .stdout(Stdio::null())
+    let mut child = command
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .map_err(|err| format!("failed to launch `peitho present`: {err}"))?;
+
+    // This command returning `Ok` only means the OS accepted the `spawn()`
+    // call — near-instant regardless of deck size, well before the child
+    // has actually rendered anything. Watching for its own readiness line
+    // instead (see `watch_present_readiness`) gives the frontend a signal
+    // that tracks the part that's actually slow for a heavy deck.
+    watch_present_readiness(child.stdout.take(), window);
 
     state.present_child = Some(child);
     Ok(())
@@ -527,6 +570,21 @@ pub fn present_deck(rehearsal: bool, window: WebviewWindow, session: State<Peith
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_present_ready_line_spec_matches_the_real_prefix_with_a_url_suffix() {
+        assert!(is_present_ready_line("serving presentation at http://127.0.0.1:4317/present.html"));
+    }
+
+    #[test]
+    fn is_present_ready_line_adversarial_rejects_unrelated_or_partial_lines() {
+        assert!(!is_present_ready_line(""));
+        assert!(!is_present_ready_line("generated present cache at .peitho-present-cache"));
+        assert!(!is_present_ready_line("recording rehearsal to .peitho-rehearsals/"));
+        // Case-sensitive, and no match on a mere substring occurring mid-line.
+        assert!(!is_present_ready_line("Serving presentation at http://x"));
+        assert!(!is_present_ready_line("now serving presentation at http://x"));
+    }
 
     #[test]
     fn validate_deck_name_spec_trims_surrounding_whitespace() {

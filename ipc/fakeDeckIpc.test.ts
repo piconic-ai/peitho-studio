@@ -50,9 +50,21 @@ describe('createFakeDeckIpc', () => {
     expect(count).toBe(1)
   })
 
+  test('spec: onPresentReady subscribes, emitPresentReady fires every subscriber', () => {
+    const ipc = createFakeDeckIpc()
+    let a = 0
+    let b = 0
+    ipc.onPresentReady(() => { a++ })
+    ipc.onPresentReady(() => { b++ })
+    ipc.emitPresentReady()
+    expect(a).toBe(1)
+    expect(b).toBe(1)
+  })
+
   test('adversarial: emitting with no subscribers does nothing (no throw)', () => {
     const ipc = createFakeDeckIpc()
     expect(() => { ipc.emitDeckFileChanged() }).not.toThrow()
+    expect(() => { ipc.emitPresentReady() }).not.toThrow()
   })
 
   test('adversarial: unsubscribing twice is a no-op, not an error', () => {
