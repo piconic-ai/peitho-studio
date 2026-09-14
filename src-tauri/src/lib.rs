@@ -149,8 +149,21 @@ fn build_recent_menu(app: &tauri::AppHandle, recents: &[String]) -> tauri::Resul
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
+    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    // Only in an `--features e2e-testing` build (see
+    // docs/tauri-playwright-spike.md): embeds a control server Playwright's
+    // "tauri" mode connects to over a Unix socket to drive this real
+    // WKWebView window — never in a normal build. Registered here rather
+    // than inside `.setup()` (where `tauri_plugin_log` is, below) because
+    // this plugin injects a `js_init_script` that only reaches a webview's
+    // *first* page load — `setup()` runs after `tauri.conf.json`'s
+    // declared windows already exist, which is too late for the main
+    // window's init script to take effect (confirmed: the plugin's own
+    // `window.__PW_ACTIVE__` readiness marker never appeared when this was
+    // registered from `setup()` instead).
+    #[cfg(feature = "e2e-testing")]
+    let builder = builder.plugin(tauri_plugin_playwright::init());
+    builder
         .manage(PeithoSession::default())
         .manage(PendingDecks::default())
         .menu(|app| build_menu_with_recents(app, Vec::new()))

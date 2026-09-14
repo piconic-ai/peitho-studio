@@ -1,3 +1,17 @@
 fn main() {
-  tauri_build::build()
+  // `capabilities/e2e/*` grants `playwright:default`, which only resolves
+  // (tauri-build validates every listed permission against the plugins
+  // actually linked in) when `tauri-plugin-playwright` is — i.e. only in a
+  // `--features e2e-testing` build. Scanning that directory in a normal
+  // build fails with "Permission playwright:default not found", so it's
+  // only included in the capability glob when the feature is on; a normal
+  // build's glob never reaches it, since `*` doesn't cross the `e2e/`
+  // directory boundary.
+  let pattern = if std::env::var_os("CARGO_FEATURE_E2E_TESTING").is_some() {
+    "./capabilities/**/*"
+  } else {
+    "./capabilities/*.json"
+  };
+  tauri_build::try_build(tauri_build::Attributes::new().capabilities_path_pattern(pattern))
+    .expect("failed to run tauri-build");
 }

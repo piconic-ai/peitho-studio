@@ -68,11 +68,20 @@ see every file's status at a glance:
   fixed a real bug, see `new-slide.e2e.ts`). What it *can't* catch:
   anything that depends on peitho-core's actual output or a real WKWebView
   (rendering fidelity, `adoptedStyleSheets`/`@font-face` support, native
-  right-click, drag). Real e2e that drives an actual Tauri window (via
-  `tauri-driver`) is still queued in `tmp/todo.md` as a Scope1+ concern;
-  until then, the steps for verifying WKWebView-specific behavior on a
-  real device are collected in
-  `.claude/skills/run-peitho-studio/SKILL.md`.
+  right-click, drag). Real e2e that drives an actual Tauri window is still
+  queued in `tmp/todo.md` as a Scope1+ concern — **not** via `tauri-driver`
+  as originally assumed: it has no macOS support at all (Apple doesn't ship
+  a WKWebDriver; confirmed at
+  [tauri-apps/tauri#7068](https://github.com/tauri-apps/tauri/issues/7068)).
+  A spike into the actual macOS-viable alternative
+  (`tauri-plugin-playwright`, which drives the webview over a Unix socket
+  instead of OS-level input) is in progress — see
+  `docs/tauri-playwright-spike.md`. Until real e2e lands, the steps for
+  verifying WKWebView-specific behavior on a real device are collected in
+  `.claude/skills/run-peitho-studio/SKILL.md` — but see that spike doc's
+  own findings first: OS-level GUI automation (`osascript`/`cliclick`) has
+  caused a real incident (a misdirected click during a screen-shared
+  meeting) and should be treated as a last resort, not the default.
 
 ## Commit granularity
 
