@@ -644,7 +644,7 @@ export function Studio() {
     // Show the clamped value right away: when the slide already holds that
     // time, nothing below saves or re-renders to correct the spinners.
     const timeMs = savableSectionTimeMs(draft.timeMs, otherSectionsMs)
-    if (timeMs !== draft.timeMs) updateSectionDraft(manifestIndex, current => ({ ...current, timeMs }))
+    updateSectionDraft(manifestIndex, current => ({ ...current, timeMs }))
     const slideText = currentSlideText(startIndex)
     const updatedSlideText = updatePageComment(slideText, { section: draft.name, time: formatDurationMs(timeMs) })
     if (updatedSlideText === slideText) return
