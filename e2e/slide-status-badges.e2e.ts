@@ -46,15 +46,22 @@ test('Given an open deck, when "Skip in Present" is turned on and then off from 
   const row = page.locator('[data-slide-row="1"]')
   await expect(row.locator('[data-slide-status]')).toHaveCount(0)
 
-  await row.click({ button: 'right' })
-  await page.getByRole('button', { name: /^Skip in Present/ }).click()
-  await expect(row.locator('[data-slide-status="skip"]')).toBeVisible({ timeout: 5_000 })
-  expect(deck.source).toContain('"skip":true')
+  const skipToggle = page.getByRole('button', { name: /^Skip in Present/ })
 
   await row.click({ button: 'right' })
-  await page.getByRole('button', { name: /^Skip in Present/ }).click()
+  await skipToggle.click()
+  await expect(row.locator('[data-slide-status="skip"]')).toBeVisible({ timeout: 5_000 })
+  // `commitChange` paints the new render *before* it saves and refreshes
+  // `slideRanges`, so wait for both instead of racing them: the save for
+  // the file, and the menu's checkmark (read from `slideRanges`) before
+  // toggling again — otherwise the second click could re-apply skip.
+  await expect.poll(() => deck.source).toContain('"skip":true')
+
+  await row.click({ button: 'right' })
+  await expect(skipToggle).toContainText('✓')
+  await skipToggle.click()
   await expect(row.locator('[data-slide-status]')).toHaveCount(0, { timeout: 5_000 })
-  expect(deck.source).not.toContain('"skip":true')
+  await expect.poll(() => deck.source).not.toContain('"skip":true')
 })
 
 test.describe('non-functional: the badge overlay never gets in the way of interacting with the thumbnail', () => {
