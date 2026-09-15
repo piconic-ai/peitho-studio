@@ -966,7 +966,11 @@ export function Studio() {
       }
       const tag = document.activeElement?.tagName.toLowerCase()
       if (tag === 'input' || tag === 'textarea') return
-      const count = render.manifest()?.slides.length ?? 0
+      // `slideEntries().length`, not `manifest.slideCount`/`manifest.slides.length`
+      // — the latter excludes drafts, which would leave ArrowUp/ArrowDown
+      // permanently unable to reach a draft placeholder (or anything past
+      // it) once a deck has one, even though it's reachable by click.
+      const count = slideEntries().length
       if (count === 0) return
       const current = editor.selectedIndex()
       const key = event.key.toLowerCase()
