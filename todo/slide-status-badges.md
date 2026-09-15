@@ -111,16 +111,49 @@ Skipは`SlideList.tsx`でサムネイル下に "skip" というテキストラ�
 - [x] (Rust変更があれば) `cargo test` グリーン(テスト追加のみ、挙動変更なし)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] `render_draft`のdraftスライド扱いを調査した結果、Rust側の変更が
+- [x] `render_draft`のdraftスライド扱いを調査した結果、Rust側の変更が
       要ると分かった場合、その設計をFableに相談してから着手する
-      — **該当した**(上記「調査結果」)。draftバッジの表示と、draft有無で
-      ずれるサムネイル↔`slideRanges()`のインデックス対応は未着手。
-      `slideStatusBadge`と`SlideList.tsx`のオーバーレイは`draft`も
-      受け付ける形になっているので、データが届けばそのまま表示される
+      — **該当した**(上記「調査結果」)。kfly8確認: 「Draftにしたスライドが
+      非表示のままでは要件未達」との指摘を受け、Rust側(peitho-core)を
+      変更せず、フロントエンド側で`manifest.slides`ではなく
+      `editor.slideRanges()`(常に全件、draft含む)を起点にサムネイル一覧を
+      再構築する方式で解決した。
+      - `domain/slideList.ts`(新設): `buildSlideList(fullSource,
+        manifestSlides)`が両者を突き合わせ、各行を`{kind:'rendered',
+        sourceIndex, manifestIndex, slide}`(peitho-coreがレンダリング済み)
+        または`{kind:'placeholder', sourceIndex, title, draft, key}`
+        (draft、または再レンダリング未反映の一時的な状態)に分類する。
+        `manifestIndexAt`/`manifestIndexToSourceIndex`/
+        `recordByManifestIndex`/`sectionStartBySourceIndex`で、
+        `state/renderStore.ts`側(manifestのインデックス基準のまま)と
+        `SlideList.tsx`/`Studio.tsx`の他の全操作(sourceIndex基準)との
+        変換を行う。
+      - `SlideList.tsx`は`manifest.slides`ではなく`entries`
+        (`buildSlideList`の結果)を`.map()`する。`kind:'placeholder'`の行は
+        canvasをマウントせず、生Markdownから抽出したタイトルをそのまま
+        表示するプレースホルダーにし、`draft`ならDRAFTバッジを重ねる。
+      - これにより、draft有無でサムネイル行番号と`slideRanges()`の
+        インデックスがずれる既存の不整合(クリック/右クリック/Skip切替が
+        1つ前のスライドに効いてしまう問題)も同時に解消した — 両者が
+        同じ`sourceIndex`空間に統一されたため。
+      - e2eモック(`e2e/helpers/mockTauri.ts`)もdraftスライドを
+        manifestから除外するよう修正(実peitho-coreの挙動に合わせた)。
+        修正前のモックはdraftを除外しなかったため、上記のずれが
+        モックe2eで再現できなかった — `e2e/slide-status-badges.e2e.ts`に
+        draft関連の新規テスト4件を追加し、この修正で初めて再現・検証
+        できることを確認した。
 - [ ] 実機(`run-peitho-studio` skill)でdraft/skip双方の見た目を確認
       (skipバッジの半透明オーバーレイ`bg-black/40`は`color-mix()`で
-      出力されるため、WKWebViewでの見え方も併せて確認する)
+      出力されるため、WKWebViewでの見え方も併せて確認する)。draftの
+      プレースホルダー(`bg-muted`のタイトルのみ表示)の見た目も
+      合わせて確認する。
 
 ## 先送り事項
 
-(実装時に見つかった、本筋と無関係な改善点があればここに書き出す)
+- kfly8指摘: SKIPバッジが赤すぎて目立ちすぎる(`bg-destructive
+  text-destructive-foreground`)。DRAFTバッジと同じ地味な配色
+  (`bg-muted text-foreground`)に統一した — 両バッジとも見た目は同じに
+  なり、ラベル文字列(DRAFT/SKIP)だけで区別する。将来的にバッジごとに
+  異なる色を付けたくなった場合は、このプロジェクトの中立的なデザイン
+  トークン(destructive/secondary/accentのみで、warning系の色相がない)に
+  1色追加するかどうかから検討し直す必要がある。
