@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: セクション時間設定を分/秒スピナーのGUIに置き換え、不正フォーマット入力を構造的に防ぐ
 tags: [ui, section, time]
 ---
@@ -39,6 +39,33 @@ tags: [ui, section, time]
   従来通り`formatDurationMs`で組み立てる — フォーマット自体は変更しない。
   変わるのはUIの入力手段のみ。
 
+### 実装時に決めたこと
+
+- **UI**: `<input type="number">`を2つ(分・秒)。ネイティブのスピン
+  ボタンとキーボードの上下キーでステップでき、直接入力もできる。分には
+  `min="0"`、秒には`min`/`max`を付けない(矢印で59を超えて/0を下回って
+  ステップさせ、繰り上げ/繰り下げを起こすため)。
+- **60秒以上は繰り上げ、負の秒は分から繰り下げ**(時計と同じ挙動)。
+  合計は`[0, MAX_DURATION_MS]`にクランプし、整数秒に丸める
+  (`minutesSecondsToMs`)。`MAX_DURATION_MS`は`Number.MAX_SAFE_INTEGER`
+  msを秒単位に切り下げた値 — これを超えると`formatDurationMs`が
+  `1e+21m`のような指数表記を出し、`parseDurationToMs`が読めなくなるため。
+- **`SectionDraft`は`{ name, timeMs }`(ミリ秒)に変更**した。
+  `{ minutes, seconds }`だと`0分90秒`と`1分30秒`のように同じ時間に2つの
+  表現ができてしまうため、正規形が1つのミリ秒にした。表示時に
+  `msToMinutesSeconds`で分解する。
+- **0秒は保存時に1秒へクランプ**(`savableSectionTimeMs`)。peitho-core
+  は`time must be greater than zero`で0を拒否する。編集中は0分0秒を表示
+  できるようにした(分を0にしてから秒を打つ途中で秒欄を書き換えないため)。
+- **セクションヘッダーの保存は、フォーカスがヘッダーの外に出たとき**
+  (`dom/sectionHeader.ts`の`isFocusMovingWithinSectionHeader`)。入力欄
+  ごとのblurで保存すると、分→秒へTabした瞬間に保存が走り、その再描画で
+  下書きがリセットされて、保存中にステップした秒が消えるため
+  (`e2e/section-time-spinner.e2e.ts`の最後のテストで再現・固定)。
+- **打った文字列が同じ値に正規化される場合の表示ずれ**(値が`0`のときに
+  `000`や`-1`を打つ等)は、reactiveな`value`バインディングだけでは書き
+  戻されない。`onChange`で`showCanonicalValue`を呼んで書き戻す。
+
 ## レイヤー配置
 
 - `domain/slides.ts`に、既存の`parseDurationToMs`/`formatDurationMs`
@@ -46,13 +73,18 @@ tags: [ui, section, time]
   - `msToMinutesSeconds(ms: number): { minutes: number; seconds: number }`
   - `minutesSecondsToMs(minutes: number, seconds: number): number`
   を追加(いずれも純粋関数)。
+  - 実装時に追加: `withDurationPart`(スピナー1つの編集)、
+    `savableSectionTimeMs`/`MIN_SECTION_TIME_MS`(保存時の下限)、
+    `MAX_DURATION_MS`。
 - `SlideList.tsx`側の`SectionDraft`(`domain/render.ts`)は`time: string`
   のまま(既存の保存経路を変えない)にするか、`{ minutes, seconds }`に
   変えるかは実装時に決める — 後者の方がスピナーの状態とドメインの往復が
-  自然になりやすい。
+  自然になりやすい。→ `{ name, timeMs }`に変更(上記「実装時に決めた
+  こと」参照)。初期値は`domain/render.ts`の`savedSectionDraft`。
 - `Studio.tsx`の`onSectionTimeInput`/`commitSectionEdit`は
   スピナー由来の値を受け取るよう調整するだけで、`parseDurationToMs`の
   失敗ケース自体が構造上発生しなくなる。
+- DOM操作(フォーカス判定・表示の書き戻し)は`dom/sectionHeader.ts`。
 
 ## テスト
 
@@ -61,18 +93,51 @@ tags: [ui, section, time]
   巨大値)。
 - 相互変換(`minutesSecondsToMs(msToMinutesSeconds(ms).minutes, ...) === ms`
   の往復)テストも入れておく。
+- 実装時に追加:
+  - `domain/slides.examples.ts`: スピナー編集のGiven-When-Then例(データ)。
+    `slides.test.ts`が`example: ...`として実行する。
+  - 非機能(堅牢性): `<input type="number">`が返しうる任意の数値
+    (NaN/±Infinity/-0/巨大値/小数)に対し、保存される文字列が必ず
+    `parseDurationToMs`で同じ値に読み戻せること、および保存値が
+    `[1秒, MAX_DURATION_MS]`に収まることのプロパティテスト(fast-check)。
+  - `e2e/section-time-spinner.e2e.ts`: モックIPC経由で実際の
+    SlideList→Studio→`save_deck_source`の経路を通すGiven-When-Then例。
+    `e2e/helpers/mockTauri.ts`はPageCommentからセクションを組み立て、
+    `render_draft`の遅延を指定できるようにした。
 
 ## 完了条件
 
 自動で確認できる項目:
-- [ ] `domain/slides.ts`への変換関数追加 + spec/adversarialテスト
-- [ ] `SlideList.tsx`のスピナーUI実装
-- [ ] `Studio.tsx`側の配線変更
-- [ ] `bun test`/`bun run typecheck`グリーン
+- [x] `domain/slides.ts`への変換関数追加 + spec/adversarialテスト
+- [x] `SlideList.tsx`のスピナーUI実装
+- [x] `Studio.tsx`側の配線変更
+- [x] `bun test`/`bun run typecheck`グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機確認(秒の繰り上がり、既存デッキの読み込み・保存が壊れないこと)
+  - WKWebViewのネイティブスピンボタンの見た目・幅(`w-10`で2桁が
+    収まるか)と、矢印クリックでの繰り上がり/繰り下がり。e2eはChromeで
+    キーボード操作のみ確認している。
+  - 分のスピナーから秒のスピナーの矢印を直接クリックしたとき、WKWebView
+    がblurの`relatedTarget`を報告し、保存がヘッダー離脱まで遅れること
+    (報告しない場合は入力欄ごとに保存する従来の挙動に戻る)。
+  - `1h`や`"time": 5`(整数分)など、`parseDurationToMs`が読まない形式で
+    時間を書いた既存デッキを開き、スピナーの表示が正しいこと。
+- [ ] 0分0秒を保存しようとしたとき1秒に切り上げる挙動でよいか
+  (peitho-coreが0を拒否するため。代案: エラー表示して保存しない)
 
 ## 先送り事項
 
-(実装時に見つかった、本筋と無関係な改善点があればここに書き出す)
+- `sumSectionTimesMs`(スライドの追加/貼り付け/削除時のfrontmatter合計
+  同期)は`parseDurationToMs`を使っており、peitho-coreが受け付ける`1h`や
+  整数分(`"time": 5`)を読めず0として数える。そうしたデッキでスライドを
+  追加/削除するとfrontmatterの合計がずれてビルドエラーになりうる。
+- セクションヘッダーからフォーカスを外すだけで、変更がなくても
+  `"90s"`が`"1m30s"`に書き換えて保存される(本タスク以前からの挙動)。
+  下書きが保存済みの値と同じなら保存しない、というガードを検討する。
+- 本文エディタの自動保存など、別の経路の再描画でも`applyRenderPayload`
+  がセクションの下書きをリセットするため、スピナー編集中に別の保存が
+  着地すると編集が消えうる(本タスク以前からの挙動)。
+- 1セクションを`MAX_DURATION_MS`にし、他のセクションも時間を持つと、
+  合計が`Number.MAX_SAFE_INTEGER`を超えてpeitho-coreがビルドを拒否する。
+  現実的な入力ではないため未対応。
