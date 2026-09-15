@@ -39,7 +39,7 @@ describe('applyRenderPayload', () => {
     })
   })
 
-  test('spec: derives sectionDrafts from the manifest\'s sections, formatting their planned duration', () => {
+  test('spec: derives sectionDrafts from the manifest\'s sections, keeping their planned duration in milliseconds', () => {
     createRoot(() => {
       const store = createRenderStore()
       store.applyRenderPayload(payload({
@@ -49,14 +49,14 @@ describe('applyRenderPayload', () => {
           slides: [slide()],
         },
       }), 'source')
-      expect(store.sectionDrafts()[0]).toEqual({ name: 'Intro', time: '1m30s' })
+      expect(store.sectionDrafts()[0]).toEqual({ name: 'Intro', timeMs: 90_000 })
     })
   })
 
   test('adversarial: a manifest with no sections resets sectionDrafts to empty, not stale', () => {
     createRoot(() => {
       const store = createRenderStore()
-      store.setSectionDrafts({ 0: { name: 'stale', time: '1m0s' } })
+      store.setSectionDrafts({ 0: { name: 'stale', timeMs: 60_000 } })
       store.applyRenderPayload(payload(), 'source')
       expect(store.sectionDrafts()).toEqual({})
     })

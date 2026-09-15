@@ -1,8 +1,8 @@
 import { createSignal, createMemo, batch } from '@barefootjs/client'
-import { type Manifest, type ManifestSection, type SectionDraft, type RenderPayload, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
+import { type Manifest, type ManifestSection, type SectionDraft, type RenderPayload, savedSectionDraft, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
 import { absolutizeCssUrls, scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { absolutizeFragmentUrls } from '../domain/slideFragment'
-import { formatDurationMs, stabilizeByKey } from '../domain/slides'
+import { stabilizeByKey } from '../domain/slides'
 
 /** The deck's last-rendered state: manifest, per-slide fragment HTML, canvas
  * size, asset base URL, and the section-header drafts a fresh render resets.
@@ -127,7 +127,7 @@ export function createRenderStore() {
       setManifest({ ...payload.manifest, slides: stabilizeByKey(previousSlides, payload.manifest.slides) })
       const drafts: Record<number, SectionDraft> = {}
       for (const section of payload.manifest.sections) {
-        drafts[section.startIndex] = { name: section.name, time: formatDurationMs(section.plannedDurationMs) }
+        drafts[section.startIndex] = savedSectionDraft(section)
       }
       setSectionDrafts(drafts)
     })

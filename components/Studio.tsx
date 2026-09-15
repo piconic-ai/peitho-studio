@@ -4,7 +4,7 @@ import { createSignal, createMemo, createEffect, onMount, onCleanup } from '@bar
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
-import { type ManifestSlide, type RenderPayload } from '../domain/render'
+import { type ManifestSlide, type RenderPayload, type SectionDraft, savedSectionDraft } from '../domain/render'
 import { clampMenuPosition } from '../domain/geometry'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
@@ -34,11 +34,12 @@ import {
   newSlideConfig,
   clampFocusIndex,
   extractHeadingText,
-  parseDurationToMs,
   updateFrontmatterTime,
   formatDurationMs,
   joinSlideTexts,
   sumSectionTimesMs,
+  withDurationPart,
+  type DurationPart,
 } from '../domain/slides'
 import { WelcomeScreen } from './WelcomeScreen'
 import { NewDeckModal } from './NewDeckModal'
@@ -606,22 +607,26 @@ export function Studio() {
   // a section (peitho-core rejects that combination outright), so a
   // `sourceIndex` that reaches these with no manifest index behind it is
   // not a real state to handle, just a defensive no-op.
-  function onSectionNameInput(index: number, value: string): void {
-    const manifestIndex = manifestIndexAt(slideEntries(), index)
-    if (manifestIndex === null) return
+  //
+  // Applies `edit` to section `manifestIndex`'s draft, starting from its
+  // saved values if nobody has edited it since the last render.
+  function updateSectionDraft(manifestIndex: number, edit: (draft: SectionDraft) => SectionDraft): void {
     render.setSectionDrafts(prev => ({
       ...prev,
-      [manifestIndex]: { name: value, time: prev[manifestIndex]?.time ?? formatDurationMs(render.sectionStartByIndex()[manifestIndex].plannedDurationMs) },
+      [manifestIndex]: edit(prev[manifestIndex] ?? savedSectionDraft(render.sectionStartByIndex()[manifestIndex])),
     }))
   }
 
-  function onSectionTimeInput(index: number, value: string): void {
+  function onSectionNameInput(index: number, value: string): void {
     const manifestIndex = manifestIndexAt(slideEntries(), index)
     if (manifestIndex === null) return
-    render.setSectionDrafts(prev => ({
-      ...prev,
-      [manifestIndex]: { name: prev[manifestIndex]?.name ?? render.sectionStartByIndex()[manifestIndex].name, time: value },
-    }))
+    updateSectionDraft(manifestIndex, draft => ({ ...draft, name: value }))
+  }
+
+  function onSectionTimeInput(index: number, part: DurationPart, value: number): void {
+    const manifestIndex = manifestIndexAt(slideEntries(), index)
+    if (manifestIndex === null) return
+    updateSectionDraft(manifestIndex, draft => ({ ...draft, timeMs: withDurationPart(draft.timeMs, part, value) }))
   }
 
   async function commitSectionEdit(startIndex: number): Promise<void> {
@@ -631,24 +636,21 @@ export function Studio() {
     const range = editor.slideRanges()[startIndex]
     if (!draft || !range) return
     const slideText = currentSlideText(startIndex)
-    const updatedSlideText = updatePageComment(slideText, { section: draft.name, time: draft.time })
+    const updatedSlideText = updatePageComment(slideText, { section: draft.name, time: formatDurationMs(draft.timeMs) })
     if (updatedSlideText === slideText) return
 
     let nextSource = editor.fullSource()
     nextSource = nextSource.slice(0, range.start) + updatedSlideText + nextSource.slice(range.end)
 
-    // peitho requires the frontmatter's total time to equal the sum of
-    // every section's time — keep that in sync so editing one section's
-    // time here doesn't quietly break the next build.
-    const editedMs = parseDurationToMs(draft.time)
-    if (editedMs !== null) {
-      const sections = render.manifest()?.sections ?? []
-      const totalMs = sections.reduce(
-        (sum, section) => sum + (section.startIndex === manifestIndex ? editedMs : section.plannedDurationMs),
-        0,
-      )
-      nextSource = updateFrontmatterTime(nextSource, totalMs)
-    }
+    // time here doesn't quietly break the next build. The draft's time
+    // comes from the spinners as milliseconds, so there's no unparseable
+    // value to skip this for.
+    const sections = render.manifest()?.sections ?? []
+    const totalMs = sections.reduce(
+      (sum, section) => sum + (section.startIndex === manifestIndex ? draft.timeMs : section.plannedDurationMs),
+      0,
+    )
+    nextSource = updateFrontmatterTime(nextSource, totalMs)
 
     await commitChange(nextSource, { kind: 'keep' })
   }

@@ -1,9 +1,10 @@
 'use client'
 
 import { type Manifest, type ManifestSection, type SectionDraft } from '../domain/render'
-import { formatDurationMs } from '../domain/slides'
+import { type DurationPart, msToMinutesSeconds } from '../domain/slides'
 import { type SlideListEntry } from '../domain/slideList'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
+import { showCanonicalValue } from '../dom/sectionHeader'
 
 // Every prop here is a called value or a plain callback (never a signal
 // getter or a setter) — see `components/WelcomeScreen.tsx` for the BF044
@@ -44,7 +45,10 @@ export interface SlideListProps {
   onDragStart: (index: number) => (event: MouseEvent) => void
   onSelectSlide: (index: number) => void
   onSectionNameInput: (index: number, value: string) => void
-  onSectionTimeInput: (index: number, value: string) => void
+  /** `value` is the spinner's `valueAsNumber`: NaN when the field is empty,
+   * and possibly negative, fractional or past 59 seconds. Studio.tsx
+   * normalizes it with `withDurationPart`. */
+  onSectionTimeInput: (index: number, part: DurationPart, value: number) => void
   onCommitSectionEdit: (index: number) => void
 }
 
@@ -140,8 +144,13 @@ export function SlideList(props: SlideListProps) {
                 style={props.draggedIndex === entry.sourceIndex ? `transform: translateY(${String(props.dragDeltaY)}px) scale(0.95)` : ''}
               >
                 {props.sectionStartByIndex[entry.sourceIndex] ? (
+                  // The time is edited with two number spinners instead of
+                  // free text in peitho's `1m30s` format, so no input can
+                  // produce a time peitho rejects (see `domain/slides.ts`'s
+                  // `withDurationPart`).
                   <div className="flex items-center gap-1 pt-3 pb-1">
                     <input
+                      aria-label="Section name"
                       value={props.sectionDrafts[entry.sourceIndex]?.name ?? props.sectionStartByIndex[entry.sourceIndex].name}
                       onInput={e => props.onSectionNameInput(entry.sourceIndex, e.target.value)}
                       onBlur={() => props.onCommitSectionEdit(entry.sourceIndex)}
@@ -149,12 +158,33 @@ export function SlideList(props: SlideListProps) {
                       className="min-w-0 flex-1 bg-transparent outline-none text-xs font-semibold text-foreground/80"
                     />
                     <input
-                      value={props.sectionDrafts[entry.sourceIndex]?.time ?? formatDurationMs(props.sectionStartByIndex[entry.sourceIndex].plannedDurationMs)}
-                      onInput={e => props.onSectionTimeInput(entry.sourceIndex, e.target.value)}
+                      type="number"
+                      min="0"
+                      step="1"
+                      aria-label="Section minutes"
+                      value={String(msToMinutesSeconds(props.sectionDrafts[entry.sourceIndex]?.timeMs ?? props.sectionStartByIndex[entry.sourceIndex].plannedDurationMs).minutes)}
+                      onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'minutes', e.target.valueAsNumber)}
+                      onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDrafts[entry.sourceIndex]?.timeMs ?? props.sectionStartByIndex[entry.sourceIndex].plannedDurationMs).minutes))}
                       onBlur={() => props.onCommitSectionEdit(entry.sourceIndex)}
                       onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                       className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
                     />
+                    <span className="shrink-0 text-xs text-muted-foreground">m</span>
+                    {/* No `min`/`max` on the seconds spinner, so its arrows
+                        step past 59 and below 0 and carry into or borrow
+                        from the minutes. */}
+                    <input
+                      type="number"
+                      step="1"
+                      aria-label="Section seconds"
+                      value={String(msToMinutesSeconds(props.sectionDrafts[entry.sourceIndex]?.timeMs ?? props.sectionStartByIndex[entry.sourceIndex].plannedDurationMs).seconds)}
+                      onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'seconds', e.target.valueAsNumber)}
+                      onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDrafts[entry.sourceIndex]?.timeMs ?? props.sectionStartByIndex[entry.sourceIndex].plannedDurationMs).seconds))}
+                      onBlur={() => props.onCommitSectionEdit(entry.sourceIndex)}
+                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                      className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
+                    />
+                    <span className="shrink-0 text-xs text-muted-foreground">s</span>
                   </div>
                 ) : null}
                 <button

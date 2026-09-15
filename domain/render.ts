@@ -33,10 +33,20 @@ export interface Manifest {
 
 /** A section header's in-progress (unsaved) name/time edit, keyed by the
  * slide index it starts at — falls back to the section's own saved values
- * (`ManifestSection.name`/`plannedDurationMs`) until the user types. */
+ * (`savedSectionDraft`) until the user edits. The time is held as
+ * milliseconds rather than as peitho's `1m30s` text: the header edits it
+ * with minutes/seconds spinners (`domain/slides.ts`'s
+ * `withDurationPart`), so every value a draft can hold formats to a
+ * string peitho accepts. */
 export interface SectionDraft {
   name: string
-  time: string
+  timeMs: number
+}
+
+/** The draft a section header shows before anyone edits it: the section's
+ * own saved name and planned time. */
+export function savedSectionDraft(section: ManifestSection): SectionDraft {
+  return { name: section.name, timeMs: section.plannedDurationMs }
 }
 
 /** The result of one render pass — same "domain concept the IPC boundary
