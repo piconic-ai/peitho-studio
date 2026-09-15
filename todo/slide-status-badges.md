@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: Draft/Skipスライドをサムネイル本体を隠さずバッジで識別できるようにする
 tags: [ui, slide-list, thumbnail]
 ---
@@ -46,6 +46,32 @@ Skipは`SlideList.tsx`でサムネイル下に "skip" というテキストラ�
   - 除外していない場合: 単純にフロント側の型(`ManifestSlide`)に`draft`
     フィールドを足すだけで済む可能性が高い。
 
+### 調査結果(実装時に確認済み)
+
+- **`render_draft`はdraftスライドを除外している。** 経路は
+  `render_draft`(`peitho.rs`) → `engine::pipeline::render_source` →
+  `peitho_core::parse_deck_and_transform` → `parse_markdown`
+  (`crates/peitho-core/src/parser.rs`、`draft`が`enabled`の
+  `pending_slide`を`filter`で落とし、生き残りだけで`index`を振り直す)。
+  エディタ用に素通しするオプションはpeitho-core側のAPIに存在しない。
+  `manifest.slides`にも`fragments`にもdraftスライドは載らず、
+  `ManifestSlide`に`draft`フィールドもない — `pipeline.rs`の
+  `render_source_adversarial_a_draft_slide_never_reaches_the_manifest`で
+  この挙動をテストとして固定した(peitho-coreの仕様が変わったら落ちる)。
+- skipスライドは除外されず、manifestに`"skip":true`で載る
+  (`render_source_spec_a_skipped_slide_stays_in_the_manifest_flagged_skip`)。
+- **設計相談に含めるべき既存の不整合(コードトレースで確認、実機未確認)**:
+  `SlideList.tsx`の行インデックスは`manifest.slides`上の位置だが、
+  `Studio.tsx`はそれをそのまま`selectSlide(index)`/`slideConfigOf(index)`/
+  `toggleSlideSkip(index)`等に渡し、`editor.slideRanges()[index]`
+  (draftを含む生テキストの区切り)として解釈している。draftスライドが
+  1枚でもあると、それより後ろのサムネイルをクリック/右クリックした際に
+  **1つ前(draft側)のスライドが編集・トグル対象になる**。draftバッジの
+  設計(Rust側でdraftも含めて返す/`slideRanges()`起点に描画する)を
+  決める際は、このインデックス対応も同時に解消する必要がある。
+  e2eのモック(`e2e/helpers/mockTauri.ts`)はdraftを除外しないため、
+  この不整合はモックe2eでは再現しない。
+
 ## 方針
 
 - draft/skipどちらも、`.peitho-slide`本体は縮小表示されたまま見せ続け、
@@ -77,14 +103,23 @@ Skipは`SlideList.tsx`でサムネイル下に "skip" というテキストラ�
 ## 完了条件
 
 自動で確認できる項目:
-- [ ] `slideStatusBadge`純粋関数 + spec/adversarialテスト
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] (Rust変更があれば) `cargo test` グリーン
+- [x] `slideStatusBadge`純粋関数 + spec/adversarialテスト
+      (`domain/slideStatus.ts`、GWT例は`domain/slideStatus.examples.ts`)
+- [x] skipバッジのオーバーレイ化と下部"skip"テキストラベルの削除
+      (`SlideList.tsx`、`e2e/slide-status-badges.e2e.ts`)
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] (Rust変更があれば) `cargo test` グリーン(テスト追加のみ、挙動変更なし)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] `render_draft`のdraftスライド扱いを調査した結果、Rust側の変更が
       要ると分かった場合、その設計をFableに相談してから着手する
+      — **該当した**(上記「調査結果」)。draftバッジの表示と、draft有無で
+      ずれるサムネイル↔`slideRanges()`のインデックス対応は未着手。
+      `slideStatusBadge`と`SlideList.tsx`のオーバーレイは`draft`も
+      受け付ける形になっているので、データが届けばそのまま表示される
 - [ ] 実機(`run-peitho-studio` skill)でdraft/skip双方の見た目を確認
+      (skipバッジの半透明オーバーレイ`bg-black/40`は`color-mix()`で
+      出力されるため、WKWebViewでの見え方も併せて確認する)
 
 ## 先送り事項
 
