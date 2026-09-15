@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: 同一ディレクトリの多言語デッキ(deck.ja.md等)を簡単に切り替えられるようにする
 tags: [ui, deck, i18n]
 ---
