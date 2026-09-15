@@ -28,6 +28,12 @@ describe('createFakeDeckIpc', () => {
     expect(ipc.calls).toEqual([{ method: 'listDeckVariants', args: [] }])
   })
 
+  test('spec: checkSlideLayouts defaults to "nothing to judge" and records both args', async () => {
+    const ipc = createFakeDeckIpc()
+    expect(await ipc.checkSlideLayouts('# One\n', 0)).toBeNull()
+    expect(ipc.calls).toEqual([{ method: 'checkSlideLayouts', args: ['# One\n', 0] }])
+  })
+
   test('spec: an override replaces the default behavior and is not auto-recorded', async () => {
     const ipc = createFakeDeckIpc({ getRecentDecks: async () => ['/a/deck.md', '/b/deck.md'] })
     expect(await ipc.getRecentDecks()).toEqual(['/a/deck.md', '/b/deck.md'])

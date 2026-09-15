@@ -14,9 +14,11 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type { DeckVariant } from '../domain/deckVariants'
 import type { RenderPayload } from '../domain/render'
+import type { LayoutVerdict } from '../domain/layoutFit'
 
 export type { DeckVariant } from '../domain/deckVariants'
 export type { Manifest, ManifestSection, ManifestSlide, RenderPayload } from '../domain/render'
+export type { LayoutVerdict } from '../domain/layoutFit'
 
 export interface DeckSessionInfo {
   deckPath: string
@@ -54,6 +56,11 @@ export interface DeckIpc {
    * itself included — see `list_deck_variants` in peitho.rs. */
   listDeckVariants(): Promise<DeckVariant[]>
   previewLayouts(): Promise<LayoutPreviewsPayload>
+  /** Which of the deck's layouts the slide at `slideIndex` of `content`
+   * fits — `null` when there is no such slide to judge (out of range, or a
+   * draft). Rejects when `content` doesn't parse. See
+   * `engine::layout_fit` in src-tauri. */
+  checkSlideLayouts(content: string, slideIndex: number): Promise<LayoutVerdict[] | null>
   presentDeck(rehearsal: boolean): Promise<void>
   onDeckFileChanged(callback: () => void): Unsubscribe
   onMenuNewDeck(callback: () => void): Unsubscribe
@@ -83,6 +90,7 @@ export function createTauriDeckIpc(): DeckIpc {
     saveDeckSource: content => invoke('save_deck_source', { content }),
     listDeckVariants: () => invoke('list_deck_variants'),
     previewLayouts: () => invoke('preview_layouts'),
+    checkSlideLayouts: (content, slideIndex) => invoke('check_slide_layouts', { content, slideIndex }),
     presentDeck: rehearsal => invoke('present_deck', { rehearsal }),
     onDeckFileChanged: callback => subscribe('deck-file-changed', callback),
     onMenuNewDeck: callback => subscribe('menu:new-deck', callback),

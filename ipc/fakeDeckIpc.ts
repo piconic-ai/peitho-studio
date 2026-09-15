@@ -55,6 +55,7 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
       const payload: LayoutPreviewsPayload = { previews: [], css: '' }
       return payload
     },
+    checkSlideLayouts: async (content, slideIndex) => { record('checkSlideLayouts', [content, slideIndex]); return null },
     presentDeck: async rehearsal => { record('presentDeck', [rehearsal]) },
     onDeckFileChanged: callback => {
       deckFileChangedListeners.add(callback)
