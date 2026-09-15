@@ -6,6 +6,13 @@
 // onSectionTimeInput/commitSectionEdit -> save_deck_source) against the
 // mocked IPC bridge. The native spin buttons WKWebView draws are not
 // covered here: see domain/slides.examples.ts's manual example.
+//
+// A header shows a plain, clickable summary until someone asks to edit it
+// (kfly8's review: permanently visible spinner arrows read as an unstyled
+// form dropped into the slide list) — see `state/uiStore.ts`'s
+// `editingSectionIndex`. Every test that drives the spinners themselves
+// clicks that summary open first (`openSectionEditor`); the collapse/expand
+// behavior itself is covered by its own dedicated examples below.
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 
@@ -34,8 +41,20 @@ async function openDeck(page: Page, deck: MockDeck): Promise<void> {
   await expect(page.locator('[data-slide-row]')).toHaveCount(2, { timeout: 10_000 })
 }
 
+function sectionEditButton(page: Page, row: number) {
+  return page.locator(`[data-slide-row="${String(row)}"]`).getByLabel('Edit section name and time')
+}
+
 function introSpinner(page: Page, part: 'minutes' | 'seconds') {
   return page.locator('[data-slide-row="0"]').getByLabel(part === 'minutes' ? 'Section minutes' : 'Section seconds')
+}
+
+/** Expands row 0's (Intro's) collapsed summary into its editable spinners
+ * — every test below that drives the spinners needs this first, since
+ * they only mount once the header is clicked into edit mode. */
+async function openSectionEditor(page: Page, row = 0): Promise<void> {
+  await sectionEditButton(page, row).click()
+  await expect(page.locator(`[data-slide-row="${String(row)}"]`).getByLabel('Section name')).toBeVisible()
 }
 
 /** Renames the Body section and waits until that save lands. A save the
@@ -43,22 +62,47 @@ function introSpinner(page: Page, part: 'minutes' | 'seconds') {
  * has landed too by the time this returns, and the caller can check that
  * the Intro section is still what the deck started with. */
 async function saveUnrelatedEdit(page: Page, deck: MockDeck): Promise<void> {
+  await openSectionEditor(page, 1)
   const bodyName = page.locator('[data-slide-row="1"]').getByLabel('Section name')
   await bodyName.fill('Body renamed')
   await bodyName.press('Enter')
   await expect.poll(() => deck.source).toContain('"section":"Body renamed"')
 }
 
-test('Given a section loaded from a deck as "1m30s", when the deck opens, then its spinners show 1 minute and 30 seconds', async ({ page }) => {
+test('Given a section loaded from a deck as "1m30s", when the deck opens, then its header shows a collapsed summary, not live spinners', async ({ page }) => {
   await openDeck(page, deckWithIntroPlannedFor('1m30s', '2m30s'))
+
+  await expect(sectionEditButton(page, 0)).toHaveText('Intro1m30s')
+  await expect(page.locator('[data-slide-row="0"]').getByLabel('Section minutes')).toHaveCount(0)
+})
+
+test('Given that collapsed summary, when it is clicked, then its spinners show 1 minute and 30 seconds', async ({ page }) => {
+  await openDeck(page, deckWithIntroPlannedFor('1m30s', '2m30s'))
+
+  await openSectionEditor(page)
 
   await expect(introSpinner(page, 'minutes')).toHaveValue('1')
   await expect(introSpinner(page, 'seconds')).toHaveValue('30')
 })
 
+test('Given an expanded section header, when focus leaves it, then it collapses back to its summary', async ({ page }) => {
+  const deck = deckWithIntroPlannedFor('1m30s', '2m30s')
+  await openDeck(page, deck)
+  await openSectionEditor(page)
+
+  await introSpinner(page, 'seconds').fill('45')
+  await page.keyboard.press('Enter')
+
+  await expect.poll(() => deck.source).toContain('"time":"1m45s"')
+  await expect(sectionEditButton(page, 0)).toBeVisible()
+  await expect(sectionEditButton(page, 0)).toHaveText('Intro1m45s')
+  await expect(page.locator('[data-slide-row="0"]').getByLabel('Section minutes')).toHaveCount(0)
+})
+
 test('Given a section planned for 59 seconds, when its seconds spinner is stepped up once and the header is left, then the seconds carry into the minutes and the deck saves 1m with a matching frontmatter total', async ({ page }) => {
   const deck = deckWithIntroPlannedFor('59s', '1m59s')
   await openDeck(page, deck)
+  await openSectionEditor(page)
 
   await introSpinner(page, 'seconds').focus()
   await page.keyboard.press('ArrowUp')
@@ -75,10 +119,12 @@ test('Given a section planned for 59 seconds, when its seconds spinner is steppe
 test('Given a section planned for 1m30s, when 75 is typed into its seconds spinner and the header is left, then the deck saves 2m15s', async ({ page }) => {
   const deck = deckWithIntroPlannedFor('1m30s', '2m30s')
   await openDeck(page, deck)
+  await openSectionEditor(page)
 
   await introSpinner(page, 'seconds').fill('75')
   await page.keyboard.press('Enter')
 
+  await openSectionEditor(page)
   await expect(introSpinner(page, 'minutes')).toHaveValue('2')
   await expect(introSpinner(page, 'seconds')).toHaveValue('15')
   await expect.poll(() => deck.source).toContain('<!-- {"section":"Intro","time":"2m15s"} -->')
@@ -88,10 +134,12 @@ test('Given a section planned for 1m30s, when 75 is typed into its seconds spinn
 test('Given a section planned for 30 seconds, when "000" is typed into its minutes spinner and the header is left, then the spinner shows 0 again and the section is left unchanged', async ({ page }) => {
   const deck = deckWithIntroPlannedFor('30s', '1m30s')
   await openDeck(page, deck)
+  await openSectionEditor(page)
 
   await introSpinner(page, 'minutes').fill('000')
   await page.keyboard.press('Enter')
 
+  await openSectionEditor(page)
   await expect(introSpinner(page, 'minutes')).toHaveValue('0')
   await expect(introSpinner(page, 'seconds')).toHaveValue('30')
   await saveUnrelatedEdit(page, deck)
@@ -102,12 +150,14 @@ test('Given a section planned for 30 seconds, when "000" is typed into its minut
 test('Given a section planned for 1m30s, when its minutes spinner is cleared and the header is left, then the spinner shows 1 again and the section is left unchanged', async ({ page }) => {
   const deck = deckWithIntroPlannedFor('1m30s', '2m30s')
   await openDeck(page, deck)
+  await openSectionEditor(page)
 
   await introSpinner(page, 'minutes').fill('')
   // Still empty while the user is in the field, not rewritten to 0.
   await expect(introSpinner(page, 'minutes')).toHaveValue('')
   await page.keyboard.press('Enter')
 
+  await openSectionEditor(page)
   await expect(introSpinner(page, 'minutes')).toHaveValue('1')
   await expect(introSpinner(page, 'seconds')).toHaveValue('30')
   await saveUnrelatedEdit(page, deck)
@@ -120,11 +170,13 @@ test('Given a section planned for 1m30s, when "-1" is typed key by key into its 
   // that follows would make "01" instead of "-1".
   const deck = deckWithIntroPlannedFor('1m30s', '2m30s')
   await openDeck(page, deck)
+  await openSectionEditor(page)
 
   await introSpinner(page, 'seconds').selectText()
   await page.keyboard.type('-1')
   await page.keyboard.press('Enter')
 
+  await openSectionEditor(page)
   await expect(introSpinner(page, 'minutes')).toHaveValue('0')
   await expect(introSpinner(page, 'seconds')).toHaveValue('59')
   await expect.poll(() => deck.source).toContain('<!-- {"section":"Intro","time":"59s"} -->')
@@ -134,6 +186,7 @@ test('Given a section planned for 1m30s, when "-1" is typed key by key into its 
 test('Given a section planned for 1 minute, when its minutes spinner is set to 0 (making 0m0s) and the header is left, then the deck saves 1 second instead, since peitho rejects a zero-length section time', async ({ page }) => {
   const deck = deckWithIntroPlannedFor('1m', '2m')
   await openDeck(page, deck)
+  await openSectionEditor(page)
 
   await introSpinner(page, 'minutes').fill('0')
   await expect(introSpinner(page, 'seconds')).toHaveValue('0')
@@ -141,6 +194,7 @@ test('Given a section planned for 1 minute, when its minutes spinner is set to 0
 
   await expect.poll(() => deck.source).toContain('<!-- {"section":"Intro","time":"1s"} -->')
   expect(deck.source).toContain('time: 1m1s\n')
+  await openSectionEditor(page)
   await expect(introSpinner(page, 'minutes')).toHaveValue('0')
   await expect(introSpinner(page, 'seconds')).toHaveValue('1')
 })
@@ -148,10 +202,12 @@ test('Given a section planned for 1 minute, when its minutes spinner is set to 0
 test('Given a section already saved as 1 second, when its seconds spinner is brought to 0 and the header is left, then the spinner shows 1 again and the section is left unchanged', async ({ page }) => {
   const deck = deckWithIntroPlannedFor('1s', '1m1s')
   await openDeck(page, deck)
+  await openSectionEditor(page)
 
   await introSpinner(page, 'seconds').fill('0')
   await page.keyboard.press('Enter')
 
+  await openSectionEditor(page)
   await expect(introSpinner(page, 'seconds')).toHaveValue('1')
   await saveUnrelatedEdit(page, deck)
   expect(deck.source).toContain('<!-- {"section":"Intro","time":"1s"} -->')
@@ -167,6 +223,7 @@ test('Given saving takes a while, when the minutes spinner is stepped, then the 
   const renderDraftDelayMs = 500
   const deck: MockDeck = { ...deckWithIntroPlannedFor('1m30s', '2m30s'), renderDraftDelayMs }
   await openDeck(page, deck)
+  await openSectionEditor(page)
 
   await introSpinner(page, 'minutes').focus()
   await page.keyboard.press('ArrowUp')
@@ -182,6 +239,7 @@ test('Given saving takes a while, when the minutes spinner is stepped, then the 
 
   await expect.poll(() => deck.source).toContain('<!-- {"section":"Intro","time":"2m31s"} -->')
   expect(deck.source).toContain('time: 3m31s\n')
+  await openSectionEditor(page)
   await expect(introSpinner(page, 'minutes')).toHaveValue('2')
   await expect(introSpinner(page, 'seconds')).toHaveValue('31')
 })
