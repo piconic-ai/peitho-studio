@@ -1,13 +1,15 @@
-// A slide fragment's only relative references are `<img src="assets/...">`
-// and a layout author's own `<script src="assets/...">` — a Shadow root
-// has no `<base href>` to resolve either against, unlike the iframe
+// A slide fragment's only relative references are `<img src="assets/...">`,
+// a `<video poster="assets/...">`/`<source src="assets/...">`, and a layout
+// author's own `<script src="assets/...">` — a Shadow root has no
+// `<base href>` to resolve any of these against, unlike the iframe
 // `srcdoc` documents this replaces. (peitho-core resolves every other
 // asset reference — theme `url()`s, etc. — into that same `assets/` form
 // itself; see `engine::pipeline`.)
 
-// The leading `\s` keeps this to a real `src` attribute: a bare `\b` also
-// matches the tail of `data-src="…"`, which is not part of that contract.
-const FRAGMENT_ASSET_SRC_PATTERN = /(\s)src="(assets\/[^"]*)"/g
+// The leading `\s` keeps this to a real `src`/`poster` attribute: a bare
+// `\b` also matches the tail of `data-src="…"`, which is not part of that
+// contract.
+const FRAGMENT_ASSET_SRC_PATTERN = /(\s)(src|poster)="(assets\/[^"]*)"/g
 
 /** A `<script>...</script>` block, captured whole so `split` below hands
  * it back as one piece instead of splitting through it. */
@@ -15,7 +17,7 @@ const SCRIPT_BLOCK_PATTERN = /(<script\b[^>]*>[\s\S]*?<\/script>)/gi
 const SCRIPT_OPEN_TAG_PATTERN = /^<script\b[^>]*>/i
 
 function absolutizeSrcAttributes(text: string, baseUrl: string): string {
-  return text.replace(FRAGMENT_ASSET_SRC_PATTERN, (_match, space: string, path: string) => `${space}src="${new URL(path, baseUrl).href}"`)
+  return text.replace(FRAGMENT_ASSET_SRC_PATTERN, (_match, space: string, attr: string, path: string) => `${space}${attr}="${new URL(path, baseUrl).href}"`)
 }
 
 /** An empty `baseUrl` (no asset server resolved yet) is a no-op — there's

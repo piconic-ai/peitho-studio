@@ -83,4 +83,19 @@ describe('absolutizeFragmentUrls', () => {
     expect(absolutizeFragmentUrls(html, 'http://localhost/')).toBe(
       '<script src="http://localhost/assets/a.js"></script><script src="http://localhost/assets/b.js"></script>')
   })
+
+  test('spec: a video\'s poster attribute is absolutized, same as an img src', () => {
+    // Missed in an earlier pass: a <video poster="assets/...">'s poster
+    // isn't a `src` attribute at all, so the src-only pattern silently
+    // skipped it — confirmed 404ing against the wrong origin (the app's
+    // own dev server, not the asset server) on a real device.
+    const html = '<video poster="assets/hero.jpg"><source src="assets/hero.mp4" type="video/mp4"></video>'
+    expect(absolutizeFragmentUrls(html, 'http://127.0.0.1:1234/')).toBe(
+      '<video poster="http://127.0.0.1:1234/assets/hero.jpg"><source src="http://127.0.0.1:1234/assets/hero.mp4" type="video/mp4"></video>')
+  })
+
+  test('adversarial: an attribute merely ending in "poster" is not mistaken for poster', () => {
+    const html = '<div data-poster="assets/a.png"></div>'
+    expect(absolutizeFragmentUrls(html, 'http://localhost/')).toBe(html)
+  })
 })
