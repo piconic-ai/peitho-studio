@@ -131,7 +131,7 @@ test('Given unsaved edits that give a title-only slide a body, when its layouts 
 })
 
 test.describe('non-functional', () => {
-  test('Given the fit check is still running, when the user clicks a layout, then nothing is applied until it answers', async ({ page }) => {
+  test('Given the fit check is still running, when the user clicks a layout, then nothing is applied and the picker says it is still checking', async ({ page }) => {
     const deck: MockDeck = {
       source: SOURCE,
       layouts: ['cover', 'statement'],
@@ -145,11 +145,13 @@ test.describe('non-functional', () => {
     await openLayoutPicker(page, 1)
     await expect(pickerEntry(page, 'statement')).toHaveAttribute('aria-disabled', 'true')
     await clickDimmedEntry(page, 'cover')
+    await expect(page.getByRole('alert')).toHaveText(/^Still checking which layouts fit this slide/)
     expect(deck.source).toBe(SOURCE)
 
     // Once the answer lands, the fitting layout becomes choosable.
     await expect(pickerEntry(page, 'statement')).toHaveAttribute('aria-disabled', 'false', { timeout: 5_000 })
     await expect(pickerEntry(page, 'cover')).toHaveAttribute('aria-disabled', 'true')
+    await expect(page.getByRole('alert')).toBeHidden()
     expect(deck.source).toBe(SOURCE)
   })
 

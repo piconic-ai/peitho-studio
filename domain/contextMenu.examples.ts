@@ -44,10 +44,10 @@ export const layoutChoiceExamples = defineExamples<ContextMenu, { layout: string
       id: 'choice-waits-for-the-check',
       given: 'a slide whose fit check has not answered yet',
       when: 'the user chooses any layout',
-      then: 'nothing happens yet (the choice is not applied blind)',
+      then: 'nothing is applied blind, and the picker says the check is still running',
       state: slideMenu({ kind: 'checking', requestId: 7 }),
       event: { layout: 'cover' },
-      expect: { kind: 'ignore' },
+      expect: { kind: 'wait', notice: 'Still checking which layouts fit this slide — try again in a moment.' },
       tags: ['boundary'],
     },
     {

@@ -107,7 +107,9 @@ export function openOnSlide(index: number, x: number, y: number, requestId: numb
  * right-click, while it was in flight — and leaves `menu` unchanged. */
 export function withLayoutFitResult(menu: ContextMenu, requestId: number, verdicts: readonly LayoutVerdict[] | null): ContextMenu {
   if (menu.kind !== 'on-slide' || menu.layoutFit.kind !== 'checking' || menu.layoutFit.requestId !== requestId) return menu
-  return { ...menu, layoutFit: settledFitCheck(verdicts) }
+  // Clears the notice too: while the check was in flight the only notice
+  // it could carry is `CHECKING_NOTICE`, which the answer makes stale.
+  return { ...menu, layoutFit: settledFitCheck(verdicts), layoutNotice: null }
 }
 
 /** The menu's fit check — `unavailable` outside `on-slide`, where there's
@@ -121,12 +123,18 @@ export function layoutNoticeOf(menu: ContextMenu): string | null {
   return menu.kind === 'on-slide' ? menu.layoutNotice : null
 }
 
+/** Shown when a layout is chosen before the fit check has answered, so the
+ * click visibly did something instead of silently doing nothing. */
+export const CHECKING_NOTICE = 'Still checking which layouts fit this slide — try again in a moment.'
+
 /** What choosing a layout from the picker should do: pin it on slide
- * `index`, refuse it with `notice` (the slide doesn't fit it), or nothing
- * (no slide targeted, or the fit check hasn't answered yet). */
+ * `index`, refuse it with `notice` (the slide doesn't fit it), hold off
+ * with `notice` (the fit check hasn't answered yet), or nothing (no slide
+ * targeted). */
 export type LayoutChoice =
   | { kind: 'apply'; index: number }
   | { kind: 'reject'; notice: string }
+  | { kind: 'wait'; notice: string }
   | { kind: 'ignore' }
 
 export function chooseLayout(menu: ContextMenu, layout: string): LayoutChoice {
@@ -136,7 +144,7 @@ export function chooseLayout(menu: ContextMenu, layout: string): LayoutChoice {
     case 'selectable':
       return { kind: 'apply', index: menu.index }
     case 'checking':
-      return { kind: 'ignore' }
+      return { kind: 'wait', notice: CHECKING_NOTICE }
     case 'mismatch':
       return { kind: 'reject', notice: mismatchNotice(layout, availability.reason) }
     default: {

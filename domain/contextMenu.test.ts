@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import fc from 'fast-check'
 import {
   indexOf, positionOf, isLayoutPickerOpen, menuItems, appendIndex, menuItemEnabled, menuItemChecked,
-  openOnSlide, withLayoutFitResult, layoutFitOf, layoutNoticeOf, chooseLayout, withLayoutNotice,
+  openOnSlide, withLayoutFitResult, layoutFitOf, layoutNoticeOf, chooseLayout, withLayoutNotice, CHECKING_NOTICE,
   type ContextMenu, type MenuContext, type MenuItem,
 } from './contextMenu'
 import { layoutChoiceExamples, fitAnswerExamples } from './contextMenu.examples'
@@ -244,6 +244,17 @@ describe('withLayoutFitResult', () => {
     const opened = onSlide({ index: 1, x: 10, y: 20, layoutPickerOpen: true, layoutFit: { kind: 'checking', requestId: 5 } })
     const settled = withLayoutFitResult(opened, 5, VERDICTS)
     expect(settled).toEqual({ ...opened, layoutFit: { kind: 'checked', verdicts: VERDICTS } })
+  })
+
+  test('spec: the answer clears the "still checking" notice a too-early click left behind', () => {
+    const early = withLayoutNotice(openOnSlide(1, 10, 20, 5), CHECKING_NOTICE)
+    expect(layoutNoticeOf(withLayoutFitResult(early, 5, VERDICTS))).toBeNull()
+    expect(layoutNoticeOf(withLayoutFitResult(early, 5, null))).toBeNull()
+  })
+
+  test('adversarial: a stale answer leaves the "still checking" notice in place', () => {
+    const early = withLayoutNotice(openOnSlide(1, 10, 20, 5), CHECKING_NOTICE)
+    expect(layoutNoticeOf(withLayoutFitResult(early, 4, VERDICTS))).toBe(CHECKING_NOTICE)
   })
 
   test('adversarial: an answer for another request returns the very same menu object', () => {

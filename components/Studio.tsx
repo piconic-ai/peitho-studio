@@ -769,14 +769,15 @@ export function Studio() {
   }
 
   // A layout the slide fits is pinned and the menu closes, same as before
-  // the fit check existed; one it doesn't fit keeps the menu open with the
-  // reason, and deck.md is left untouched.
+  // the fit check existed; one it doesn't fit — or any, while the check is
+  // still running — keeps the menu open with a notice, and deck.md is left
+  // untouched.
   function chooseLayoutFromPicker(layout: string): void {
     const choice = chooseLayout(ui.contextMenu(), layout)
     if (choice.kind === 'apply') {
       void changeSlideLayout(choice.index, layout)
       ui.closeContextMenu()
-    } else if (choice.kind === 'reject') {
+    } else if (choice.kind === 'reject' || choice.kind === 'wait') {
       ui.showLayoutNotice(choice.notice)
     }
   }
