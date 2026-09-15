@@ -368,6 +368,42 @@ mod tests {
         assert!(render_source(&deck_path, source).is_err());
     }
 
+    // The slide list's status badge (`domain/slideStatus.ts`) reads the
+    // manifest `render_draft` returns, so these two pin what that manifest
+    // actually carries for skipped and draft slides.
+    #[test]
+    fn render_source_spec_a_skipped_slide_stays_in_the_manifest_flagged_skip() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let source = "<!-- {\"key\":\"opening\"} -->\n# Opening\n\n---\n\n<!-- {\"key\":\"backup\",\"skip\":true} -->\n# Backup\n";
+        let output = render_source(&deck_path, source).expect("a skipped slide should build cleanly");
+        let manifest: serde_json::Value = serde_json::from_str(&output.manifest_json).unwrap();
+        let slides = manifest["slides"].as_array().unwrap();
+        assert_eq!(slides.len(), 2);
+        assert_eq!(slides[0]["skip"], false);
+        assert_eq!((slides[1]["key"].as_str(), slides[1]["skip"].as_bool()), (Some("backup"), Some(true)));
+        assert!(output.fragments.contains_key("backup"));
+    }
+
+    #[test]
+    fn render_source_adversarial_a_draft_slide_never_reaches_the_manifest() {
+        // Why the thumbnail DRAFT badge can't show yet: peitho-core drops
+        // draft slides while parsing, so there is no manifest entry (or
+        // fragment) to put a badge on, and later slides' indices shift down.
+        // If this starts failing, peitho-core changed how drafts are built —
+        // revisit todo/slide-status-badges.md.
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let source = "<!-- {\"key\":\"wip\",\"draft\":true} -->\n# Work in progress\n\n---\n\n<!-- {\"key\":\"opening\"} -->\n# Opening\n";
+        let output = render_source(&deck_path, source).expect("a deck with one draft and one live slide should build");
+        let manifest: serde_json::Value = serde_json::from_str(&output.manifest_json).unwrap();
+        let slides = manifest["slides"].as_array().unwrap();
+        assert_eq!(slides.len(), 1);
+        assert_eq!((slides[0]["key"].as_str(), slides[0]["index"].as_u64()), (Some("opening"), Some(0)));
+        assert!(slides[0].get("draft").is_none());
+        assert!(!output.fragments.contains_key("wip"));
+    }
+
     #[test]
     fn short_sha256_hex_spec_matches_a_known_sha256_prefix() {
         // sha256("") == e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
