@@ -1070,8 +1070,9 @@ export function Studio() {
         // point: the screen change itself is the "you pressed it and it's
         // doing something" signal, which held up far better on a real
         // device than any busy-indicator design bolted onto WelcomeScreen
-        // did (see todo/archive/welcome-open-feels-frozen.md). The first
-        // open after launch can sit here for seconds, so the spinner keeps
+        // did (see todo/archive/welcome-open-feels-frozen.md). A deck the
+        // launch warm-up didn't cover (`engine::warm_up`), or a large one,
+        // can still sit here a noticeable moment, so the spinner keeps
         // moving to show it hasn't stalled.
         <div role="status" className="flex-1 flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <span aria-hidden="true" className="w-4 h-4 rounded-full border-2 border-muted-foreground border-t-transparent animate-spin"></span>

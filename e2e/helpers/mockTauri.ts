@@ -53,9 +53,10 @@ export interface MockDeck {
   presentReadyDelayMs?: number
   /** Milliseconds `open_deck` waits before resolving/rejecting — defaults
    * to 0 (settles on the same tick). Set this to observe Studio.tsx's
-   * loading placeholder, which shows only until `open_deck` resolves; on a
-   * real device the first open after launch takes seconds (see
-   * `todo/archive/welcome-open-feels-frozen.md`). */
+   * loading placeholder, which shows only until `open_deck` resolves (on a
+   * real device, from tens of milliseconds up to ~0.6s for a code-heavy deck
+   * the launch warm-up didn't cover — see
+   * `todo/archive/open-deck-cold-start-latency.md`). */
   openDeckDelayMs?: number
 }
 
