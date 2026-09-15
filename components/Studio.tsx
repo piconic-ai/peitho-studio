@@ -743,7 +743,7 @@ export function Studio() {
     ui.setContextMenu(
       index === null
         ? { kind: 'on-empty-space', x: event.clientX, y: event.clientY }
-        : { kind: 'on-slide', index, x: event.clientX, y: event.clientY, layoutPickerOpen: false },
+        : { kind: 'on-slide', index, x: event.clientX, y: event.clientY, layoutPickerOpen: false, layoutFit: { kind: 'unavailable' }, layoutNotice: null },
     )
     void loadLayoutPreviews()
   }
