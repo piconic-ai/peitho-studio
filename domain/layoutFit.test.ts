@@ -1,0 +1,80 @@
+import { describe, expect, test } from 'bun:test'
+import { availabilityOf, mismatchNotice, settledFitCheck, type LayoutFitCheck, type LayoutVerdict } from './layoutFit'
+
+const verdicts: LayoutVerdict[] = [
+  { layout: 'cover', fit: { kind: 'mismatch', reason: "unassigned content remains for missing 'body' slot" } },
+  { layout: 'statement', fit: { kind: 'fits' } },
+]
+
+describe('settledFitCheck', () => {
+  test('spec: verdicts become a checked state carrying them', () => {
+    expect(settledFitCheck(verdicts)).toEqual({ kind: 'checked', verdicts })
+  })
+
+  test('spec: no verdicts at all (nothing to judge, or the call failed) is unavailable', () => {
+    expect(settledFitCheck(null)).toEqual({ kind: 'unavailable' })
+  })
+
+  test('adversarial: an empty verdict list is still a completed check, not unavailable', () => {
+    expect(settledFitCheck([])).toEqual({ kind: 'checked', verdicts: [] })
+  })
+})
+
+describe('availabilityOf', () => {
+  const checked: LayoutFitCheck = { kind: 'checked', verdicts }
+
+  test('spec: a layout the slide fits is selectable', () => {
+    expect(availabilityOf(checked, 'statement')).toEqual({ kind: 'selectable' })
+  })
+
+  test('spec: a layout the slide does not fit carries peitho-core\'s reason', () => {
+    expect(availabilityOf(checked, 'cover')).toEqual({ kind: 'mismatch', reason: "unassigned content remains for missing 'body' slot" })
+  })
+
+  test('spec: every layout waits while the check is in flight', () => {
+    const checking: LayoutFitCheck = { kind: 'checking', requestId: 1 }
+    expect(availabilityOf(checking, 'cover')).toEqual({ kind: 'checking' })
+    expect(availabilityOf(checking, 'statement')).toEqual({ kind: 'checking' })
+  })
+
+  test('adversarial: an unavailable check never blocks any layout', () => {
+    expect(availabilityOf({ kind: 'unavailable' }, 'cover')).toEqual({ kind: 'selectable' })
+  })
+
+  test('adversarial: a layout absent from the verdicts stays selectable', () => {
+    expect(availabilityOf(checked, 'poster')).toEqual({ kind: 'selectable' })
+    expect(availabilityOf({ kind: 'checked', verdicts: [] }, 'cover')).toEqual({ kind: 'selectable' })
+  })
+
+  test('adversarial: layout names match exactly — no case folding, trimming, or prefix match', () => {
+    expect(availabilityOf(checked, 'Cover')).toEqual({ kind: 'selectable' })
+    expect(availabilityOf(checked, ' cover')).toEqual({ kind: 'selectable' })
+    expect(availabilityOf(checked, 'cov')).toEqual({ kind: 'selectable' })
+    expect(availabilityOf(checked, '')).toEqual({ kind: 'selectable' })
+  })
+
+  test('adversarial: with duplicate verdicts for one layout, the first one wins', () => {
+    const duplicated: LayoutFitCheck = {
+      kind: 'checked',
+      verdicts: [{ layout: 'cover', fit: { kind: 'fits' } }, { layout: 'cover', fit: { kind: 'mismatch', reason: 'x' } }],
+    }
+    expect(availabilityOf(duplicated, 'cover')).toEqual({ kind: 'selectable' })
+  })
+
+  test('adversarial: an empty reason is still a mismatch', () => {
+    const emptyReason: LayoutFitCheck = { kind: 'checked', verdicts: [{ layout: 'cover', fit: { kind: 'mismatch', reason: '' } }] }
+    expect(availabilityOf(emptyReason, 'cover')).toEqual({ kind: 'mismatch', reason: '' })
+  })
+})
+
+describe('mismatchNotice', () => {
+  test('spec: names the layout and gives the reason', () => {
+    expect(mismatchNotice('cover', "unassigned content remains for missing 'body' slot"))
+      .toBe("\"cover\" doesn't fit this slide: unassigned content remains for missing 'body' slot")
+  })
+
+  test('adversarial: empty strings and markup-like text pass through verbatim (rendered as text, never HTML)', () => {
+    expect(mismatchNotice('', '')).toBe("\"\" doesn't fit this slide: ")
+    expect(mismatchNotice('<b>x</b>', "slot 'a' got 2 item(s)\nsecond line")).toBe("\"<b>x</b>\" doesn't fit this slide: slot 'a' got 2 item(s)\nsecond line")
+  })
+})
