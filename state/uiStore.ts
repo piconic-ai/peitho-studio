@@ -119,6 +119,16 @@ export function createUiStore() {
   const [slideListWidth, setSlideListWidth] = createSignal(SLIDE_LIST_WIDTH)
   const [editorWidth, setEditorWidth] = createSignal(EDITOR_WIDTH)
 
+  // Which section header's own row (by `sourceIndex`) is expanded into its
+  // editable name/time spinners — every other section header shows a
+  // plain, compact summary instead. `null` means none are expanded. Only
+  // one at a time can be, since only one section header can plausibly have
+  // focus — so a single index is enough; no need for the per-key signal
+  // map pattern `state/renderStore.ts`'s `fragmentSignal` uses (that's for
+  // "many independent things can each change," not "at most one of many
+  // can be active").
+  const [editingSectionIndex, setEditingSectionIndex] = createSignal<number | null>(null)
+
   return {
     dragState, setDragState, draggedIndex, dragOverGap, dragDeltaY,
     contextMenu, setContextMenu, closeContextMenu, toggleLayoutPicker, contextMenuAppendIndex,
@@ -128,5 +138,6 @@ export function createUiStore() {
     presentMenuOpen, setPresentMenuOpen, presentPending, setPresentPending,
     variantMenuOpen, setVariantMenuOpen,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth,
+    editingSectionIndex, setEditingSectionIndex,
   }
 }
