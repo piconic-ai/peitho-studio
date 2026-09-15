@@ -28,8 +28,12 @@ const PR_INFO_SCHEMA = {
       type: 'string',
       description: 'One-line summary of whatever is still unchecked under 完了条件 の「人間の判断が必要な項目」for this todo (e.g. "実機確認"), or "" if none.',
     },
+    archivedTodo: {
+      type: 'boolean',
+      description: 'Whether the todo file was set to status: done and git-mv\'d to todo/archive/ as part of this PR (true only when 完了条件 had no outstanding human-judgment item at all).',
+    },
   },
-  required: ['todoPath', 'branch', 'prNumber', 'prUrl', 'reviewRequestDraft', 'openHumanItems'],
+  required: ['todoPath', 'branch', 'prNumber', 'prUrl', 'reviewRequestDraft', 'openHumanItems', 'archivedTodo'],
 }
 
 function implementPrompt(todoPath, total) {
@@ -88,8 +92,17 @@ ${total > 1 ? `\n今回は複数タスク(${total}件)の同時実行です。�
   レビューし、未解決の指摘がないことを確認する。
 
 ## 6. 仕上げ
-- \`${todoPath}\` のfrontmatterの \`status\` を \`wip\` に更新する(まだ
-  kfly8の最終確認が残っているため \`done\` にはしない)。
+- \`${todoPath}\` の「完了条件」を確認する。
+  - **「人間の判断が必要な項目」に1つでも未チェックの項目が残る場合**
+    (実機確認など): frontmatterの \`status\` を \`wip\` に更新するだけに
+    とどめ、ファイルは \`todo/\` に置いたままにする(kfly8の最終確認が
+    残っているため \`done\` にはしない)。
+  - **該当する項目が最初から1つもない、またはすべてチェック済みの場合**
+    (=自動で確認できる項目・人間の判断が必要な項目のどちらも完全に
+    埋まっている): frontmatterの \`status\` を \`done\` に更新し、
+    \`git mv\` で \`todo/archive/\` へ移動する。この変更(status更新 +
+    ファイル移動)は同じPRのコミットとして含めること(別PRに分けたり、
+    人間の追加依頼を待ったりしない)。
 - レビュアーの割り当ては行わない(GitHubはPR作成者自身をレビュアーに
   指定できない仕様上の制約があるため)。代わりに、次の形式でレビュー
   リクエストコメントの本文を**作成するだけ**にとどめ、実際には投稿し
@@ -113,7 +126,9 @@ ${total > 1 ? `\n今回は複数タスク(${total}件)の同時実行です。�
 最後に、構造化出力で todoPath・branch(実際に使ったブランチ名)・
 prNumber・prUrl・reviewRequestDraft(6節で作成したコメント本文全文)・
 openHumanItems(「完了条件」の「人間の判断が必要な項目」のうち未チェック
-のまま残っているものの一言サマリ。なければ空文字)を返してください。`
+のまま残っているものの一言サマリ。6節で\`done\`にしてarchiveした場合は
+空文字)・archivedTodo(6節で\`done\`にしてarchiveしたかどうか)を
+返してください。`
 }
 
 function stackPrompt(prs) {
@@ -160,7 +175,8 @@ ${list}
 
 ## 3. 報告
 最終的な各PRの状態(スタックしたかどうかに関わらず)を、入力と同じ形
-(todoPath・branch・prNumber・prUrl・reviewRequestDraft・openHumanItems)
+(todoPath・branch・prNumber・prUrl・reviewRequestDraft・openHumanItems・
+archivedTodo)
 の配列で返してください。`
 }
 
