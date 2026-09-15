@@ -8,9 +8,10 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
+use peitho_core::phase::Parsed;
 use peitho_core::{
     build_manifest, build_theme_css, check_deck, dispatch_by_convention, manifest_json,
-    parse_deck_and_transform, parse_frontmatter, render_deck, resolve_image_paths, BuildError,
+    parse_deck_and_transform, parse_frontmatter, render_deck, resolve_image_paths, BuildError, Deck,
     ImageRequest, ResolvedImageAsset, ResolvedImagePath,
 };
 
@@ -35,27 +36,38 @@ pub struct RenderOutput {
     pub fonts_dir: Option<PathBuf>,
 }
 
-pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, String> {
-    let deck_dir = deck_path
+/// A deck source parsed up to (not including) layout dispatch, plus the
+/// deck-adjacent assets the parse resolved — the shared first half of
+/// `render_source` and `engine::layout_fit`, which needs the parsed slides
+/// and the deck's layouts but none of the rendering after them.
+pub struct ParsedSource {
+    pub deck: Deck<Parsed>,
+    pub assets: ResolvedAssets,
+}
+
+fn deck_dir_of(deck_path: &Path) -> &Path {
+    deck_path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
+        .unwrap_or_else(|| Path::new("."))
+}
+
+pub fn parse_source(deck_path: &Path, source: &str) -> Result<ParsedSource, String> {
+    let deck_dir = deck_dir_of(deck_path);
 
     let frontmatter = parse_frontmatter(source).map_err(|err| err.to_string())?;
     let expanded = peitho_core::include::expand_includes(source, frontmatter.body_start(), deck_path)
         .map_err(|err| err.to_string())?;
 
-    let ResolvedAssets { layouts, css: css_files, highlighter, fonts_dir } =
-        assets::resolve(deck_dir)?;
-    let highlighter = highlighter.get();
+    let assets = assets::resolve(deck_dir)?;
 
     let code_images_cache_dir = deck_dir.join(peitho_core::CODE_IMAGES_CACHE_DIR);
     let embeds_cache_dir = deck_dir.join(peitho_core::EMBEDS_CACHE_DIR);
 
-    let parsed = parse_deck_and_transform(
+    let deck = parse_deck_and_transform(
         &expanded.source,
         frontmatter,
-        highlighter,
+        assets.highlighter.get(),
         &UnsupportedSvgRunner,
         &UnsupportedEmbedRenderer,
         &UnsupportedOEmbedFetcher,
@@ -63,6 +75,16 @@ pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, Str
         &embeds_cache_dir,
     )
     .map_err(|err| err.to_string())?;
+
+    Ok(ParsedSource { deck, assets })
+}
+
+pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, String> {
+    let deck_dir = deck_dir_of(deck_path);
+
+    let ParsedSource { deck: parsed, assets } = parse_source(deck_path, source)?;
+    let ResolvedAssets { layouts, css: css_files, highlighter, fonts_dir } = assets;
+    let highlighter = highlighter.get();
 
     let mapped = dispatch_by_convention(parsed, &layouts).map_err(|err| err.to_string())?;
     let checked = check_deck(mapped).map_err(|err| err.to_string())?;
