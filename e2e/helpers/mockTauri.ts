@@ -67,16 +67,25 @@ function sleep(ms: number): Promise<void> {
 function buildManifest(source: string): { manifest: Manifest; fragments: Record<string, string> } {
   const ranges = splitSlides(source)
   const keys: string[] = []
-  const slides: ManifestSlide[] = ranges.map((range, index) => {
+  const slides: ManifestSlide[] = []
+  // Mirrors real peitho-core: a slide marked `"draft":true` never reaches
+  // the manifest at all (see `domain/slideList.ts`'s `buildSlideList`,
+  // which is what actually copes with that on the frontend side). Getting
+  // this right in the mock matters — a version that kept draft slides as
+  // ordinary rows would hide the very bug (a thumbnail's row index
+  // silently drifting from `editor.slideRanges()`'s once a draft precedes
+  // it) this mock exists to catch.
+  for (const range of ranges) {
     const { rest, config } = extractPageComment(range.text)
+    if (config.draft === true) continue
     const title = extractHeadingText(rest) ?? ''
-    const key = config.key ?? uniqueSlideKey(slugifyTitle(title || `slide-${String(index)}`), keys)
+    const key = config.key ?? uniqueSlideKey(slugifyTitle(title || `slide-${String(slides.length)}`), keys)
     keys.push(key)
-    return {
-      index, key, src: range.text, hasNotes: false, skip: config.skip ?? false,
+    slides.push({
+      index: slides.length, key, src: range.text, hasNotes: false, skip: config.skip ?? false,
       revealSteps: 1, text: { title, body: rest, code: '' },
-    }
-  })
+    })
+  }
   const fragments: Record<string, string> = {}
   for (const s of slides) fragments[s.key] = `<section class="peitho-slide"><h1>${s.text.title}</h1></section>`
   const manifest: Manifest = {
