@@ -45,3 +45,11 @@ peitho-core = { path = "/Users/kfly8/src/github.com/mizzy/peitho/crates/peitho-c
 
 [dev-dependencies]
 tempfile = "3"
+
+# Optimize dependencies (not this crate) in dev builds. Unoptimized, syntect's
+# first highlight is ~10x slower: building the default syntax set and
+# compiling each language's regexes on first use made the first `open_deck`
+# after launch take ~5s under `tauri dev`, vs ~0.5s in release. Costs one
+# longer dependency build; this crate's own rebuilds are unaffected.
+[profile.dev.package."*"]
+opt-level = 3
