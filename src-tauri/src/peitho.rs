@@ -22,6 +22,7 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
+use crate::deck_variants;
 use crate::engine::builtin;
 use crate::engine::pipeline::{self, RenderOutput};
 use crate::engine::serve::AssetServer;
@@ -474,6 +475,60 @@ pub fn save_deck_source(content: String, window: WebviewWindow, session: State<P
     std::fs::write(&state.deck_path, content).map_err(|err| err.to_string())
 }
 
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeckVariantPayload {
+    /// Full path, ready to hand to `open_deck_window`.
+    path: String,
+    file_name: String,
+    suffix: Option<String>,
+    is_current: bool,
+}
+
+/// The on-disk half of `list_deck_variants`, split out so it's testable
+/// against a temp directory without a Tauri window/session. Only regular
+/// files (symlinks followed) count as siblings, and a name that isn't
+/// valid UTF-8 is skipped rather than failing the whole listing.
+fn deck_variants_on_disk(deck_path: &Path) -> Result<Vec<DeckVariantPayload>, String> {
+    let current = deck_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("deck path has no file name: {}", deck_path.display()))?;
+    // `Path::new("deck.md").parent()` is `Some("")`, which `read_dir` rejects.
+    let dir = deck_path.parent().filter(|dir| !dir.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let sibling_names: Vec<String> = std::fs::read_dir(dir)
+        .map_err(|err| format!("failed to read {}: {err}", dir.display()))?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().is_file())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect();
+    Ok(deck_variants::group_deck_variants(current, &sibling_names)
+        .into_iter()
+        .map(|variant| DeckVariantPayload {
+            path: deck_path.with_file_name(&variant.file_name).display().to_string(),
+            file_name: variant.file_name,
+            suffix: variant.suffix,
+            is_current: variant.is_current,
+        })
+        .collect())
+}
+
+/// Sibling decks sharing the open deck's base name (`deck.md`,
+/// `deck.ja.md`, ...) — see `crate::deck_variants` for the grouping rules.
+/// Includes the open deck itself, so a result of one or fewer entries means
+/// there's nothing to switch to. `async` since listing a directory (e.g. on
+/// a network volume) isn't guaranteed fast, and nothing here touches shared
+/// state beyond reading the session's path.
+#[tauri::command(async)]
+pub fn list_deck_variants(window: WebviewWindow, session: State<PeithoSession>) -> Result<Vec<DeckVariantPayload>, String> {
+    let deck_path = {
+        let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+        let state = guard.get(window.label()).ok_or_else(|| "no deck is open".to_string())?;
+        state.deck_path.clone()
+    };
+    deck_variants_on_disk(&deck_path)
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LayoutPreview {
@@ -696,6 +751,72 @@ mod tests {
     #[test]
     fn resolve_deck_path_adversarial_nonexistent_path_is_an_error() {
         assert!(resolve_deck_path("/definitely/does/not/exist/deck.md").is_err());
+    }
+
+    fn variant_file_names(variants: &[DeckVariantPayload]) -> Vec<&str> {
+        variants.iter().map(|v| v.file_name.as_str()).collect()
+    }
+
+    #[test]
+    fn deck_variants_on_disk_spec_lists_same_base_decks_with_full_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["deck.md", "deck.ja.md", "deck-old.md", "notes.txt"] {
+            std::fs::write(dir.path().join(name), "# Hi").unwrap();
+        }
+        let variants = deck_variants_on_disk(&dir.path().join("deck.ja.md")).unwrap();
+        assert_eq!(
+            variants,
+            vec![
+                DeckVariantPayload {
+                    path: dir.path().join("deck.md").display().to_string(),
+                    file_name: "deck.md".into(),
+                    suffix: None,
+                    is_current: false,
+                },
+                DeckVariantPayload {
+                    path: dir.path().join("deck.ja.md").display().to_string(),
+                    file_name: "deck.ja.md".into(),
+                    suffix: Some("ja".into()),
+                    is_current: true,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn deck_variants_on_disk_adversarial_a_directory_named_like_a_variant_is_not_a_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("deck.md"), "# Hi").unwrap();
+        std::fs::create_dir(dir.path().join("deck.ja.md")).unwrap();
+        let variants = deck_variants_on_disk(&dir.path().join("deck.md")).unwrap();
+        assert_eq!(variant_file_names(&variants), vec!["deck.md"]);
+    }
+
+    #[test]
+    fn deck_variants_on_disk_adversarial_missing_directory_is_an_error() {
+        assert!(deck_variants_on_disk(Path::new("/definitely/does/not/exist/deck.md")).is_err());
+    }
+
+    #[test]
+    fn deck_variants_on_disk_adversarial_path_without_a_file_name_is_an_error() {
+        assert!(deck_variants_on_disk(Path::new("/")).is_err());
+        assert!(deck_variants_on_disk(Path::new("")).is_err());
+    }
+
+    #[test]
+    fn deck_variant_payload_spec_serializes_with_the_frontends_camel_case_field_names() {
+        let payload = DeckVariantPayload {
+            path: "/d/deck.ja.md".into(),
+            file_name: "deck.ja.md".into(),
+            suffix: Some("ja".into()),
+            is_current: true,
+        };
+        assert_eq!(
+            serde_json::to_value(&payload).unwrap(),
+            serde_json::json!({ "path": "/d/deck.ja.md", "fileName": "deck.ja.md", "suffix": "ja", "isCurrent": true })
+        );
+        let unsuffixed = DeckVariantPayload { suffix: None, ..payload };
+        assert_eq!(serde_json::to_value(&unsuffixed).unwrap()["suffix"], serde_json::Value::Null);
     }
 
     fn render_output(manifest_json: &str, css: &str) -> RenderOutput {

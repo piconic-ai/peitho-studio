@@ -240,6 +240,7 @@ pub fn run() {
             peitho::render_draft,
             peitho::read_deck_source,
             peitho::save_deck_source,
+            peitho::list_deck_variants,
             peitho::preview_layouts,
             peitho::present_deck,
         ])
