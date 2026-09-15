@@ -244,6 +244,7 @@ pub fn run() {
             peitho::save_deck_source,
             peitho::list_deck_variants,
             peitho::preview_layouts,
+            peitho::check_slide_layouts,
             peitho::present_deck,
         ])
         .build(tauri::generate_context!())

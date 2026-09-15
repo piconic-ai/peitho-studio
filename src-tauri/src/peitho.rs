@@ -24,6 +24,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
 use crate::deck_variants;
 use crate::engine::builtin;
+use crate::engine::layout_fit::{self, LayoutVerdict};
 use crate::engine::pipeline::{self, RenderOutput};
 use crate::engine::serve::AssetServer;
 
@@ -656,6 +657,27 @@ pub fn preview_layouts(window: WebviewWindow, session: State<PeithoSession>) -> 
         previews.push(LayoutPreview { name: name.to_string(), fragment });
     }
     Ok(LayoutPreviewsPayload { previews, css })
+}
+
+/// Which layouts the slide at `slide_index` of `content` (the deck source
+/// as the frontend currently has it, unsaved edits included) fits — for the
+/// "Change Layout" picker to mark the rest before one is chosen. See
+/// `engine::layout_fit`. `async` like `open_deck`: it parses the whole deck,
+/// highlighting every code block, and unlike `render_draft` it touches no
+/// shared state, so it can run off the UI thread.
+#[tauri::command(async)]
+pub fn check_slide_layouts(
+    content: String,
+    slide_index: usize,
+    window: WebviewWindow,
+    session: State<PeithoSession>,
+) -> Result<Option<Vec<LayoutVerdict>>, String> {
+    let deck_path = {
+        let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+        let state = guard.get(window.label()).ok_or_else(|| "no deck is open".to_string())?;
+        state.deck_path.clone()
+    };
+    layout_fit::check_slide_layouts(&deck_path, &content, slide_index)
 }
 
 #[tauri::command]
