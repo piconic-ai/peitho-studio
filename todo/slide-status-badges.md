@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: Draft/Skipスライドをサムネイル本体を隠さずバッジで識別できるようにする
 tags: [ui, slide-list, thumbnail]
 ---
@@ -46,6 +46,32 @@ Skipは`SlideList.tsx`でサムネイル下に "skip" というテキストラ�
   - 除外していない場合: 単純にフロント側の型(`ManifestSlide`)に`draft`
     フィールドを足すだけで済む可能性が高い。
 
+### 調査結果(実装時に確認済み)
+
+- **`render_draft`はdraftスライドを除外している。** 経路は
+  `render_draft`(`peitho.rs`) → `engine::pipeline::render_source` →
+  `peitho_core::parse_deck_and_transform` → `parse_markdown`
+  (`crates/peitho-core/src/parser.rs`、`draft`が`enabled`の
+  `pending_slide`を`filter`で落とし、生き残りだけで`index`を振り直す)。
+  エディタ用に素通しするオプションはpeitho-core側のAPIに存在しない。
+  `manifest.slides`にも`fragments`にもdraftスライドは載らず、
+  `ManifestSlide`に`draft`フィールドもない — `pipeline.rs`の
+  `render_source_adversarial_a_draft_slide_never_reaches_the_manifest`で
+  この挙動をテストとして固定した(peitho-coreの仕様が変わったら落ちる)。
+- skipスライドは除外されず、manifestに`"skip":true`で載る
+  (`render_source_spec_a_skipped_slide_stays_in_the_manifest_flagged_skip`)。
+- **設計相談に含めるべき既存の不整合(コードトレースで確認、実機未確認)**:
+  `SlideList.tsx`の行インデックスは`manifest.slides`上の位置だが、
+  `Studio.tsx`はそれをそのまま`selectSlide(index)`/`slideConfigOf(index)`/
+  `toggleSlideSkip(index)`等に渡し、`editor.slideRanges()[index]`
+  (draftを含む生テキストの区切り)として解釈している。draftスライドが
+  1枚でもあると、それより後ろのサムネイルをクリック/右クリックした際に
+  **1つ前(draft側)のスライドが編集・トグル対象になる**。draftバッジの
+  設計(Rust側でdraftも含めて返す/`slideRanges()`起点に描画する)を
+  決める際は、このインデックス対応も同時に解消する必要がある。
+  e2eのモック(`e2e/helpers/mockTauri.ts`)はdraftを除外しないため、
+  この不整合はモックe2eでは再現しない。
+
 ## 方針
 
 - draft/skipどちらも、`.peitho-slide`本体は縮小表示されたまま見せ続け、
@@ -77,15 +103,130 @@ Skipは`SlideList.tsx`でサムネイル下に "skip" というテキストラ�
 ## 完了条件
 
 自動で確認できる項目:
-- [ ] `slideStatusBadge`純粋関数 + spec/adversarialテスト
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] (Rust変更があれば) `cargo test` グリーン
+- [x] `slideStatusBadge`純粋関数 + spec/adversarialテスト
+      (`domain/slideStatus.ts`、GWT例は`domain/slideStatus.examples.ts`)
+- [x] skipバッジのオーバーレイ化と下部"skip"テキストラベルの削除
+      (`SlideList.tsx`、`e2e/slide-status-badges.e2e.ts`)
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] (Rust変更があれば) `cargo test` グリーン(テスト追加のみ、挙動変更なし)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] `render_draft`のdraftスライド扱いを調査した結果、Rust側の変更が
+- [x] `render_draft`のdraftスライド扱いを調査した結果、Rust側の変更が
       要ると分かった場合、その設計をFableに相談してから着手する
+      — **該当した**(上記「調査結果」)。kfly8確認: 「Draftにしたスライドが
+      非表示のままでは要件未達」との指摘を受け、Rust側(peitho-core)を
+      変更せず、フロントエンド側で`manifest.slides`ではなく
+      `editor.slideRanges()`(常に全件、draft含む)を起点にサムネイル一覧を
+      再構築する方式で解決した。
+      - `domain/slideList.ts`(新設): `buildSlideList(fullSource,
+        manifestSlides)`が両者を突き合わせ、各行を`{kind:'rendered',
+        sourceIndex, manifestIndex, slide}`(peitho-coreがレンダリング済み)
+        または`{kind:'placeholder', sourceIndex, title, draft, key}`
+        (draft、または再レンダリング未反映の一時的な状態)に分類する。
+        `manifestIndexAt`/`manifestIndexToSourceIndex`/
+        `recordByManifestIndex`/`sectionStartBySourceIndex`で、
+        `state/renderStore.ts`側(manifestのインデックス基準のまま)と
+        `SlideList.tsx`/`Studio.tsx`の他の全操作(sourceIndex基準)との
+        変換を行う。
+      - `SlideList.tsx`は`manifest.slides`ではなく`entries`
+        (`buildSlideList`の結果)を`.map()`する。`kind:'placeholder'`の行は
+        canvasをマウントせず、生Markdownから抽出したタイトルをそのまま
+        表示するプレースホルダーにし、`draft`ならDRAFTバッジを重ねる。
+      - これにより、draft有無でサムネイル行番号と`slideRanges()`の
+        インデックスがずれる既存の不整合(クリック/右クリック/Skip切替が
+        1つ前のスライドに効いてしまう問題)も同時に解消した — 両者が
+        同じ`sourceIndex`空間に統一されたため。
+      - e2eモック(`e2e/helpers/mockTauri.ts`)もdraftスライドを
+        manifestから除外するよう修正(実peitho-coreの挙動に合わせた)。
+        修正前のモックはdraftを除外しなかったため、上記のずれが
+        モックe2eで再現できなかった — `e2e/slide-status-badges.e2e.ts`に
+        draft関連の新規テスト4件を追加し、この修正で初めて再現・検証
+        できることを確認した。
 - [ ] 実機(`run-peitho-studio` skill)でdraft/skip双方の見た目を確認
+      (skipバッジの半透明オーバーレイ`bg-black/40`は`color-mix()`で
+      出力されるため、WKWebViewでの見え方も併せて確認する)。draftの
+      プレースホルダー(`bg-muted`のタイトルのみ表示)の見た目も
+      合わせて確認する。 — kfly8が実機で確認し、2件の不具合を報告
+      (2026-09-15)。原因調査・修正は以下のとおり。**この修正自体は
+      Playwright(モックe2e)でのみ検証済みで、実機での再確認がまだ
+      残っている**(未チェックのまま):
+      - **問題1: Draft化した直後、後ろのスライドのサムネイルが真っ黒に
+        なる。** 原因: `commitChange`が新しいmanifestを`applyRenderPayload`
+        で反映した直後、`await deckIpc.saveDeckSource(...)`を挟んでから
+        `editor.setFullSource(...)`を呼んでいたため、その間`slideEntries`
+        (`buildSlideList`)が「新manifest + 旧source」という一致しない
+        組み合わせで再計算されることがあった。同じタイトルのスライドが
+        複数あるデッキでこれが起きると、後ろのスライドの行が誤った
+        manifestエントリと対応付けられ、BarefootJSの keyed `.map()` に
+        重複キーを渡してしまい(`[BarefootJS] mapArray: duplicate key`
+        警告)、該当スライドのcanvasが恒久的に空になっていた(デッキを
+        開き直すまで直らない)。
+        - 修正: `state/renderStore.ts`に`renderedSource`
+          (manifestを実際に生成したsource文字列を`applyRenderPayload`が
+          同じバッチで書き込む)を追加し、`Studio.tsx`の`slideEntries`は
+          `editor.fullSource()`ではなくこちらを参照するよう変更。
+          `applyRenderPayload`の呼び出し元3箇所(`refreshSource`
+          経由の`open_deck`、`renderPreview`、`commitChange`)すべてで
+          対応するsourceを明示的に渡すようにした。
+      - **問題2: Draft解除すると、そのスライド自身のサムネイルが
+        真っ黒になる。** 原因はBarefootJSコンパイラ側の不具合
+        ([piconic-ai/barefootjs#3009](https://github.com/piconic-ai/barefootjs/issues/3009)、
+        最小再現・原因調査つきで報告済み): keyed `.map()`の1行が
+        `rendered`↔`placeholder`という2つの分岐を持つとき、行の
+        `key`が同じまま`rendered→placeholder→rendered`と一周すると、
+        3回目に`rendered`側へ戻ったときの`ref`が実行されない
+        (`mountSlideCanvas`が一度も走らずcanvasが空のまま)。
+        draftのPageCommentは`addSlide`が付与した明示的な`key`を
+        そのまま保持するため、draft化・解除を1回繰り返すだけで
+        必ず`key`が一致していた。
+        - 修正: `domain/slideList.ts`のplaceholder行の`key`を、
+          スライド自身の`config.key`から独立させ、常に
+          `` `placeholder:${sourceIndex}` `` にした。これにより
+          `rendered`↔`placeholder`の切り替えは常に「新しいkey」として
+          扱われ、BarefootJS側は毎回まっさらな新規マウントを行う
+          (既存の、正しく動いているパスと同じ経路になる)。
+      - どちらも`e2e/slide-status-badges.e2e.ts`に、修正前は実際に
+        失敗する(修正を一時的に戻して確認済み)回帰テストを追加した。
+      - **追加のUI指摘(kfly8、2026-09-15)**: 上記2件の不具合修正を
+        報告した際、「draft化したときのサムネイルが元の内容と別物になる。
+        内容は保持したまま、DRAFTラベルなどを上に重ねるだけにしてほしい」
+        という指摘も受けた。当時の実装は、draft化された行を常に
+        `bg-muted`のタイトルのみのプレースホルダーに切り替えており、
+        SKIPバッジ(常に元のcanvasの上にオーバーレイするだけ)と見た目の
+        扱いが異なっていた。
+        - 原因: `SlideList.tsx`の行は`entry.kind`(`'rendered'` /
+          `'placeholder'`)で描画を完全に分岐させており、draftになった
+          瞬間に元のcanvas要素ごと破棄して別のDOMに切り替えていた。
+        - 修正: `domain/slideList.ts`の`PlaceholderSlideEntry`に
+          `lastRenderedKey`(スライド自身の明示的なPageComment `key`。
+          無ければ`null`)を追加。`state/renderStore.ts`の
+          per-keyフラグメントキャッシュは、そのキーがmanifestから
+          消えた後も(draftになった後も)最後に描画された内容を保持し
+          続けている性質を利用し、`SlideList.tsx`側は
+          `lastRenderedKey`に対応するキャッシュが空でない限り、
+          `entry.kind`に関わらずcanvasを描画し続けるように変更
+          (`canvasSourceFor`ヘルパー)。キャッシュが本当に存在しない
+          場合(明示的keyを持たない古いデッキ、あるいは一度も
+          レンダリングされていない新規スライドがdraftのまま作られた
+          場合)のみ、従来どおりタイトルのみのプレースホルダーに
+          フォールバックする。
+        - この変更は`domain/slideList.ts`が既に確立していた
+          「`.map()`の行キー(`entry.key`)は`rendered`↔`placeholder`の
+          切り替えごとに必ず変える(barefootjs#3009対策)」という制約とは
+          独立している — `lastRenderedKey`は行キーではなくcanvasの
+          「どのフラグメントを表示するか」を選ぶためだけの値なので、
+          この制約を破らない。
+        - `e2e/slide-status-badges.e2e.ts`に、明示的keyを持つ
+          レンダリング済みスライドをdraft化しても`h1`要素を含む
+          canvasが表示され続けることを確認する回帰テストを追加
+          (修正前は実際に失敗することを確認済み)。
 
 ## 先送り事項
 
-(実装時に見つかった、本筋と無関係な改善点があればここに書き出す)
+- kfly8指摘: SKIPバッジが赤すぎて目立ちすぎる(`bg-destructive
+  text-destructive-foreground`)。DRAFTバッジと同じ地味な配色
+  (`bg-muted text-foreground`)に統一した — 両バッジとも見た目は同じに
+  なり、ラベル文字列(DRAFT/SKIP)だけで区別する。将来的にバッジごとに
+  異なる色を付けたくなった場合は、このプロジェクトの中立的なデザイン
+  トークン(destructive/secondary/accentのみで、warning系の色相がない)に
+  1色追加するかどうかから検討し直す必要がある。

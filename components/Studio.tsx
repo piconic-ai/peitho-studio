@@ -4,14 +4,17 @@ import { createSignal, createMemo, createEffect, onMount, onCleanup } from '@bar
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
-import { type ManifestSlide } from '../domain/render'
+import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
 import { clampMenuPosition } from '../domain/geometry'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
-import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems } from '../domain/contextMenu'
+import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
+import { type LayoutVerdict } from '../domain/layoutFit'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
+import { buildSlideList, manifestIndexAt, sectionStartBySourceIndex } from '../domain/slideList'
+import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOptionsOf } from '../domain/deckVariants'
 import { waitForEventOrTimeout } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
@@ -31,11 +34,13 @@ import {
   newSlideConfig,
   clampFocusIndex,
   extractHeadingText,
-  parseDurationToMs,
   updateFrontmatterTime,
   formatDurationMs,
   joinSlideTexts,
   sumSectionTimesMs,
+  withDurationPart,
+  savableSectionTimeMs,
+  type DurationPart,
 } from '../domain/slides'
 import { WelcomeScreen } from './WelcomeScreen'
 import { NewDeckModal } from './NewDeckModal'
@@ -86,10 +91,12 @@ export function Studio() {
     setErrorMessage(null)
     try {
       const info = await deckIpc.openDeck(path)
-      render.applyRenderPayload(info.render)
-      await refreshSource(false)
+      await refreshSource(false, info.render)
       setStatusMessage(`Opened ${info.deckPath}`)
       await dispatch({ type: 'opened', deckPath: info.deckPath })
+      // Only once `open`: a variant picked while still `opening` would be
+      // rejected by `decide` as busy, silently doing nothing.
+      void refreshDeckVariants()
     } catch (err) {
       setErrorMessage(String(err))
       // A failure here often means the path was a Recent entry pointing
@@ -111,13 +118,12 @@ export function Studio() {
       await dispatch({ type: 'failed', message: String(err) })
     }
   }
-  // The `spawn-window` effect — modeled in `domain/deckLifecycle.ts` for
-  // completeness (an `open` window that somehow receives another
-  // `open-requested` shouldn't lose its own deck), but as of this
-  // writing nothing in this file can actually fire `open-requested`
-  // while `open`: the buttons/Recent entries that dispatch it only
-  // render on the welcome screen, and native "Open Recent" opens a new
-  // window entirely Rust-side without going through this component.
+  // The `spawn-window` effect: an `open` window that receives another
+  // `open-requested` keeps its own deck and opens the new one in a new
+  // window. Fired by the deck header's variant switcher (deck.md ->
+  // deck.ja.md); the welcome screen's buttons/Recent entries dispatch the
+  // same event but only while `welcome`, and native "Open Recent" opens a
+  // new window entirely Rust-side without going through this component.
   async function openDeckInNewWindow(path: string): Promise<void> {
     try {
       await deckIpc.openDeckWindow(path)
@@ -166,6 +172,10 @@ export function Studio() {
   // `localStorage`, since the native File > Open Recent submenu needs the
   // same list and has no access to this webview's storage.
   const [recentDecks, setRecentDecks] = createSignal<string[]>([])
+  // Same-base sibling decks of the open one (deck.md, deck.ja.md, ...) —
+  // fetched once per open by `refreshDeckVariants`.
+  const [deckVariants, setDeckVariants] = createSignal<DeckVariant[]>([])
+  const variantSwitcher = createMemo(() => toVariantSwitcher(deckVariants()))
 
   // Plain (non-reactive) DOM handles for the two editor textareas — see the
   // note above `syncEditorFields` for why these are *not* driven by a
@@ -221,15 +231,30 @@ export function Studio() {
     if (previews.length === 0) return 'empty'
     return 'ready'
   })
+  // Rows in `editor.slideRanges()` order (drafts included), each paired
+  // with its manifest data when it has any — see `domain/slideList.ts`.
+  // `slideCount` below is deliberately this list's length, not
+  // `manifest.slideCount`: the manifest's own count excludes drafts, and
+  // every index this component hands around (`selectSlide`,
+  // `updateSlideConfig`, this menu's own `index`, ...) is already a
+  // `slideRanges` index, so a manifest-sized count would under-count the
+  // deck whenever a draft slide is in it.
+  // `render.renderedSource()`, not `editor.fullSource()` — the two can
+  // briefly disagree (see `state/renderStore.ts`'s `renderedSource` doc
+  // comment for the exact scenario this fixes), and pairing `manifest()`
+  // with anything other than the source that actually produced it is
+  // exactly what corrupted a thumbnail's canvas permanently.
+  const slideEntries = createMemo(() => buildSlideList(render.renderedSource(), render.manifest()?.slides ?? []))
   const currentMenuItems = createMemo(() => computeMenuItems(ui.contextMenu(), {
-    slideCount: render.manifest()?.slideCount ?? 0,
+    slideCount: slideEntries().length,
     hasClipboard: ui.clipboardSlideText() !== null,
     configOf: slideConfigOf,
   }))
   const selectedSlide = createMemo<ManifestSlide | null>(() => {
     const i = editor.selectedIndex()
     if (i === null) return null
-    return render.manifest()?.slides[i] ?? null
+    const entry = slideEntries()[i]
+    return entry?.kind === 'rendered' ? entry.slide : null
   })
   // `selectedSlide()` itself is a *new object* on every keystroke (even to
   // some other slide — see `stabilizeByKey` in slides.ts), but a memo's
@@ -305,7 +330,7 @@ export function Studio() {
     try {
       const payload = await deckIpc.renderDraft(content)
       if (generation !== previewGeneration) return
-      render.applyRenderPayload(payload)
+      render.applyRenderPayload(payload, content)
       setErrorMessage(null)
     } catch (err) {
       if (generation !== previewGeneration) return
@@ -382,8 +407,15 @@ export function Studio() {
     }
   })
 
-  async function refreshSource(preserveSelection: boolean): Promise<void> {
+  // `renderPayload`, when given, is applied together with the exact
+  // `source` this same call just read — see `state/renderStore.ts`'s
+  // `renderedSource` for why `applyRenderPayload` must always receive its
+  // matching source directly, rather than this function setting
+  // `editor.fullSource` off on its own and leaving the manifest to catch
+  // up separately.
+  async function refreshSource(preserveSelection: boolean, renderPayload?: RenderPayload): Promise<void> {
     const source = await deckIpc.readDeckSource()
+    if (renderPayload) render.applyRenderPayload(renderPayload, source)
     editor.setFullSource(source)
     const ranges = splitSlides(source)
     editor.setSlideRanges(ranges)
@@ -404,6 +436,17 @@ export function Studio() {
       setRecentDecks(await deckIpc.getRecentDecks())
     } catch {
       // Best-effort — an empty Recent list just means nothing to suggest.
+    }
+  }
+
+  // Called by `runOpen` once the deck is open — `list_deck_variants` reads
+  // this window's session, which `open_deck` has already set. Best-effort
+  // like `refreshRecentDecks`: a failed listing just hides the switcher.
+  async function refreshDeckVariants(): Promise<void> {
+    try {
+      setDeckVariants(await deckIpc.listDeckVariants())
+    } catch {
+      setDeckVariants([])
     }
   }
 
@@ -461,7 +504,7 @@ export function Studio() {
     setErrorMessage(null)
     try {
       const payload = await deckIpc.renderDraft(nextSource)
-      render.applyRenderPayload(payload)
+      render.applyRenderPayload(payload, nextSource)
       await deckIpc.saveDeckSource(nextSource)
       editor.setFullSource(nextSource)
       const ranges = splitSlides(nextSource)
@@ -557,43 +600,60 @@ export function Studio() {
     return totalMs > 0 ? updateFrontmatterTime(rebuilt, totalMs) : rebuilt
   }
 
-  function onSectionNameInput(index: number, value: string): void {
-    render.setSectionDrafts(prev => ({
-      ...prev,
-      [index]: { name: value, time: prev[index]?.time ?? formatDurationMs(render.sectionStartByIndex()[index].plannedDurationMs) },
-    }))
+  // `state/renderStore.ts`'s section-draft records are keyed by manifest
+  // index (they're built straight from `manifest.sections`, drafts never
+  // among them) — the section header's own row index is a `sourceIndex`
+  // (see `slideEntries` above), so every entry point here converts through
+  // `manifestIndexAt` before touching them. A draft slide can never start
+  // a section (peitho-core rejects that combination outright), so a
+  // `sourceIndex` that reaches these with no manifest index behind it is
+  // not a real state to handle, just a defensive no-op.
+  //
+  // Applies `edit` to section `manifestIndex`'s draft. Skips the write
+  // when nothing changed (e.g. a half-typed spinner entry), so the
+  // section headers' bindings don't re-run for it.
+  function updateSectionDraft(manifestIndex: number, edit: (draft: SectionDraft) => SectionDraft): void {
+    const current = render.sectionDraftOf(manifestIndex)
+    const next = edit(current)
+    if (next.name === current.name && next.timeMs === current.timeMs) return
+    render.setSectionDrafts(prev => ({ ...prev, [manifestIndex]: next }))
   }
 
-  function onSectionTimeInput(index: number, value: string): void {
-    render.setSectionDrafts(prev => ({
-      ...prev,
-      [index]: { name: prev[index]?.name ?? render.sectionStartByIndex()[index].name, time: value },
-    }))
+  function onSectionNameInput(index: number, value: string): void {
+    const manifestIndex = manifestIndexAt(slideEntries(), index)
+    if (manifestIndex === null) return
+    updateSectionDraft(manifestIndex, draft => ({ ...draft, name: value }))
+  }
+
+  function onSectionTimeInput(index: number, part: DurationPart, value: number): void {
+    const manifestIndex = manifestIndexAt(slideEntries(), index)
+    if (manifestIndex === null) return
+    updateSectionDraft(manifestIndex, draft => ({ ...draft, timeMs: withDurationPart(draft.timeMs, part, value) }))
   }
 
   async function commitSectionEdit(startIndex: number): Promise<void> {
-    const draft = render.sectionDrafts()[startIndex]
+    const manifestIndex = manifestIndexAt(slideEntries(), startIndex)
+    if (manifestIndex === null) return
+    const draft = render.sectionDrafts()[manifestIndex]
     const range = editor.slideRanges()[startIndex]
     if (!draft || !range) return
+    const otherSectionsMs = (render.manifest()?.sections ?? [])
+      .reduce((sum, section) => section.startIndex === manifestIndex ? sum : sum + section.plannedDurationMs, 0)
+    // The spinners can read a time peitho-core rejects (0m0s, or one that
+    // pushes the deck total past its limit), so the saved time is clamped.
+    // Show the clamped value right away: when the slide already holds that
+    // time, nothing below saves or re-renders to correct the spinners.
+    const timeMs = savableSectionTimeMs(draft.timeMs, otherSectionsMs)
+    updateSectionDraft(manifestIndex, current => ({ ...current, timeMs }))
     const slideText = currentSlideText(startIndex)
-    const updatedSlideText = updatePageComment(slideText, { section: draft.name, time: draft.time })
+    const updatedSlideText = updatePageComment(slideText, { section: draft.name, time: formatDurationMs(timeMs) })
     if (updatedSlideText === slideText) return
 
     let nextSource = editor.fullSource()
     nextSource = nextSource.slice(0, range.start) + updatedSlideText + nextSource.slice(range.end)
 
-    // peitho requires the frontmatter's total time to equal the sum of
-    // every section's time — keep that in sync so editing one section's
     // time here doesn't quietly break the next build.
-    const editedMs = parseDurationToMs(draft.time)
-    if (editedMs !== null) {
-      const sections = render.manifest()?.sections ?? []
-      const totalMs = sections.reduce(
-        (sum, section) => sum + (section.startIndex === startIndex ? editedMs : section.plannedDurationMs),
-        0,
-      )
-      nextSource = updateFrontmatterTime(nextSource, totalMs)
-    }
+    nextSource = updateFrontmatterTime(nextSource, otherSectionsMs + timeMs)
 
     await commitChange(nextSource, { kind: 'keep' })
   }
@@ -685,13 +745,46 @@ export function Studio() {
     // `index` reflects that row (or truly is empty space) and doesn't get
     // overwritten afterward.
     event.stopPropagation()
-    if (index !== null) void selectSlide(index)
-    ui.setContextMenu(
-      index === null
-        ? { kind: 'on-empty-space', x: event.clientX, y: event.clientY }
-        : { kind: 'on-slide', index, x: event.clientX, y: event.clientY, layoutPickerOpen: false },
-    )
+    if (index === null) {
+      ui.setContextMenu({ kind: 'on-empty-space', x: event.clientX, y: event.clientY })
+    } else {
+      void selectSlide(index)
+      void checkLayoutFit(index, ui.openSlideContextMenu(index, event.clientX, event.clientY))
+    }
     void loadLayoutPreviews()
+  }
+
+  // Asks peitho-core which layouts slide `index` fits, against the source
+  // `updateSlideConfig` would pin a layout onto — the open slide's unsaved
+  // draft included. Read synchronously, before the first `await`: when the
+  // right-click switched away from a dirty slide, `selectSlide`'s flush is
+  // still in flight and that draft is still what's current. A failed call
+  // (e.g. a draft that doesn't parse yet) settles as "unavailable", leaving
+  // every layout choosable — `commitChange` renders before it saves, so a
+  // mismatch that gets past this still never reaches disk.
+  async function checkLayoutFit(index: number, requestId: number): Promise<void> {
+    const source = editor.isDirty() ? (currentDraftSource() ?? editor.fullSource()) : editor.fullSource()
+    let verdicts: LayoutVerdict[] | null = null
+    try {
+      verdicts = await deckIpc.checkSlideLayouts(source, index)
+    } catch {
+      // Settles as unavailable below.
+    }
+    ui.settleLayoutFit(requestId, verdicts)
+  }
+
+  // A layout the slide fits is pinned and the menu closes, same as before
+  // the fit check existed; one it doesn't fit — or any, while the check is
+  // still running — keeps the menu open with a notice, and deck.md is left
+  // untouched.
+  function chooseLayoutFromPicker(layout: string): void {
+    const choice = chooseLayout(ui.contextMenu(), layout)
+    if (choice.kind === 'apply') {
+      void changeSlideLayout(choice.index, layout)
+      ui.closeContextMenu()
+    } else if (choice.kind === 'reject' || choice.kind === 'wait') {
+      ui.showLayoutNotice(choice.notice)
+    }
   }
 
   // Keeps the context menu on-screen: it's positioned at the raw click
@@ -941,7 +1034,11 @@ export function Studio() {
       }
       const tag = document.activeElement?.tagName.toLowerCase()
       if (tag === 'input' || tag === 'textarea') return
-      const count = render.manifest()?.slides.length ?? 0
+      // `slideEntries().length`, not `manifest.slideCount`/`manifest.slides.length`
+      // — the latter excludes drafts, which would leave ArrowUp/ArrowDown
+      // permanently unable to reach a draft placeholder (or anything past
+      // it) once a deck has one, even though it's reachable by click.
+      const count = slideEntries().length
       if (count === 0) return
       const current = editor.selectedIndex()
       const key = event.key.toLowerCase()
@@ -1055,6 +1152,13 @@ export function Studio() {
         <>
       <DeckHeader
         deckPath={deck.deckPath()}
+        variantSwitcherShown={variantSwitcher().kind === 'shown'}
+        currentVariantLabel={currentVariantLabelOf(variantSwitcher())}
+        variantOptions={variantOptionsOf(variantSwitcher())}
+        variantMenuOpen={ui.variantMenuOpen()}
+        onToggleVariantMenu={() => ui.setVariantMenuOpen(!ui.variantMenuOpen())}
+        onCloseVariantMenu={() => ui.setVariantMenuOpen(false)}
+        onOpenVariant={path => void dispatch({ type: 'open-requested', path })}
         presentMenuOpen={ui.presentMenuOpen()}
         presentPending={ui.presentPending()}
         onTogglePresentMenu={() => ui.setPresentMenuOpen(!ui.presentMenuOpen())}
@@ -1082,13 +1186,19 @@ export function Studio() {
       <div className="flex-1 flex min-h-0">
         <SlideList
           manifest={render.manifest()}
+          entries={slideEntries()}
           slideListWidth={ui.slideListWidth()}
           draggedIndex={ui.draggedIndex()}
           dragOverGap={ui.dragOverGap()}
           dragDeltaY={ui.dragDeltaY()}
           selectedIndex={editor.selectedIndex()}
-          sectionStartByIndex={render.sectionStartByIndex()}
-          sectionDrafts={render.sectionDrafts()}
+          sectionStartByIndex={sectionStartBySourceIndex(render.manifest()?.sections ?? [], slideEntries())}
+          sectionDraftOf={index => {
+            const manifestIndex = manifestIndexAt(slideEntries(), index)
+            return manifestIndex === null ? { name: '', timeMs: 0 } : render.sectionDraftOf(manifestIndex)
+          }}
+          editingSectionIndex={ui.editingSectionIndex()}
+          onEditSection={index => ui.setEditingSectionIndex(index)}
           canvasWidth={render.canvasWidth()}
           canvasHeight={render.canvasHeight()}
           canvasFragmentOf={render.canvasFragmentOf}
@@ -1098,7 +1208,13 @@ export function Studio() {
           onSelectSlide={index => selectSlide(index)}
           onSectionNameInput={onSectionNameInput}
           onSectionTimeInput={onSectionTimeInput}
-          onCommitSectionEdit={index => void commitSectionEdit(index)}
+          onCommitSectionEdit={index => {
+            void commitSectionEdit(index)
+            // The header collapses back to its plain summary once focus
+            // leaves it — same trigger as saving it, so a spinner isn't
+            // left open just because the deck happens to be mid-save.
+            if (ui.editingSectionIndex() === index) ui.setEditingSectionIndex(null)
+          }}
         />
 
         <div
@@ -1149,18 +1265,20 @@ export function Studio() {
         layoutPickerOpen={isLayoutPickerOpen(ui.contextMenu())}
         layoutPickerView={layoutPickerView()}
         layoutPreviews={ui.layoutPreviews()}
+        layoutFit={layoutFitOf(ui.contextMenu())}
+        layoutNotice={layoutNoticeOf(ui.contextMenu())}
         layoutPreviewStylesheet={getLayoutPreviewStylesheet}
         canvasWidth={render.canvasWidth()}
         canvasHeight={render.canvasHeight()}
         onMenuRef={el => { contextMenuEl = el }}
         onClose={ui.closeContextMenu}
-        onNewSlide={() => { void addSlide(ui.contextMenuAppendIndex(render.manifest()?.slideCount ?? 1)); ui.closeContextMenu() }}
+        onNewSlide={() => { void addSlide(ui.contextMenuAppendIndex(slideEntries().length || 1)); ui.closeContextMenu() }}
         onCut={() => { void cutSlide(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onCopy={() => { copySlide(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
-        onPaste={() => { void pasteSlideAfter(ui.contextMenuAppendIndex(render.manifest()?.slideCount ?? 1)); ui.closeContextMenu() }}
+        onPaste={() => { void pasteSlideAfter(ui.contextMenuAppendIndex(slideEntries().length || 1)); ui.closeContextMenu() }}
         onDelete={() => { void deleteSlide(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onToggleLayoutPicker={ui.toggleLayoutPicker}
-        onChangeLayout={name => { void changeSlideLayout(contextMenuIndexOf(ui.contextMenu())!, name); ui.closeContextMenu() }}
+        onChangeLayout={chooseLayoutFromPicker}
         onToggleDraft={() => { void toggleSlideDraft(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onToggleSkip={() => { void toggleSlideSkip(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onToggleSection={() => { void toggleSlideSection(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}

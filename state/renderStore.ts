@@ -1,8 +1,8 @@
 import { createSignal, createMemo, batch } from '@barefootjs/client'
-import { type Manifest, type ManifestSection, type SectionDraft, type RenderPayload, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
+import { type Manifest, type ManifestSection, type SectionDraft, type RenderPayload, savedSectionDraft, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
 import { absolutizeCssUrls, scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { absolutizeFragmentUrls } from '../domain/slideFragment'
-import { formatDurationMs, stabilizeByKey } from '../domain/slides'
+import { stabilizeByKey } from '../domain/slides'
 
 /** The deck's last-rendered state: manifest, per-slide fragment HTML, canvas
  * size, asset base URL, and the section-header drafts a fresh render resets.
@@ -25,8 +25,35 @@ export function createRenderStore() {
   const [canvasWidth, setCanvasWidth] = createSignal(1280)
   const [canvasHeight, setCanvasHeight] = createSignal(720)
   const [manifest, setManifest] = createSignal<Manifest | null>(null)
+  // The exact source string that produced the current `manifest()` —
+  // written only by `applyRenderPayload`, atomically with the manifest
+  // itself (same `batch()` below), never anywhere else. `domain/slideList.ts`'s
+  // `buildSlideList` needs a source that's guaranteed to already match
+  // `manifest.slides` (so drafts/positions line up); `editor.fullSource()`
+  // doesn't give that guarantee — it's a separate signal `Studio.tsx`
+  // updates independently, sometimes across an `await` (e.g.
+  // `commitChange` applies the new manifest, then `await`s the disk
+  // write, and only *after that* sets `fullSource`). A `slideEntries`
+  // memo reading `manifest()` + `fullSource()` together could observe
+  // that in-between state — a manifest with one fewer slide (say, one
+  // just marked draft) paired with the *old* source that still has every
+  // slide undrafted — and mis-pair a later same-titled slide's row with
+  // the wrong manifest entry, handing BarefootJS's keyed `.map()` a
+  // duplicate key it then permanently collapses to one DOM scope (logged
+  // as a `[BarefootJS] mapArray: duplicate key` warning) — which is what
+  // left a slide's thumbnail canvas blank until the whole deck was
+  // reopened. Pairing the manifest with the source that *actually*
+  // produced it removes the mismatched read entirely, regardless of when
+  // `fullSource()` itself gets around to catching up.
+  const [renderedSource, setRenderedSource] = createSignal('')
   const sectionStartByIndex = createMemo<Record<number, ManifestSection>>(() => computeSectionStartByIndex(manifest()?.sections ?? []))
   const [sectionDrafts, setSectionDrafts] = createSignal<Record<number, SectionDraft>>({})
+  /** The draft for the section starting at slide `startIndex`, or that
+   * section's saved values when there's no draft for it. Only meaningful
+   * for an index in `sectionStartByIndex()`. */
+  function sectionDraftOf(startIndex: number): SectionDraft {
+    return sectionDrafts()[startIndex] ?? savedSectionDraft(sectionStartByIndex()[startIndex])
+  }
 
   const [css, setCss] = createSignal('')
   // A memo, rather than something computed once in `applyRenderPayload`,
@@ -72,7 +99,7 @@ export function createRenderStore() {
   // that's unchanged is what lets the keyed `.map()` over `manifest().slides`
   // skip re-running that row's bindings at all — see `stabilizeByKey`'s own
   // comment for why this is load-bearing, not just tidiness.
-  function applyRenderPayload(payload: RenderPayload): void {
+  function applyRenderPayload(payload: RenderPayload, source: string): void {
     // Everything a slide's one-shot mount read depends on — its fragment,
     // the canvas size, the asset base URL — must already be current
     // *before* `setManifest` below, not after. A brand-new row (this deck's
@@ -101,19 +128,20 @@ export function createRenderStore() {
       if (css() !== payload.css) setCss(payload.css)
       if (canvasWidth() !== payload.manifest.canvasWidth) setCanvasWidth(payload.manifest.canvasWidth)
       if (canvasHeight() !== payload.manifest.canvasHeight) setCanvasHeight(payload.manifest.canvasHeight)
+      if (renderedSource() !== source) setRenderedSource(source)
       const previousSlides = manifest()?.slides ?? []
       setManifest({ ...payload.manifest, slides: stabilizeByKey(previousSlides, payload.manifest.slides) })
       const drafts: Record<number, SectionDraft> = {}
       for (const section of payload.manifest.sections) {
-        drafts[section.startIndex] = { name: section.name, time: formatDurationMs(section.plannedDurationMs) }
+        drafts[section.startIndex] = savedSectionDraft(section)
       }
       setSectionDrafts(drafts)
     })
   }
 
   return {
-    assetBaseUrl, canvasWidth, canvasHeight, manifest, sectionStartByIndex,
-    sectionDrafts, setSectionDrafts,
+    assetBaseUrl, canvasWidth, canvasHeight, manifest, renderedSource, sectionStartByIndex,
+    sectionDrafts, setSectionDrafts, sectionDraftOf,
     fragmentSignal, canvasFragmentOf, applyRenderPayload,
     slideStylesheetText, fontFaceCss,
   }

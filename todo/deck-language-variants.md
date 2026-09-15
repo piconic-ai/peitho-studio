@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: 同一ディレクトリの多言語デッキ(deck.ja.md等)を簡単に切り替えられるようにする
 tags: [ui, deck, i18n]
 ---
@@ -78,16 +78,65 @@ tags: [ui, deck, i18n]
 ## 完了条件
 
 自動で確認できる項目:
-- [ ] グルーピング判定の純粋関数 + spec/adversarialテスト
-- [ ] Rust側のディレクトリ列挙コマンド追加
-- [ ] `DeckHeader.tsx`への切り替えUI実装
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `cargo test` グリーン
+- [x] グルーピング判定の純粋関数 + spec/adversarialテスト
+  (`src-tauri/src/deck_variants.rs`。表示側の射影は`domain/deckVariants.ts`
+  + GWT例`domain/deckVariants.examples.ts`)
+- [x] Rust側のディレクトリ列挙コマンド追加(`list_deck_variants`、
+  `peitho.rs`)
+- [x] `DeckHeader.tsx`への切り替えUI実装(e2e: `e2e/deck-variants.e2e.ts`)
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `cargo test` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] スライド位置引き継ぎ方針をFableと確認・実装
-- [ ] 実機確認
+  (現状: 引き継がない。切り替え先は`open_deck_window`の既存挙動どおり
+  新しいウィンドウで開き、先頭スライドから始まる。元ウィンドウはそのまま)
+- [ ] 実機確認: `deck.md`+`deck.ja.md`のフォルダでデッキを開き、ヘッダーの
+  切り替えボタン/ドロップダウンがWKWebViewで正しく描画されること、選択
+  すると新しいウィンドウで該当デッキが開き元ウィンドウは維持されること、
+  単独デッキではボタンが出ないこと
 
 ## 先送り事項
 
 (実装時に見つかった、本筋と無関係な改善点があればここに書き出す)
+
+- 候補一覧はデッキを開いた時に一度だけ取得する。開いた後に同じフォルダへ
+  `deck.fr.md`等を追加しても、開き直すまで切り替え候補に出ない
+  (ウィンドウフォーカス時の再取得などで対応可能)。
+- ~~すでに別ウィンドウで開いている候補を選んでも、そのウィンドウを前面に
+  出さず新しいウィンドウをもう1つ開く(Open Recentの既存挙動と同じ)。~~
+  → kfly8からのレビューで対応: `open_deck_window_impl`
+  (`src-tauri/src/peitho.rs`)が、対象デッキが既に開いているウィンドウを
+  `PeithoSession`から探し、見つかればそのウィンドウを`set_focus()`する
+  ように変更。見つからない場合のみ新規ウィンドウを開く。この関数は
+  deck-variantsの切り替え・ネイティブ「Open Deck…」・「Open Recent」の
+  全経路が共有しているため、3経路すべてに一括で適用される。
+  - 併せて、新規ウィンドウが常に同じ位置に開いて「新しいウィンドウが
+    開いたと気づきにくい」という指摘にも対応: 開くたびに
+    `WINDOW_CASCADE_STEP_PX`(32px)ずつ位置をずらす(`WINDOW_CASCADE_STEPS`
+    件で一周)カスケード表示にした。
+  - 純粋関数`matching_window_label`/`deck_path_for_comparison`を切り出し、
+    spec/adversarialテストを追加(シンボリックリンク越しの一致、
+    存在しないパス同士の比較などを含む)。
+  - この機能はネイティブの複数ウィンドウ操作(フォーカス移動、実際の
+    ウィンドウ位置)に依存するため、モックe2eでは検証できない — 実機
+    (`run-peitho-studio` skill)で以下を確認する必要がある:
+    - 同じデッキを`open_deck_window`経由で二重に開こうとしたとき、
+      新規ウィンドウが増えずに既存ウィンドウが前面に来ること
+      (deck-variants切り替え/Open Deck.../Open Recentの3経路)
+    - 新規ウィンドウを複数開いたとき、位置が少しずつずれて見えること
+  - **Pullfrogレビューで見つかった既知のギャップ(未対応)**: この重複
+    ウィンドウ検出には、ウィンドウ生成直後〜そのウィンドウ自身の
+    `open_deck`完了(`PeithoSession`への登録)までの間にもう一度同じ
+    デッキを開こうとすると、すり抜けてもう1枚ウィンドウが増えてしまう
+    競合が残っている。`open_deck`の初回レンダリングは実機で最大5秒
+    程度かかりうる(CLAUDE.mdのTauriの落とし穴参照)ため、この間隔は
+    無視できない長さになりうる。`PendingDecks`も併せて調べる案を検討
+    したが、フロント側は`take_pending_deck`をレンダリング開始前
+    (`open_deck`呼び出し前)に呼んで即座にエントリを消費するため、実際に
+    抜けている区間(レンダリング中)はこの案でもカバーできない —
+    根本対応には`PeithoSession`への登録タイミングか`PendingDecks`の
+    保持期間そのものを見直す設計変更が要る。実害はウィンドウが1枚
+    余分に増えるだけ(データ損失なし)で、かつ短い間隔内に同じ操作を
+    繰り返すという意図的な行動が要るため、今回は見送り、既知の
+    ギャップとして記録するに留める。

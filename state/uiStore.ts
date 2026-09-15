@@ -1,6 +1,7 @@
 import { createSignal, createMemo } from '@barefootjs/client'
 import { type DragState } from '../domain/drag'
-import { type ContextMenu, appendIndex as computeAppendIndex } from '../domain/contextMenu'
+import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withLayoutFitResult, withLayoutNotice } from '../domain/contextMenu'
+import { type LayoutVerdict } from '../domain/layoutFit'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 
 const SLIDE_LIST_WIDTH = 176
@@ -9,7 +10,7 @@ const EDITOR_WIDTH = 420
 /** Transient UI-only state that doesn't belong to any single deck/editor
  * concept: the thumbnail drag gesture, the right-click context menu (+ its
  * "Change Layout" submenu preview cache), the in-app clipboard, the Present
- * dropdown, and the two resizable column widths.
+ * and deck-variant dropdowns, and the two resizable column widths.
  *
  * Orchestration that spans this store and another concern — `startSlideDrag`
  * ending in a call to `reorderSlides`, `openContextMenu` also calling
@@ -58,6 +59,23 @@ export function createUiStore() {
   function toggleLayoutPicker(): void {
     setContextMenu(menu => (menu.kind === 'on-slide' ? { ...menu, layoutPickerOpen: !menu.layoutPickerOpen } : menu))
   }
+  // Each right-click on a slide starts its own `check_slide_layouts` call;
+  // numbering them is what lets `settleLayoutFit` drop an answer that
+  // arrives after the menu it was for has been replaced or closed.
+  let lastLayoutFitRequestId = 0
+  /** Opens the menu on slide `index` and returns the request id its fit
+   * check's answer must be settled with. */
+  function openSlideContextMenu(index: number, x: number, y: number): number {
+    lastLayoutFitRequestId += 1
+    setContextMenu(openOnSlide(index, x, y, lastLayoutFitRequestId))
+    return lastLayoutFitRequestId
+  }
+  function settleLayoutFit(requestId: number, verdicts: readonly LayoutVerdict[] | null): void {
+    setContextMenu(menu => withLayoutFitResult(menu, requestId, verdicts))
+  }
+  function showLayoutNotice(notice: string): void {
+    setContextMenu(menu => withLayoutNotice(menu, notice))
+  }
   /** The index a slide-appending action (New Slide, Paste) should insert
    * after — the right-clicked slide, or the end of the list when the menu
    * is closed or was opened on empty space. */
@@ -88,6 +106,8 @@ export function createUiStore() {
   const [clipboardSlideText, setClipboardSlideText] = createSignal<string | null>(null)
 
   const [presentMenuOpen, setPresentMenuOpen] = createSignal(false)
+  // The deck header's variant switcher dropdown (deck.md <-> deck.ja.md).
+  const [variantMenuOpen, setVariantMenuOpen] = createSignal(false)
   // Click-to-completion feedback for the Present button (`DeckHeader.tsx`):
   // set right when a present click is dispatched, cleared once
   // `present_deck` settles (success or failure alike — this is deliberately
@@ -99,12 +119,25 @@ export function createUiStore() {
   const [slideListWidth, setSlideListWidth] = createSignal(SLIDE_LIST_WIDTH)
   const [editorWidth, setEditorWidth] = createSignal(EDITOR_WIDTH)
 
+  // Which section header's own row (by `sourceIndex`) is expanded into its
+  // editable name/time spinners — every other section header shows a
+  // plain, compact summary instead. `null` means none are expanded. Only
+  // one at a time can be, since only one section header can plausibly have
+  // focus — so a single index is enough; no need for the per-key signal
+  // map pattern `state/renderStore.ts`'s `fragmentSignal` uses (that's for
+  // "many independent things can each change," not "at most one of many
+  // can be active").
+  const [editingSectionIndex, setEditingSectionIndex] = createSignal<number | null>(null)
+
   return {
     dragState, setDragState, draggedIndex, dragOverGap, dragDeltaY,
     contextMenu, setContextMenu, closeContextMenu, toggleLayoutPicker, contextMenuAppendIndex,
+    openSlideContextMenu, settleLayoutFit, showLayoutNotice,
     layoutPreviews, setLayoutPreviews, layoutPreviewStylesheetText, setLayoutPreviewCss,
     clipboardSlideText, setClipboardSlideText,
     presentMenuOpen, setPresentMenuOpen, presentPending, setPresentPending,
+    variantMenuOpen, setVariantMenuOpen,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth,
+    editingSectionIndex, setEditingSectionIndex,
   }
 }

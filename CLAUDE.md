@@ -304,6 +304,37 @@ don't bundle everything into one giant commit.
   and its own static parent's handler for the same event — have the
   parent's handler explicitly skip itself when the click landed inside a
   row (e.g. `event.target.closest('[data-slide-row]')`) instead.
+- **A keyed `.map()` row's `ref` doesn't re-run when a branch is re-entered
+  after the row's key round-trips through another branch** (reported as
+  [piconic-ai/barefootjs#3009](https://github.com/piconic-ai/barefootjs/issues/3009),
+  with a minimal repro and root-cause trace). Distinct from the
+  already-corrected #2927 entry above (which is about a `createEffect`
+  *leaking* on re-entry, and concluded a plain `ref` re-runs fine on
+  re-entry) — this is a plain `ref` (no `createEffect` inside it) that
+  simply never runs a *second* time: `cond ? <div ref={...}/> : <other/>`
+  inside a keyed `.map()` row, when that row's key goes `cond===true` ->
+  `cond===false` -> `cond===true` again (the SAME key throughout), leaves
+  the third render's `<div>` in the DOM but its `ref` callback never
+  executes — confirmed by reading the compiled output's `outerHTML`, not
+  just `bf debug graph`. Hit in `SlideList.tsx`/`domain/slideList.ts`: a
+  slide's thumbnail row toggling `rendered` -> `placeholder` (marked
+  draft) -> `rendered` (un-drafted) left the canvas `<div>` present but
+  un-mounted (`mountSlideCanvas` never ran, no `data-slide-canvas-key`
+  set) — a permanently blank thumbnail until the whole deck was reopened.
+  Fix: never let the two branches share a key across the toggle — give the
+  branch that doesn't need a stable identity (a draft placeholder, which
+  is rare and short-lived) a key namespace that can *never* collide with
+  the other branch's key (e.g. `` `placeholder:${sourceIndex}` ``, never
+  the slide's own explicit key), so the toggle is always a genuinely new
+  key from the `.map()`'s perspective — forcing a real unmount+fresh-mount
+  (the already-exercised, correctly-working case) instead of an in-place
+  branch swap.
+
+- **An input's `value={expr}` binding writes to the DOM only when `expr`'s
+  result changes.** Text the user typed that normalizes back to the value
+  already shown (`000` or `-1` into a number input that shows `0`) stays on
+  screen. When an input normalizes what's typed, also rewrite the field
+  from `onChange` (see `dom/sectionHeader.ts`'s `showCanonicalValue`).
 
 ## Pitfalls hit with UnoCSS (Wind4 preset)
 

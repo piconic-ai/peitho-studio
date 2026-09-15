@@ -24,6 +24,7 @@
 
 pub mod assets;
 pub mod builtin;
+pub mod layout_fit;
 pub mod pipeline;
 pub mod serve;
 pub mod unsupported;

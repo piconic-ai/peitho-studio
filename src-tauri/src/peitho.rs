@@ -22,7 +22,9 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
+use crate::deck_variants;
 use crate::engine::builtin;
+use crate::engine::layout_fit::{self, LayoutVerdict};
 use crate::engine::pipeline::{self, RenderOutput};
 use crate::engine::serve::AssetServer;
 
@@ -107,6 +109,45 @@ impl PeithoSession {
             }
         }
     }
+
+    /// The label of a window that already has `target` open, if any — see
+    /// `matching_window_label`. `open_deck_window` uses this to bring an
+    /// already-open deck's window to the front instead of opening a
+    /// redundant second copy of it.
+    pub fn window_label_for(&self, target: &Path) -> Option<String> {
+        let guard = self.0.lock().ok()?;
+        matching_window_label(guard.iter().map(|(label, state)| (label.as_str(), state.deck_path.as_path())), target)
+    }
+}
+
+/// The label paired with `target`'s path, if any of `open_decks` matches
+/// it — compared by canonical path (falling back to the path as given
+/// when canonicalizing fails, e.g. it no longer exists) so a relative
+/// argument, a differently-cased mount point, or a symlink doesn't hide a
+/// deck that actually is already open, and a path that merely looks
+/// similar as text doesn't falsely match one that isn't. State-
+/// independent (plain label/path pairs, no `PeithoSession` lock) so it's
+/// unit-testable on its own — see `PeithoSession::window_label_for` for
+/// the version that actually reads live sessions.
+fn matching_window_label<'a>(mut open_decks: impl Iterator<Item = (&'a str, &'a Path)>, target: &Path) -> Option<String> {
+    let canonical_target = std::fs::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
+    open_decks
+        .find(|(_, path)| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()) == canonical_target)
+        .map(|(label, _)| label.to_string())
+}
+
+/// A `path` argument normalized just enough to compare against an open
+/// window's own (already-resolved) `deck_path` — the same directory-to-
+/// `deck.md` join `resolve_deck_path` does, but this never fails when the
+/// result doesn't exist (unlike that function): a path that doesn't
+/// exist can't be the same file as anything already open either, so
+/// there's nothing to gain by rejecting it before the comparison — a
+/// genuinely new window still goes through the real, failing
+/// `resolve_deck_path` once it mounts and calls `open_deck`, exactly as
+/// before this comparison was added.
+fn deck_path_for_comparison(input: &str) -> PathBuf {
+    let path = PathBuf::from(input);
+    if path.is_dir() { path.join("deck.md") } else { path }
 }
 
 #[derive(Serialize)]
@@ -265,23 +306,50 @@ pub struct PendingDecks(Mutex<HashMap<String, String>>);
 
 static WINDOW_COUNTER: AtomicU32 = AtomicU32::new(0);
 
+/// Each new window cascades a step further than the last (wrapping after
+/// `WINDOW_CASCADE_STEPS`), so a freshly opened window is visibly offset
+/// from whichever one was already on top of it — otherwise a second deck
+/// opening exactly on top of the first looks like nothing happened at
+/// all. Not specific to the deck-language-variant switcher this constant
+/// was added for — it's every caller of `open_deck_window` (native "Open
+/// Deck…"/"Open Recent" too), since they all funnel through the same
+/// `open_deck_window_impl`.
+const WINDOW_CASCADE_STEP_PX: f64 = 32.0;
+const WINDOW_CASCADE_STEPS: u32 = 8;
+const WINDOW_BASE_POSITION: (f64, f64) = (120.0, 120.0);
+
 /// Opens `path` in a brand new window, leaving whichever window this was
 /// called from untouched — comparing two decks side by side means neither
-/// one can be silently replaced by the other.
+/// one can be silently replaced by the other. If that deck is already
+/// open in some other window, that window is brought to the front
+/// instead of opening a redundant second copy of it, matching how
+/// re-opening a file already open elsewhere is expected to behave.
 #[tauri::command]
-pub fn open_deck_window(app: AppHandle, pending: State<PendingDecks>, path: String) -> Result<(), String> {
-    open_deck_window_impl(&app, &pending, path)
+pub fn open_deck_window(app: AppHandle, pending: State<PendingDecks>, session: State<PeithoSession>, path: String) -> Result<(), String> {
+    open_deck_window_impl(&app, &pending, &session, path)
 }
 
-pub(crate) fn open_deck_window_impl(app: &AppHandle, pending: &PendingDecks, path: String) -> Result<(), String> {
-    let label = format!("deck-{}", WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed));
+pub(crate) fn open_deck_window_impl(app: &AppHandle, pending: &PendingDecks, session: &PeithoSession, path: String) -> Result<(), String> {
+    if let Some(label) = session.window_label_for(&deck_path_for_comparison(&path)) {
+        if let Some(window) = app.get_webview_window(&label) {
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+            return Ok(());
+        }
+    }
+
+    let counter = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let label = format!("deck-{counter}");
     {
         let mut guard = pending.0.lock().map_err(|_| "pending-decks lock poisoned".to_string())?;
         guard.insert(label.clone(), path);
     }
+    let step = f64::from(counter % WINDOW_CASCADE_STEPS);
+    let (base_x, base_y) = WINDOW_BASE_POSITION;
     tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::App("index.html".into()))
         .title("Peitho Studio")
         .inner_size(1440.0, 900.0)
+        .position(base_x + step * WINDOW_CASCADE_STEP_PX, base_y + step * WINDOW_CASCADE_STEP_PX)
         .resizable(true)
         .build()
         .map_err(|err| err.to_string())?;
@@ -474,6 +542,63 @@ pub fn save_deck_source(content: String, window: WebviewWindow, session: State<P
     std::fs::write(&state.deck_path, content).map_err(|err| err.to_string())
 }
 
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeckVariantPayload {
+    /// Full path, ready to hand to `open_deck_window`.
+    path: String,
+    file_name: String,
+    suffix: Option<String>,
+    is_current: bool,
+}
+
+/// The on-disk half of `list_deck_variants`, split out so it's testable
+/// against a temp directory without a Tauri window/session. Only regular
+/// files (symlinks followed) count as siblings, and a name that isn't
+/// valid UTF-8 is skipped rather than failing the whole listing. Names are
+/// grouped first, so only the few same-base candidates get stat'ed — not
+/// every image/asset sharing the deck's folder.
+fn deck_variants_on_disk(deck_path: &Path) -> Result<Vec<DeckVariantPayload>, String> {
+    let current = deck_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("deck path has no file name: {}", deck_path.display()))?;
+    // `Path::new("deck.md").parent()` is `Some("")`, which `read_dir` rejects.
+    let dir = deck_path.parent().filter(|dir| !dir.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let sibling_names: Vec<String> = std::fs::read_dir(dir)
+        .map_err(|err| format!("failed to read {}: {err}", dir.display()))?
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect();
+    Ok(deck_variants::group_deck_variants(current, &sibling_names)
+        .into_iter()
+        .map(|variant| (deck_path.with_file_name(&variant.file_name), variant))
+        .filter(|(path, variant)| variant.is_current || path.is_file())
+        .map(|(path, variant)| DeckVariantPayload {
+            path: path.display().to_string(),
+            file_name: variant.file_name,
+            suffix: variant.suffix,
+            is_current: variant.is_current,
+        })
+        .collect())
+}
+
+/// Sibling decks sharing the open deck's base name (`deck.md`,
+/// `deck.ja.md`, ...) — see `crate::deck_variants` for the grouping rules.
+/// Includes the open deck itself, so a result of one or fewer entries means
+/// there's nothing to switch to. `async` since listing a directory (e.g. on
+/// a network volume) isn't guaranteed fast, and nothing here touches shared
+/// state beyond reading the session's path.
+#[tauri::command(async)]
+pub fn list_deck_variants(window: WebviewWindow, session: State<PeithoSession>) -> Result<Vec<DeckVariantPayload>, String> {
+    let deck_path = {
+        let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+        let state = guard.get(window.label()).ok_or_else(|| "no deck is open".to_string())?;
+        state.deck_path.clone()
+    };
+    deck_variants_on_disk(&deck_path)
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LayoutPreview {
@@ -532,6 +657,27 @@ pub fn preview_layouts(window: WebviewWindow, session: State<PeithoSession>) -> 
         previews.push(LayoutPreview { name: name.to_string(), fragment });
     }
     Ok(LayoutPreviewsPayload { previews, css })
+}
+
+/// Which layouts the slide at `slide_index` of `content` (the deck source
+/// as the frontend currently has it, unsaved edits included) fits — for the
+/// "Change Layout" picker to mark the rest before one is chosen. See
+/// `engine::layout_fit`. `async` like `open_deck`: it parses the whole deck,
+/// highlighting every code block, and unlike `render_draft` it touches no
+/// shared state, so it can run off the UI thread.
+#[tauri::command(async)]
+pub fn check_slide_layouts(
+    content: String,
+    slide_index: usize,
+    window: WebviewWindow,
+    session: State<PeithoSession>,
+) -> Result<Option<Vec<LayoutVerdict>>, String> {
+    let deck_path = {
+        let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+        let state = guard.get(window.label()).ok_or_else(|| "no deck is open".to_string())?;
+        state.deck_path.clone()
+    };
+    layout_fit::check_slide_layouts(&deck_path, &content, slide_index)
 }
 
 #[tauri::command]
@@ -696,6 +842,142 @@ mod tests {
     #[test]
     fn resolve_deck_path_adversarial_nonexistent_path_is_an_error() {
         assert!(resolve_deck_path("/definitely/does/not/exist/deck.md").is_err());
+    }
+
+    #[test]
+    fn deck_path_for_comparison_spec_joins_deck_md_for_a_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(deck_path_for_comparison(dir.path().to_str().unwrap()), dir.path().join("deck.md"));
+    }
+
+    #[test]
+    fn deck_path_for_comparison_spec_leaves_a_file_path_as_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("custom-name.md");
+        std::fs::write(&file, "# Hi").unwrap();
+        assert_eq!(deck_path_for_comparison(file.to_str().unwrap()), file);
+    }
+
+    #[test]
+    fn deck_path_for_comparison_adversarial_a_path_that_does_not_exist_is_never_rejected() {
+        // Unlike `resolve_deck_path`, this never fails — a nonexistent
+        // path can't match anything already open, but it also can't
+        // crash the comparison that's about to check that.
+        assert_eq!(deck_path_for_comparison("/definitely/does/not/exist/deck.md"), PathBuf::from("/definitely/does/not/exist/deck.md"));
+    }
+
+    #[test]
+    fn matching_window_label_spec_finds_the_label_whose_deck_path_is_the_same_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        std::fs::write(&deck_path, "# Hi").unwrap();
+        let open_decks = [("deck-0", deck_path.as_path())];
+        assert_eq!(matching_window_label(open_decks.into_iter(), &deck_path), Some("deck-0".to_string()));
+    }
+
+    #[test]
+    fn matching_window_label_spec_matches_through_a_symlink_to_the_same_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_path = dir.path().join("deck.md");
+        std::fs::write(&real_path, "# Hi").unwrap();
+        let symlink_path = dir.path().join("alias.md");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real_path, &symlink_path).unwrap();
+        #[cfg(not(unix))]
+        std::os::windows::fs::symlink_file(&real_path, &symlink_path).unwrap();
+        let open_decks = [("deck-0", real_path.as_path())];
+        assert_eq!(matching_window_label(open_decks.into_iter(), &symlink_path), Some("deck-0".to_string()));
+    }
+
+    #[test]
+    fn matching_window_label_adversarial_no_open_decks_is_none() {
+        assert_eq!(matching_window_label(std::iter::empty(), Path::new("/tmp/deck.md")), None);
+    }
+
+    #[test]
+    fn matching_window_label_adversarial_similar_looking_but_different_files_do_not_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("deck.md");
+        let b = dir.path().join("deck-old.md");
+        std::fs::write(&a, "# A").unwrap();
+        std::fs::write(&b, "# B").unwrap();
+        let open_decks = [("deck-0", a.as_path())];
+        assert_eq!(matching_window_label(open_decks.into_iter(), &b), None);
+    }
+
+    #[test]
+    fn matching_window_label_adversarial_a_path_that_no_longer_exists_still_compares_by_text() {
+        // Neither side can be canonicalized, so the fallback (compare the
+        // path as given) still has to work rather than panic.
+        let gone = Path::new("/definitely/does/not/exist/deck.md");
+        let open_decks = [("deck-0", gone)];
+        assert_eq!(matching_window_label(open_decks.into_iter(), gone), Some("deck-0".to_string()));
+    }
+
+    fn variant_file_names(variants: &[DeckVariantPayload]) -> Vec<&str> {
+        variants.iter().map(|v| v.file_name.as_str()).collect()
+    }
+
+    #[test]
+    fn deck_variants_on_disk_spec_lists_same_base_decks_with_full_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["deck.md", "deck.ja.md", "deck-old.md", "notes.txt"] {
+            std::fs::write(dir.path().join(name), "# Hi").unwrap();
+        }
+        let variants = deck_variants_on_disk(&dir.path().join("deck.ja.md")).unwrap();
+        assert_eq!(
+            variants,
+            vec![
+                DeckVariantPayload {
+                    path: dir.path().join("deck.md").display().to_string(),
+                    file_name: "deck.md".into(),
+                    suffix: None,
+                    is_current: false,
+                },
+                DeckVariantPayload {
+                    path: dir.path().join("deck.ja.md").display().to_string(),
+                    file_name: "deck.ja.md".into(),
+                    suffix: Some("ja".into()),
+                    is_current: true,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn deck_variants_on_disk_adversarial_a_directory_named_like_a_variant_is_not_a_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("deck.md"), "# Hi").unwrap();
+        std::fs::create_dir(dir.path().join("deck.ja.md")).unwrap();
+        let variants = deck_variants_on_disk(&dir.path().join("deck.md")).unwrap();
+        assert_eq!(variant_file_names(&variants), vec!["deck.md"]);
+    }
+
+    #[test]
+    fn deck_variants_on_disk_adversarial_missing_directory_is_an_error() {
+        assert!(deck_variants_on_disk(Path::new("/definitely/does/not/exist/deck.md")).is_err());
+    }
+
+    #[test]
+    fn deck_variants_on_disk_adversarial_path_without_a_file_name_is_an_error() {
+        assert!(deck_variants_on_disk(Path::new("/")).is_err());
+        assert!(deck_variants_on_disk(Path::new("")).is_err());
+    }
+
+    #[test]
+    fn deck_variant_payload_spec_serializes_with_the_frontends_camel_case_field_names() {
+        let payload = DeckVariantPayload {
+            path: "/d/deck.ja.md".into(),
+            file_name: "deck.ja.md".into(),
+            suffix: Some("ja".into()),
+            is_current: true,
+        };
+        assert_eq!(
+            serde_json::to_value(&payload).unwrap(),
+            serde_json::json!({ "path": "/d/deck.ja.md", "fileName": "deck.ja.md", "suffix": "ja", "isCurrent": true })
+        );
+        let unsuffixed = DeckVariantPayload { suffix: None, ..payload };
+        assert_eq!(serde_json::to_value(&unsuffixed).unwrap()["suffix"], serde_json::Value::Null);
     }
 
     fn render_output(manifest_json: &str, css: &str) -> RenderOutput {

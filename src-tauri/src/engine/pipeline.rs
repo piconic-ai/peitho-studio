@@ -8,9 +8,10 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
+use peitho_core::phase::Parsed;
 use peitho_core::{
     build_manifest, build_theme_css, check_deck, dispatch_by_convention, manifest_json,
-    parse_deck_and_transform, parse_frontmatter, render_deck, resolve_image_paths, BuildError,
+    parse_deck_and_transform, parse_frontmatter, render_deck, resolve_image_paths, BuildError, Deck,
     ImageRequest, ResolvedImageAsset, ResolvedImagePath,
 };
 
@@ -35,27 +36,38 @@ pub struct RenderOutput {
     pub fonts_dir: Option<PathBuf>,
 }
 
-pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, String> {
-    let deck_dir = deck_path
+/// A deck source parsed up to (not including) layout dispatch, plus the
+/// deck-adjacent assets the parse resolved — the shared first half of
+/// `render_source` and `engine::layout_fit`, which needs the parsed slides
+/// and the deck's layouts but none of the rendering after them.
+pub struct ParsedSource {
+    pub deck: Deck<Parsed>,
+    pub assets: ResolvedAssets,
+}
+
+fn deck_dir_of(deck_path: &Path) -> &Path {
+    deck_path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
+        .unwrap_or_else(|| Path::new("."))
+}
+
+pub fn parse_source(deck_path: &Path, source: &str) -> Result<ParsedSource, String> {
+    let deck_dir = deck_dir_of(deck_path);
 
     let frontmatter = parse_frontmatter(source).map_err(|err| err.to_string())?;
     let expanded = peitho_core::include::expand_includes(source, frontmatter.body_start(), deck_path)
         .map_err(|err| err.to_string())?;
 
-    let ResolvedAssets { layouts, css: css_files, highlighter, fonts_dir } =
-        assets::resolve(deck_dir)?;
-    let highlighter = highlighter.get();
+    let assets = assets::resolve(deck_dir)?;
 
     let code_images_cache_dir = deck_dir.join(peitho_core::CODE_IMAGES_CACHE_DIR);
     let embeds_cache_dir = deck_dir.join(peitho_core::EMBEDS_CACHE_DIR);
 
-    let parsed = parse_deck_and_transform(
+    let deck = parse_deck_and_transform(
         &expanded.source,
         frontmatter,
-        highlighter,
+        assets.highlighter.get(),
         &UnsupportedSvgRunner,
         &UnsupportedEmbedRenderer,
         &UnsupportedOEmbedFetcher,
@@ -63,6 +75,16 @@ pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, Str
         &embeds_cache_dir,
     )
     .map_err(|err| err.to_string())?;
+
+    Ok(ParsedSource { deck, assets })
+}
+
+pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, String> {
+    let deck_dir = deck_dir_of(deck_path);
+
+    let ParsedSource { deck: parsed, assets: ResolvedAssets { layouts, css: css_files, highlighter, fonts_dir } } =
+        parse_source(deck_path, source)?;
+    let highlighter = highlighter.get();
 
     let mapped = dispatch_by_convention(parsed, &layouts).map_err(|err| err.to_string())?;
     let checked = check_deck(mapped).map_err(|err| err.to_string())?;
@@ -366,6 +388,42 @@ mod tests {
         let deck_path = dir.path().join("deck.md");
         let source = "<!-- {\"section\":\"Intro\"} -->\n# One\n";
         assert!(render_source(&deck_path, source).is_err());
+    }
+
+    // The slide list's status badge (`domain/slideStatus.ts`) reads the
+    // manifest `render_draft` returns, so these two pin what that manifest
+    // actually carries for skipped and draft slides.
+    #[test]
+    fn render_source_spec_a_skipped_slide_stays_in_the_manifest_flagged_skip() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let source = "<!-- {\"key\":\"opening\"} -->\n# Opening\n\n---\n\n<!-- {\"key\":\"backup\",\"skip\":true} -->\n# Backup\n";
+        let output = render_source(&deck_path, source).expect("a skipped slide should build cleanly");
+        let manifest: serde_json::Value = serde_json::from_str(&output.manifest_json).unwrap();
+        let slides = manifest["slides"].as_array().unwrap();
+        assert_eq!(slides.len(), 2);
+        assert_eq!(slides[0]["skip"], false);
+        assert_eq!((slides[1]["key"].as_str(), slides[1]["skip"].as_bool()), (Some("backup"), Some(true)));
+        assert!(output.fragments.contains_key("backup"));
+    }
+
+    #[test]
+    fn render_source_adversarial_a_draft_slide_never_reaches_the_manifest() {
+        // Why the thumbnail DRAFT badge can't show yet: peitho-core drops
+        // draft slides while parsing, so there is no manifest entry (or
+        // fragment) to put a badge on, and later slides' indices shift down.
+        // If this starts failing, peitho-core changed how drafts are built —
+        // revisit todo/slide-status-badges.md.
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let source = "<!-- {\"key\":\"wip\",\"draft\":true} -->\n# Work in progress\n\n---\n\n<!-- {\"key\":\"opening\"} -->\n# Opening\n";
+        let output = render_source(&deck_path, source).expect("a deck with one draft and one live slide should build");
+        let manifest: serde_json::Value = serde_json::from_str(&output.manifest_json).unwrap();
+        let slides = manifest["slides"].as_array().unwrap();
+        assert_eq!(slides.len(), 1);
+        assert_eq!((slides[0]["key"].as_str(), slides[0]["index"].as_u64()), (Some("opening"), Some(0)));
+        assert!(slides[0].get("draft").is_none());
+        assert!(!output.fragments.contains_key("wip"));
     }
 
     #[test]

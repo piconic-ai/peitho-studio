@@ -8,8 +8,10 @@
 // A synthetic RenderPayload, not real peitho-core output — verified
 // against production behavior separately (run-peitho-studio skill).
 import type { Page } from '@playwright/test'
-import { splitSlides, extractPageComment, extractHeadingText, slugifyTitle, uniqueSlideKey } from '../../domain/slides'
-import type { Manifest, ManifestSlide, RenderPayload } from '../../domain/render'
+import { splitSlides, extractPageComment, extractHeadingText, slugifyTitle, uniqueSlideKey, parseDurationToMs } from '../../domain/slides'
+import type { Manifest, ManifestSection, ManifestSlide, RenderPayload } from '../../domain/render'
+import type { DeckVariant } from '../../domain/deckVariants'
+import type { LayoutVerdict } from '../../domain/layoutFit'
 
 export interface MockDeck {
   source: string
@@ -58,6 +60,33 @@ export interface MockDeck {
    * the launch warm-up didn't cover — see
    * `todo/archive/open-deck-cold-start-latency.md`). */
   openDeckDelayMs?: number
+  /** What `list_deck_variants` returns — defaults to none, which hides the
+   * deck header's variant switcher. */
+  deckVariants?: DeckVariant[]
+  /** Called with every `invoke()` that reaches the mock — including ones
+   * `commandError` then fails — so a test can assert on which commands a
+   * UI action actually sent. */
+  onInvoke?: (cmd: string, args: Record<string, unknown>) => void
+  /** Layout names `preview_layouts` lists (each with an empty fragment, so
+   * the picker shows name-only cards) — defaults to none ("No layouts
+   * found"). */
+  layouts?: string[]
+  /** What `check_slide_layouts` answers for the given source/slide index —
+   * defaults to `null` (nothing to judge, every layout stays choosable).
+   * Stands in for `engine::layout_fit`'s real peitho-core verdicts. */
+  layoutVerdicts?: (content: string, slideIndex: number) => LayoutVerdict[] | null
+  /** Milliseconds `check_slide_layouts` waits before answering — defaults
+   * to 0. Set this to observe the picker while the check is in flight. */
+  checkSlideLayoutsDelayMs?: number
+  /** Every `invoke()` command name, in call order — appended to when
+   * provided, so a test can assert a command never ran (e.g. nothing was
+   * rendered or saved). */
+  invokedCommands?: string[]
+  /** Milliseconds `render_draft` waits before resolving/rejecting —
+   * defaults to 0 (settles on the same tick). Set this to widen the window
+   * in which a save is still in flight, e.g. to exercise edits the user
+   * makes while a previous commit's re-render hasn't landed yet. */
+  renderDraftDelayMs?: number
 }
 
 function sleep(ms: number): Promise<void> {
@@ -67,20 +96,45 @@ function sleep(ms: number): Promise<void> {
 function buildManifest(source: string): { manifest: Manifest; fragments: Record<string, string> } {
   const ranges = splitSlides(source)
   const keys: string[] = []
-  const slides: ManifestSlide[] = ranges.map((range, index) => {
+  const slides: ManifestSlide[] = []
+  const sections: ManifestSection[] = []
+  // Mirrors real peitho-core: a slide marked `"draft":true` never reaches
+  // the manifest at all (see `domain/slideList.ts`'s `buildSlideList`,
+  // which is what actually copes with that on the frontend side). Getting
+  // this right in the mock matters — a version that kept draft slides as
+  // ordinary rows would hide the very bug (a thumbnail's row index
+  // silently drifting from `editor.slideRanges()`'s once a draft precedes
+  // it) this mock exists to catch.
+  for (const range of ranges) {
     const { rest, config } = extractPageComment(range.text)
-    const title = extractHeadingText(rest) ?? ''
-    const key = config.key ?? uniqueSlideKey(slugifyTitle(title || `slide-${String(index)}`), keys)
-    keys.push(key)
-    return {
-      index, key, src: range.text, hasNotes: false, skip: config.skip ?? false,
-      revealSteps: 1, text: { title, body: rest, code: '' },
+    if (config.draft === true) continue
+    // A slide whose PageComment sets both `section` and `time` starts a
+    // section running up to the next one, the same pairing peitho-core
+    // requires. Only the `1m30s`-style times `parseDurationToMs` reads are
+    // modeled; peitho-core also accepts `1h` and bare minute counts, and
+    // rejects a deck whose time is 0 or unreadable. Such a slide gets no
+    // section here rather than a section peitho-core would never report.
+    // The section's own index is the manifest index this slide is about
+    // to get (`slides.length`, not this range's raw position), since a
+    // draft slide earlier in the deck is never counted here either.
+    const plannedDurationMs = typeof config.time === 'string' ? parseDurationToMs(config.time) : null
+    if (typeof config.section === 'string' && plannedDurationMs !== null && plannedDurationMs > 0) {
+      const previous = sections[sections.length - 1]
+      if (previous) previous.endIndex = slides.length - 1
+      sections.push({ name: config.section, startIndex: slides.length, endIndex: ranges.length - 1, plannedDurationMs })
     }
-  })
+    const title = extractHeadingText(rest) ?? ''
+    const key = config.key ?? uniqueSlideKey(slugifyTitle(title || `slide-${String(slides.length)}`), keys)
+    keys.push(key)
+    slides.push({
+      index: slides.length, key, src: range.text, hasNotes: false, skip: config.skip ?? false,
+      revealSteps: 1, text: { title, body: rest, code: '' },
+    })
+  }
   const fragments: Record<string, string> = {}
   for (const s of slides) fragments[s.key] = `<section class="peitho-slide"><h1>${s.text.title}</h1></section>`
   const manifest: Manifest = {
-    title: 'Fake Deck', slideCount: slides.length, canvasWidth: 1280, canvasHeight: 720, sections: [], slides,
+    title: 'Fake Deck', slideCount: slides.length, canvasWidth: 1280, canvasHeight: 720, sections, slides,
   }
   return { manifest, fragments }
 }
@@ -96,9 +150,13 @@ function renderPayloadFor(source: string): RenderPayload {
  * `page.goto('/')`. */
 export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
   await page.exposeFunction('__mockInvoke', async (cmd: string, args: Record<string, unknown>) => {
+    deck.invokedCommands?.push(cmd)
     const error = deck.commandError?.(cmd, args)
     if (cmd === 'present_deck' && deck.presentDeckDelayMs) await sleep(deck.presentDeckDelayMs)
     if (cmd === 'open_deck' && deck.openDeckDelayMs) await sleep(deck.openDeckDelayMs)
+    if (cmd === 'check_slide_layouts' && deck.checkSlideLayoutsDelayMs) await sleep(deck.checkSlideLayoutsDelayMs)
+    if (cmd === 'render_draft' && deck.renderDraftDelayMs) await sleep(deck.renderDraftDelayMs)
+    deck.onInvoke?.(cmd, args)
     if (error !== null && error !== undefined) throw new Error(error)
     switch (cmd) {
       case 'dev_default_deck': return deck.devDefaultDeck === undefined ? '/fake/deck.md' : deck.devDefaultDeck
@@ -112,7 +170,10 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'save_deck_source':
         deck.source = args.content as string
         return null
-      case 'preview_layouts': return { previews: [], css: '' }
+      case 'preview_layouts': return { previews: (deck.layouts ?? []).map(name => ({ name, fragment: '' })), css: '' }
+      case 'list_deck_variants': return deck.deckVariants ?? []
+      case 'check_slide_layouts':
+        return deck.layoutVerdicts?.(args.content as string, args.slideIndex as number) ?? null
       case 'present_deck':
         // Fires after the spawn itself resolves, matching real timing —
         // `watch_present_readiness` (peitho.rs) only starts watching
