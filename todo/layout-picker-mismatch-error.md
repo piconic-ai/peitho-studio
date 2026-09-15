@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: 内容とレイアウトの構造が合わない選択をした際にエラーを表示する
 tags: [ui, layout, validation]
 ---
@@ -40,6 +40,17 @@ tags: [ui, layout, validation]
   レンダリングを実行せずに事前判定できる関数があるか確認する。
   なければ新設が必要か、既存の`render`パスを流用した検証しかできないかを
   見極める。
+- (実装時の調査メモ — 人間の確認待ち) 検証専用の窓口はないが、
+  `explain_dispatch`(`mapping.rs`)の構造マッチ経路(レイアウト指定なし・
+  レイアウト2つ以上)が、候補レイアウトごとに`map_slide` +
+  `check_slide`(`check_deck`と同じスロット検査)を走らせ、
+  `Matched`/`Rejected { reason }`を記録している。スライド自身のpinを
+  外してこれを呼べば「そのレイアウトにpinしてビルドした結果」と同じ
+  判定が得られる(レイアウト1つのデッキは検査を走らせないため、複製
+  レイアウトを足して構造マッチ経路に乗せる)。peitho-core側の変更は不要で、
+  `engine/layout_fit.rs`に実装し、実デッキでの「pinしてビルド」との
+  一致をテストで担保した。これに基づき方式(B)で実装したが、方式の
+  最終決定は下記の通り未了。
 
 ## 方針候補(要 Fable 相談 — 実装規模がかなり違う)
 
@@ -59,9 +70,9 @@ tags: [ui, layout, validation]
 ## 完了条件
 
 自動で確認できる項目:
-- [ ] 実装(選んだ方式) + spec/adversarialテスト
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] (Rust変更があれば) `cargo test` グリーン
+- [x] 実装(選んだ方式) + spec/adversarialテスト
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] (Rust変更があれば) `cargo test` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] peitho-core側の事前検証手段の有無を調査し記録
@@ -71,3 +82,12 @@ tags: [ui, layout, validation]
 ## 先送り事項
 
 (実装時に見つかった、本筋と無関係な改善点があればここに書き出す)
+
+- スライドの位置(index)の対応付けは既存のコンテキストメニュー操作と同じ
+  前提を引き継いでいる: サムネイル行のindexはmanifest(draft除外・include
+  展開後)上の位置だが、`updateSlideConfig`はそれを`splitSlides`(draft込み・
+  include未展開・行ベースの近似分割)上の位置として扱う。fitチェックは
+  「実際に書き換わるスライド」と一致させるため後者(peitho-coreの
+  `source_index`)で判定している。draftスライドより後ろの行やincludeを
+  使うデッキでは、表示中のサムネイルと判定・変更対象がずれうる
+  (`slide-status-badges.md`でdraftが一覧に残るようになれば前者は解消)。
