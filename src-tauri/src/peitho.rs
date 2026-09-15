@@ -988,6 +988,7 @@ mod tests {
             has_math: false,
             image_assets: HashMap::new(),
             fonts_dir: None,
+            deck_dir: PathBuf::new(),
         }
     }
 

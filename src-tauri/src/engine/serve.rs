@@ -27,6 +27,7 @@ struct ServedState {
     has_math: bool,
     image_assets: HashMap<String, PathBuf>,
     fonts_dir: Option<PathBuf>,
+    deck_dir: PathBuf,
 }
 
 impl AssetServer {
@@ -65,6 +66,7 @@ impl AssetServer {
             state.has_math = output.has_math;
             state.image_assets = output.image_assets.clone();
             state.fonts_dir = output.fonts_dir.clone();
+            state.deck_dir = output.deck_dir.clone();
         }
     }
 }
@@ -112,8 +114,29 @@ fn respond(state: &Mutex<ServedState>, url: &str) -> Result<(Vec<u8>, &'static s
             if let Ok(bytes) = std::fs::read(source) {
                 return Ok((bytes, image_content_type(name)));
             }
+            return Err(404);
         }
-        return Err(404);
+        // Not one of peitho-core's own resolved (markdown-referenced)
+        // images — fall back to the deck's own `assets/` directory
+        // verbatim, for a layout author's `<video>`/`<script src>` etc.
+        // that reference a file there directly, never through markdown
+        // image syntax (so peitho-core's asset discovery never counted
+        // it in `image_assets` to begin with). Same path-escape guard as
+        // `DraftImageResolver` (pipeline.rs): canonicalize and check
+        // containment before reading, not just string-level `..`
+        // rejection, which a symlink could route around.
+        if state.deck_dir.as_os_str().is_empty() {
+            return Err(404);
+        }
+        let Ok(deck_abs) = std::fs::canonicalize(&state.deck_dir) else { return Err(404) };
+        let Ok(candidate_abs) = std::fs::canonicalize(deck_abs.join("assets").join(name)) else { return Err(404) };
+        if !candidate_abs.starts_with(&deck_abs) {
+            return Err(404);
+        }
+        return match std::fs::read(&candidate_abs) {
+            Ok(bytes) => Ok((bytes, asset_content_type(name))),
+            Err(_) => Err(404),
+        };
     }
 
     Err(404)
@@ -136,5 +159,122 @@ fn image_content_type(name: &str) -> &'static str {
         "gif" => "image/gif",
         "webp" => "image/webp",
         _ => "application/octet-stream",
+    }
+}
+
+/// Beyond `image_content_type`'s images: video (a layout's own
+/// `<video>`/`<source>`) and JS (a layout's own `<script src>`). A
+/// `type="module"` script in particular fails to load at all under an
+/// incorrect MIME type — browsers enforce a strict JavaScript-MIME check
+/// for those, unlike a classic script.
+fn asset_content_type(name: &str) -> &'static str {
+    match name.rsplit('.').next().unwrap_or("") {
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "ogv" => "video/ogg",
+        "mjs" | "js" => "text/javascript; charset=utf-8",
+        "json" => "application/json; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        _ => image_content_type(name),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    fn state_for(deck_dir: PathBuf, image_assets: HashMap<String, PathBuf>) -> Mutex<ServedState> {
+        Mutex::new(ServedState { deck_dir, image_assets, ..ServedState::default() })
+    }
+
+    #[test]
+    fn respond_spec_falls_back_to_the_deck_directorys_assets_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("assets")).unwrap();
+        std::fs::write(dir.path().join("assets/deck.js"), b"console.log(1)").unwrap();
+        let state = state_for(dir.path().to_path_buf(), HashMap::new());
+
+        let (bytes, content_type) = respond(&state, "/assets/deck.js").unwrap();
+
+        assert_eq!(bytes, b"console.log(1)");
+        assert_eq!(content_type, "text/javascript; charset=utf-8");
+    }
+
+    #[test]
+    fn respond_spec_video_and_json_get_their_own_content_type() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("assets")).unwrap();
+        std::fs::write(dir.path().join("assets/hero.mp4"), b"fake video bytes").unwrap();
+        std::fs::write(dir.path().join("assets/data.json"), b"{}").unwrap();
+        let state = state_for(dir.path().to_path_buf(), HashMap::new());
+
+        assert_eq!(respond(&state, "/assets/hero.mp4").unwrap().1, "video/mp4");
+        assert_eq!(respond(&state, "/assets/data.json").unwrap().1, "application/json; charset=utf-8");
+    }
+
+    #[test]
+    fn respond_spec_a_known_image_asset_is_still_read_from_its_own_resolved_path_first() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("assets")).unwrap();
+        // Deliberately absent from the deck's own assets/ dir — proves this
+        // path came from `image_assets`, not the fallback.
+        let resolved_source = dir.path().join("elsewhere.png");
+        std::fs::write(&resolved_source, b"resolved bytes").unwrap();
+        let state = state_for(dir.path().to_path_buf(), HashMap::from([("abc123-photo.png".to_string(), resolved_source)]));
+
+        let (bytes, content_type) = respond(&state, "/assets/abc123-photo.png").unwrap();
+
+        assert_eq!(bytes, b"resolved bytes");
+        assert_eq!(content_type, "image/png");
+    }
+
+    #[test]
+    fn respond_adversarial_a_name_only_present_in_image_assets_is_never_looked_up_in_the_fallback_dir() {
+        // A name resolved by peitho-core but whose backing file went
+        // missing must 404, not silently fall through to a same-named
+        // file that happens to sit in the deck's own assets/ directory.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("assets")).unwrap();
+        std::fs::write(dir.path().join("assets/abc123-photo.png"), b"decoy").unwrap();
+        let missing_source = dir.path().join("does-not-exist.png");
+        let state = state_for(dir.path().to_path_buf(), HashMap::from([("abc123-photo.png".to_string(), missing_source)]));
+
+        assert_eq!(respond(&state, "/assets/abc123-photo.png"), Err(404));
+    }
+
+    #[test]
+    fn respond_adversarial_rejects_a_path_that_escapes_the_deck_directory() {
+        let outer = tempfile::tempdir().unwrap();
+        std::fs::write(outer.path().join("secret.txt"), b"nope").unwrap();
+        let deck = tempfile::tempdir().unwrap();
+        std::fs::create_dir(deck.path().join("assets")).unwrap();
+        let state = state_for(deck.path().to_path_buf(), HashMap::new());
+
+        assert_eq!(respond(&state, "/assets/../../secret.txt"), Err(404));
+    }
+
+    #[test]
+    fn respond_adversarial_a_missing_file_under_a_real_assets_dir_is_404_not_a_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("assets")).unwrap();
+        let state = state_for(dir.path().to_path_buf(), HashMap::new());
+
+        assert_eq!(respond(&state, "/assets/nope.js"), Err(404));
+    }
+
+    #[test]
+    fn respond_adversarial_no_deck_dir_known_yet_is_404_not_a_panic() {
+        let state = state_for(PathBuf::new(), HashMap::new());
+
+        assert_eq!(respond(&state, "/assets/deck.js"), Err(404));
+    }
+
+    #[test]
+    fn respond_adversarial_a_path_outside_assets_at_all_is_404() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_for(dir.path().to_path_buf(), HashMap::new());
+
+        assert_eq!(respond(&state, "/not-an-asset-route"), Err(404));
     }
 }

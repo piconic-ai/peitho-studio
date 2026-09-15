@@ -34,6 +34,12 @@ pub struct RenderOutput {
     pub image_assets: HashMap<String, PathBuf>,
     /// Present only when the deck has its own `fonts/` directory.
     pub fonts_dir: Option<PathBuf>,
+    /// The deck's own directory — `engine::serve` falls back to reading
+    /// `deck_dir/assets/<name>` directly for a request `image_assets`
+    /// doesn't recognize (e.g. a video/script a layout author references
+    /// straight from an `assets/` file, never through markdown image
+    /// syntax, so peitho-core's own asset-discovery never counted it).
+    pub deck_dir: PathBuf,
 }
 
 /// A deck source parsed up to (not including) layout dispatch, plus the
@@ -119,7 +125,7 @@ pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, Str
         .map(|asset| (asset.dist_rel.as_str().to_string(), asset.source_abs))
         .collect();
 
-    Ok(RenderOutput { manifest_json, fragments, css, has_math, image_assets, fonts_dir })
+    Ok(RenderOutput { manifest_json, fragments, css, has_math, image_assets, fonts_dir, deck_dir: deck_dir.to_path_buf() })
 }
 
 /// Resolves an author-written image path to an `assets/<hash>-<name>`
