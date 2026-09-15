@@ -78,16 +78,30 @@ tags: [ui, deck, i18n]
 ## 完了条件
 
 自動で確認できる項目:
-- [ ] グルーピング判定の純粋関数 + spec/adversarialテスト
-- [ ] Rust側のディレクトリ列挙コマンド追加
-- [ ] `DeckHeader.tsx`への切り替えUI実装
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `cargo test` グリーン
+- [x] グルーピング判定の純粋関数 + spec/adversarialテスト
+  (`src-tauri/src/deck_variants.rs`。表示側の射影は`domain/deckVariants.ts`
+  + GWT例`domain/deckVariants.examples.ts`)
+- [x] Rust側のディレクトリ列挙コマンド追加(`list_deck_variants`、
+  `peitho.rs`)
+- [x] `DeckHeader.tsx`への切り替えUI実装(e2e: `e2e/deck-variants.e2e.ts`)
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `cargo test` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] スライド位置引き継ぎ方針をFableと確認・実装
-- [ ] 実機確認
+  (現状: 引き継がない。切り替え先は`open_deck_window`の既存挙動どおり
+  新しいウィンドウで開き、先頭スライドから始まる。元ウィンドウはそのまま)
+- [ ] 実機確認: `deck.md`+`deck.ja.md`のフォルダでデッキを開き、ヘッダーの
+  切り替えボタン/ドロップダウンがWKWebViewで正しく描画されること、選択
+  すると新しいウィンドウで該当デッキが開き元ウィンドウは維持されること、
+  単独デッキではボタンが出ないこと
 
 ## 先送り事項
 
 (実装時に見つかった、本筋と無関係な改善点があればここに書き出す)
+
+- 候補一覧はデッキを開いた時に一度だけ取得する。開いた後に同じフォルダへ
+  `deck.fr.md`等を追加しても、開き直すまで切り替え候補に出ない
+  (ウィンドウフォーカス時の再取得などで対応可能)。
+- すでに別ウィンドウで開いている候補を選んでも、そのウィンドウを前面に
+  出さず新しいウィンドウをもう1つ開く(Open Recentの既存挙動と同じ)。
