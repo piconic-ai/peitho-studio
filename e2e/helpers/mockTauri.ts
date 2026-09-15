@@ -111,14 +111,17 @@ function buildManifest(source: string): { manifest: Manifest; fragments: Record<
     // A slide whose PageComment sets both `section` and `time` starts a
     // section running up to the next one, the same pairing peitho-core
     // requires. Only the `1m30s`-style times `parseDurationToMs` reads are
-    // modeled; peitho-core also accepts `1h` and bare minute counts. The
-    // section's own index is the manifest index this slide is about to
-    // get (`slides.length`, not this range's raw position), since a
+    // modeled; peitho-core also accepts `1h` and bare minute counts, and
+    // rejects a deck whose time is 0 or unreadable. Such a slide gets no
+    // section here rather than a section peitho-core would never report.
+    // The section's own index is the manifest index this slide is about
+    // to get (`slides.length`, not this range's raw position), since a
     // draft slide earlier in the deck is never counted here either.
-    if (typeof config.section === 'string' && typeof config.time === 'string') {
+    const plannedDurationMs = typeof config.time === 'string' ? parseDurationToMs(config.time) : null
+    if (typeof config.section === 'string' && plannedDurationMs !== null && plannedDurationMs > 0) {
       const previous = sections[sections.length - 1]
       if (previous) previous.endIndex = slides.length - 1
-      sections.push({ name: config.section, startIndex: slides.length, endIndex: ranges.length - 1, plannedDurationMs: parseDurationToMs(config.time) ?? 0 })
+      sections.push({ name: config.section, startIndex: slides.length, endIndex: ranges.length - 1, plannedDurationMs })
     }
     const title = extractHeadingText(rest) ?? ''
     const key = config.key ?? uniqueSlideKey(slugifyTitle(title || `slide-${String(slides.length)}`), keys)

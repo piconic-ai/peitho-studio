@@ -38,6 +38,17 @@ function introSpinner(page: Page, part: 'minutes' | 'seconds') {
   return page.locator('[data-slide-row="0"]').getByLabel(part === 'minutes' ? 'Section minutes' : 'Section seconds')
 }
 
+/** Renames the Body section and waits until that save lands. A save the
+ * step under test started by mistake was sent to the backend first, so it
+ * has landed too by the time this returns, and the caller can check that
+ * the Intro section is still what the deck started with. */
+async function saveUnrelatedEdit(page: Page, deck: MockDeck): Promise<void> {
+  const bodyName = page.locator('[data-slide-row="1"]').getByLabel('Section name')
+  await bodyName.fill('Body renamed')
+  await bodyName.press('Enter')
+  await expect.poll(() => deck.source).toContain('"section":"Body renamed"')
+}
+
 test('Given a section loaded from a deck as "1m30s", when the deck opens, then its spinners show 1 minute and 30 seconds', async ({ page }) => {
   await openDeck(page, deckWithIntroPlannedFor('1m30s', '2m30s'))
 
@@ -74,9 +85,8 @@ test('Given a section planned for 1m30s, when 75 is typed into its seconds spinn
   expect(deck.source).toContain('time: 3m15s\n')
 })
 
-test('Given a section planned for 30 seconds, when "000" is typed into its minutes spinner and the header is left, then the spinner shows 0 again and the deck is left unchanged', async ({ page }) => {
+test('Given a section planned for 30 seconds, when "000" is typed into its minutes spinner and the header is left, then the spinner shows 0 again and the section is left unchanged', async ({ page }) => {
   const deck = deckWithIntroPlannedFor('30s', '1m30s')
-  const original = deck.source
   await openDeck(page, deck)
 
   await introSpinner(page, 'minutes').fill('000')
@@ -84,14 +94,48 @@ test('Given a section planned for 30 seconds, when "000" is typed into its minut
 
   await expect(introSpinner(page, 'minutes')).toHaveValue('0')
   await expect(introSpinner(page, 'seconds')).toHaveValue('30')
-  expect(deck.source).toBe(original)
+  await saveUnrelatedEdit(page, deck)
+  expect(deck.source).toContain('<!-- {"section":"Intro","time":"30s"} -->')
+  expect(deck.source).toContain('time: 1m30s\n')
 })
 
-test('Given a section planned for 5 seconds, when both spinners are brought to 0 and the header is left, then the deck saves 1 second instead, since peitho rejects a zero-length section time', async ({ page }) => {
-  const deck = deckWithIntroPlannedFor('5s', '1m5s')
+test('Given a section planned for 1m30s, when its minutes spinner is cleared and the header is left, then the spinner shows 1 again and the section is left unchanged', async ({ page }) => {
+  const deck = deckWithIntroPlannedFor('1m30s', '2m30s')
   await openDeck(page, deck)
 
-  await introSpinner(page, 'seconds').fill('0')
+  await introSpinner(page, 'minutes').fill('')
+  // Still empty while the user is in the field, not rewritten to 0.
+  await expect(introSpinner(page, 'minutes')).toHaveValue('')
+  await page.keyboard.press('Enter')
+
+  await expect(introSpinner(page, 'minutes')).toHaveValue('1')
+  await expect(introSpinner(page, 'seconds')).toHaveValue('30')
+  await saveUnrelatedEdit(page, deck)
+  expect(deck.source).toContain('<!-- {"section":"Intro","time":"1m30s"} -->')
+})
+
+test('Given a section planned for 1m30s, when "-1" is typed key by key into its seconds spinner and the header is left, then a minute is borrowed and the deck saves 59s', async ({ page }) => {
+  // The "-" alone is a half-typed entry the number input reports as NaN.
+  // It must not be read as 0 and written back over the field, or the "1"
+  // that follows would make "01" instead of "-1".
+  const deck = deckWithIntroPlannedFor('1m30s', '2m30s')
+  await openDeck(page, deck)
+
+  await introSpinner(page, 'seconds').selectText()
+  await page.keyboard.type('-1')
+  await page.keyboard.press('Enter')
+
+  await expect(introSpinner(page, 'minutes')).toHaveValue('0')
+  await expect(introSpinner(page, 'seconds')).toHaveValue('59')
+  await expect.poll(() => deck.source).toContain('<!-- {"section":"Intro","time":"59s"} -->')
+  expect(deck.source).toContain('time: 1m59s\n')
+})
+
+test('Given a section planned for 1 minute, when its minutes spinner is set to 0 (making 0m0s) and the header is left, then the deck saves 1 second instead, since peitho rejects a zero-length section time', async ({ page }) => {
+  const deck = deckWithIntroPlannedFor('1m', '2m')
+  await openDeck(page, deck)
+
+  await introSpinner(page, 'minutes').fill('0')
   await expect(introSpinner(page, 'seconds')).toHaveValue('0')
   await page.keyboard.press('Enter')
 
@@ -101,16 +145,17 @@ test('Given a section planned for 5 seconds, when both spinners are brought to 0
   await expect(introSpinner(page, 'seconds')).toHaveValue('1')
 })
 
-test('Given a section already saved as 1 second, when its seconds spinner is brought to 0 and the header is left, then nothing is saved and the spinner shows 1 again', async ({ page }) => {
+test('Given a section already saved as 1 second, when its seconds spinner is brought to 0 and the header is left, then the spinner shows 1 again and the section is left unchanged', async ({ page }) => {
   const deck = deckWithIntroPlannedFor('1s', '1m1s')
-  const original = deck.source
   await openDeck(page, deck)
 
   await introSpinner(page, 'seconds').fill('0')
   await page.keyboard.press('Enter')
 
   await expect(introSpinner(page, 'seconds')).toHaveValue('1')
-  expect(deck.source).toBe(original)
+  await saveUnrelatedEdit(page, deck)
+  expect(deck.source).toContain('<!-- {"section":"Intro","time":"1s"} -->')
+  expect(deck.source).toContain('time: 1m1s\n')
 })
 
 test('Given saving takes a while, when the minutes spinner is stepped, then the seconds spinner is stepped and the user pauses before leaving the header, then both steps are kept and saved', async ({ page }) => {
