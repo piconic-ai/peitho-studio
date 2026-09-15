@@ -1,6 +1,6 @@
 ---
 status: wip
-description: レイアウトHTMLにscriptを書けば実際に動く世界観にする(Studio側は実装・アセット配信・Shadow DOM橋渡しまで実装済み、実機再確認待ち。mizzy/peitho・barefootjs側は検証済み未コミット)
+description: レイアウトHTMLにscriptを書けば実際に動く世界観にする(Studio側は実機確認まで完了 — 動画・Arcade・Terminal・Showcase全て動作確認済み。mizzy/peitho・barefootjs側は検証済み未コミット)
 tags: [debug, layout, console, script-execution]
 ---
 
@@ -149,6 +149,74 @@ Showcase)いずれも動いていないと報告。原因は2つ重なってい�
    再パッチいずれでもイベントが正しいshadow rootと共に届くことを
    検証。
 
+### 続報2(2026-09-16): DevToolsコンソールで実機デバッグ → 追加で3件のバグを発見・修正、全コンポーネント動作確認完了
+
+前回時点の修正(アセット配信フォールバック+CustomEvent橋渡し)を
+入れた状態でも、kfly8からは「動画・Arcadeは相変わらず見れない。
+デバッグ方法を疑っている」との指摘。まずキャプチャで実際の表示状態を
+確認し、次に(devtools:trueを一時的に有効化して)実機の`bunx tauri
+dev`アプリでDevTools Consoleを直接使ってデバッグする方針に切替え、
+以下3件の未発見バグを特定・修正した(いずれも単体テストだけでは
+検出できず、実機のWKWebView + 実CORS + 実DevToolsコンソールで
+初めて顕在化したもの):
+
+1. **`poster`属性が絶対URL化されていなかった**: `domain/
+   slideFragment.ts`の`FRAGMENT_ASSET_SRC_PATTERN`は`src="assets/…"`
+   だけを見ており、`<video poster="assets/hero.jpg">`のような`src`
+   以外の属性は無視されていた。実機コンソールで
+   `Failed to load resource: 404 → http://localhost:3003/assets/hero.jpg`
+   を確認(Studio自身のdevサーバーの方に解決されてしまっていた —
+   本来はRustの`AssetServer`の動的ポート宛であるべき)。
+   - 修正: パターンを`/(\s)(src|poster)="(assets\/[^"]*)"/g`に拡張し、
+     `absolutizeSrcAttributes`もキャプチャした属性名を使うよう変更。
+     テスト2件追加(`domain/slideFragment.test.ts`、`poster`を
+     正しく絶対化するspec + `data-poster`のような紛らわしい属性名を
+     誤検出しないadversarial)。
+2. **`AssetServer`のレスポンスにCORSヘッダーがなかった**: `<script
+   type="module" src="…">`は通常のスクリプトと違い、たとえ200が
+   返っていてもCORSヘッダーがなければ実行そのものを拒否される。実機
+   コンソールで
+   `Origin http://localhost:3003 is not allowed by
+   Access-Control-Allow-Origin. Status code: 200 →
+   http://127.0.0.1:.../assets/mount.js`
+   を確認(前回セッションで追加したdeck_dirフォールバック自体は
+   正しく機能し200を返していたが、CORSヘッダーがないため
+   ブラウザ側が実行を拒否していた)。
+   - 修正: `src-tauri/src/engine/serve.rs`の`AssetServer::start()`で
+     全レスポンス(成功・404両方)に`Access-Control-Allow-Origin: *`
+     を付与。生のTCPソケットで実サーバーに接続するRust統合テスト
+     (`asset_server_spec_every_response_allows_cross_origin_reads`)
+     を追加、修正前は実際に失敗することを確認。
+3. **`<video>`がRangeリクエストに対応していなかった**: 上記2件を
+   修正してもposter画像は表示されるようになったが、動画自体は
+   `paused: true, currentTime: 0, readyState: 0, networkState: 3`
+   (`NETWORK_NO_SOURCE`)のまま止まっていた。`curl -H "Range:
+   bytes=0-1023"`で実サーバーを直接叩いたところ、Rangeヘッダーの
+   有無にかかわらず常に`200 OK`+`Transfer-Encoding: chunked`(ボディ
+   全体)を返すだけで、`206`/`Content-Range`/`Accept-Ranges`は
+   一切返していないことを確認。WKWebViewの`<video>`はRange対応
+   サーバーでないと初期化自体を拒否する(Chromiumより厳格な挙動)。
+   - 修正: `parse_range_header`(`bytes=start-end`/`bytes=start-`/
+     `bytes=-suffix`の単一レンジのみサポート、複数レンジ・不正な
+     範囲・空リソースは`None`)を追加し、`AssetServer::start()`の
+     レスポンス組み立てで`Range`ヘッダーがあれば`206`+
+     `Content-Range`+`Accept-Ranges`、なければ`Accept-Ranges: bytes`
+     付きの通常レスポンスを返すよう変更。Rustテスト11件追加(純粋な
+     `parse_range_header`のspec/adversarial8件+実サーバーに対する
+     TCP統合テスト2件、うち206系は修正前に実際に失敗することを確認)。
+
+**実機再検証(すべてDevToolsコンソールで直接確認)**:
+- 動画: `paused:false`かつ`currentTime`が時間経過で進行
+  (5.6秒→21.6秒)していることを2回のクエリで確認。ポスター画像
+  だけでなく実際に再生されている。
+- Arcade(12枚目): スコア・WAVE・LEVEL・エイリアンスプライト・
+  GAME START/DEMOボタンまで含め完全にレンダリングされることを
+  スクリーンショットで確認。
+- Terminal(13枚目 “One command.”)・Showcase(11枚目)も同様に
+  完全にレンダリングされることを確認。
+- DevTools ConsoleのErrorsフィルタで、これら全スライドを表示した後も
+  エラーが0件であることを確認。
+
 barefootjs側(`site/core/`)も、kfly8の許可のもと編集・実機同等の
 検証まで実施(未コミット):
 - `component/mount.ts`: `document`レベルの素朴なMutationObserver
@@ -204,7 +272,7 @@ script のIIFE自動包み)を追加し、`mountSlideCanvas`(初回マウント)
 - [x] アセット配信のフォールバック(`engine::serve.rs`)+ Rustテスト8件
 - [x] `CANVAS_MOUNTED_EVENT`によるShadow DOM橋渡し + e2eテスト2件
 - [x] `bun test` / `bun run typecheck` / 全e2e(51件) / `cargo test`
-      (87件)すべてグリーン
+      (99件)すべてグリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [x] レイアウトHTMLへのJS埋め込みが仕様として認められているか調査 —
@@ -219,11 +287,16 @@ script のIIFE自動包み)を追加し、`mountSlideCanvas`(初回マウント)
 - [x] 実機確認(Studio側) — kfly8が`bunx tauri dev`で実際に確認し、
       動画・Arcade・他コンポーネントいずれも動いていないと報告
       (2026-09-16)。上記の追加修正(アセット配信+CustomEvent橋渡し+
-      barefootjs側mount.js)で解消。**この追加修正自体はまだkfly8の
-      実機再確認が済んでいない**(未チェックのまま):
-- [ ] 追加修正後の実機再確認(Studio側、`bunx tauri dev`で
+      barefootjs側mount.js)を入れた後も動画・Arcadeは動いておらず、
+      DevToolsコンソールでの実機デバッグにより`poster`絶対化漏れ・
+      CORS未対応・Range未対応の3件を追加で発見・修正(続報2参照)。
+- [x] 追加修正後の実機再確認(Studio側、`bunx tauri dev`で
       `barefootjs/site/core/slides/overview`のデッキを開き、動画・
-      Arcade・Compiler/Trace/Terminal/Showcaseがすべて動くこと)
+      Arcade・Terminal・Showcaseがすべて動くこと) — 2026-09-16、
+      DevToolsコンソールで直接確認済み(続報2参照)。Compiler/Trace
+      は未選択のまま(同じ`executeInlineScripts`/CORS/Range経路を
+      通るため個別の追加バグは想定していないが、実機での目視は
+      まだ)。
 
 ## 先送り事項
 
