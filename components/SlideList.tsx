@@ -4,7 +4,7 @@ import { type Manifest, type ManifestSection, type SectionDraft } from '../domai
 import { type DurationPart, msToMinutesSeconds } from '../domain/slides'
 import { type SlideListEntry } from '../domain/slideList'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
-import { showCanonicalValue } from '../dom/sectionHeader'
+import { isFocusMovingWithinSectionHeader, showCanonicalValue } from '../dom/sectionHeader'
 
 // Every prop here is a called value or a plain callback (never a signal
 // getter or a setter) — see `components/WelcomeScreen.tsx` for the BF044
@@ -147,13 +147,15 @@ export function SlideList(props: SlideListProps) {
                   // The time is edited with two number spinners instead of
                   // free text in peitho's `1m30s` format, so no input can
                   // produce a time peitho rejects (see `domain/slides.ts`'s
-                  // `withDurationPart`).
-                  <div className="flex items-center gap-1 pt-3 pb-1">
+                  // `withDurationPart`). The header saves once focus leaves
+                  // it, not on each input's own blur (see
+                  // `isFocusMovingWithinSectionHeader`).
+                  <div data-section-header="" className="flex items-center gap-1 pt-3 pb-1">
                     <input
                       aria-label="Section name"
                       value={props.sectionDrafts[entry.sourceIndex]?.name ?? props.sectionStartByIndex[entry.sourceIndex].name}
                       onInput={e => props.onSectionNameInput(entry.sourceIndex, e.target.value)}
-                      onBlur={() => props.onCommitSectionEdit(entry.sourceIndex)}
+                      onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
                       onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                       className="min-w-0 flex-1 bg-transparent outline-none text-xs font-semibold text-foreground/80"
                     />
@@ -165,7 +167,7 @@ export function SlideList(props: SlideListProps) {
                       value={String(msToMinutesSeconds(props.sectionDrafts[entry.sourceIndex]?.timeMs ?? props.sectionStartByIndex[entry.sourceIndex].plannedDurationMs).minutes)}
                       onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'minutes', e.target.valueAsNumber)}
                       onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDrafts[entry.sourceIndex]?.timeMs ?? props.sectionStartByIndex[entry.sourceIndex].plannedDurationMs).minutes))}
-                      onBlur={() => props.onCommitSectionEdit(entry.sourceIndex)}
+                      onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
                       onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                       className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
                     />
@@ -180,7 +182,7 @@ export function SlideList(props: SlideListProps) {
                       value={String(msToMinutesSeconds(props.sectionDrafts[entry.sourceIndex]?.timeMs ?? props.sectionStartByIndex[entry.sourceIndex].plannedDurationMs).seconds)}
                       onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'seconds', e.target.valueAsNumber)}
                       onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDrafts[entry.sourceIndex]?.timeMs ?? props.sectionStartByIndex[entry.sourceIndex].plannedDurationMs).seconds))}
-                      onBlur={() => props.onCommitSectionEdit(entry.sourceIndex)}
+                      onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
                       onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                       className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
                     />
