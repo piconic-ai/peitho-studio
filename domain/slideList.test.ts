@@ -44,14 +44,30 @@ describe('buildSlideList', () => {
 
   test('adversarial: a title-less draft slide gets an empty placeholder title, not a crash', () => {
     const entries = buildSlideList('<!-- {"draft":true} -->\nJust a paragraph, no heading.\n', [])
-    expect(entries).toEqual([{ kind: 'placeholder', sourceIndex: 0, title: '', draft: true, key: 'placeholder-0' }])
+    expect(entries).toEqual([{ kind: 'placeholder', sourceIndex: 0, title: '', draft: true, key: 'placeholder:0' }])
+  })
+
+  test('adversarial: a placeholder never reuses the slide\'s own explicit key, even across a draft toggle', () => {
+    // A key a placeholder shares with its slide's eventual `rendered` form
+    // is exactly what leaves a thumbnail's canvas permanently blank after
+    // un-drafting it — BarefootJS's keyed `.map()` doesn't remount a row's
+    // canvas `ref` when a key returns to `rendered` after a stint as
+    // `placeholder` on that same key (see PlaceholderSlideEntry's own doc
+    // comment). Simulates the toggle by calling buildSlideList twice with
+    // the same explicit key, draft then not.
+    const draftEntry = buildSlideList('<!-- {"draft":true,"key":"cover"} -->\n# Cover\n', [])[0]
+    const renderedEntry = buildSlideList('<!-- {"key":"cover"} -->\n# Cover\n', [slide(0, 'cover', 'Cover')])[0]
+    if (draftEntry.kind !== 'placeholder' || renderedEntry.kind !== 'rendered') throw new Error('unexpected entry kind')
+    expect(draftEntry.key).not.toBe('cover')
+    expect(renderedEntry.slide.key).toBe('cover')
+    expect(draftEntry.key).not.toBe(renderedEntry.slide.key)
   })
 })
 
 describe('manifestIndexAt / manifestIndexToSourceIndex', () => {
   const entries: SlideListEntry[] = [
     { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'a', 'A') },
-    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder-1' },
+    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1' },
     { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'c', 'C') },
   ]
 
@@ -78,7 +94,7 @@ describe('manifestIndexAt / manifestIndexToSourceIndex', () => {
 describe('recordByManifestIndex', () => {
   const entries: SlideListEntry[] = [
     { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'a', 'A') },
-    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder-1' },
+    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1' },
     { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'c', 'C') },
   ]
 
@@ -99,7 +115,7 @@ describe('recordByManifestIndex', () => {
 describe('sectionStartBySourceIndex', () => {
   const entries: SlideListEntry[] = [
     { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'a', 'A') },
-    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder-1' },
+    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1' },
     { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'c', 'C') },
   ]
 
