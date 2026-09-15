@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { type DeckVariant, toVariantSwitcher, variantLabel } from './deckVariants'
+import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantLabel, variantOptionsOf } from './deckVariants'
 import { variantSwitcherExamples } from './deckVariants.examples'
 import { isExhaustivelyAccountedFor } from './spec'
 
@@ -69,5 +69,18 @@ describe('toVariantSwitcher', () => {
   test('adversarial: does not mutate its input', () => {
     const variants = Object.freeze([Object.freeze(deck('deck.md', null, true)), Object.freeze(deck('deck.ja.md', 'ja'))])
     expect(() => toVariantSwitcher(variants)).not.toThrow()
+  })
+})
+
+describe('currentVariantLabelOf / variantOptionsOf', () => {
+  test('spec: a shown switcher projects its current label and options', () => {
+    const switcher = toVariantSwitcher([deck('deck.md', null, true), deck('deck.ja.md', 'ja')])
+    expect(currentVariantLabelOf(switcher)).toBe('deck.md')
+    expect(variantOptionsOf(switcher).map(o => o.label)).toEqual(['deck.md', 'ja'])
+  })
+
+  test('adversarial: a hidden switcher projects an empty label and no options', () => {
+    expect(currentVariantLabelOf({ kind: 'hidden' })).toBe('')
+    expect(variantOptionsOf({ kind: 'hidden' })).toEqual([])
   })
 })

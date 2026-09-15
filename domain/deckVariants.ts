@@ -53,3 +53,17 @@ export function toVariantSwitcher(variants: readonly DeckVariant[]): VariantSwit
   if (current.length !== 1 || variants.length < 2) return { kind: 'hidden' }
   return { kind: 'shown', currentLabel: variantLabel(current[0]), options: variants.map(toOption) }
 }
+
+// Flat projections for `DeckHeader`'s props, which keeps the switcher
+// permanently mounted and toggles a `hidden` class instead of branching on
+// `kind` (see the comment on its JSX for why).
+
+/** The switcher button's text — empty while hidden. */
+export function currentVariantLabelOf(switcher: VariantSwitcher): string {
+  return switcher.kind === 'shown' ? switcher.currentLabel : ''
+}
+
+/** The menu's entries — none while hidden. */
+export function variantOptionsOf(switcher: VariantSwitcher): readonly VariantOption[] {
+  return switcher.kind === 'shown' ? switcher.options : []
+}
