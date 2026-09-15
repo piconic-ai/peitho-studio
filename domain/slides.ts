@@ -257,6 +257,55 @@ export function formatDurationMs(ms: number): string {
   return `${String(minutes)}m${String(seconds)}s`
 }
 
+/** The longest duration the section-time spinners can produce:
+ * `Number.MAX_SAFE_INTEGER` ms rounded down to a whole second. peitho-core
+ * rejects a section total above `Number.MAX_SAFE_INTEGER` ms, and anything
+ * past it would also make `formatDurationMs` print exponent notation
+ * (`1e+21m`), which `parseDurationToMs` can't read back. */
+export const MAX_DURATION_MS = Math.floor(Number.MAX_SAFE_INTEGER / 1000) * 1000
+
+const MAX_DURATION_SECONDS = MAX_DURATION_MS / 1000
+
+/** Rounds `seconds` to a whole second and clamps it into
+ * `[0, MAX_DURATION_SECONDS]`. NaN becomes 0. A negative zero comes back as
+ * `+0`, because `Math.max` ranks `+0` above `-0`. */
+function clampWholeSeconds(seconds: number): number {
+  if (Number.isNaN(seconds)) return 0
+  return Math.min(MAX_DURATION_SECONDS, Math.max(0, Math.round(seconds)))
+}
+
+/** Splits a duration into the whole minutes and seconds the section-time
+ * spinners display. `seconds` is always in `0..59`. Rounds to the nearest
+ * second, like `formatDurationMs`. Negative or NaN input reads as 0, and
+ * input past `MAX_DURATION_MS` reads as `MAX_DURATION_MS`. */
+export function msToMinutesSeconds(ms: number): { minutes: number; seconds: number } {
+  const totalSeconds = clampWholeSeconds(ms / 1000)
+  return { minutes: Math.floor(totalSeconds / 60), seconds: totalSeconds % 60 }
+}
+
+/** Inverse of `msToMinutesSeconds`: combines spinner values into
+ * milliseconds. Neither part has to be in range. Seconds past 59 carry into
+ * minutes (`0, 60` -> 1m) and negative seconds borrow from them
+ * (`2, -1` -> 1m59s), so stepping a spinner past its end behaves like a
+ * clock. The result is rounded to a whole second and clamped into
+ * `[0, MAX_DURATION_MS]`. A NaN part (an empty `<input type="number">`
+ * reads as NaN) counts as 0. */
+export function minutesSecondsToMs(minutes: number, seconds: number): number {
+  const m = Number.isNaN(minutes) ? 0 : minutes
+  const s = Number.isNaN(seconds) ? 0 : seconds
+  return clampWholeSeconds(m * 60 + s) * 1000
+}
+
+export type DurationPart = 'minutes' | 'seconds'
+
+/** Returns `ms` with one spinner's part replaced by `value` and the other
+ * part kept. This is what editing a single section-time spinner does. The
+ * result follows `minutesSecondsToMs`'s carry, borrow and clamping rules. */
+export function withDurationPart(ms: number, part: DurationPart, value: number): number {
+  const { minutes, seconds } = msToMinutesSeconds(ms)
+  return part === 'minutes' ? minutesSecondsToMs(value, seconds) : minutesSecondsToMs(minutes, value)
+}
+
 /** Rebuilds a deck's full source from an ordered list of slide texts,
  * joined with peitho's own `---` slide separator. `prefix` (YAML
  * frontmatter, if any) and `suffix` (anything after the last slide) are

@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import fc from 'fast-check'
+import { isExhaustivelyAccountedFor } from './spec'
+import { sectionTimeExamples } from './slides.examples'
 import {
+  msToMinutesSeconds,
+  minutesSecondsToMs,
+  withDurationPart,
+  MAX_DURATION_MS,
+  type DurationPart,
   splitSlides,
   extractNote,
   injectNote,
@@ -366,6 +374,195 @@ describe('parseDurationToMs / formatDurationMs', () => {
       expect(ms).not.toBeNull()
       expect(formatDurationMs(ms as number)).toBe(value)
     }
+  })
+})
+
+describe('msToMinutesSeconds', () => {
+  test.each([
+    [0, { minutes: 0, seconds: 0 }],
+    [59_000, { minutes: 0, seconds: 59 }],
+    [60_000, { minutes: 1, seconds: 0 }],
+    [90_000, { minutes: 1, seconds: 30 }],
+    [3_600_000, { minutes: 60, seconds: 0 }],
+  ])('spec: splits %d ms into %o', (ms, expected) => {
+    expect(msToMinutesSeconds(ms)).toEqual(expected)
+  })
+
+  test('spec: rounds to the nearest second, the same way formatDurationMs does', () => {
+    expect(msToMinutesSeconds(59_500)).toEqual({ minutes: 1, seconds: 0 })
+    expect(msToMinutesSeconds(1_499)).toEqual({ minutes: 0, seconds: 1 })
+  })
+
+  test('adversarial: a negative duration reads as zero, never as negative minutes/seconds', () => {
+    expect(msToMinutesSeconds(-1)).toEqual({ minutes: 0, seconds: 0 })
+    expect(msToMinutesSeconds(-90_000)).toEqual({ minutes: 0, seconds: 0 })
+  })
+
+  test('adversarial: NaN reads as zero', () => {
+    expect(msToMinutesSeconds(Number.NaN)).toEqual({ minutes: 0, seconds: 0 })
+  })
+
+  test('adversarial: a sub-second fraction below half a second rounds down to zero, not negative zero', () => {
+    const { minutes, seconds } = msToMinutesSeconds(-400)
+    expect(Object.is(minutes, 0)).toBe(true)
+    expect(Object.is(seconds, 0)).toBe(true)
+  })
+
+  test('adversarial: a duration past MAX_DURATION_MS (including Infinity) is capped there', () => {
+    const cap = { minutes: MAX_DURATION_MS / 60_000, seconds: 0 }
+    expect(msToMinutesSeconds(Number.MAX_SAFE_INTEGER)).toEqual(cap)
+    expect(msToMinutesSeconds(Number.MAX_VALUE)).toEqual(cap)
+    expect(msToMinutesSeconds(Number.POSITIVE_INFINITY)).toEqual(cap)
+  })
+})
+
+describe('minutesSecondsToMs', () => {
+  test.each([
+    [0, 0, 0],
+    [0, 59, 59_000],
+    [1, 0, 60_000],
+    [1, 30, 90_000],
+  ])('spec: %d min %d s is %d ms', (minutes, seconds, expected) => {
+    expect(minutesSecondsToMs(minutes, seconds)).toBe(expected)
+  })
+
+  test('spec: seconds past 59 carry into minutes (60s -> 1m0s)', () => {
+    expect(minutesSecondsToMs(0, 60)).toBe(60_000)
+    expect(msToMinutesSeconds(minutesSecondsToMs(1, 75))).toEqual({ minutes: 2, seconds: 15 })
+  })
+
+  test('spec: negative seconds borrow from minutes (2m, -1s -> 1m59s)', () => {
+    expect(msToMinutesSeconds(minutesSecondsToMs(2, -1))).toEqual({ minutes: 1, seconds: 59 })
+  })
+
+  test('adversarial: a negative total clamps to 0, never to a negative duration or negative zero', () => {
+    expect(minutesSecondsToMs(-1, 0)).toBe(0)
+    expect(minutesSecondsToMs(0, -1)).toBe(0)
+    expect(Object.is(minutesSecondsToMs(0, -0.4), 0)).toBe(true)
+    expect(Object.is(minutesSecondsToMs(-0, -0), 0)).toBe(true)
+  })
+
+  test('adversarial: non-integer parts round the total to the nearest whole second', () => {
+    expect(minutesSecondsToMs(1.5, 0)).toBe(90_000)
+    expect(minutesSecondsToMs(0, 1.6)).toBe(2_000)
+    expect(minutesSecondsToMs(0, 0.4)).toBe(0)
+    expect(minutesSecondsToMs(0.1, 0)).toBe(6_000)
+  })
+
+  test('adversarial: a NaN part (an empty number input) counts as 0', () => {
+    expect(minutesSecondsToMs(Number.NaN, 30)).toBe(30_000)
+    expect(minutesSecondsToMs(2, Number.NaN)).toBe(120_000)
+    expect(minutesSecondsToMs(Number.NaN, Number.NaN)).toBe(0)
+  })
+
+  test('adversarial: huge parts cap at MAX_DURATION_MS instead of overflowing past peitho-core\'s limit', () => {
+    expect(minutesSecondsToMs(Number.MAX_SAFE_INTEGER, 0)).toBe(MAX_DURATION_MS)
+    expect(minutesSecondsToMs(0, Number.MAX_SAFE_INTEGER)).toBe(MAX_DURATION_MS)
+    expect(minutesSecondsToMs(Number.POSITIVE_INFINITY, 0)).toBe(MAX_DURATION_MS)
+    expect(minutesSecondsToMs(Number.NEGATIVE_INFINITY, 59)).toBe(0)
+  })
+
+  test('adversarial: +Infinity minutes and -Infinity seconds (NaN when summed) count as 0, not NaN', () => {
+    expect(minutesSecondsToMs(Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY)).toBe(0)
+  })
+
+  test('adversarial: MAX_DURATION_MS itself is a whole second that formats in plain digits and parses back', () => {
+    expect(MAX_DURATION_MS % 1000).toBe(0)
+    expect(MAX_DURATION_MS).toBeLessThanOrEqual(Number.MAX_SAFE_INTEGER)
+    expect(formatDurationMs(MAX_DURATION_MS)).toMatch(/^\d+m(\d+s)?$/)
+    expect(parseDurationToMs(formatDurationMs(MAX_DURATION_MS))).toBe(MAX_DURATION_MS)
+  })
+})
+
+describe('msToMinutesSeconds / minutesSecondsToMs round-trip', () => {
+  test.each([0, 1_000, 59_000, 60_000, 90_000, 3_599_000, 3_600_000, MAX_DURATION_MS])(
+    'spec: %d ms survives a split and a recombine unchanged',
+    ms => {
+      const { minutes, seconds } = msToMinutesSeconds(ms)
+      expect(minutesSecondsToMs(minutes, seconds)).toBe(ms)
+    },
+  )
+
+  test('adversarial: every whole-second duration up to MAX_DURATION_MS round-trips (property)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: MAX_DURATION_MS / 1000 }), totalSeconds => {
+        const ms = totalSeconds * 1000
+        const { minutes, seconds } = msToMinutesSeconds(ms)
+        return minutesSecondsToMs(minutes, seconds) === ms
+      }),
+    )
+  })
+
+  test('adversarial: an off-grid duration comes back rounded to the whole second formatDurationMs would print', () => {
+    for (const ms of [1, 499, 500, 59_999, 90_250]) {
+      const { minutes, seconds } = msToMinutesSeconds(ms)
+      expect(formatDurationMs(minutesSecondsToMs(minutes, seconds))).toBe(formatDurationMs(ms))
+    }
+  })
+})
+
+describe('withDurationPart', () => {
+  test('spec: replacing the minutes keeps the seconds', () => {
+    expect(withDurationPart(90_000, 'minutes', 5)).toBe(330_000)
+  })
+
+  test('spec: replacing the seconds keeps the minutes', () => {
+    expect(withDurationPart(90_000, 'seconds', 5)).toBe(65_000)
+  })
+
+  test('adversarial: an unchanged part value returns the same duration', () => {
+    expect(withDurationPart(90_000, 'minutes', 1)).toBe(90_000)
+    expect(withDurationPart(90_000, 'seconds', 30)).toBe(90_000)
+  })
+
+  test('adversarial: an off-grid starting duration is rounded before the edit, not carried along', () => {
+    expect(withDurationPart(90_400, 'minutes', 2)).toBe(150_000)
+  })
+})
+
+describe('example: editing a section time with the minutes/seconds spinners', () => {
+  test.each(sectionTimeExamples.automated.map(e => [e.id, e] as const))('example: %s', (_id, example) => {
+    const timeMs = withDurationPart(example.state.timeMs, example.event.part, example.event.value)
+    expect({ ...msToMinutesSeconds(timeMs), written: formatDurationMs(timeMs) }).toEqual(example.expect)
+  })
+
+  test('every example is either automated or carries a manual reason', () => {
+    expect(isExhaustivelyAccountedFor(sectionTimeExamples)).toBe(true)
+  })
+})
+
+// Non-functional: robustness. The acceptance condition for the spinner UI
+// is that no input it can produce yields a time string `parseDurationToMs`
+// rejects. These properties feed every kind of number an
+// `<input type="number">` can report, not just the typical ones above.
+describe('robustness: section-time spinners can\'t produce an unparseable time', () => {
+  const anyInputNumber = fc.oneof(
+    fc.double(),
+    fc.integer(),
+    fc.constantFrom(Number.NaN, 0, -0, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.MAX_SAFE_INTEGER, Number.MIN_SAFE_INTEGER, Number.MAX_VALUE),
+  )
+
+  test('adversarial: any spinner edit from any starting time writes a string that parses back to the same duration (property)', () => {
+    fc.assert(
+      fc.property(anyInputNumber, fc.constantFrom<DurationPart>('minutes', 'seconds'), anyInputNumber, (start, part, value) => {
+        const timeMs = withDurationPart(start, part, value)
+        return parseDurationToMs(formatDurationMs(timeMs)) === timeMs
+      }),
+      { numRuns: 2_000 },
+    )
+  })
+
+  test('adversarial: any spinner edit keeps the displayed parts non-negative whole numbers with seconds in 0..59 (property)', () => {
+    fc.assert(
+      fc.property(anyInputNumber, fc.constantFrom<DurationPart>('minutes', 'seconds'), anyInputNumber, (start, part, value) => {
+        const timeMs = withDurationPart(start, part, value)
+        const { minutes, seconds } = msToMinutesSeconds(timeMs)
+        return Number.isSafeInteger(minutes) && minutes >= 0
+          && Number.isInteger(seconds) && seconds >= 0 && seconds <= 59
+          && Object.is(timeMs, Math.abs(timeMs)) && timeMs <= MAX_DURATION_MS
+      }),
+      { numRuns: 2_000 },
+    )
   })
 })
 
