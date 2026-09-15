@@ -129,7 +129,7 @@ describe('menuItems', () => {
   })
 
   test('adversarial: toggle-skip/toggle-section disable themselves on a draft slide — peitho-core rejects both combinations', () => {
-    const menu: ContextMenu = { kind: 'on-slide', index: 0, x: 0, y: 0, layoutPickerOpen: false }
+    const menu = onSlide({ index: 0 })
     const items = menuItems(menu, ctx({ configOf: () => ({ draft: true }) }))
     const byAction = Object.fromEntries(items.map(i => [i.action, i]))
     expect(byAction['toggle-skip'].enabled).toBe(false)
