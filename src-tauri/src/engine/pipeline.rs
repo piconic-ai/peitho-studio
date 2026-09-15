@@ -82,8 +82,8 @@ pub fn parse_source(deck_path: &Path, source: &str) -> Result<ParsedSource, Stri
 pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, String> {
     let deck_dir = deck_dir_of(deck_path);
 
-    let ParsedSource { deck: parsed, assets } = parse_source(deck_path, source)?;
-    let ResolvedAssets { layouts, css: css_files, highlighter, fonts_dir } = assets;
+    let ParsedSource { deck: parsed, assets: ResolvedAssets { layouts, css: css_files, highlighter, fonts_dir } } =
+        parse_source(deck_path, source)?;
     let highlighter = highlighter.get();
 
     let mapped = dispatch_by_convention(parsed, &layouts).map_err(|err| err.to_string())?;
