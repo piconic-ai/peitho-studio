@@ -135,6 +135,34 @@ test('Given a draft slide, when "Mark as Draft" is unchecked from its context me
   await expect.poll(() => deck.source).not.toContain('"draft":true')
 })
 
+test('Given a deck with a draft slide, when ArrowDown is pressed twice from the first slide, then the selection reaches the slide after the draft one', async ({ page }) => {
+  await openDeck(page, { source: DECK_WITH_DRAFT_THEN_SKIPPED }, 3)
+
+  // Select the first slide to give the keyboard handler a starting point.
+  await page.locator('[data-slide-row="0"]').click()
+  await expect(page.locator('textarea').first()).toHaveValue(/# Opening/, { timeout: 5_000 })
+
+  await page.keyboard.press('ArrowDown')
+  await expect(page.locator('textarea').first()).toHaveValue(/# Hidden/, { timeout: 5_000 })
+
+  await page.keyboard.press('ArrowDown')
+  await expect(page.locator('textarea').first()).toHaveValue(/# Backup Slide/, { timeout: 5_000 })
+})
+
+test('Given a draft slide, when it is right-clicked, then "Skip in Present" and "Section Start" are disabled (peitho-core rejects both combined with draft)', async ({ page }) => {
+  await openDeck(page, { source: DECK_WITH_DRAFT_THEN_SKIPPED }, 3)
+  const draftRow = page.locator('[data-slide-row="1"]')
+
+  await draftRow.click({ button: 'right' })
+
+  await expect(page.getByRole('button', { name: /^Skip in Present/ })).toBeDisabled()
+  await expect(page.getByRole('button', { name: /^Section Start/ })).toBeDisabled()
+  // Everything else about the slide is still an ordinary target — only
+  // the two combinations peitho-core actually refuses are disabled.
+  await expect(page.getByRole('button', { name: /^Mark as Draft/ })).toBeEnabled()
+  await expect(page.getByRole('button', { name: /^Cut/ })).toBeEnabled()
+})
+
 test.describe('non-functional: the badge overlay never gets in the way of interacting with the thumbnail', () => {
   // `page.mouse` rather than `locator.click()`: the overlay is
   // `pointer-events: none` by design, which Playwright's actionability
