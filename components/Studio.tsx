@@ -12,6 +12,7 @@ import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, val
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems } from '../domain/contextMenu'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
+import { buildSlideList, manifestIndexAt, recordByManifestIndex, sectionStartBySourceIndex } from '../domain/slideList'
 import { waitForEventOrTimeout } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
@@ -221,15 +222,25 @@ export function Studio() {
     if (previews.length === 0) return 'empty'
     return 'ready'
   })
+  // Rows in `editor.slideRanges()` order (drafts included), each paired
+  // with its manifest data when it has any — see `domain/slideList.ts`.
+  // `slideCount` below is deliberately this list's length, not
+  // `manifest.slideCount`: the manifest's own count excludes drafts, and
+  // every index this component hands around (`selectSlide`,
+  // `updateSlideConfig`, this menu's own `index`, ...) is already a
+  // `slideRanges` index, so a manifest-sized count would under-count the
+  // deck whenever a draft slide is in it.
+  const slideEntries = createMemo(() => buildSlideList(editor.fullSource(), render.manifest()?.slides ?? []))
   const currentMenuItems = createMemo(() => computeMenuItems(ui.contextMenu(), {
-    slideCount: render.manifest()?.slideCount ?? 0,
+    slideCount: slideEntries().length,
     hasClipboard: ui.clipboardSlideText() !== null,
     configOf: slideConfigOf,
   }))
   const selectedSlide = createMemo<ManifestSlide | null>(() => {
     const i = editor.selectedIndex()
     if (i === null) return null
-    return render.manifest()?.slides[i] ?? null
+    const entry = slideEntries()[i]
+    return entry?.kind === 'rendered' ? entry.slide : null
   })
   // `selectedSlide()` itself is a *new object* on every keystroke (even to
   // some other slide — see `stabilizeByKey` in slides.ts), but a memo's
@@ -557,22 +568,36 @@ export function Studio() {
     return totalMs > 0 ? updateFrontmatterTime(rebuilt, totalMs) : rebuilt
   }
 
+  // `state/renderStore.ts`'s section-draft records are keyed by manifest
+  // index (they're built straight from `manifest.sections`, drafts never
+  // among them) — the section header's own row index is a `sourceIndex`
+  // (see `slideEntries` above), so every entry point here converts through
+  // `manifestIndexAt` before touching them. A draft slide can never start
+  // a section (peitho-core rejects that combination outright), so a
+  // `sourceIndex` that reaches these with no manifest index behind it is
+  // not a real state to handle, just a defensive no-op.
   function onSectionNameInput(index: number, value: string): void {
+    const manifestIndex = manifestIndexAt(slideEntries(), index)
+    if (manifestIndex === null) return
     render.setSectionDrafts(prev => ({
       ...prev,
-      [index]: { name: value, time: prev[index]?.time ?? formatDurationMs(render.sectionStartByIndex()[index].plannedDurationMs) },
+      [manifestIndex]: { name: value, time: prev[manifestIndex]?.time ?? formatDurationMs(render.sectionStartByIndex()[manifestIndex].plannedDurationMs) },
     }))
   }
 
   function onSectionTimeInput(index: number, value: string): void {
+    const manifestIndex = manifestIndexAt(slideEntries(), index)
+    if (manifestIndex === null) return
     render.setSectionDrafts(prev => ({
       ...prev,
-      [index]: { name: prev[index]?.name ?? render.sectionStartByIndex()[index].name, time: value },
+      [manifestIndex]: { name: prev[manifestIndex]?.name ?? render.sectionStartByIndex()[manifestIndex].name, time: value },
     }))
   }
 
   async function commitSectionEdit(startIndex: number): Promise<void> {
-    const draft = render.sectionDrafts()[startIndex]
+    const manifestIndex = manifestIndexAt(slideEntries(), startIndex)
+    if (manifestIndex === null) return
+    const draft = render.sectionDrafts()[manifestIndex]
     const range = editor.slideRanges()[startIndex]
     if (!draft || !range) return
     const slideText = currentSlideText(startIndex)
@@ -589,7 +614,7 @@ export function Studio() {
     if (editedMs !== null) {
       const sections = render.manifest()?.sections ?? []
       const totalMs = sections.reduce(
-        (sum, section) => sum + (section.startIndex === startIndex ? editedMs : section.plannedDurationMs),
+        (sum, section) => sum + (section.startIndex === manifestIndex ? editedMs : section.plannedDurationMs),
         0,
       )
       nextSource = updateFrontmatterTime(nextSource, totalMs)
@@ -1082,13 +1107,14 @@ export function Studio() {
       <div className="flex-1 flex min-h-0">
         <SlideList
           manifest={render.manifest()}
+          entries={slideEntries()}
           slideListWidth={ui.slideListWidth()}
           draggedIndex={ui.draggedIndex()}
           dragOverGap={ui.dragOverGap()}
           dragDeltaY={ui.dragDeltaY()}
           selectedIndex={editor.selectedIndex()}
-          sectionStartByIndex={render.sectionStartByIndex()}
-          sectionDrafts={render.sectionDrafts()}
+          sectionStartByIndex={sectionStartBySourceIndex(render.manifest()?.sections ?? [], slideEntries())}
+          sectionDrafts={recordByManifestIndex(render.sectionDrafts(), slideEntries())}
           canvasWidth={render.canvasWidth()}
           canvasHeight={render.canvasHeight()}
           canvasFragmentOf={render.canvasFragmentOf}
@@ -1154,10 +1180,10 @@ export function Studio() {
         canvasHeight={render.canvasHeight()}
         onMenuRef={el => { contextMenuEl = el }}
         onClose={ui.closeContextMenu}
-        onNewSlide={() => { void addSlide(ui.contextMenuAppendIndex(render.manifest()?.slideCount ?? 1)); ui.closeContextMenu() }}
+        onNewSlide={() => { void addSlide(ui.contextMenuAppendIndex(slideEntries().length || 1)); ui.closeContextMenu() }}
         onCut={() => { void cutSlide(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onCopy={() => { copySlide(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
-        onPaste={() => { void pasteSlideAfter(ui.contextMenuAppendIndex(render.manifest()?.slideCount ?? 1)); ui.closeContextMenu() }}
+        onPaste={() => { void pasteSlideAfter(ui.contextMenuAppendIndex(slideEntries().length || 1)); ui.closeContextMenu() }}
         onDelete={() => { void deleteSlide(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onToggleLayoutPicker={ui.toggleLayoutPicker}
         onChangeLayout={name => { void changeSlideLayout(contextMenuIndexOf(ui.contextMenu())!, name); ui.closeContextMenu() }}
