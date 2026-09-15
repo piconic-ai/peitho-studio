@@ -87,13 +87,18 @@ export interface MockDeck {
    * in which a save is still in flight, e.g. to exercise edits the user
    * makes while a previous commit's re-render hasn't landed yet. */
   renderDraftDelayMs?: number
+  /** Builds a slide's rendered fragment HTML from its title — defaults to
+   * a bare `<h1>{title}</h1>`. Override to exercise fragment content the
+   * default template can't produce (e.g. an embedded `<script>`, testing
+   * `dom/slideCanvas.ts`'s script-execution fix). */
+  fragmentFor?: (title: string) => string
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-function buildManifest(source: string): { manifest: Manifest; fragments: Record<string, string> } {
+function buildManifest(source: string, fragmentFor: (title: string) => string): { manifest: Manifest; fragments: Record<string, string> } {
   const ranges = splitSlides(source)
   const keys: string[] = []
   const slides: ManifestSlide[] = []
@@ -132,15 +137,17 @@ function buildManifest(source: string): { manifest: Manifest; fragments: Record<
     })
   }
   const fragments: Record<string, string> = {}
-  for (const s of slides) fragments[s.key] = `<section class="peitho-slide"><h1>${s.text.title}</h1></section>`
+  for (const s of slides) fragments[s.key] = fragmentFor(s.text.title)
   const manifest: Manifest = {
     title: 'Fake Deck', slideCount: slides.length, canvasWidth: 1280, canvasHeight: 720, sections, slides,
   }
   return { manifest, fragments }
 }
 
-function renderPayloadFor(source: string): RenderPayload {
-  const { manifest, fragments } = buildManifest(source)
+const DEFAULT_FRAGMENT_FOR = (title: string): string => `<section class="peitho-slide"><h1>${title}</h1></section>`
+
+function renderPayloadFor(source: string, fragmentFor: (title: string) => string): RenderPayload {
+  const { manifest, fragments } = buildManifest(source, fragmentFor)
   return { manifest, fragments, assetBaseUrl: 'http://localhost:9/', css: '.peitho-slide { color: black; }' }
 }
 
@@ -163,9 +170,9 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'take_pending_deck': return null
       case 'get_recent_decks': return deck.recentDecks ?? []
       case 'open_deck':
-        return { deckPath: deck.source, deckDir: '/fake', render: renderPayloadFor(deck.source) }
+        return { deckPath: deck.source, deckDir: '/fake', render: renderPayloadFor(deck.source, deck.fragmentFor ?? DEFAULT_FRAGMENT_FOR) }
       case 'render_draft':
-        return renderPayloadFor(args.content as string)
+        return renderPayloadFor(args.content as string, deck.fragmentFor ?? DEFAULT_FRAGMENT_FOR)
       case 'read_deck_source': return deck.source
       case 'save_deck_source':
         deck.source = args.content as string
