@@ -314,9 +314,15 @@ export type DurationPart = 'minutes' | 'seconds'
 
 /** Returns `ms` with one spinner's part replaced by `value` and the other
  * part kept. This is what editing a single section-time spinner does. The
- * result follows `minutesSecondsToMs`'s carry, borrow and clamping rules. */
+ * result follows `minutesSecondsToMs`'s carry, borrow and clamping rules.
+ *
+ * A NaN `value` leaves the time as it was (rounded and clamped like any
+ * other result). `<input type="number">` reports NaN for an entry the user
+ * hasn't finished typing, such as an empty field, `-` or `1e`. Reading that
+ * as 0 would rewrite the field to `0` under the user's cursor. */
 export function withDurationPart(ms: number, part: DurationPart, value: number): number {
   const { minutes, seconds } = msToMinutesSeconds(ms)
+  if (Number.isNaN(value)) return minutesSecondsToMs(minutes, seconds)
   return part === 'minutes' ? minutesSecondsToMs(value, seconds) : minutesSecondsToMs(minutes, value)
 }
 

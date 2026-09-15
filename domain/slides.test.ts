@@ -551,6 +551,17 @@ describe('withDurationPart', () => {
   test('adversarial: an off-grid starting duration is rounded before the edit, not carried along', () => {
     expect(withDurationPart(90_400, 'minutes', 2)).toBe(150_000)
   })
+
+  test('adversarial: a NaN value (an empty or half-typed number input) leaves the duration unchanged, for either part', () => {
+    expect(withDurationPart(90_000, 'minutes', Number.NaN)).toBe(90_000)
+    expect(withDurationPart(90_000, 'seconds', Number.NaN)).toBe(90_000)
+  })
+
+  test('adversarial: a NaN value still normalizes an off-grid or out-of-range starting duration', () => {
+    expect(withDurationPart(90_400, 'seconds', Number.NaN)).toBe(90_000)
+    expect(withDurationPart(-5_000, 'minutes', Number.NaN)).toBe(0)
+    expect(withDurationPart(Number.NaN, 'minutes', Number.NaN)).toBe(0)
+  })
 })
 
 describe('example: editing a section time with the minutes/seconds spinners', () => {
