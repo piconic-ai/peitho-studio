@@ -187,6 +187,39 @@ Skipは`SlideList.tsx`でサムネイル下に "skip" というテキストラ�
           (既存の、正しく動いているパスと同じ経路になる)。
       - どちらも`e2e/slide-status-badges.e2e.ts`に、修正前は実際に
         失敗する(修正を一時的に戻して確認済み)回帰テストを追加した。
+      - **追加のUI指摘(kfly8、2026-09-15)**: 上記2件の不具合修正を
+        報告した際、「draft化したときのサムネイルが元の内容と別物になる。
+        内容は保持したまま、DRAFTラベルなどを上に重ねるだけにしてほしい」
+        という指摘も受けた。当時の実装は、draft化された行を常に
+        `bg-muted`のタイトルのみのプレースホルダーに切り替えており、
+        SKIPバッジ(常に元のcanvasの上にオーバーレイするだけ)と見た目の
+        扱いが異なっていた。
+        - 原因: `SlideList.tsx`の行は`entry.kind`(`'rendered'` /
+          `'placeholder'`)で描画を完全に分岐させており、draftになった
+          瞬間に元のcanvas要素ごと破棄して別のDOMに切り替えていた。
+        - 修正: `domain/slideList.ts`の`PlaceholderSlideEntry`に
+          `lastRenderedKey`(スライド自身の明示的なPageComment `key`。
+          無ければ`null`)を追加。`state/renderStore.ts`の
+          per-keyフラグメントキャッシュは、そのキーがmanifestから
+          消えた後も(draftになった後も)最後に描画された内容を保持し
+          続けている性質を利用し、`SlideList.tsx`側は
+          `lastRenderedKey`に対応するキャッシュが空でない限り、
+          `entry.kind`に関わらずcanvasを描画し続けるように変更
+          (`canvasSourceFor`ヘルパー)。キャッシュが本当に存在しない
+          場合(明示的keyを持たない古いデッキ、あるいは一度も
+          レンダリングされていない新規スライドがdraftのまま作られた
+          場合)のみ、従来どおりタイトルのみのプレースホルダーに
+          フォールバックする。
+        - この変更は`domain/slideList.ts`が既に確立していた
+          「`.map()`の行キー(`entry.key`)は`rendered`↔`placeholder`の
+          切り替えごとに必ず変える(barefootjs#3009対策)」という制約とは
+          独立している — `lastRenderedKey`は行キーではなくcanvasの
+          「どのフラグメントを表示するか」を選ぶためだけの値なので、
+          この制約を破らない。
+        - `e2e/slide-status-badges.e2e.ts`に、明示的keyを持つ
+          レンダリング済みスライドをdraft化しても`h1`要素を含む
+          canvasが表示され続けることを確認する回帰テストを追加
+          (修正前は実際に失敗することを確認済み)。
 
 ## 先送り事項
 
