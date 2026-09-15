@@ -28,6 +28,7 @@ pub mod pipeline;
 pub mod serve;
 pub mod unsupported;
 
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use peitho_core::highlight::Highlighter;
@@ -38,6 +39,47 @@ static DEFAULT_HIGHLIGHTER: OnceLock<Highlighter> = OnceLock::new();
 /// shared for the lifetime of the app.
 pub fn default_highlighter() -> &'static Highlighter {
     DEFAULT_HIGHLIGHTER.get_or_init(Highlighter::defaults)
+}
+
+/// Pays the renderer's one-time costs ahead of the first `open_deck`:
+/// building the default highlighter, and syntect compiling each language's
+/// regexes the first time a code block in that language is highlighted.
+/// Rendering the decks most likely to be opened next (and discarding the
+/// output) warms exactly the languages they use. Errors are ignored — a
+/// deck that fails to render here fails again, visibly, when opened.
+pub fn warm_up(deck_paths: &[PathBuf]) {
+    default_highlighter();
+    for deck_path in deck_paths {
+        if let Ok(source) = std::fs::read_to_string(deck_path) {
+            let _ = pipeline::render_source(deck_path, &source);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn warm_up_spec_renders_real_decks_without_disturbing_later_renders() {
+        let deck_path = fixtures::example_deck("minimal");
+        warm_up(std::slice::from_ref(&deck_path));
+
+        let source = std::fs::read_to_string(&deck_path).expect("fixture deck should exist on disk");
+        let output = pipeline::render_source(&deck_path, &source).expect("a warmed deck should still render");
+        assert_eq!(output.fragments.len(), 3);
+    }
+
+    #[test]
+    fn warm_up_adversarial_ignores_missing_and_unrenderable_decks() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let broken = dir.path().join("deck.md");
+        std::fs::write(&broken, "# Broken\n\n```no-such-language\nx\n```\n").expect("write deck");
+        assert!(pipeline::render_source(&broken, &std::fs::read_to_string(&broken).unwrap()).is_err());
+
+        warm_up(&[]);
+        warm_up(&[PathBuf::new(), dir.path().join("missing/deck.md"), dir.path().to_path_buf(), broken]);
+    }
 }
 
 /// Fixtures for the engine's tests: real decks from the sibling `peitho`
