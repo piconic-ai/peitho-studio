@@ -52,11 +52,10 @@ export interface MockDeck {
    * ready. */
   presentReadyDelayMs?: number
   /** Milliseconds `open_deck` waits before resolving/rejecting — defaults
-   * to 0 (settles on the same tick), matching a real in-process
-   * peitho-core render of a small deck closely enough to observe
-   * WelcomeScreen's min-display-duration floor on its busy feedback (see
-   * `remainingMinDisplayMs`/`todo/welcome-open-feels-frozen.md`) even
-   * when this resolves near-instantly. */
+   * to 0 (settles on the same tick). Set this to observe Studio.tsx's
+   * loading placeholder, which shows only until `open_deck` resolves; on a
+   * real device the first open after launch takes seconds (see
+   * `todo/archive/welcome-open-feels-frozen.md`). */
   openDeckDelayMs?: number
 }
 
