@@ -22,6 +22,12 @@ describe('createFakeDeckIpc', () => {
     expect(info.render.manifest.slides).toEqual([])
   })
 
+  test('spec: listDeckVariants defaults to no variants (a lone deck) and records the call', async () => {
+    const ipc = createFakeDeckIpc()
+    expect(await ipc.listDeckVariants()).toEqual([])
+    expect(ipc.calls).toEqual([{ method: 'listDeckVariants', args: [] }])
+  })
+
   test('spec: an override replaces the default behavior and is not auto-recorded', async () => {
     const ipc = createFakeDeckIpc({ getRecentDecks: async () => ['/a/deck.md', '/b/deck.md'] })
     expect(await ipc.getRecentDecks()).toEqual(['/a/deck.md', '/b/deck.md'])

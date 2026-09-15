@@ -49,6 +49,7 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
     renderDraft: async content => { record('renderDraft', [content]); return emptyRenderPayload },
     readDeckSource: async () => { record('readDeckSource', []); return '' },
     saveDeckSource: async content => { record('saveDeckSource', [content]) },
+    listDeckVariants: async () => { record('listDeckVariants', []); return [] },
     previewLayouts: async () => {
       record('previewLayouts', [])
       const payload: LayoutPreviewsPayload = { previews: [], css: '' }

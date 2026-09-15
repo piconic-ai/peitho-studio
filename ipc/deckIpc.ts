@@ -1,5 +1,5 @@
 // Typed boundary around every Tauri command/event Studio.tsx talks to (see
-// src-tauri/src/peitho.rs for the Rust side — 11 #[tauri::command]s + the
+// src-tauri/src/peitho.rs for the Rust side — 12 #[tauri::command]s + the
 // `deck-file-changed`/`menu:new-deck`/`present-ready` events emitted from
 // lib.rs/peitho.rs). Per
 // docs/architecture.md's layering: this is the sanctioned door for
@@ -12,8 +12,10 @@
 // welcome-screen/window flows this module doesn't touch yet.
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import type { DeckVariant } from '../domain/deckVariants'
 import type { RenderPayload } from '../domain/render'
 
+export type { DeckVariant } from '../domain/deckVariants'
 export type { Manifest, ManifestSection, ManifestSlide, RenderPayload } from '../domain/render'
 
 export interface DeckSessionInfo {
@@ -48,6 +50,9 @@ export interface DeckIpc {
   renderDraft(content: string): Promise<RenderPayload>
   readDeckSource(): Promise<string>
   saveDeckSource(content: string): Promise<void>
+  /** The open deck's same-base siblings (`deck.md`, `deck.ja.md`, ...),
+   * itself included — see `list_deck_variants` in peitho.rs. */
+  listDeckVariants(): Promise<DeckVariant[]>
   previewLayouts(): Promise<LayoutPreviewsPayload>
   presentDeck(rehearsal: boolean): Promise<void>
   onDeckFileChanged(callback: () => void): Unsubscribe
@@ -76,6 +81,7 @@ export function createTauriDeckIpc(): DeckIpc {
     renderDraft: content => invoke('render_draft', { content }),
     readDeckSource: () => invoke('read_deck_source'),
     saveDeckSource: content => invoke('save_deck_source', { content }),
+    listDeckVariants: () => invoke('list_deck_variants'),
     previewLayouts: () => invoke('preview_layouts'),
     presentDeck: rehearsal => invoke('present_deck', { rehearsal }),
     onDeckFileChanged: callback => subscribe('deck-file-changed', callback),
