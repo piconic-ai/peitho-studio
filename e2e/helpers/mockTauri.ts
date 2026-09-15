@@ -11,6 +11,7 @@ import type { Page } from '@playwright/test'
 import { splitSlides, extractPageComment, extractHeadingText, slugifyTitle, uniqueSlideKey } from '../../domain/slides'
 import type { Manifest, ManifestSlide, RenderPayload } from '../../domain/render'
 import type { DeckVariant } from '../../domain/deckVariants'
+import type { LayoutVerdict } from '../../domain/layoutFit'
 
 export interface MockDeck {
   source: string
@@ -66,6 +67,21 @@ export interface MockDeck {
    * `commandError` then fails — so a test can assert on which commands a
    * UI action actually sent. */
   onInvoke?: (cmd: string, args: Record<string, unknown>) => void
+  /** Layout names `preview_layouts` lists (each with an empty fragment, so
+   * the picker shows name-only cards) — defaults to none ("No layouts
+   * found"). */
+  layouts?: string[]
+  /** What `check_slide_layouts` answers for the given source/slide index —
+   * defaults to `null` (nothing to judge, every layout stays choosable).
+   * Stands in for `engine::layout_fit`'s real peitho-core verdicts. */
+  layoutVerdicts?: (content: string, slideIndex: number) => LayoutVerdict[] | null
+  /** Milliseconds `check_slide_layouts` waits before answering — defaults
+   * to 0. Set this to observe the picker while the check is in flight. */
+  checkSlideLayoutsDelayMs?: number
+  /** Every `invoke()` command name, in call order — appended to when
+   * provided, so a test can assert a command never ran (e.g. nothing was
+   * rendered or saved). */
+  invokedCommands?: string[]
 }
 
 function sleep(ms: number): Promise<void> {
@@ -113,9 +129,11 @@ function renderPayloadFor(source: string): RenderPayload {
  * `page.goto('/')`. */
 export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
   await page.exposeFunction('__mockInvoke', async (cmd: string, args: Record<string, unknown>) => {
+    deck.invokedCommands?.push(cmd)
     const error = deck.commandError?.(cmd, args)
     if (cmd === 'present_deck' && deck.presentDeckDelayMs) await sleep(deck.presentDeckDelayMs)
     if (cmd === 'open_deck' && deck.openDeckDelayMs) await sleep(deck.openDeckDelayMs)
+    if (cmd === 'check_slide_layouts' && deck.checkSlideLayoutsDelayMs) await sleep(deck.checkSlideLayoutsDelayMs)
     deck.onInvoke?.(cmd, args)
     if (error !== null && error !== undefined) throw new Error(error)
     switch (cmd) {
@@ -130,8 +148,10 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'save_deck_source':
         deck.source = args.content as string
         return null
-      case 'preview_layouts': return { previews: [], css: '' }
+      case 'preview_layouts': return { previews: (deck.layouts ?? []).map(name => ({ name, fragment: '' })), css: '' }
       case 'list_deck_variants': return deck.deckVariants ?? []
+      case 'check_slide_layouts':
+        return deck.layoutVerdicts?.(args.content as string, args.slideIndex as number) ?? null
       case 'present_deck':
         // Fires after the spawn itself resolves, matching real timing —
         // `watch_present_readiness` (peitho.rs) only starts watching
