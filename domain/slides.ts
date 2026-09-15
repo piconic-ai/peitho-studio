@@ -296,6 +296,20 @@ export function minutesSecondsToMs(minutes: number, seconds: number): number {
   return clampWholeSeconds(m * 60 + s) * 1000
 }
 
+/** The shortest time a section can be saved with. peitho-core rejects a
+ * section time of 0 ("time must be greater than zero"). */
+export const MIN_SECTION_TIME_MS = 1000
+
+/** The time to write for a section whose spinners read `ms`: `ms` rounded
+ * to a whole second and clamped into `[MIN_SECTION_TIME_MS,
+ * MAX_DURATION_MS]`. The spinners themselves can show 0m0s while the user
+ * is still editing (setting the minutes to 0 before typing the seconds
+ * shouldn't change the seconds field). The clamp is applied only when the
+ * time is saved. NaN reads as 0 and so saves as `MIN_SECTION_TIME_MS`. */
+export function savableSectionTimeMs(ms: number): number {
+  return Math.max(MIN_SECTION_TIME_MS, minutesSecondsToMs(0, ms / 1000))
+}
+
 export type DurationPart = 'minutes' | 'seconds'
 
 /** Returns `ms` with one spinner's part replaced by `value` and the other

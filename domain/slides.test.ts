@@ -6,7 +6,9 @@ import {
   msToMinutesSeconds,
   minutesSecondsToMs,
   withDurationPart,
+  savableSectionTimeMs,
   MAX_DURATION_MS,
+  MIN_SECTION_TIME_MS,
   type DurationPart,
   splitSlides,
   extractNote,
@@ -501,6 +503,37 @@ describe('msToMinutesSeconds / minutesSecondsToMs round-trip', () => {
   })
 })
 
+describe('savableSectionTimeMs', () => {
+  test.each([
+    [1_000, 1_000],
+    [59_000, 59_000],
+    [90_000, 90_000],
+  ])('spec: a positive whole-second time %d ms is saved unchanged', (ms, expected) => {
+    expect(savableSectionTimeMs(ms)).toBe(expected)
+  })
+
+  test('spec: a time of 0 is saved as MIN_SECTION_TIME_MS (1 second), since peitho-core rejects 0', () => {
+    expect(MIN_SECTION_TIME_MS).toBe(1_000)
+    expect(savableSectionTimeMs(0)).toBe(1_000)
+  })
+
+  test('adversarial: negative, NaN and sub-half-second times all save as 1 second', () => {
+    expect(savableSectionTimeMs(-60_000)).toBe(1_000)
+    expect(savableSectionTimeMs(Number.NaN)).toBe(1_000)
+    expect(savableSectionTimeMs(499)).toBe(1_000)
+  })
+
+  test('adversarial: an off-grid time rounds to the nearest whole second before clamping', () => {
+    expect(savableSectionTimeMs(1_500)).toBe(2_000)
+    expect(savableSectionTimeMs(90_499)).toBe(90_000)
+  })
+
+  test('adversarial: a time past MAX_DURATION_MS (including Infinity) saves as MAX_DURATION_MS', () => {
+    expect(savableSectionTimeMs(Number.MAX_SAFE_INTEGER)).toBe(MAX_DURATION_MS)
+    expect(savableSectionTimeMs(Number.POSITIVE_INFINITY)).toBe(MAX_DURATION_MS)
+  })
+})
+
 describe('withDurationPart', () => {
   test('spec: replacing the minutes keeps the seconds', () => {
     expect(withDurationPart(90_000, 'minutes', 5)).toBe(330_000)
@@ -560,6 +593,17 @@ describe('robustness: section-time spinners can\'t produce an unparseable time',
         return Number.isSafeInteger(minutes) && minutes >= 0
           && Number.isInteger(seconds) && seconds >= 0 && seconds <= 59
           && Object.is(timeMs, Math.abs(timeMs)) && timeMs <= MAX_DURATION_MS
+      }),
+      { numRuns: 2_000 },
+    )
+  })
+
+  test('adversarial: whatever the spinners show, the saved time is greater than zero, within peitho-core\'s limit, and parses back (property)', () => {
+    fc.assert(
+      fc.property(anyInputNumber, fc.constantFrom<DurationPart>('minutes', 'seconds'), anyInputNumber, (start, part, value) => {
+        const saved = savableSectionTimeMs(withDurationPart(start, part, value))
+        return saved >= MIN_SECTION_TIME_MS && saved <= MAX_DURATION_MS
+          && parseDurationToMs(formatDurationMs(saved)) === saved
       }),
       { numRuns: 2_000 },
     )
