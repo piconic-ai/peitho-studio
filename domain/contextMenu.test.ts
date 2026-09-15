@@ -105,6 +105,19 @@ describe('menuItems', () => {
     const items = menuItems(menu, ctx({ configOf: () => ({ section: undefined }) }))
     expect(items.find(i => i.action === 'toggle-section')?.checked).toBe(false)
   })
+
+  test('adversarial: toggle-skip/toggle-section disable themselves on a draft slide — peitho-core rejects both combinations', () => {
+    const menu: ContextMenu = { kind: 'on-slide', index: 0, x: 0, y: 0, layoutPickerOpen: false }
+    const items = menuItems(menu, ctx({ configOf: () => ({ draft: true }) }))
+    const byAction = Object.fromEntries(items.map(i => [i.action, i]))
+    expect(byAction['toggle-skip'].enabled).toBe(false)
+    expect(byAction['toggle-section'].enabled).toBe(false)
+    // Every other per-slide action stays available on a draft slide —
+    // only the two combinations peitho-core actually refuses are disabled.
+    expect(byAction['toggle-draft'].enabled).toBe(true)
+    expect(byAction['cut'].enabled).toBe(true)
+    expect(byAction['change-layout'].enabled).toBe(true)
+  })
 })
 
 describe('appendIndex', () => {

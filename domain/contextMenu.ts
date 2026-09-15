@@ -52,6 +52,13 @@ export function menuItems(menu: ContextMenu, ctx: MenuContext): MenuItem[] {
   const index = indexOf(menu)
   const hasSlide = index !== null
   const config = index !== null ? ctx.configOf(index) : null
+  // peitho-core rejects a slide marked both draft and skip, and a draft
+  // slide that declares a section marker (see domain/slideStatus.ts's own
+  // doc comment) — so once a draft slide has a reachable, right-clickable
+  // row of its own (the slide list no longer hides it), these two toggles
+  // must disable themselves for it rather than reach commitChange with a
+  // combination peitho-core is guaranteed to refuse.
+  const isDraft = config?.draft === true
   return [
     { action: 'new-slide', enabled: true },
     { action: 'cut', enabled: hasSlide },
@@ -59,9 +66,9 @@ export function menuItems(menu: ContextMenu, ctx: MenuContext): MenuItem[] {
     { action: 'paste', enabled: ctx.hasClipboard },
     { action: 'delete', enabled: hasSlide && ctx.slideCount > 1 },
     { action: 'change-layout', enabled: hasSlide },
-    { action: 'toggle-draft', enabled: hasSlide, checked: config?.draft === true },
-    { action: 'toggle-skip', enabled: hasSlide, checked: config?.skip === true },
-    { action: 'toggle-section', enabled: hasSlide, checked: typeof config?.section === 'string' },
+    { action: 'toggle-draft', enabled: hasSlide, checked: isDraft },
+    { action: 'toggle-skip', enabled: hasSlide && !isDraft, checked: config?.skip === true },
+    { action: 'toggle-section', enabled: hasSlide && !isDraft, checked: typeof config?.section === 'string' },
     { action: 'move-up', enabled: hasSlide && index > 0 },
     { action: 'move-down', enabled: hasSlide && index < ctx.slideCount - 1 },
   ]
