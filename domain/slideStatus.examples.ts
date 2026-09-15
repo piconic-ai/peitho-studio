@@ -7,7 +7,7 @@ import type { SlideStatusBadge, SlideStatusFlags } from './slideStatus'
 
 /** The only event these examples describe: the slide list drawing a
  * slide's thumbnail. */
-export type ThumbnailShown = 'thumbnail-shown'
+type ThumbnailShown = 'thumbnail-shown'
 
 export const slideStatusBadgeExamples = defineExamples<SlideStatusFlags, ThumbnailShown, SlideStatusBadge | null>(
   'slideStatusBadge',

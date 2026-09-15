@@ -5,12 +5,12 @@
 // built, so a real render never gives the slide list a draft slide to
 // badge, and this mock deliberately doesn't invent one either (see
 // todo/slide-status-badges.md).
-import { test, expect, type Locator } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 
 const DECK_WITH_SKIPPED_SLIDE = '# Opening\n\n---\n\n<!-- {"skip":true} -->\n# Backup Slide\n'
 
-async function openDeck(page: Parameters<typeof mockTauri>[0], deck: MockDeck): Promise<void> {
+async function openDeck(page: Page, deck: MockDeck): Promise<void> {
   await mockTauri(page, deck)
   await page.goto('/')
   await expect(page.locator('[data-slide-row]')).toHaveCount(2, { timeout: 10_000 })

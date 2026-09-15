@@ -173,9 +173,8 @@ export function SlideList(props: SlideListProps) {
                           className="absolute top-0 right-0 bottom-0 left-0 flex items-start justify-end p-1 bg-black/40 pointer-events-none"
                         >
                           <span
-                            className={slideStatusBadge(slide) === 'draft'
-                              ? 'rounded-sm px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide bg-muted text-foreground'
-                              : 'rounded-sm px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide bg-destructive text-destructive-foreground'}
+                            className={'rounded-sm px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide '
+                              + (slideStatusBadge(slide) === 'draft' ? 'bg-muted text-foreground' : 'bg-destructive text-destructive-foreground')}
                           >
                             {slideStatusBadge(slide)}
                           </span>
