@@ -2,6 +2,7 @@
 
 import { type Manifest, type ManifestSection, type SectionDraft } from '../domain/render'
 import { formatDurationMs } from '../domain/slides'
+import { slideStatusBadge } from '../domain/slideStatus'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 
 // Every prop here is a called value or a plain callback (never a signal
@@ -161,8 +162,26 @@ export function SlideList(props: SlideListProps) {
                         }}
                         className="absolute top-0 right-0 bottom-0 left-0"
                       />
+                      {/* Laid over the canvas rather than replacing it, so
+                          the slide stays recognizable underneath. Today only
+                          `skip` can show here: peitho-core drops draft slides
+                          before the manifest is built, so they never reach
+                          `manifest.slides` (see todo/slide-status-badges.md). */}
+                      {slideStatusBadge(slide) !== null ? (
+                        <span
+                          data-slide-status={slideStatusBadge(slide)}
+                          className="absolute top-0 right-0 bottom-0 left-0 flex items-start justify-end p-1 bg-black/40 pointer-events-none"
+                        >
+                          <span
+                            className={slideStatusBadge(slide) === 'draft'
+                              ? 'rounded-sm px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide bg-muted text-foreground'
+                              : 'rounded-sm px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide bg-destructive text-destructive-foreground'}
+                          >
+                            {slideStatusBadge(slide)}
+                          </span>
+                        </span>
+                      ) : null}
                     </span>
-                    {slide.skip ? <span className="text-xs text-destructive">skip</span> : null}
                   </span>
                 </button>
               </div>
