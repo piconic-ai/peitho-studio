@@ -488,7 +488,9 @@ pub struct DeckVariantPayload {
 /// The on-disk half of `list_deck_variants`, split out so it's testable
 /// against a temp directory without a Tauri window/session. Only regular
 /// files (symlinks followed) count as siblings, and a name that isn't
-/// valid UTF-8 is skipped rather than failing the whole listing.
+/// valid UTF-8 is skipped rather than failing the whole listing. Names are
+/// grouped first, so only the few same-base candidates get stat'ed — not
+/// every image/asset sharing the deck's folder.
 fn deck_variants_on_disk(deck_path: &Path) -> Result<Vec<DeckVariantPayload>, String> {
     let current = deck_path
         .file_name()
@@ -499,13 +501,14 @@ fn deck_variants_on_disk(deck_path: &Path) -> Result<Vec<DeckVariantPayload>, St
     let sibling_names: Vec<String> = std::fs::read_dir(dir)
         .map_err(|err| format!("failed to read {}: {err}", dir.display()))?
         .filter_map(Result::ok)
-        .filter(|entry| entry.path().is_file())
         .filter_map(|entry| entry.file_name().into_string().ok())
         .collect();
     Ok(deck_variants::group_deck_variants(current, &sibling_names)
         .into_iter()
-        .map(|variant| DeckVariantPayload {
-            path: deck_path.with_file_name(&variant.file_name).display().to_string(),
+        .map(|variant| (deck_path.with_file_name(&variant.file_name), variant))
+        .filter(|(path, variant)| variant.is_current || path.is_file())
+        .map(|(path, variant)| DeckVariantPayload {
+            path: path.display().to_string(),
             file_name: variant.file_name,
             suffix: variant.suffix,
             is_current: variant.is_current,
