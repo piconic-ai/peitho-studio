@@ -88,6 +88,13 @@ export function createUiStore() {
   const [clipboardSlideText, setClipboardSlideText] = createSignal<string | null>(null)
 
   const [presentMenuOpen, setPresentMenuOpen] = createSignal(false)
+  // Click-to-completion feedback for the Present button (`DeckHeader.tsx`):
+  // set right when a present click is dispatched, cleared once
+  // `present_deck` settles (success or failure alike — this is deliberately
+  // independent of `errorMessage`, which is the separate *result* display).
+  // A plain boolean is enough here (no illegal combination it could express)
+  // unlike `dragState`/`contextMenu` above, which need a real ADT.
+  const [presentPending, setPresentPending] = createSignal(false)
 
   const [slideListWidth, setSlideListWidth] = createSignal(SLIDE_LIST_WIDTH)
   const [editorWidth, setEditorWidth] = createSignal(EDITOR_WIDTH)
@@ -97,7 +104,7 @@ export function createUiStore() {
     contextMenu, setContextMenu, closeContextMenu, toggleLayoutPicker, contextMenuAppendIndex,
     layoutPreviews, setLayoutPreviews, layoutPreviewStylesheetText, setLayoutPreviewCss,
     clipboardSlideText, setClipboardSlideText,
-    presentMenuOpen, setPresentMenuOpen,
+    presentMenuOpen, setPresentMenuOpen, presentPending, setPresentPending,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth,
   }
 }

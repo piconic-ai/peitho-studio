@@ -1,6 +1,7 @@
 // Typed boundary around every Tauri command/event Studio.tsx talks to (see
 // src-tauri/src/peitho.rs for the Rust side — 11 #[tauri::command]s + the
-// `deck-file-changed`/`menu:new-deck` events emitted from lib.rs). Per
+// `deck-file-changed`/`menu:new-deck`/`present-ready` events emitted from
+// lib.rs/peitho.rs). Per
 // docs/architecture.md's layering: this is the sanctioned door for
 // `@tauri-apps/api/core`(`invoke`)/`.../event`(`listen`) — enforced by
 // `scripts/arch-check.test.ts`'s `components/` rule — so components/state
@@ -51,6 +52,12 @@ export interface DeckIpc {
   presentDeck(rehearsal: boolean): Promise<void>
   onDeckFileChanged(callback: () => void): Unsubscribe
   onMenuNewDeck(callback: () => void): Unsubscribe
+  /** Fires once the `peitho present` subprocess `presentDeck` launched has
+   * actually rendered the deck and started serving it — see
+   * `watch_present_readiness` in peitho.rs. Much closer to "the
+   * presentation is really up" than `presentDeck`'s own resolution, which
+   * only means the subprocess was spawned. */
+  onPresentReady(callback: () => void): Unsubscribe
 }
 
 function subscribe(event: string, callback: () => void): Unsubscribe {
@@ -73,5 +80,6 @@ export function createTauriDeckIpc(): DeckIpc {
     presentDeck: rehearsal => invoke('present_deck', { rehearsal }),
     onDeckFileChanged: callback => subscribe('deck-file-changed', callback),
     onMenuNewDeck: callback => subscribe('menu:new-deck', callback),
+    onPresentReady: callback => subscribe('present-ready', callback),
   }
 }

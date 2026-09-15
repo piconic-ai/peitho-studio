@@ -2,8 +2,8 @@
 // "model-based testing" note) — a test supplies just the responses it
 // cares about via `overrides`; every call still lands in `calls` so a
 // test can assert on what was invoked and with what arguments, without a
-// real Tauri window. `emitDeckFileChanged`/`emitMenuNewDeck` let a test
-// simulate the Rust side pushing an event.
+// real Tauri window. `emitDeckFileChanged`/`emitMenuNewDeck`/
+// `emitPresentReady` let a test simulate the Rust side pushing an event.
 import type { DeckIpc, DeckSessionInfo, LayoutPreviewsPayload, RenderPayload } from './deckIpc'
 
 export interface RecordedCall {
@@ -15,6 +15,7 @@ export interface FakeDeckIpc extends DeckIpc {
   calls: RecordedCall[]
   emitDeckFileChanged(): void
   emitMenuNewDeck(): void
+  emitPresentReady(): void
 }
 
 const emptyRenderPayload: RenderPayload = {
@@ -28,6 +29,7 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
   const calls: RecordedCall[] = []
   const deckFileChangedListeners = new Set<() => void>()
   const menuNewDeckListeners = new Set<() => void>()
+  const presentReadyListeners = new Set<() => void>()
 
   function record(method: keyof DeckIpc, args: readonly unknown[]): void {
     calls.push({ method, args })
@@ -61,6 +63,10 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
       menuNewDeckListeners.add(callback)
       return () => { menuNewDeckListeners.delete(callback) }
     },
+    onPresentReady: callback => {
+      presentReadyListeners.add(callback)
+      return () => { presentReadyListeners.delete(callback) }
+    },
   }
 
   return {
@@ -69,5 +75,6 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
     calls,
     emitDeckFileChanged: () => { for (const cb of deckFileChangedListeners) cb() },
     emitMenuNewDeck: () => { for (const cb of menuNewDeckListeners) cb() },
+    emitPresentReady: () => { for (const cb of presentReadyListeners) cb() },
   }
 }

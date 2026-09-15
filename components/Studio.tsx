@@ -12,6 +12,7 @@ import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, val
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems } from '../domain/contextMenu'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
+import { waitForEventOrTimeout } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas } from '../dom/slideCanvas'
@@ -1006,19 +1007,42 @@ export function Studio() {
     })
   })
 
+  // `present_deck` resolving only means the OS accepted spawning the
+  // `peitho present` subprocess — near-instant regardless of deck size,
+  // well before that subprocess has actually rendered anything. Clearing
+  // `presentPending` right there (the original version of this function)
+  // made the busy state flash for a single frame on every click, reading
+  // as a glitch rather than feedback, and — worse — never actually covered
+  // the slow part a heavy deck spends rendering, which is exactly the lag
+  // this feature exists to cover. `onPresentReady` fires once the
+  // subprocess's own stdout shows it actually started serving (see
+  // `watch_present_readiness` in peitho.rs); the fixed timeout is only a
+  // fallback for a `peitho` binary that, for whatever reason, never prints
+  // that line (e.g. a version mismatch) — busy state just clears silently
+  // in that case rather than hanging forever with no way out.
+  const PRESENT_READY_TIMEOUT_MS = 15_000
+
   async function handlePresent(rehearsal: boolean): Promise<void> {
+    // Guards against a second `present_deck` firing while the first is
+    // still in flight even if some caller reaches this past the button's
+    // own `disabled` — same defensive pattern as `deck.isBusy()` above.
+    if (ui.presentPending()) return
     setErrorMessage(null)
+    ui.setPresentPending(true)
     try {
       await deckIpc.presentDeck(rehearsal)
+      await waitForEventOrTimeout(deckIpc.onPresentReady, PRESENT_READY_TIMEOUT_MS)
       setStatusMessage(rehearsal ? 'Presenting (rehearsal)…' : 'Presenting…')
     } catch (err) {
       setErrorMessage(String(err))
+    } finally {
+      ui.setPresentPending(false)
     }
   }
 
   return (
     <div className="h-full w-full flex flex-col bg-background text-foreground">
-      {deck.deckPath() === null ? (
+      {!deck.showEditor() ? (
         <WelcomeScreen
           isBusy={deck.isBusy()}
           errorMessage={errorMessage()}
@@ -1032,11 +1056,28 @@ export function Studio() {
       <DeckHeader
         deckPath={deck.deckPath()}
         presentMenuOpen={ui.presentMenuOpen()}
+        presentPending={ui.presentPending()}
         onTogglePresentMenu={() => ui.setPresentMenuOpen(!ui.presentMenuOpen())}
         onClosePresentMenu={() => ui.setPresentMenuOpen(false)}
         onPresent={rehearsal => void handlePresent(rehearsal)}
       />
 
+      {deck.deckPath() === null ? (
+        // `showEditor()` went true the instant `open-requested`/`created`
+        // was dispatched — before `deckIpc.openDeck()` has even started,
+        // let alone resolved. Landing here immediately (rather than
+        // staying on WelcomeScreen until data arrives) is the whole
+        // point: the screen change itself is the "you pressed it and it's
+        // doing something" signal, which held up far better on a real
+        // device than any busy-indicator design bolted onto WelcomeScreen
+        // did (see todo/archive/welcome-open-feels-frozen.md). The first
+        // open after launch can sit here for seconds, so the spinner keeps
+        // moving to show it hasn't stalled.
+        <div role="status" className="flex-1 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <span aria-hidden="true" className="w-4 h-4 rounded-full border-2 border-muted-foreground border-t-transparent animate-spin"></span>
+          Loading deck…
+        </div>
+      ) : (
       <div className="flex-1 flex min-h-0">
         <SlideList
           manifest={render.manifest()}
@@ -1091,6 +1132,7 @@ export function Studio() {
           canvasHeight={render.canvasHeight()}
         />
       </div>
+      )}
 
       <StatusBar
         errorMessage={errorMessage()}

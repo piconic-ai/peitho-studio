@@ -22,6 +22,22 @@ export function createDeckStore() {
     const l = deckLifecycle()
     return l.kind === 'open' ? l.deckPath : null
   })
+  // Drives which top-level screen Studio.tsx renders — true for `opening`
+  // as well as `open`, not just `open`. `dispatch` sets `deckLifecycle` to
+  // `opening` synchronously, before ever awaiting `deckIpc.openDeck()`, so
+  // switching to the editor shell on this (rather than waiting for
+  // `deckPath()`, which only becomes non-null once the deck has actually
+  // loaded) makes the screen change happen the instant a click is handled
+  // — no perceptible delay for it to cover, so no busy-indicator design is
+  // needed on WelcomeScreen for this flow at all. The editor shell itself
+  // shows a loading placeholder while `deckPath()` is still null (see
+  // Studio.tsx) — this real-device request came directly from a user
+  // report that WelcomeScreen's busy feedback wasn't reassuring even once
+  // reliably painted (see todo/archive/welcome-open-feels-frozen.md).
+  const showEditor = createMemo(() => {
+    const k = deckLifecycle().kind
+    return k === 'opening' || k === 'open'
+  })
   const isBusy = createMemo(() => computeIsBusy(deckLifecycle()))
   const newDeckModalOpen = createMemo(() => {
     const k = deckLifecycle().kind
@@ -36,5 +52,5 @@ export function createDeckStore() {
     return l.kind === 'naming-new-deck' || l.kind === 'creating' ? l.name : ''
   })
 
-  return { deckLifecycle, setDeckLifecycle, deckPath, isBusy, newDeckModalOpen, newDeckParentDir, newDeckName }
+  return { deckLifecycle, setDeckLifecycle, deckPath, showEditor, isBusy, newDeckModalOpen, newDeckParentDir, newDeckName }
 }
