@@ -532,6 +532,21 @@ describe('savableSectionTimeMs', () => {
     expect(savableSectionTimeMs(Number.MAX_SAFE_INTEGER)).toBe(MAX_DURATION_MS)
     expect(savableSectionTimeMs(Number.POSITIVE_INFINITY)).toBe(MAX_DURATION_MS)
   })
+
+  test('spec: other sections\' time is left alone unless the deck total would pass MAX_DURATION_MS', () => {
+    expect(savableSectionTimeMs(90_000, 60_000)).toBe(90_000)
+    expect(savableSectionTimeMs(Number.MAX_SAFE_INTEGER, 60_000)).toBe(MAX_DURATION_MS - 60_000)
+  })
+
+  test('adversarial: other sections exactly filling MAX_DURATION_MS still leave the 1-second minimum', () => {
+    expect(savableSectionTimeMs(90_000, MAX_DURATION_MS)).toBe(MIN_SECTION_TIME_MS)
+    expect(savableSectionTimeMs(90_000, Number.POSITIVE_INFINITY)).toBe(MIN_SECTION_TIME_MS)
+  })
+
+  test('adversarial: a NaN or negative other-sections total counts as 0', () => {
+    expect(savableSectionTimeMs(Number.MAX_SAFE_INTEGER, Number.NaN)).toBe(MAX_DURATION_MS)
+    expect(savableSectionTimeMs(Number.MAX_SAFE_INTEGER, -60_000)).toBe(MAX_DURATION_MS)
+  })
 })
 
 describe('withDurationPart', () => {
@@ -609,13 +624,21 @@ describe('robustness: section-time spinners can\'t produce an unparseable time',
     )
   })
 
-  test('adversarial: whatever the spinners show, the saved time is greater than zero, within peitho-core\'s limit, and parses back (property)', () => {
+  test('adversarial: whatever the spinners show, the saved time is greater than zero, keeps the deck total within peitho-core\'s limit, and parses back (property)', () => {
     fc.assert(
-      fc.property(anyInputNumber, fc.constantFrom<DurationPart>('minutes', 'seconds'), anyInputNumber, (start, part, value) => {
-        const saved = savableSectionTimeMs(withDurationPart(start, part, value))
-        return saved >= MIN_SECTION_TIME_MS && saved <= MAX_DURATION_MS
-          && parseDurationToMs(formatDurationMs(saved)) === saved
-      }),
+      fc.property(
+        anyInputNumber,
+        fc.constantFrom<DurationPart>('minutes', 'seconds'),
+        anyInputNumber,
+        // Other sections as peitho-core could have loaded them: whole
+        // seconds, leaving at least a second of room under the limit.
+        fc.integer({ min: 0, max: (MAX_DURATION_MS - MIN_SECTION_TIME_MS) / 1000 }).map(s => s * 1000),
+        (start, part, value, otherSectionsMs) => {
+          const saved = savableSectionTimeMs(withDurationPart(start, part, value), otherSectionsMs)
+          return saved >= MIN_SECTION_TIME_MS && saved + otherSectionsMs <= MAX_DURATION_MS
+            && parseDurationToMs(formatDurationMs(saved)) === saved
+        },
+      ),
       { numRuns: 2_000 },
     )
   })

@@ -636,11 +636,13 @@ export function Studio() {
     const draft = render.sectionDrafts()[manifestIndex]
     const range = editor.slideRanges()[startIndex]
     if (!draft || !range) return
-    // The spinners can read 0m0s, which peitho-core rejects, so the saved
-    // time is clamped to at least a second. Show the clamped value right
-    // away: when the slide already holds that time, nothing below saves
-    // or re-renders to correct the spinners.
-    const timeMs = savableSectionTimeMs(draft.timeMs)
+    const otherSectionsMs = (render.manifest()?.sections ?? [])
+      .reduce((sum, section) => section.startIndex === manifestIndex ? sum : sum + section.plannedDurationMs, 0)
+    // The spinners can read a time peitho-core rejects (0m0s, or one that
+    // pushes the deck total past its limit), so the saved time is clamped.
+    // Show the clamped value right away: when the slide already holds that
+    // time, nothing below saves or re-renders to correct the spinners.
+    const timeMs = savableSectionTimeMs(draft.timeMs, otherSectionsMs)
     if (timeMs !== draft.timeMs) updateSectionDraft(manifestIndex, current => ({ ...current, timeMs }))
     const slideText = currentSlideText(startIndex)
     const updatedSlideText = updatePageComment(slideText, { section: draft.name, time: formatDurationMs(timeMs) })
@@ -649,17 +651,8 @@ export function Studio() {
     let nextSource = editor.fullSource()
     nextSource = nextSource.slice(0, range.start) + updatedSlideText + nextSource.slice(range.end)
 
-    // peitho requires the frontmatter's total time to equal the sum of
-    // every section's time — keep that in sync so editing one section's
-    // time here doesn't quietly break the next build. The time comes from
-    // the spinners as milliseconds, so there's no unparseable value to
-    // skip this for.
-    const sections = render.manifest()?.sections ?? []
-    const totalMs = sections.reduce(
-      (sum, section) => sum + (section.startIndex === manifestIndex ? timeMs : section.plannedDurationMs),
-      0,
-    )
-    nextSource = updateFrontmatterTime(nextSource, totalMs)
+    // time here doesn't quietly break the next build.
+    nextSource = updateFrontmatterTime(nextSource, otherSectionsMs + timeMs)
 
     await commitChange(nextSource, { kind: 'keep' })
   }

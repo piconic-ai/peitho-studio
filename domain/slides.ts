@@ -300,14 +300,21 @@ export function minutesSecondsToMs(minutes: number, seconds: number): number {
  * section time of 0 ("time must be greater than zero"). */
 export const MIN_SECTION_TIME_MS = 1000
 
-/** The time to write for a section whose spinners read `ms`: `ms` rounded
- * to a whole second and clamped into `[MIN_SECTION_TIME_MS,
- * MAX_DURATION_MS]`. The spinners themselves can show 0m0s while the user
- * is still editing (setting the minutes to 0 before typing the seconds
- * shouldn't change the seconds field). The clamp is applied only when the
- * time is saved. NaN reads as 0 and so saves as `MIN_SECTION_TIME_MS`. */
-export function savableSectionTimeMs(ms: number): number {
-  return Math.max(MIN_SECTION_TIME_MS, minutesSecondsToMs(0, ms / 1000))
+/** The time to write for a section whose spinners read `ms`, given that the
+ * deck's other sections add up to `otherSectionsMs`. `ms` is rounded to a
+ * whole second and clamped to at least `MIN_SECTION_TIME_MS`, and to at
+ * most whatever keeps the deck's total within `MAX_DURATION_MS` (peitho-core
+ * rejects a total past `Number.MAX_SAFE_INTEGER` ms).
+ *
+ * The spinners themselves can show 0m0s while the user is still editing
+ * (setting the minutes to 0 before typing the seconds shouldn't change the
+ * seconds field). The clamp is applied only when the time is saved. NaN
+ * reads as 0, for either argument. When the other sections alone leave no
+ * room, the result is still `MIN_SECTION_TIME_MS`; peitho-core couldn't
+ * have loaded such a deck in the first place. */
+export function savableSectionTimeMs(ms: number, otherSectionsMs = 0): number {
+  const roomMs = MAX_DURATION_MS - clampWholeSeconds(otherSectionsMs / 1000) * 1000
+  return Math.max(MIN_SECTION_TIME_MS, Math.min(roomMs, clampWholeSeconds(ms / 1000) * 1000))
 }
 
 export type DurationPart = 'minutes' | 'seconds'
