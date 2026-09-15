@@ -270,10 +270,76 @@ pitfallsセクションに一般化した知見として追記済み(Shadow DOM�
       展開される問題、条件分岐された`ref`内の`createEffect`がbranch
       再突入のたびにリークする問題)。実機でしか分からない知見
       (`@font-face`/`adoptedStyleSheets`等)は下記の実機検証後に追記する。
-- [ ] **残タスク**: 3章のリスク1〜6(`@font-face`登録、
-      `adoptedStyleSheets`可用性、`border-radius`クリップ、`html`/
-      `body`ルールの非適用、大規模デッキでのメモリ/描画時間、プレビュー
-      枠のテキスト選択・リンク無効化・サムネイル操作の非デグレ確認)の
-      実機WKWebView検証。ユーザーのマシンが利用可能になり次第、
-      `run-peitho-studio` skillで実施し、結果をこの計画書とCLAUDE.md
-      に記録する。
+- [ ] **残タスク**: 3章のリスク1〜6の実機WKWebView検証。
+      GUI自動化は2章末の進捗メモの通り過去に誤操作事故を起こしている
+      ため、これはユーザー自身が手動で行う想定 — 以下はそのための
+      チェックリスト(このワークフローはコードを一切変更していない)。
+      「Cmd+Shift+Dスナップショット」(旧7項)は`studio-tsx-refactoring`
+      で削除済みの一時デバッグ機能で現存しないため、代わりに
+      スクリーンショット目視 + 必要に応じてWeb Inspectorで確認する。
+
+      **準備**:
+      ```bash
+      cd /Users/kfly8/src/github.com/piconic-ai/peitho-studio
+      nohup bunx tauri dev > /tmp/tauri-dev.log 2>&1 &
+      ```
+      (`[build] ... Running target/debug/app` が出るまで待つ。他に
+      `tauri dev` が既に動いていないか `lsof -i :3003 -sTCP:LISTEN` で
+      先に確認 — 詳細は `run-peitho-studio` skill参照)。
+
+      - [ ] **リスク1: Shadow root内の@font-face登録**
+        `/Users/kfly8/src/github.com/mizzy/peitho/examples/custom-fonts`
+        (見出しに"Playfair Display"という装飾的なセリフ体を`@font-face`
+        で指定)を開く。サムネイル・プレビュー双方でそのフォントが実際に
+        当たっている(システムフォントへのフォールバックに見えない)か
+        目視確認する。現状は`@font-face`を`<head>`にhoistする設計
+        (`dom/slideCanvas.ts`の`ensureFontFaces`)なので、これは
+        その方式が実機でも機能しているかの確認であり、Shadow root内に
+        直接置く簡略化を試すのは任意(今回必須ではない)。
+
+      - [ ] **リスク2: adoptedStyleSheetsの可用性**
+        任意のデッキでサムネイルがテーマの色・レイアウト通りに描画されて
+        いる(未スタイルの素のHTMLに見えない)ことを確認する。念のため
+        Web Inspector(`src-tauri/tauri.conf.json`の`devtools`を一時的に
+        `true`にして再起動 → 右クリック→Inspect Element)のConsoleで
+        `document.querySelector('[data-slide-canvas-key]').shadowRoot
+        .adoptedStyleSheets.length` を実行し0より大きいことを確認しても
+        よい。確認後は必ず`devtools`を`false`に戻す
+        (`run-peitho-studio` skillの注意点参照 — `true`のままだとアプリ
+        自身の右クリックメニューが機能しなくなる)。
+
+      - [ ] **リスク3: border-radiusのクリップ**
+        任意のデッキでサムネイルを1枚選択(黄色い`border-4`の選択枠)し、
+        スクリーンショットを拡大して四隅が実際に丸くクリップされている
+        (縮小後のスライド内容が角からはみ出ていない)ことを確認する。
+
+      - [ ] **リスク4: theme CSSのhtml/bodyルールがShadow内で無効**
+        (既知・許容済みの忠実度差 — 直すためではなく実際の見え方を
+        記録するための確認)。`html`/`body`セレクタを使うテーマ
+        (`grep -n "^html\|^body"` で各exampleの`css/base.css`から探す)
+        を使うデッキを開き、サムネイル/プレビューが見た目として破綻して
+        いないことを確認する。
+
+      - [ ] **リスク5: 大規模デッキでのメモリ・描画時間**
+        50枚級の一時デッキを用意する(例:
+        `examples/peitho-tour/deck.md`(33枚)のスライドを複製して
+        scratch領域に50枚以上の一時ファイルを作る)。開く直前・直後で
+        Activity Monitorの`target/debug/app`のメモリ使用量を記録し、
+        サムネイル一覧が出るまでの体感時間も記録する。検証後は一時
+        デッキファイルを削除する。
+
+      - [ ] **リスク6: プレビュー枠のテキスト選択・リンク非遷移・
+            操作の非デグレ**
+        `examples/footnotes`(脚注に`https://example.com`へのリンクを
+        含む)を開く。プレビュー枠内でテキストをドラッグして選択できる
+        こと、`[links](https://example.com)`をクリックしても何も
+        起きない(新規タブ・アプリ内遷移のいずれも発生しない)ことを
+        確認する。続けて、サムネイル一覧の「クリックで選択」「右クリック
+        でコンテキストメニュー」「ドラッグで並べ替え」、レイアウト
+        ピッカー(スライド右クリック→Change Layout)のプレビュー描画・
+        選択・右クリックが、どれも従来通り機能することを確認する。
+
+      **記録**: 各項目の結果(OK/NG、NGなら症状)をこの計画書に追記し、
+      新たに判明した知見があればCLAUDE.mdのPitfallsセクションにも
+      追記する。全項目OKなら、この計画書の`status`を`done`にして
+      `todo/archive/`へ移動してよい。
