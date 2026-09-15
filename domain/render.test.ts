@@ -15,11 +15,6 @@ describe('savedSectionDraft', () => {
     expect(savedSectionDraft({ name: '', startIndex: 4, endIndex: 4, plannedDurationMs: 0 }))
       .toEqual({ name: '', timeMs: 0 })
   })
-
-  test('adversarial: a planned time written in a format parseDurationToMs doesn\'t read (e.g. "1h") still arrives intact, since peitho-core already parsed it into milliseconds', () => {
-    expect(savedSectionDraft({ name: 'Long', startIndex: 0, endIndex: 0, plannedDurationMs: 3_600_000 }).timeMs)
-      .toBe(3_600_000)
-  })
 })
 
 describe('sectionStartByIndex', () => {

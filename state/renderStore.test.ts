@@ -53,6 +53,36 @@ describe('applyRenderPayload', () => {
     })
   })
 
+  test('spec: sectionDraftOf returns the edited draft once one is set', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.applyRenderPayload(payload({
+        manifest: {
+          title: 'Deck', slideCount: 1, canvasWidth: 1280, canvasHeight: 720,
+          sections: [{ name: 'Intro', startIndex: 0, endIndex: 0, plannedDurationMs: 90_000 }],
+          slides: [slide()],
+        },
+      }), 'source')
+      store.setSectionDrafts({ 0: { name: 'Opening', timeMs: 120_000 } })
+      expect(store.sectionDraftOf(0)).toEqual({ name: 'Opening', timeMs: 120_000 })
+    })
+  })
+
+  test('adversarial: sectionDraftOf falls back to the section\'s saved values when its draft is missing', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.applyRenderPayload(payload({
+        manifest: {
+          title: 'Deck', slideCount: 1, canvasWidth: 1280, canvasHeight: 720,
+          sections: [{ name: 'Intro', startIndex: 0, endIndex: 0, plannedDurationMs: 90_000 }],
+          slides: [slide()],
+        },
+      }), 'source')
+      store.setSectionDrafts({})
+      expect(store.sectionDraftOf(0)).toEqual({ name: 'Intro', timeMs: 90_000 })
+    })
+  })
+
   test('adversarial: a manifest with no sections resets sectionDrafts to empty, not stale', () => {
     createRoot(() => {
       const store = createRenderStore()

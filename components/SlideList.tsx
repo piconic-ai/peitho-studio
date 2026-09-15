@@ -32,7 +32,10 @@ export interface SlideListProps {
   dragDeltaY: number
   selectedIndex: number | null
   sectionStartByIndex: Record<number, ManifestSection>
-  sectionDrafts: Record<number, SectionDraft>
+  /** In-progress name/time of the section that starts at slide
+   * `startIndex`, falling back to its saved values (`state/renderStore.ts`'s
+   * `sectionDraftOf`). */
+  sectionDraftOf: (startIndex: number) => SectionDraft
   canvasWidth: number
   canvasHeight: number
   /** Pre-absolutized fragment HTML for `key` — a shadow root has no `<base
@@ -45,9 +48,9 @@ export interface SlideListProps {
   onDragStart: (index: number) => (event: MouseEvent) => void
   onSelectSlide: (index: number) => void
   onSectionNameInput: (index: number, value: string) => void
-  /** `value` is the spinner's `valueAsNumber`: NaN when the field is empty,
-   * and possibly negative, fractional or past 59 seconds. Studio.tsx
-   * normalizes it with `withDurationPart`. */
+  /** `value` is the spinner's `valueAsNumber`: NaN when the field is empty
+   * or half-typed, and possibly negative, fractional or past 59 seconds.
+   * Studio.tsx normalizes it with `withDurationPart`. */
   onSectionTimeInput: (index: number, part: DurationPart, value: number) => void
   onCommitSectionEdit: (index: number) => void
 }
@@ -153,7 +156,7 @@ export function SlideList(props: SlideListProps) {
                   <div data-section-header="" className="flex items-center gap-1 pt-3 pb-1">
                     <input
                       aria-label="Section name"
-                      value={props.sectionDrafts[entry.sourceIndex]?.name ?? props.sectionStartByIndex[entry.sourceIndex].name}
+                      value={props.sectionDraftOf(entry.sourceIndex).name}
                       onInput={e => props.onSectionNameInput(entry.sourceIndex, e.target.value)}
                       onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
                       onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
@@ -164,9 +167,9 @@ export function SlideList(props: SlideListProps) {
                       min="0"
                       step="1"
                       aria-label="Section minutes"
-                      value={String(msToMinutesSeconds(props.sectionDrafts[entry.sourceIndex]?.timeMs ?? props.sectionStartByIndex[entry.sourceIndex].plannedDurationMs).minutes)}
+                      value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes)}
                       onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'minutes', e.target.valueAsNumber)}
-                      onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDrafts[entry.sourceIndex]?.timeMs ?? props.sectionStartByIndex[entry.sourceIndex].plannedDurationMs).minutes))}
+                      onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes))}
                       onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
                       onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                       className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
@@ -179,9 +182,9 @@ export function SlideList(props: SlideListProps) {
                       type="number"
                       step="1"
                       aria-label="Section seconds"
-                      value={String(msToMinutesSeconds(props.sectionDrafts[entry.sourceIndex]?.timeMs ?? props.sectionStartByIndex[entry.sourceIndex].plannedDurationMs).seconds)}
+                      value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds)}
                       onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'seconds', e.target.valueAsNumber)}
-                      onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDrafts[entry.sourceIndex]?.timeMs ?? props.sectionStartByIndex[entry.sourceIndex].plannedDurationMs).seconds))}
+                      onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds))}
                       onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
                       onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                       className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"

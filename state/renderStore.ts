@@ -48,6 +48,12 @@ export function createRenderStore() {
   const [renderedSource, setRenderedSource] = createSignal('')
   const sectionStartByIndex = createMemo<Record<number, ManifestSection>>(() => computeSectionStartByIndex(manifest()?.sections ?? []))
   const [sectionDrafts, setSectionDrafts] = createSignal<Record<number, SectionDraft>>({})
+  /** The draft for the section starting at slide `startIndex`, or that
+   * section's saved values when there's no draft for it. Only meaningful
+   * for an index in `sectionStartByIndex()`. */
+  function sectionDraftOf(startIndex: number): SectionDraft {
+    return sectionDrafts()[startIndex] ?? savedSectionDraft(sectionStartByIndex()[startIndex])
+  }
 
   const [css, setCss] = createSignal('')
   // A memo, rather than something computed once in `applyRenderPayload`,
@@ -135,7 +141,7 @@ export function createRenderStore() {
 
   return {
     assetBaseUrl, canvasWidth, canvasHeight, manifest, renderedSource, sectionStartByIndex,
-    sectionDrafts, setSectionDrafts,
+    sectionDrafts, setSectionDrafts, sectionDraftOf,
     fragmentSignal, canvasFragmentOf, applyRenderPayload,
     slideStylesheetText, fontFaceCss,
   }

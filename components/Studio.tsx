@@ -4,7 +4,7 @@ import { createSignal, createMemo, createEffect, onMount, onCleanup } from '@bar
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
-import { type ManifestSlide, type RenderPayload, type SectionDraft, savedSectionDraft } from '../domain/render'
+import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
 import { clampMenuPosition } from '../domain/geometry'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
@@ -13,7 +13,7 @@ import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import { type LayoutVerdict } from '../domain/layoutFit'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
-import { buildSlideList, manifestIndexAt, recordByManifestIndex, sectionStartBySourceIndex } from '../domain/slideList'
+import { buildSlideList, manifestIndexAt, sectionStartBySourceIndex } from '../domain/slideList'
 import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOptionsOf } from '../domain/deckVariants'
 import { waitForEventOrTimeout } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
@@ -609,13 +609,14 @@ export function Studio() {
   // `sourceIndex` that reaches these with no manifest index behind it is
   // not a real state to handle, just a defensive no-op.
   //
-  // Applies `edit` to section `manifestIndex`'s draft, starting from its
-  // saved values if nobody has edited it since the last render.
+  // Applies `edit` to section `manifestIndex`'s draft. Skips the write
+  // when nothing changed (e.g. a half-typed spinner entry), so the
+  // section headers' bindings don't re-run for it.
   function updateSectionDraft(manifestIndex: number, edit: (draft: SectionDraft) => SectionDraft): void {
-    render.setSectionDrafts(prev => ({
-      ...prev,
-      [manifestIndex]: edit(prev[manifestIndex] ?? savedSectionDraft(render.sectionStartByIndex()[manifestIndex])),
-    }))
+    const current = render.sectionDraftOf(manifestIndex)
+    const next = edit(current)
+    if (next.name === current.name && next.timeMs === current.timeMs) return
+    render.setSectionDrafts(prev => ({ ...prev, [manifestIndex]: next }))
   }
 
   function onSectionNameInput(index: number, value: string): void {
@@ -1192,7 +1193,10 @@ export function Studio() {
           dragDeltaY={ui.dragDeltaY()}
           selectedIndex={editor.selectedIndex()}
           sectionStartByIndex={sectionStartBySourceIndex(render.manifest()?.sections ?? [], slideEntries())}
-          sectionDrafts={recordByManifestIndex(render.sectionDrafts(), slideEntries())}
+          sectionDraftOf={index => {
+            const manifestIndex = manifestIndexAt(slideEntries(), index)
+            return manifestIndex === null ? { name: '', timeMs: 0 } : render.sectionDraftOf(manifestIndex)
+          }}
           canvasWidth={render.canvasWidth()}
           canvasHeight={render.canvasHeight()}
           canvasFragmentOf={render.canvasFragmentOf}
