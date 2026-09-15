@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: Draft/Skipスライドをサムネイル本体を隠さずバッジで識別できるようにする
 tags: [ui, slide-list, thumbnail]
 ---
@@ -142,14 +142,12 @@ Skipは`SlideList.tsx`でサムネイル下に "skip" というテキストラ�
         モックe2eで再現できなかった — `e2e/slide-status-badges.e2e.ts`に
         draft関連の新規テスト4件を追加し、この修正で初めて再現・検証
         できることを確認した。
-- [ ] 実機(`run-peitho-studio` skill)でdraft/skip双方の見た目を確認
+- [x] 実機(`run-peitho-studio` skill)でdraft/skip双方の見た目を確認
       (skipバッジの半透明オーバーレイ`bg-black/40`は`color-mix()`で
       出力されるため、WKWebViewでの見え方も併せて確認する)。draftの
       プレースホルダー(`bg-muted`のタイトルのみ表示)の見た目も
       合わせて確認する。 — kfly8が実機で確認し、2件の不具合を報告
-      (2026-09-15)。原因調査・修正は以下のとおり。**この修正自体は
-      Playwright(モックe2e)でのみ検証済みで、実機での再確認がまだ
-      残っている**(未チェックのまま):
+      (2026-09-15)。原因調査・修正は以下のとおり:
       - **問題1: Draft化した直後、後ろのスライドのサムネイルが真っ黒に
         なる。** 原因: `commitChange`が新しいmanifestを`applyRenderPayload`
         で反映した直後、`await deckIpc.saveDeckSource(...)`を挟んでから
@@ -220,6 +218,8 @@ Skipは`SlideList.tsx`でサムネイル下に "skip" というテキストラ�
           レンダリング済みスライドをdraft化しても`h1`要素を含む
           canvasが表示され続けることを確認する回帰テストを追加
           (修正前は実際に失敗することを確認済み)。
+      - 上記2件の不具合修正と追加のUI修正について、kfly8が実機で
+        再確認した上で4件のPR(#63〜#66)をマージ(2026-09-15)。
 
 ## 先送り事項
 

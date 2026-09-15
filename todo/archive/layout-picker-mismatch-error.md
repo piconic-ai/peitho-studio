@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: 内容とレイアウトの構造が合わない選択をした際にエラーを表示する
 tags: [ui, layout, validation]
 ---
@@ -75,9 +75,12 @@ tags: [ui, layout, validation]
 - [x] (Rust変更があれば) `cargo test` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] peitho-core側の事前検証手段の有無を調査し記録
-- [ ] 方式(A)/(B)をFableと相談の上決定
-- [ ] 実機確認
+- [x] peitho-core側の事前検証手段の有無を調査し記録 — 上記「要調査」節の
+      とおり、専用の窓口はないが`explain_dispatch`の構造マッチ経路を
+      流用できることを確認した。
+- [x] 方式(A)/(B)をFableと相談の上決定 — 方式(B)(選択前の事前検証)で
+      実装。
+- [x] 実機確認 — kfly8が実機で確認した上でPR #65をマージ(2026-09-15)。
 
 ## 先送り事項
 
