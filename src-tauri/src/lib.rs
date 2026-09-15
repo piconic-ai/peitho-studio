@@ -6,6 +6,9 @@ use tauri::menu::{AboutMetadata, IsMenuItem, Menu, MenuItem, PredefinedMenuItem,
 use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
 
+/// How many of the most recent decks `engine::warm_up` renders at launch.
+const WARM_UP_RECENT_DECKS: usize = 3;
+
 /// Builds the native menu bar. Starts from the same shape Tauri's own
 /// `Menu::default()` produces (App/Edit/View/Window/Help, with all the
 /// platform-standard items — Quit, Cut/Copy/Paste, About, etc. — wired
@@ -215,6 +218,15 @@ pub fn run() {
             // the app's own state is fully initialized.
             let menu = build_menu(app.handle())?;
             app.set_menu(menu)?;
+            // Off the main thread so launch isn't held up: the first render
+            // after launch pays one-time costs (~0.6s for three code-heavy
+            // decks), which would otherwise land on the first deck opened.
+            let recents: Vec<std::path::PathBuf> = peitho::read_recent_decks(app.handle())
+                .into_iter()
+                .take(WARM_UP_RECENT_DECKS)
+                .map(std::path::PathBuf::from)
+                .collect();
+            std::thread::spawn(move || engine::warm_up(&recents));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
