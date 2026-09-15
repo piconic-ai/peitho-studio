@@ -49,7 +49,7 @@ export const buildSlideListExamples = defineExamples<BuildSlideListState, SlideL
       event: 'slide-list-built',
       expect: [
         { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
-        { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1' },
+        { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: null },
         { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'three', 'Three') },
       ],
     },
@@ -65,21 +65,21 @@ export const buildSlideListExamples = defineExamples<BuildSlideListState, SlideL
       event: 'slide-list-built',
       expect: [
         { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
-        { kind: 'placeholder', sourceIndex: 1, title: 'Two', draft: false, key: 'placeholder:1' },
+        { kind: 'placeholder', sourceIndex: 1, title: 'Two', draft: false, key: 'placeholder:1', lastRenderedKey: null },
       ],
     },
     {
       id: 'draft-with-explicit-key',
       given: 'a slide marked both {"draft":true,"key":"cover"}',
       when: 'the slide list is built',
-      then: 'the placeholder uses a position-derived key, deliberately ignoring the slide\'s own explicit key — reusing it would hand this row the exact key its `rendered` form uses right before/after the draft toggle, which BarefootJS\'s keyed `.map()` doesn\'t remount correctly (see the type\'s own doc comment)',
+      then: 'the placeholder\'s own `.map()` key stays position-derived, deliberately ignoring the slide\'s own explicit key — reusing it there would hand this row the exact key its `rendered` form uses right before/after the draft toggle, which BarefootJS\'s keyed `.map()` doesn\'t remount correctly (see the type\'s own doc comment) — but `lastRenderedKey` carries that explicit key through anyway, so the slide list can still show whatever was last rendered under it instead of a blank placeholder',
       state: {
         fullSource: '<!-- {"draft":true,"key":"cover"} -->\n# Cover\n',
         manifestSlides: [],
       },
       event: 'slide-list-built',
       expect: [
-        { kind: 'placeholder', sourceIndex: 0, title: 'Cover', draft: true, key: 'placeholder:0' },
+        { kind: 'placeholder', sourceIndex: 0, title: 'Cover', draft: true, key: 'placeholder:0', lastRenderedKey: 'cover' },
       ],
     },
   ],

@@ -44,7 +44,17 @@ describe('buildSlideList', () => {
 
   test('adversarial: a title-less draft slide gets an empty placeholder title, not a crash', () => {
     const entries = buildSlideList('<!-- {"draft":true} -->\nJust a paragraph, no heading.\n', [])
-    expect(entries).toEqual([{ kind: 'placeholder', sourceIndex: 0, title: '', draft: true, key: 'placeholder:0' }])
+    expect(entries).toEqual([{ kind: 'placeholder', sourceIndex: 0, title: '', draft: true, key: 'placeholder:0', lastRenderedKey: null }])
+  })
+
+  test('spec: a placeholder carries its slide\'s own explicit key separately, as lastRenderedKey', () => {
+    const entries = buildSlideList('<!-- {"draft":true,"key":"cover"} -->\n# Cover\n', [])
+    expect(entries).toEqual([{ kind: 'placeholder', sourceIndex: 0, title: 'Cover', draft: true, key: 'placeholder:0', lastRenderedKey: 'cover' }])
+  })
+
+  test('adversarial: a placeholder with no explicit key has a null lastRenderedKey, not a guessed one', () => {
+    const entries = buildSlideList('<!-- {"draft":true} -->\n# No Key\n', [])
+    expect(entries).toEqual([{ kind: 'placeholder', sourceIndex: 0, title: 'No Key', draft: true, key: 'placeholder:0', lastRenderedKey: null }])
   })
 
   test('adversarial: a placeholder never reuses the slide\'s own explicit key, even across a draft toggle', () => {
@@ -67,7 +77,7 @@ describe('buildSlideList', () => {
 describe('manifestIndexAt / manifestIndexToSourceIndex', () => {
   const entries: SlideListEntry[] = [
     { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'a', 'A') },
-    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1' },
+    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: null },
     { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'c', 'C') },
   ]
 
@@ -94,7 +104,7 @@ describe('manifestIndexAt / manifestIndexToSourceIndex', () => {
 describe('recordByManifestIndex', () => {
   const entries: SlideListEntry[] = [
     { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'a', 'A') },
-    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1' },
+    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: null },
     { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'c', 'C') },
   ]
 
@@ -115,7 +125,7 @@ describe('recordByManifestIndex', () => {
 describe('sectionStartBySourceIndex', () => {
   const entries: SlideListEntry[] = [
     { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'a', 'A') },
-    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1' },
+    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: null },
     { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'c', 'C') },
   ]
 

@@ -25,18 +25,19 @@ export interface RenderedSlideEntry {
   slide: ManifestSlide
 }
 
-/** A slide with nothing to render: either it's marked draft (peitho-core
- * excludes it from the build on purpose), or the manifest simply hasn't
- * caught up with the source yet (a `render_draft` in flight after an edit
- * added a slide) — `draft` tells the slide list which of the two it is,
- * since only the first one wears a DRAFT badge. `title` is pulled directly
- * out of the raw Markdown (no build required), and `key` is this row's
- * `.map()` key: always `placeholder:<sourceIndex>`, deliberately *never*
- * the slide's own PageComment `key` (even when it set one) — a slide
- * commonly keeps the *same* explicit key across a draft toggle, which
- * would otherwise hand this row the exact key its `rendered` counterpart
- * used right before (or will use right after). BarefootJS's keyed
- * `.map()` doesn't correctly re-run a row's canvas `ref` when a key
+/** A slide the manifest has nothing current to say about: either it's
+ * marked draft (peitho-core excludes it from the build on purpose), or the
+ * manifest simply hasn't caught up with the source yet (a `render_draft`
+ * in flight after an edit added a slide) — `draft` tells the slide list
+ * which of the two it is, since only the first one wears a DRAFT badge.
+ * `title` is pulled directly out of the raw Markdown (no build required).
+ *
+ * `key` is this row's `.map()` key: always `placeholder:<sourceIndex>`,
+ * deliberately *never* the slide's own PageComment `key` (even when it set
+ * one) — a slide commonly keeps the *same* explicit key across a draft
+ * toggle, which would otherwise hand this row the exact key its `rendered`
+ * counterpart used right before (or will use right after). BarefootJS's
+ * keyed `.map()` doesn't correctly re-run a row's canvas `ref` when a key
  * *returns* to the `rendered` branch after a stint as `placeholder` on
  * that same key (confirmed by direct browser reproduction, not just
  * `bf debug graph`'s static analysis — see CLAUDE.md's BarefootJS
@@ -47,13 +48,29 @@ export interface RenderedSlideEntry {
  * every `rendered` <-> `placeholder` transition a fresh key as far as the
  * `.map()` is concerned, which mounts correctly (the already-working,
  * exercised-everywhere case). Losing DOM-node reuse for this rare,
- * short-lived state isn't a concern. */
+ * short-lived state isn't a concern.
+ *
+ * `lastRenderedKey` is a *different* key: the slide's own explicit
+ * PageComment `key`, when it set one (`null` otherwise). It exists purely
+ * so `components/SlideList.tsx` can look up whatever fragment HTML
+ * `state/renderStore.ts` still has cached under that key from the render
+ * *before* this slide became a placeholder — that cache is never cleared
+ * just because a later render dropped the key, only ever overwritten by a
+ * fresher render under the same key — and show it as-is instead of a
+ * generic title-only box, so marking a slide draft doesn't visibly replace
+ * its thumbnail, only overlays a DRAFT badge (matching how SKIP already
+ * behaves). `null` when the slide never had an explicit key (an
+ * older/imported deck whose key peitho-core would derive from its title
+ * instead) — there's no way to know that derived key without re-deriving
+ * peitho-core's own slugging algorithm, so that case falls back to the
+ * generic placeholder instead of guessing at a key that might be wrong. */
 export interface PlaceholderSlideEntry {
   kind: 'placeholder'
   sourceIndex: number
   title: string
   draft: boolean
   key: string
+  lastRenderedKey: string | null
 }
 
 export type SlideListEntry = RenderedSlideEntry | PlaceholderSlideEntry
@@ -89,6 +106,7 @@ export function buildSlideList(fullSource: string, manifestSlides: readonly Mani
       title: extractHeadingText(rest) ?? '',
       draft: config.draft === true,
       key: `placeholder:${String(sourceIndex)}`,
+      lastRenderedKey: config.key ?? null,
     })
   }
   return entries

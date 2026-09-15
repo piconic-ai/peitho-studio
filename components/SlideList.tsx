@@ -60,6 +60,23 @@ function badgeFor(entry: SlideListEntry): 'draft' | 'skip' | null {
   return null
 }
 
+/** What this row's thumbnail should show: a live canvas keyed off a real
+ * slide key (rendered normally, or a placeholder that still has a fragment
+ * cached under its `lastRenderedKey` from before it lost its manifest
+ * slot), or, only when there's truly nothing to show, a generic title-only
+ * box. Checking `canvasFragmentOf(key) !== ''` rather than just
+ * `lastRenderedKey !== null` matters for a placeholder that's never been
+ * rendered under its key at all (a brand-new slide created already marked
+ * draft) — `state/renderStore.ts`'s per-key fragment signal defaults to
+ * `''` for a key it has never seen, and mounting an empty fragment would
+ * leave the canvas host looking identical to an actual empty slide instead
+ * of falling back to this row's title. */
+function canvasSourceFor(entry: SlideListEntry, canvasFragmentOf: (key: string) => string): { key: string } | null {
+  if (entry.kind === 'rendered') return { key: entry.slide.key }
+  if (entry.lastRenderedKey !== null && canvasFragmentOf(entry.lastRenderedKey) !== '') return { key: entry.lastRenderedKey }
+  return null
+}
+
 export function SlideList(props: SlideListProps) {
   return (
     <div
@@ -166,7 +183,7 @@ export function SlideList(props: SlideListProps) {
                         : 'block relative rounded-md overflow-hidden border-2 border-border bg-black hover:border-4 hover:border-muted-foreground'}
                       style={`aspect-ratio: ${String(props.canvasWidth)} / ${String(props.canvasHeight)}; box-sizing: content-box`}
                     >
-                      {entry.kind === 'rendered' ? (
+                      {canvasSourceFor(entry, props.canvasFragmentOf) !== null ? (
                         <div
                           // A `ref` callback rather than reactive JSX
                           // attributes: this row's whole `.map()` iteration
@@ -177,26 +194,30 @@ export function SlideList(props: SlideListProps) {
                           // updates arrive through `patchSlideCanvas`
                           // (Studio.tsx's always-tracked effect), which finds
                           // this element by the `data-slide-canvas-key` set
-                          // here.
+                          // here — a placeholder showing its `lastRenderedKey`'s
+                          // cached fragment is deliberately *not* patched (that
+                          // effect only walks `manifest().slides`), so it stays
+                          // frozen at whatever was last rendered instead of
+                          // reacting to edits peitho-core never applied to it.
                           ref={el => {
-                            const slideKey = entry.slide.key
-                            el.dataset.slideCanvasKey = slideKey
+                            const source = canvasSourceFor(entry, props.canvasFragmentOf)
+                            if (!source) return
+                            el.dataset.slideCanvasKey = source.key
                             const canvas = { width: props.canvasWidth, height: props.canvasHeight }
-                            mountSlideCanvas(el, props.slideStylesheet(), props.canvasFragmentOf(slideKey), canvas, 'thumbnail')
+                            mountSlideCanvas(el, props.slideStylesheet(), props.canvasFragmentOf(source.key), canvas, 'thumbnail')
                             observeCanvasScale(el, canvas)
                           }}
                           className="absolute top-0 right-0 bottom-0 left-0"
                         />
                       ) : (
-                        // No fragment exists for this row at all — a draft
-                        // slide is excluded from peitho-core's build on
-                        // purpose, and a not-yet-rendered one just hasn't
-                        // produced one yet — so there's nothing to mount a
-                        // canvas onto. Its title (pulled straight from the
-                        // raw Markdown, no build required) stands in for a
-                        // thumbnail instead of leaving the row blank.
+                        // Truly nothing to show: a draft (or not-yet-rendered)
+                        // slide with no fragment ever cached under its key —
+                        // peitho-core has never produced one. Its title
+                        // (pulled straight from the raw Markdown, no build
+                        // required) stands in for a thumbnail instead of
+                        // leaving the row blank.
                         <div className="absolute top-0 right-0 bottom-0 left-0 flex items-center justify-center p-2 bg-muted">
-                          <span className="text-xs text-muted-foreground text-center line-clamp-3">{entry.title || `Slide ${String(entry.sourceIndex + 1)}`}</span>
+                          <span className="text-xs text-muted-foreground text-center line-clamp-3">{entry.kind === 'placeholder' ? (entry.title || `Slide ${String(entry.sourceIndex + 1)}`) : ''}</span>
                         </div>
                       )}
                       {/* Laid over the thumbnail (canvas or placeholder)
