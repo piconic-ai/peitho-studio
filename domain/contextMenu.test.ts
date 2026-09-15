@@ -16,9 +16,23 @@ const ctx = (overrides: Partial<MenuContext> = {}): MenuContext => ({
   ...overrides,
 })
 
+type SlideMenu = Extract<ContextMenu, { kind: 'on-slide' }>
+
+/** An `on-slide` menu at the origin, picker collapsed, with no fit check
+ * and no notice — override only the fields a test is about. */
+const onSlide = (fields: Partial<SlideMenu> & Pick<SlideMenu, 'index'>): SlideMenu => ({
+  kind: 'on-slide',
+  x: 0,
+  y: 0,
+  layoutPickerOpen: false,
+  layoutFit: { kind: 'unavailable' },
+  layoutNotice: null,
+  ...fields,
+})
+
 describe('indexOf', () => {
   test('spec: on-slide carries its index', () => {
-    expect(indexOf({ kind: 'on-slide', index: 2, x: 0, y: 0, layoutPickerOpen: false, layoutFit: { kind: 'unavailable' }, layoutNotice: null })).toBe(2)
+    expect(indexOf(onSlide({ index: 2 }))).toBe(2)
   })
 
   test('adversarial: closed and on-empty-space both have no index', () => {
@@ -30,7 +44,7 @@ describe('indexOf', () => {
 describe('positionOf', () => {
   test('spec: on-slide/on-empty-space report their click position', () => {
     expect(positionOf({ kind: 'on-empty-space', x: 10, y: 20 })).toEqual({ x: 10, y: 20 })
-    expect(positionOf({ kind: 'on-slide', index: 0, x: 30, y: 40, layoutPickerOpen: true, layoutFit: { kind: 'unavailable' }, layoutNotice: null })).toEqual({ x: 30, y: 40 })
+    expect(positionOf(onSlide({ index: 0, x: 30, y: 40, layoutPickerOpen: true }))).toEqual({ x: 30, y: 40 })
   })
 
   test('adversarial: closed reports the origin, not a stale position', () => {
@@ -40,8 +54,8 @@ describe('positionOf', () => {
 
 describe('isLayoutPickerOpen', () => {
   test('spec: reflects on-slide\'s own flag', () => {
-    expect(isLayoutPickerOpen({ kind: 'on-slide', index: 0, x: 0, y: 0, layoutPickerOpen: true, layoutFit: { kind: 'unavailable' }, layoutNotice: null })).toBe(true)
-    expect(isLayoutPickerOpen({ kind: 'on-slide', index: 0, x: 0, y: 0, layoutPickerOpen: false, layoutFit: { kind: 'unavailable' }, layoutNotice: null })).toBe(false)
+    expect(isLayoutPickerOpen(onSlide({ index: 0, layoutPickerOpen: true }))).toBe(true)
+    expect(isLayoutPickerOpen(onSlide({ index: 0 }))).toBe(false)
   })
 
   test('adversarial: closed and on-empty-space are never open (there is no picker to open)', () => {
@@ -52,7 +66,7 @@ describe('isLayoutPickerOpen', () => {
 
 describe('menuItems', () => {
   test('spec: on-slide enables every per-slide action', () => {
-    const menu: ContextMenu = { kind: 'on-slide', index: 1, x: 0, y: 0, layoutPickerOpen: false, layoutFit: { kind: 'unavailable' }, layoutNotice: null }
+    const menu: ContextMenu = onSlide({ index: 1 })
     const items = menuItems(menu, ctx())
     const byAction = Object.fromEntries(items.map(i => [i.action, i]))
     expect(byAction['cut'].enabled).toBe(true)
@@ -86,13 +100,13 @@ describe('menuItems', () => {
   })
 
   test('adversarial: delete disables itself on the last remaining slide even when targeted', () => {
-    const menu: ContextMenu = { kind: 'on-slide', index: 0, x: 0, y: 0, layoutPickerOpen: false, layoutFit: { kind: 'unavailable' }, layoutNotice: null }
+    const menu: ContextMenu = onSlide({ index: 0 })
     expect(menuItems(menu, ctx({ slideCount: 1 })).find(i => i.action === 'delete')?.enabled).toBe(false)
   })
 
   test('adversarial: move-up/move-down disable at the respective ends of the list', () => {
-    const first: ContextMenu = { kind: 'on-slide', index: 0, x: 0, y: 0, layoutPickerOpen: false, layoutFit: { kind: 'unavailable' }, layoutNotice: null }
-    const last: ContextMenu = { kind: 'on-slide', index: 2, x: 0, y: 0, layoutPickerOpen: false, layoutFit: { kind: 'unavailable' }, layoutNotice: null }
+    const first: ContextMenu = onSlide({ index: 0 })
+    const last: ContextMenu = onSlide({ index: 2 })
     expect(menuItems(first, ctx()).find(i => i.action === 'move-up')?.enabled).toBe(false)
     expect(menuItems(first, ctx()).find(i => i.action === 'move-down')?.enabled).toBe(true)
     expect(menuItems(last, ctx()).find(i => i.action === 'move-up')?.enabled).toBe(true)
@@ -100,7 +114,7 @@ describe('menuItems', () => {
   })
 
   test('spec: toggle-draft/skip/section reflect the targeted slide\'s own config', () => {
-    const menu: ContextMenu = { kind: 'on-slide', index: 1, x: 0, y: 0, layoutPickerOpen: false, layoutFit: { kind: 'unavailable' }, layoutNotice: null }
+    const menu: ContextMenu = onSlide({ index: 1 })
     const items = menuItems(menu, ctx({ configOf: () => ({ draft: true, skip: false, section: 'Intro' }) }))
     const byAction = Object.fromEntries(items.map(i => [i.action, i]))
     expect(byAction['toggle-draft'].checked).toBe(true)
@@ -109,7 +123,7 @@ describe('menuItems', () => {
   })
 
   test('adversarial: an empty (falsy) section string is not treated as a section start', () => {
-    const menu: ContextMenu = { kind: 'on-slide', index: 0, x: 0, y: 0, layoutPickerOpen: false, layoutFit: { kind: 'unavailable' }, layoutNotice: null }
+    const menu: ContextMenu = onSlide({ index: 0 })
     const items = menuItems(menu, ctx({ configOf: () => ({ section: undefined }) }))
     expect(items.find(i => i.action === 'toggle-section')?.checked).toBe(false)
   })
@@ -130,7 +144,7 @@ describe('menuItems', () => {
 
 describe('appendIndex', () => {
   test('spec: on-slide appends after the targeted slide', () => {
-    expect(appendIndex({ kind: 'on-slide', index: 1, x: 0, y: 0, layoutPickerOpen: false, layoutFit: { kind: 'unavailable' }, layoutNotice: null }, 5)).toBe(1)
+    expect(appendIndex(onSlide({ index: 1 }), 5)).toBe(1)
   })
 
   test('adversarial: closed/on-empty-space append at the end of the list', () => {
@@ -227,9 +241,9 @@ describe('openOnSlide', () => {
 
 describe('withLayoutFitResult', () => {
   test('spec: the awaited answer settles the check and keeps everything else', () => {
-    const opened: ContextMenu = { ...openOnSlide(1, 10, 20, 5), layoutPickerOpen: true } as ContextMenu
+    const opened = onSlide({ index: 1, x: 10, y: 20, layoutPickerOpen: true, layoutFit: { kind: 'checking', requestId: 5 } })
     const settled = withLayoutFitResult(opened, 5, VERDICTS)
-    expect(settled).toEqual({ ...opened, layoutFit: { kind: 'checked', verdicts: VERDICTS } } as ContextMenu)
+    expect(settled).toEqual({ ...opened, layoutFit: { kind: 'checked', verdicts: VERDICTS } })
   })
 
   test('adversarial: an answer for another request returns the very same menu object', () => {
