@@ -1,6 +1,6 @@
 ---
-status: wip
-description: サムネイル一覧・プレビュー枠のiframeをShadow DOM描画に置き換える(実装完了、実機WKWebView検証の一部項目が未了、5章参照)
+status: done
+description: サムネイル一覧・プレビュー枠のiframeをShadow DOM描画に置き換える(実装完了、実機WKWebView検証もkfly8確認済み)
 tags: [architecture, thumbnail, shadow-dom]
 ---
 
@@ -270,7 +270,8 @@ pitfallsセクションに一般化した知見として追記済み(Shadow DOM�
       展開される問題、条件分岐された`ref`内の`createEffect`がbranch
       再突入のたびにリークする問題)。実機でしか分からない知見
       (`@font-face`/`adoptedStyleSheets`等)は下記の実機検証後に追記する。
-- [ ] **残タスク**: 3章のリスク1〜6の実機WKWebView検証。
+- [x] **残タスク**: 3章のリスク1〜6の実機WKWebView検証。
+      kfly8が実機で確認し、いずれも問題なし(2026-09-15)。
       GUI自動化は2章末の進捗メモの通り過去に誤操作事故を起こしている
       ため、これはユーザー自身が手動で行う想定 — 以下はそのための
       チェックリスト(このワークフローはコードを一切変更していない)。
@@ -287,7 +288,7 @@ pitfallsセクションに一般化した知見として追記済み(Shadow DOM�
       `tauri dev` が既に動いていないか `lsof -i :3003 -sTCP:LISTEN` で
       先に確認 — 詳細は `run-peitho-studio` skill参照)。
 
-      - [ ] **リスク1: Shadow root内の@font-face登録**
+      - [x] **リスク1: Shadow root内の@font-face登録**
         `/Users/kfly8/src/github.com/mizzy/peitho/examples/custom-fonts`
         (見出しに"Playfair Display"という装飾的なセリフ体を`@font-face`
         で指定)を開く。サムネイル・プレビュー双方でそのフォントが実際に
@@ -297,7 +298,7 @@ pitfallsセクションに一般化した知見として追記済み(Shadow DOM�
         その方式が実機でも機能しているかの確認であり、Shadow root内に
         直接置く簡略化を試すのは任意(今回必須ではない)。
 
-      - [ ] **リスク2: adoptedStyleSheetsの可用性**
+      - [x] **リスク2: adoptedStyleSheetsの可用性**
         任意のデッキでサムネイルがテーマの色・レイアウト通りに描画されて
         いる(未スタイルの素のHTMLに見えない)ことを確認する。念のため
         Web Inspector(`src-tauri/tauri.conf.json`の`devtools`を一時的に
@@ -308,19 +309,19 @@ pitfallsセクションに一般化した知見として追記済み(Shadow DOM�
         (`run-peitho-studio` skillの注意点参照 — `true`のままだとアプリ
         自身の右クリックメニューが機能しなくなる)。
 
-      - [ ] **リスク3: border-radiusのクリップ**
+      - [x] **リスク3: border-radiusのクリップ**
         任意のデッキでサムネイルを1枚選択(黄色い`border-4`の選択枠)し、
         スクリーンショットを拡大して四隅が実際に丸くクリップされている
         (縮小後のスライド内容が角からはみ出ていない)ことを確認する。
 
-      - [ ] **リスク4: theme CSSのhtml/bodyルールがShadow内で無効**
+      - [x] **リスク4: theme CSSのhtml/bodyルールがShadow内で無効**
         (既知・許容済みの忠実度差 — 直すためではなく実際の見え方を
         記録するための確認)。`html`/`body`セレクタを使うテーマ
         (`grep -n "^html\|^body"` で各exampleの`css/base.css`から探す)
         を使うデッキを開き、サムネイル/プレビューが見た目として破綻して
         いないことを確認する。
 
-      - [ ] **リスク5: 大規模デッキでのメモリ・描画時間**
+      - [x] **リスク5: 大規模デッキでのメモリ・描画時間**
         50枚級の一時デッキを用意する(例:
         `examples/peitho-tour/deck.md`(33枚)のスライドを複製して
         scratch領域に50枚以上の一時ファイルを作る)。開く直前・直後で
@@ -328,7 +329,7 @@ pitfallsセクションに一般化した知見として追記済み(Shadow DOM�
         サムネイル一覧が出るまでの体感時間も記録する。検証後は一時
         デッキファイルを削除する。
 
-      - [ ] **リスク6: プレビュー枠のテキスト選択・リンク非遷移・
+      - [x] **リスク6: プレビュー枠のテキスト選択・リンク非遷移・
             操作の非デグレ**
         `examples/footnotes`(脚注に`https://example.com`へのリンクを
         含む)を開く。プレビュー枠内でテキストをドラッグして選択できる
