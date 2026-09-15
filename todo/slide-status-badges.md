@@ -146,7 +146,47 @@ Skipは`SlideList.tsx`でサムネイル下に "skip" というテキストラ�
       (skipバッジの半透明オーバーレイ`bg-black/40`は`color-mix()`で
       出力されるため、WKWebViewでの見え方も併せて確認する)。draftの
       プレースホルダー(`bg-muted`のタイトルのみ表示)の見た目も
-      合わせて確認する。
+      合わせて確認する。 — kfly8が実機で確認し、2件の不具合を報告
+      (2026-09-15)。原因調査・修正は以下のとおり。**この修正自体は
+      Playwright(モックe2e)でのみ検証済みで、実機での再確認がまだ
+      残っている**(未チェックのまま):
+      - **問題1: Draft化した直後、後ろのスライドのサムネイルが真っ黒に
+        なる。** 原因: `commitChange`が新しいmanifestを`applyRenderPayload`
+        で反映した直後、`await deckIpc.saveDeckSource(...)`を挟んでから
+        `editor.setFullSource(...)`を呼んでいたため、その間`slideEntries`
+        (`buildSlideList`)が「新manifest + 旧source」という一致しない
+        組み合わせで再計算されることがあった。同じタイトルのスライドが
+        複数あるデッキでこれが起きると、後ろのスライドの行が誤った
+        manifestエントリと対応付けられ、BarefootJSの keyed `.map()` に
+        重複キーを渡してしまい(`[BarefootJS] mapArray: duplicate key`
+        警告)、該当スライドのcanvasが恒久的に空になっていた(デッキを
+        開き直すまで直らない)。
+        - 修正: `state/renderStore.ts`に`renderedSource`
+          (manifestを実際に生成したsource文字列を`applyRenderPayload`が
+          同じバッチで書き込む)を追加し、`Studio.tsx`の`slideEntries`は
+          `editor.fullSource()`ではなくこちらを参照するよう変更。
+          `applyRenderPayload`の呼び出し元3箇所(`refreshSource`
+          経由の`open_deck`、`renderPreview`、`commitChange`)すべてで
+          対応するsourceを明示的に渡すようにした。
+      - **問題2: Draft解除すると、そのスライド自身のサムネイルが
+        真っ黒になる。** 原因はBarefootJSコンパイラ側の不具合
+        ([piconic-ai/barefootjs#3009](https://github.com/piconic-ai/barefootjs/issues/3009)、
+        最小再現・原因調査つきで報告済み): keyed `.map()`の1行が
+        `rendered`↔`placeholder`という2つの分岐を持つとき、行の
+        `key`が同じまま`rendered→placeholder→rendered`と一周すると、
+        3回目に`rendered`側へ戻ったときの`ref`が実行されない
+        (`mountSlideCanvas`が一度も走らずcanvasが空のまま)。
+        draftのPageCommentは`addSlide`が付与した明示的な`key`を
+        そのまま保持するため、draft化・解除を1回繰り返すだけで
+        必ず`key`が一致していた。
+        - 修正: `domain/slideList.ts`のplaceholder行の`key`を、
+          スライド自身の`config.key`から独立させ、常に
+          `` `placeholder:${sourceIndex}` `` にした。これにより
+          `rendered`↔`placeholder`の切り替えは常に「新しいkey」として
+          扱われ、BarefootJS側は毎回まっさらな新規マウントを行う
+          (既存の、正しく動いているパスと同じ経路になる)。
+      - どちらも`e2e/slide-status-badges.e2e.ts`に、修正前は実際に
+        失敗する(修正を一時的に戻して確認済み)回帰テストを追加した。
 
 ## 先送り事項
 
