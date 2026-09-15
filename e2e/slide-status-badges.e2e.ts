@@ -14,6 +14,22 @@ import { mockTauri, type MockDeck } from './helpers/mockTauri'
 const DECK_WITH_SKIPPED_SLIDE = '# Opening\n\n---\n\n<!-- {"skip":true} -->\n# Backup Slide\n'
 const DECK_WITH_DRAFT_THEN_SKIPPED = '# Opening\n\n---\n\n<!-- {"draft":true} -->\n# Hidden\n\n---\n\n<!-- {"skip":true} -->\n# Backup Slide\n'
 
+// Explicit keys (as `addSlide` actually assigns in production) matter here:
+// a placeholder can only show its slide's last-rendered content under
+// `domain/slideList.ts`'s `lastRenderedKey`, which is `null` without one —
+// see `PlaceholderSlideEntry`'s own doc comment for why guessing a
+// derived key isn't attempted.
+const DECK_WITH_KEYED_SLIDES = [
+  '<!-- {"key":"opening"} -->',
+  '# Opening',
+  '',
+  '---',
+  '',
+  '<!-- {"key":"backup"} -->',
+  '# Backup Slide',
+  '',
+].join('\n')
+
 // Explicit, stable per-slide keys — matching how Studio.tsx's addSlide
 // actually assigns them in production (computed once at creation time,
 // then baked into the PageComment forever after) — with three slides
@@ -119,6 +135,22 @@ test('Given a deck whose middle slide is marked draft, when the deck opens, then
   expect(await hasRenderedCanvas(openingRow)).toBe(true)
   expect(await hasRenderedCanvas(backupRow)).toBe(true)
   await expect(backupRow.locator('[data-slide-status="skip"]')).toBeVisible()
+})
+
+test('Given a rendered slide with an explicit key, when it is marked draft, then its thumbnail keeps showing its last-rendered content instead of a generic placeholder box', async ({ page }) => {
+  await openDeck(page, { source: DECK_WITH_KEYED_SLIDES })
+  const row = page.locator('[data-slide-row="1"]')
+  expect(await hasRenderedCanvas(row)).toBe(true)
+
+  await row.click({ button: 'right' })
+  await page.getByRole('button', { name: /^Mark as Draft/ }).click()
+
+  await expect(row.locator('[data-slide-status="draft"]')).toBeVisible({ timeout: 5_000 })
+  // Only the badge should be new — kfly8's report: marking a slide draft
+  // replaced its whole thumbnail with an unrelated-looking box instead of
+  // just overlaying a label on the same content, as SKIP already does.
+  expect(await hasRenderedCanvas(row)).toBe(true)
+  await expect(row.locator('h1')).toHaveText('Backup Slide')
 })
 
 test('Given a draft slide, when its thumbnail placeholder is clicked, then its own raw text opens in the editor', async ({ page }) => {
