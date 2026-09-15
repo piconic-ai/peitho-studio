@@ -1,6 +1,6 @@
 ---
 status: wip
-description: レイアウトHTMLにscriptを書けば実際に動く世界観にする(Studio側は実装済み、mizzy/peitho側は検証済み未コミット)
+description: レイアウトHTMLにscriptを書けば実際に動く世界観にする(Studio側は実装・アセット配信・Shadow DOM橋渡しまで実装済み、実機再確認待ち。mizzy/peitho・barefootjs側は検証済み未コミット)
 tags: [debug, layout, console, script-execution]
 ---
 
@@ -117,15 +117,66 @@ Studioのプレビュー/サムネイルと(B)Present両方を対象にするこ
   kfly8曰く「悩む場合は一旦様子見」— 統一を急がず現状のまま。
 - **`kfly8/peitho`側の変更は検証済みだが未コミット**(2026-09-15
   時点)。上流(`mizzy/peitho`)へのPR化はまだ行っていない。
-- **`data-bf`+`MutationObserver`によるBarefootJSコンポーネント
-  マウント(barefootjs公式サイトのdeck例で実際に使われている手法)は
-  別問題として残っている**: `document.querySelectorAll`/
-  `MutationObserver`はデフォルトでShadow DOMの中まで届かないため、
-  `peitho present`(Shadow DOM)やStudioでは動かない
-  (`peitho build`の配布ビューアはlight DOMなのでそのまま動く)。
-  Shadow DOM対応のmounter(各shadow root個別にobserveする、または
-  マウント完了を`composed: true`のCustomEventで橋渡しする、など)は
-  今回のtodoのスコープ外とし、着手していない。
+
+### 続報(2026-09-16): kfly8が実機(`bunx tauri dev`)で確認 →
+`data-bf`マウント問題も解消
+
+kfly8が実際に`/Users/kfly8/src/github.com/piconic-ai/barefootjs/site/core/
+slides/overview`のデッキを`bunx tauri dev`で開いたところ、動画(1枚目)・
+Arcadeゲーム(12枚目)・他のコンポーネント(Compiler/Trace/Terminal/
+Showcase)いずれも動いていないと報告。原因は2つ重なっていた:
+
+1. **アセット配信の欠落**: `engine::serve::AssetServer`は
+   `image_assets`(peitho-coreがmarkdown画像記法から発見したものだけ)
+   にあるファイルしか`assets/<name>`で返さない。`hero.mp4`/`hero.jpg`
+   (layoutの`<video>`/`poster`から参照、markdown画像記法を経由しない)
+   や`assets/deck.js`のようなファイルは404だった。
+   - 修正: `RenderOutput`にデッキ自身のディレクトリ(`deck_dir`)を
+     追加し、`image_assets`に見つからない`assets/<name>`要求は
+     `deck_dir/assets/<name>`から直接読むフォールバックを追加
+     (`DraftImageResolver`と同じパストラバーサル対策付き)。
+     content-typeテーブルもvideo/js/json/css用に拡張
+     (`type="module"`スクリプトは誤ったMIMEタイプだとロード自体
+     拒否されるため重要)。Rustテスト8件追加、既存87件と合わせて
+     グリーン。
+2. **`data-bf`+`MutationObserver`のShadow DOM非対応**(前回の
+   「先送り事項」で指摘した問題)。解消策として、`dom/slideCanvas.ts`
+   の`mountSlideCanvas`/`patchSlideCanvas`が(再)マウントのたびに
+   `host`から`CANVAS_MOUNTED_EVENT`(`'peitho:canvas-mounted'`、
+   `bubbles: true, composed: true`、`detail: { root: shadow }`)を
+   発火するようにした。`composed: true`によりlight DOM側の
+   リスナーまでイベントが届く。e2e 2件で、初回マウント・編集後の
+   再パッチいずれでもイベントが正しいshadow rootと共に届くことを
+   検証。
+
+barefootjs側(`site/core/`)も、kfly8の許可のもと編集・実機同等の
+検証まで実施(未コミット):
+- `component/mount.ts`: `document`レベルの素朴なMutationObserver
+  (light DOM、`peitho build`の配布ビューア向けにそのまま維持)に加え、
+  上記`CANVAS_MOUNTED_EVENT`を購読して`event.detail.root`だけを
+  対象にマウントする経路を追加。
+- `scripts/build-slides.ts`: 既存の「mount.ts+narration.ts合体+
+  index.htmlのheadに注入」という`assets/deck.js`はそのまま維持しつつ
+  (公開サイト専用のchrome機能ぶん)、**narration.tsを含まない
+  mount専用バンドル**を新たに`assets/mount.js`としてビルドし、
+  **デッキ自身のソースディレクトリ**(`slides/overview/assets/`、
+  ビルド出力ではなく)に直接書き出すようにした。narration.tsは
+  `document.body`に無条件でプログレスバー等のchrome UIを注入するため、
+  present/Studio(このバンドルを直接読み込む側)に混入させると
+  実害がある。
+- 7つのlayout(arcade/compiler/cover/live/showcase/terminal/trace)
+  それぞれに`<script type="module" src="assets/mount.js"></script>`
+  を追加。ESモジュールはURL単位で重複評価されないため、複数layoutに
+  同じタグがあっても実害なし。
+- **実機同等の検証**: `bun run slides:build overview`で実際に
+  `assets/mount.js`(160KB、narration関連の識別子を含まないことを
+  確認)をビルドし、Playwrightで実ブラウザに読み込んで(a)light DOM
+  で`data-bf="Rotator"`が実際にBarefootJSでレンダリングされること、
+  (b)Shadow DOM + `CANVAS_MOUNTED_EVENT`経由でも同様に動くことの
+  両方を確認(いずれも実際のレンダリング結果`<p class="tagline"...
+  Your stack...out.</p>`が現れることを確認)。`peitho build deck.md`
+  でのビルド自体も、layoutへのscriptタグ追加後も壊れていないことを
+  確認済み。
 
 ### Studio側の実装(このリポジトリ、実装・テスト済み)
 
@@ -150,7 +201,10 @@ script のIIFE自動包み)を追加し、`mountSlideCanvas`(初回マウント)
 - [x] Studio側の実装(`dom/slideCanvas.ts`の`executeInlineScripts`) +
       テスト(`e2e/layout-script-execution.e2e.ts`、修正前に実際に
       失敗することを確認済み)
-- [x] `bun test` / `bun run typecheck` / 全e2e グリーン(Rust変更なし)
+- [x] アセット配信のフォールバック(`engine::serve.rs`)+ Rustテスト8件
+- [x] `CANVAS_MOUNTED_EVENT`によるShadow DOM橋渡し + e2eテスト2件
+- [x] `bun test` / `bun run typecheck` / 全e2e(51件) / `cargo test`
+      (87件)すべてグリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [x] レイアウトHTMLへのJS埋め込みが仕様として認められているか調査 —
@@ -162,7 +216,14 @@ script のIIFE自動包み)を追加し、`mountSlideCanvas`(初回マウント)
 - [x] 実装方式をkfly8と壁打ちの上決定 — "re-execute injected script"
       パターン+classic inline scriptのIIFE自動包み。専用ログパネルは
       作らない方針も確認済み。
-- [ ] 実機確認(Studio側、`run-peitho-studio` skillで)
+- [x] 実機確認(Studio側) — kfly8が`bunx tauri dev`で実際に確認し、
+      動画・Arcade・他コンポーネントいずれも動いていないと報告
+      (2026-09-16)。上記の追加修正(アセット配信+CustomEvent橋渡し+
+      barefootjs側mount.js)で解消。**この追加修正自体はまだkfly8の
+      実機再確認が済んでいない**(未チェックのまま):
+- [ ] 追加修正後の実機再確認(Studio側、`bunx tauri dev`で
+      `barefootjs/site/core/slides/overview`のデッキを開き、動画・
+      Arcade・Compiler/Trace/Terminal/Showcaseがすべて動くこと)
 
 ## 先送り事項
 
@@ -173,8 +234,14 @@ script のIIFE自動包み)を追加し、`mountSlideCanvas`(初回マウント)
 - **状態持続性の経路間の違い**(present: 初回のみ実行・持続 / build・
   Studio: 訪問/編集のたびに再実行・古いタイマー等は残ったまま)を
   統一するかどうかは意図的に未決着(kfly8: 「悩む場合は一旦様子見」)。
-- **`data-bf`+`MutationObserver`によるBarefootJSコンポーネント
-  マウントパターンのShadow DOM対応**(`peitho present`・Studioでは
-  今のmount.tsのまま動かない — 上記「対象範囲の選択肢」参照)は
-  今回未着手。barefootjsサイトの`overview`デッキ(動画背景+Arcadeゲーム)
-  を実際にStudio/present上で動かすには、この対応も別途必要。
+- **barefootjs(`piconic-ai/barefootjs`)側の変更も未コミット**
+  (2026-09-16時点): `site/core/scripts/build-slides.ts`・
+  `site/core/slides/overview/component/mount.ts`・7つのlayout
+  ファイル・新規`site/core/slides/overview/assets/mount.js`。
+  kfly8のレビュー・コミット判断待ち。
+- **作業中の事故(復旧済み)**: 検証用の一時ビルド成果物を消すつもりで
+  `barefootjs`リポジトリの`site/core/public/`を丸ごと`rm -rf`した際、
+  同ディレクトリ配下の追跡対象ファイル4件
+  (`site/core/public/static/snippets/*.txt`)も巻き込んで削除して
+  しまった。`git checkout --`で即座に復元し実害なし。以後、削除前に
+  対象ディレクトリの追跡状態を確認する。
