@@ -87,6 +87,32 @@ test('Given a section planned for 30 seconds, when "000" is typed into its minut
   expect(deck.source).toBe(original)
 })
 
+test('Given a section planned for 5 seconds, when both spinners are brought to 0 and the header is left, then the deck saves 1 second instead, since peitho rejects a zero-length section time', async ({ page }) => {
+  const deck = deckWithIntroPlannedFor('5s', '1m5s')
+  await openDeck(page, deck)
+
+  await introSpinner(page, 'seconds').fill('0')
+  await expect(introSpinner(page, 'seconds')).toHaveValue('0')
+  await page.keyboard.press('Enter')
+
+  await expect.poll(() => deck.source).toContain('<!-- {"section":"Intro","time":"1s"} -->')
+  expect(deck.source).toContain('time: 1m1s\n')
+  await expect(introSpinner(page, 'minutes')).toHaveValue('0')
+  await expect(introSpinner(page, 'seconds')).toHaveValue('1')
+})
+
+test('Given a section already saved as 1 second, when its seconds spinner is brought to 0 and the header is left, then nothing is saved and the spinner shows 1 again', async ({ page }) => {
+  const deck = deckWithIntroPlannedFor('1s', '1m1s')
+  const original = deck.source
+  await openDeck(page, deck)
+
+  await introSpinner(page, 'seconds').fill('0')
+  await page.keyboard.press('Enter')
+
+  await expect(introSpinner(page, 'seconds')).toHaveValue('1')
+  expect(deck.source).toBe(original)
+})
+
 test('Given saving takes a while, when the minutes spinner is stepped, then the seconds spinner is stepped and the user pauses before leaving the header, then both steps are kept and saved', async ({ page }) => {
   // Regression: each spinner used to save on its own blur. Tabbing from
   // minutes to seconds started a save, and when its re-render landed it
