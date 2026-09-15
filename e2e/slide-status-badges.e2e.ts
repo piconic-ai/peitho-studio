@@ -32,7 +32,8 @@ test('Given a deck whose second slide is marked skip, when the deck opens, then 
   // `innerText`, not `toHaveText` (textContent): the DOM text is the raw
   // status and CSS `uppercase` is what the user actually reads.
   expect(await badge.evaluate(el => (el as HTMLElement).innerText)).toBe('SKIP')
-  expect(await hasRenderedCanvas(skippedRow)).toBe(true)  // The badge is the only "skip" text left in the row — the old label
+  expect(await hasRenderedCanvas(skippedRow)).toBe(true)
+  // The badge is the only "skip" text left in the row — the old label
   // under the thumbnail is gone.
   await expect(skippedRow.getByText(/^skip$/i)).toHaveCount(1)
 
