@@ -64,3 +64,16 @@ export function availabilityOf(check: LayoutFitCheck, layout: string): LayoutAva
 export function mismatchNotice(layout: string, reason: string): string {
   return `"${layout}" doesn't fit this slide: ${reason}`
 }
+
+/** Whether `layout`'s picker entry is shown as choosable (not dimmed). */
+export function isSelectable(check: LayoutFitCheck, layout: string): boolean {
+  return availabilityOf(check, layout).kind === 'selectable'
+}
+
+/** The picker entry's hover text: the mismatch notice for a layout the
+ * slide doesn't fit, otherwise just the layout's name (the entry's own
+ * label truncates long names). */
+export function entryTitle(check: LayoutFitCheck, layout: string): string {
+  const availability = availabilityOf(check, layout)
+  return availability.kind === 'mismatch' ? mismatchNotice(layout, availability.reason) : layout
+}

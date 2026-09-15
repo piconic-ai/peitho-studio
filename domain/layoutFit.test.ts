@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { availabilityOf, mismatchNotice, settledFitCheck, type LayoutFitCheck, type LayoutVerdict } from './layoutFit'
+import { availabilityOf, entryTitle, isSelectable, mismatchNotice, settledFitCheck, type LayoutFitCheck, type LayoutVerdict } from './layoutFit'
 
 const verdicts: LayoutVerdict[] = [
   { layout: 'cover', fit: { kind: 'mismatch', reason: "unassigned content remains for missing 'body' slot" } },
@@ -64,6 +64,35 @@ describe('availabilityOf', () => {
   test('adversarial: an empty reason is still a mismatch', () => {
     const emptyReason: LayoutFitCheck = { kind: 'checked', verdicts: [{ layout: 'cover', fit: { kind: 'mismatch', reason: '' } }] }
     expect(availabilityOf(emptyReason, 'cover')).toEqual({ kind: 'mismatch', reason: '' })
+  })
+})
+
+describe('isSelectable', () => {
+  test('spec: only a layout the slide is known not to fit, or any layout mid-check, is dimmed', () => {
+    const checked: LayoutFitCheck = { kind: 'checked', verdicts }
+    expect(isSelectable(checked, 'statement')).toBe(true)
+    expect(isSelectable(checked, 'cover')).toBe(false)
+    expect(isSelectable({ kind: 'checking', requestId: 1 }, 'statement')).toBe(false)
+  })
+
+  test('adversarial: unavailable checks and unknown or empty names stay selectable', () => {
+    expect(isSelectable({ kind: 'unavailable' }, 'cover')).toBe(true)
+    expect(isSelectable({ kind: 'checked', verdicts }, 'poster')).toBe(true)
+    expect(isSelectable({ kind: 'checked', verdicts }, '')).toBe(true)
+  })
+})
+
+describe('entryTitle', () => {
+  test('spec: a mismatched layout explains why; a fitting one is just its name', () => {
+    const checked: LayoutFitCheck = { kind: 'checked', verdicts }
+    expect(entryTitle(checked, 'cover')).toBe("\"cover\" doesn't fit this slide: unassigned content remains for missing 'body' slot")
+    expect(entryTitle(checked, 'statement')).toBe('statement')
+  })
+
+  test('adversarial: mid-check, unavailable, and empty names fall back to the name itself', () => {
+    expect(entryTitle({ kind: 'checking', requestId: 1 }, 'cover')).toBe('cover')
+    expect(entryTitle({ kind: 'unavailable' }, 'cover')).toBe('cover')
+    expect(entryTitle({ kind: 'unavailable' }, '')).toBe('')
   })
 })
 

@@ -10,7 +10,8 @@ import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
-import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems } from '../domain/contextMenu'
+import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
+import { type LayoutVerdict } from '../domain/layoutFit'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
 import { buildSlideList, manifestIndexAt, recordByManifestIndex, sectionStartBySourceIndex } from '../domain/slideList'
 import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOptionsOf } from '../domain/deckVariants'
@@ -739,13 +740,45 @@ export function Studio() {
     // `index` reflects that row (or truly is empty space) and doesn't get
     // overwritten afterward.
     event.stopPropagation()
-    if (index !== null) void selectSlide(index)
-    ui.setContextMenu(
-      index === null
-        ? { kind: 'on-empty-space', x: event.clientX, y: event.clientY }
-        : { kind: 'on-slide', index, x: event.clientX, y: event.clientY, layoutPickerOpen: false, layoutFit: { kind: 'unavailable' }, layoutNotice: null },
-    )
+    if (index === null) {
+      ui.setContextMenu({ kind: 'on-empty-space', x: event.clientX, y: event.clientY })
+    } else {
+      void selectSlide(index)
+      void checkLayoutFit(index, ui.openSlideContextMenu(index, event.clientX, event.clientY))
+    }
     void loadLayoutPreviews()
+  }
+
+  // Asks peitho-core which layouts slide `index` fits, against the source
+  // `updateSlideConfig` would pin a layout onto — the open slide's unsaved
+  // draft included. Read synchronously, before the first `await`: when the
+  // right-click switched away from a dirty slide, `selectSlide`'s flush is
+  // still in flight and that draft is still what's current. A failed call
+  // (e.g. a draft that doesn't parse yet) settles as "unavailable", leaving
+  // every layout choosable — `commitChange` renders before it saves, so a
+  // mismatch that gets past this still never reaches disk.
+  async function checkLayoutFit(index: number, requestId: number): Promise<void> {
+    const source = editor.isDirty() ? (currentDraftSource() ?? editor.fullSource()) : editor.fullSource()
+    let verdicts: LayoutVerdict[] | null = null
+    try {
+      verdicts = await deckIpc.checkSlideLayouts(source, index)
+    } catch {
+      // Settles as unavailable below.
+    }
+    ui.settleLayoutFit(requestId, verdicts)
+  }
+
+  // A layout the slide fits is pinned and the menu closes, same as before
+  // the fit check existed; one it doesn't fit keeps the menu open with the
+  // reason, and deck.md is left untouched.
+  function chooseLayoutFromPicker(layout: string): void {
+    const choice = chooseLayout(ui.contextMenu(), layout)
+    if (choice.kind === 'apply') {
+      void changeSlideLayout(choice.index, layout)
+      ui.closeContextMenu()
+    } else if (choice.kind === 'reject') {
+      ui.showLayoutNotice(choice.notice)
+    }
   }
 
   // Keeps the context menu on-screen: it's positioned at the raw click
@@ -1215,6 +1248,8 @@ export function Studio() {
         layoutPickerOpen={isLayoutPickerOpen(ui.contextMenu())}
         layoutPickerView={layoutPickerView()}
         layoutPreviews={ui.layoutPreviews()}
+        layoutFit={layoutFitOf(ui.contextMenu())}
+        layoutNotice={layoutNoticeOf(ui.contextMenu())}
         layoutPreviewStylesheet={getLayoutPreviewStylesheet}
         canvasWidth={render.canvasWidth()}
         canvasHeight={render.canvasHeight()}
@@ -1226,7 +1261,7 @@ export function Studio() {
         onPaste={() => { void pasteSlideAfter(ui.contextMenuAppendIndex(slideEntries().length || 1)); ui.closeContextMenu() }}
         onDelete={() => { void deleteSlide(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onToggleLayoutPicker={ui.toggleLayoutPicker}
-        onChangeLayout={name => { void changeSlideLayout(contextMenuIndexOf(ui.contextMenu())!, name); ui.closeContextMenu() }}
+        onChangeLayout={chooseLayoutFromPicker}
         onToggleDraft={() => { void toggleSlideDraft(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onToggleSkip={() => { void toggleSlideSkip(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onToggleSection={() => { void toggleSlideSection(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
