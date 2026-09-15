@@ -187,13 +187,15 @@ pub fn run() {
                         let Some(folder) = folder else { return };
                         let Ok(path) = folder.into_path() else { return };
                         let pending = app_handle.state::<PendingDecks>();
-                        let _ = peitho::open_deck_window_impl(&app_handle, &pending, path.display().to_string());
+                        let session = app_handle.state::<PeithoSession>();
+                        let _ = peitho::open_deck_window_impl(&app_handle, &pending, &session, path.display().to_string());
                     });
             } else if let Some(index) = id.strip_prefix("recent_deck:").and_then(|s| s.parse::<usize>().ok()) {
                 let recents = peitho::read_recent_decks(app_handle);
                 if let Some(path) = recents.get(index).cloned() {
                     let pending = app_handle.state::<PendingDecks>();
-                    let _ = peitho::open_deck_window_impl(app_handle, &pending, path);
+                    let session = app_handle.state::<PeithoSession>();
+                    let _ = peitho::open_deck_window_impl(app_handle, &pending, &session, path);
                 }
             }
         })

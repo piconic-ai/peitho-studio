@@ -108,6 +108,45 @@ impl PeithoSession {
             }
         }
     }
+
+    /// The label of a window that already has `target` open, if any — see
+    /// `matching_window_label`. `open_deck_window` uses this to bring an
+    /// already-open deck's window to the front instead of opening a
+    /// redundant second copy of it.
+    pub fn window_label_for(&self, target: &Path) -> Option<String> {
+        let guard = self.0.lock().ok()?;
+        matching_window_label(guard.iter().map(|(label, state)| (label.as_str(), state.deck_path.as_path())), target)
+    }
+}
+
+/// The label paired with `target`'s path, if any of `open_decks` matches
+/// it — compared by canonical path (falling back to the path as given
+/// when canonicalizing fails, e.g. it no longer exists) so a relative
+/// argument, a differently-cased mount point, or a symlink doesn't hide a
+/// deck that actually is already open, and a path that merely looks
+/// similar as text doesn't falsely match one that isn't. State-
+/// independent (plain label/path pairs, no `PeithoSession` lock) so it's
+/// unit-testable on its own — see `PeithoSession::window_label_for` for
+/// the version that actually reads live sessions.
+fn matching_window_label<'a>(mut open_decks: impl Iterator<Item = (&'a str, &'a Path)>, target: &Path) -> Option<String> {
+    let canonical_target = std::fs::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
+    open_decks
+        .find(|(_, path)| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()) == canonical_target)
+        .map(|(label, _)| label.to_string())
+}
+
+/// A `path` argument normalized just enough to compare against an open
+/// window's own (already-resolved) `deck_path` — the same directory-to-
+/// `deck.md` join `resolve_deck_path` does, but this never fails when the
+/// result doesn't exist (unlike that function): a path that doesn't
+/// exist can't be the same file as anything already open either, so
+/// there's nothing to gain by rejecting it before the comparison — a
+/// genuinely new window still goes through the real, failing
+/// `resolve_deck_path` once it mounts and calls `open_deck`, exactly as
+/// before this comparison was added.
+fn deck_path_for_comparison(input: &str) -> PathBuf {
+    let path = PathBuf::from(input);
+    if path.is_dir() { path.join("deck.md") } else { path }
 }
 
 #[derive(Serialize)]
@@ -266,23 +305,50 @@ pub struct PendingDecks(Mutex<HashMap<String, String>>);
 
 static WINDOW_COUNTER: AtomicU32 = AtomicU32::new(0);
 
+/// Each new window cascades a step further than the last (wrapping after
+/// `WINDOW_CASCADE_STEPS`), so a freshly opened window is visibly offset
+/// from whichever one was already on top of it — otherwise a second deck
+/// opening exactly on top of the first looks like nothing happened at
+/// all. Not specific to the deck-language-variant switcher this constant
+/// was added for — it's every caller of `open_deck_window` (native "Open
+/// Deck…"/"Open Recent" too), since they all funnel through the same
+/// `open_deck_window_impl`.
+const WINDOW_CASCADE_STEP_PX: f64 = 32.0;
+const WINDOW_CASCADE_STEPS: u32 = 8;
+const WINDOW_BASE_POSITION: (f64, f64) = (120.0, 120.0);
+
 /// Opens `path` in a brand new window, leaving whichever window this was
 /// called from untouched — comparing two decks side by side means neither
-/// one can be silently replaced by the other.
+/// one can be silently replaced by the other. If that deck is already
+/// open in some other window, that window is brought to the front
+/// instead of opening a redundant second copy of it, matching how
+/// re-opening a file already open elsewhere is expected to behave.
 #[tauri::command]
-pub fn open_deck_window(app: AppHandle, pending: State<PendingDecks>, path: String) -> Result<(), String> {
-    open_deck_window_impl(&app, &pending, path)
+pub fn open_deck_window(app: AppHandle, pending: State<PendingDecks>, session: State<PeithoSession>, path: String) -> Result<(), String> {
+    open_deck_window_impl(&app, &pending, &session, path)
 }
 
-pub(crate) fn open_deck_window_impl(app: &AppHandle, pending: &PendingDecks, path: String) -> Result<(), String> {
-    let label = format!("deck-{}", WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed));
+pub(crate) fn open_deck_window_impl(app: &AppHandle, pending: &PendingDecks, session: &PeithoSession, path: String) -> Result<(), String> {
+    if let Some(label) = session.window_label_for(&deck_path_for_comparison(&path)) {
+        if let Some(window) = app.get_webview_window(&label) {
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+            return Ok(());
+        }
+    }
+
+    let counter = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let label = format!("deck-{counter}");
     {
         let mut guard = pending.0.lock().map_err(|_| "pending-decks lock poisoned".to_string())?;
         guard.insert(label.clone(), path);
     }
+    let step = f64::from(counter % WINDOW_CASCADE_STEPS);
+    let (base_x, base_y) = WINDOW_BASE_POSITION;
     tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::App("index.html".into()))
         .title("Peitho Studio")
         .inner_size(1440.0, 900.0)
+        .position(base_x + step * WINDOW_CASCADE_STEP_PX, base_y + step * WINDOW_CASCADE_STEP_PX)
         .resizable(true)
         .build()
         .map_err(|err| err.to_string())?;
@@ -754,6 +820,76 @@ mod tests {
     #[test]
     fn resolve_deck_path_adversarial_nonexistent_path_is_an_error() {
         assert!(resolve_deck_path("/definitely/does/not/exist/deck.md").is_err());
+    }
+
+    #[test]
+    fn deck_path_for_comparison_spec_joins_deck_md_for_a_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(deck_path_for_comparison(dir.path().to_str().unwrap()), dir.path().join("deck.md"));
+    }
+
+    #[test]
+    fn deck_path_for_comparison_spec_leaves_a_file_path_as_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("custom-name.md");
+        std::fs::write(&file, "# Hi").unwrap();
+        assert_eq!(deck_path_for_comparison(file.to_str().unwrap()), file);
+    }
+
+    #[test]
+    fn deck_path_for_comparison_adversarial_a_path_that_does_not_exist_is_never_rejected() {
+        // Unlike `resolve_deck_path`, this never fails — a nonexistent
+        // path can't match anything already open, but it also can't
+        // crash the comparison that's about to check that.
+        assert_eq!(deck_path_for_comparison("/definitely/does/not/exist/deck.md"), PathBuf::from("/definitely/does/not/exist/deck.md"));
+    }
+
+    #[test]
+    fn matching_window_label_spec_finds_the_label_whose_deck_path_is_the_same_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        std::fs::write(&deck_path, "# Hi").unwrap();
+        let open_decks = [("deck-0", deck_path.as_path())];
+        assert_eq!(matching_window_label(open_decks.into_iter(), &deck_path), Some("deck-0".to_string()));
+    }
+
+    #[test]
+    fn matching_window_label_spec_matches_through_a_symlink_to_the_same_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_path = dir.path().join("deck.md");
+        std::fs::write(&real_path, "# Hi").unwrap();
+        let symlink_path = dir.path().join("alias.md");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real_path, &symlink_path).unwrap();
+        #[cfg(not(unix))]
+        std::os::windows::fs::symlink_file(&real_path, &symlink_path).unwrap();
+        let open_decks = [("deck-0", real_path.as_path())];
+        assert_eq!(matching_window_label(open_decks.into_iter(), &symlink_path), Some("deck-0".to_string()));
+    }
+
+    #[test]
+    fn matching_window_label_adversarial_no_open_decks_is_none() {
+        assert_eq!(matching_window_label(std::iter::empty(), Path::new("/tmp/deck.md")), None);
+    }
+
+    #[test]
+    fn matching_window_label_adversarial_similar_looking_but_different_files_do_not_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("deck.md");
+        let b = dir.path().join("deck-old.md");
+        std::fs::write(&a, "# A").unwrap();
+        std::fs::write(&b, "# B").unwrap();
+        let open_decks = [("deck-0", a.as_path())];
+        assert_eq!(matching_window_label(open_decks.into_iter(), &b), None);
+    }
+
+    #[test]
+    fn matching_window_label_adversarial_a_path_that_no_longer_exists_still_compares_by_text() {
+        // Neither side can be canonicalized, so the fallback (compare the
+        // path as given) still has to work rather than panic.
+        let gone = Path::new("/definitely/does/not/exist/deck.md");
+        let open_decks = [("deck-0", gone)];
+        assert_eq!(matching_window_label(open_decks.into_iter(), gone), Some("deck-0".to_string()));
     }
 
     fn variant_file_names(variants: &[DeckVariantPayload]) -> Vec<&str> {
