@@ -330,6 +330,12 @@ don't bundle everything into one giant commit.
   (the already-exercised, correctly-working case) instead of an in-place
   branch swap.
 
+- **An input's `value={expr}` binding writes to the DOM only when `expr`'s
+  result changes.** Text the user typed that normalizes back to the value
+  already shown (`000` or `-1` into a number input that shows `0`) stays on
+  screen. When an input normalizes what's typed, also rewrite the field
+  from `onChange` (see `dom/sectionHeader.ts`'s `showCanonicalValue`).
+
 ## Pitfalls hit with UnoCSS (Wind4 preset)
 
 - Bracketed arbitrary-value syntax like `border-[Npx]` gets
