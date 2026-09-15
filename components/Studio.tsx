@@ -88,10 +88,12 @@ export function Studio() {
     setErrorMessage(null)
     try {
       const info = await deckIpc.openDeck(path)
-      void refreshDeckVariants()
       await refreshSource(false, info.render)
       setStatusMessage(`Opened ${info.deckPath}`)
       await dispatch({ type: 'opened', deckPath: info.deckPath })
+      // Only once `open`: a variant picked while still `opening` would be
+      // rejected by `decide` as busy, silently doing nothing.
+      void refreshDeckVariants()
     } catch (err) {
       setErrorMessage(String(err))
       // A failure here often means the path was a Recent entry pointing
@@ -434,8 +436,8 @@ export function Studio() {
     }
   }
 
-  // Called right after `openDeck` resolves — `list_deck_variants` reads
-  // this window's session, which `open_deck` has just set. Best-effort
+  // Called by `runOpen` once the deck is open — `list_deck_variants` reads
+  // this window's session, which `open_deck` has already set. Best-effort
   // like `refreshRecentDecks`: a failed listing just hides the switcher.
   async function refreshDeckVariants(): Promise<void> {
     try {
