@@ -41,12 +41,11 @@ export function isBusy(lifecycle: DeckLifecycle): boolean {
 /** The single state-transition table for the whole deck-opening/
  * creating flow. Every caller (UI event handlers, the async IPC
  * continuations) goes through this — none of them decide `next` for
- * themselves. `open`'s `open-requested` (spawn a second window rather
- * than replacing this one) is modeled for completeness per the ADT, but
- * as of this writing every call site that fires `open-requested` only
- * does so while still `welcome` (the "Open Deck…" button and Recent
- * entries only render there) — native "Open Recent" opens a new window
- * entirely Rust-side and never reaches this at all. */
+ * themselves. `open`'s `open-requested` spawns a second window rather
+ * than replacing this one — fired by the deck header's variant switcher
+ * (deck.md -> deck.ja.md). The welcome screen's "Open Deck…" button and
+ * Recent entries fire it only while still `welcome`; native "Open Recent"
+ * opens a new window entirely Rust-side and never reaches this at all. */
 export function decide(state: DeckLifecycle, event: DeckEvent): Decision {
   switch (state.kind) {
     case 'welcome':

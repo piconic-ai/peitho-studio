@@ -13,6 +13,7 @@ import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems } from '../domain/contextMenu'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
 import { buildSlideList, manifestIndexAt, recordByManifestIndex, sectionStartBySourceIndex } from '../domain/slideList'
+import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOptionsOf } from '../domain/deckVariants'
 import { waitForEventOrTimeout } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
@@ -87,6 +88,7 @@ export function Studio() {
     setErrorMessage(null)
     try {
       const info = await deckIpc.openDeck(path)
+      void refreshDeckVariants()
       await refreshSource(false, info.render)
       setStatusMessage(`Opened ${info.deckPath}`)
       await dispatch({ type: 'opened', deckPath: info.deckPath })
@@ -111,13 +113,12 @@ export function Studio() {
       await dispatch({ type: 'failed', message: String(err) })
     }
   }
-  // The `spawn-window` effect — modeled in `domain/deckLifecycle.ts` for
-  // completeness (an `open` window that somehow receives another
-  // `open-requested` shouldn't lose its own deck), but as of this
-  // writing nothing in this file can actually fire `open-requested`
-  // while `open`: the buttons/Recent entries that dispatch it only
-  // render on the welcome screen, and native "Open Recent" opens a new
-  // window entirely Rust-side without going through this component.
+  // The `spawn-window` effect: an `open` window that receives another
+  // `open-requested` keeps its own deck and opens the new one in a new
+  // window. Fired by the deck header's variant switcher (deck.md ->
+  // deck.ja.md); the welcome screen's buttons/Recent entries dispatch the
+  // same event but only while `welcome`, and native "Open Recent" opens a
+  // new window entirely Rust-side without going through this component.
   async function openDeckInNewWindow(path: string): Promise<void> {
     try {
       await deckIpc.openDeckWindow(path)
@@ -166,6 +167,10 @@ export function Studio() {
   // `localStorage`, since the native File > Open Recent submenu needs the
   // same list and has no access to this webview's storage.
   const [recentDecks, setRecentDecks] = createSignal<string[]>([])
+  // Same-base sibling decks of the open one (deck.md, deck.ja.md, ...) —
+  // fetched once per open by `refreshDeckVariants`.
+  const [deckVariants, setDeckVariants] = createSignal<DeckVariant[]>([])
+  const variantSwitcher = createMemo(() => toVariantSwitcher(deckVariants()))
 
   // Plain (non-reactive) DOM handles for the two editor textareas — see the
   // note above `syncEditorFields` for why these are *not* driven by a
@@ -426,6 +431,17 @@ export function Studio() {
       setRecentDecks(await deckIpc.getRecentDecks())
     } catch {
       // Best-effort — an empty Recent list just means nothing to suggest.
+    }
+  }
+
+  // Called right after `openDeck` resolves — `list_deck_variants` reads
+  // this window's session, which `open_deck` has just set. Best-effort
+  // like `refreshRecentDecks`: a failed listing just hides the switcher.
+  async function refreshDeckVariants(): Promise<void> {
+    try {
+      setDeckVariants(await deckIpc.listDeckVariants())
+    } catch {
+      setDeckVariants([])
     }
   }
 
@@ -1095,6 +1111,13 @@ export function Studio() {
         <>
       <DeckHeader
         deckPath={deck.deckPath()}
+        variantSwitcherShown={variantSwitcher().kind === 'shown'}
+        currentVariantLabel={currentVariantLabelOf(variantSwitcher())}
+        variantOptions={variantOptionsOf(variantSwitcher())}
+        variantMenuOpen={ui.variantMenuOpen()}
+        onToggleVariantMenu={() => ui.setVariantMenuOpen(!ui.variantMenuOpen())}
+        onCloseVariantMenu={() => ui.setVariantMenuOpen(false)}
+        onOpenVariant={path => void dispatch({ type: 'open-requested', path })}
         presentMenuOpen={ui.presentMenuOpen()}
         presentPending={ui.presentPending()}
         onTogglePresentMenu={() => ui.setPresentMenuOpen(!ui.presentMenuOpen())}

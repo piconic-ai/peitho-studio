@@ -9,7 +9,7 @@ const EDITOR_WIDTH = 420
 /** Transient UI-only state that doesn't belong to any single deck/editor
  * concept: the thumbnail drag gesture, the right-click context menu (+ its
  * "Change Layout" submenu preview cache), the in-app clipboard, the Present
- * dropdown, and the two resizable column widths.
+ * and deck-variant dropdowns, and the two resizable column widths.
  *
  * Orchestration that spans this store and another concern — `startSlideDrag`
  * ending in a call to `reorderSlides`, `openContextMenu` also calling
@@ -88,6 +88,8 @@ export function createUiStore() {
   const [clipboardSlideText, setClipboardSlideText] = createSignal<string | null>(null)
 
   const [presentMenuOpen, setPresentMenuOpen] = createSignal(false)
+  // The deck header's variant switcher dropdown (deck.md <-> deck.ja.md).
+  const [variantMenuOpen, setVariantMenuOpen] = createSignal(false)
   // Click-to-completion feedback for the Present button (`DeckHeader.tsx`):
   // set right when a present click is dispatched, cleared once
   // `present_deck` settles (success or failure alike — this is deliberately
@@ -105,6 +107,7 @@ export function createUiStore() {
     layoutPreviews, setLayoutPreviews, layoutPreviewStylesheetText, setLayoutPreviewCss,
     clipboardSlideText, setClipboardSlideText,
     presentMenuOpen, setPresentMenuOpen, presentPending, setPresentPending,
+    variantMenuOpen, setVariantMenuOpen,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth,
   }
 }
