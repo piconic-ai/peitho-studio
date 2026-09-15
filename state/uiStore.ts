@@ -1,6 +1,7 @@
 import { createSignal, createMemo } from '@barefootjs/client'
 import { type DragState } from '../domain/drag'
-import { type ContextMenu, appendIndex as computeAppendIndex } from '../domain/contextMenu'
+import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withLayoutFitResult, withLayoutNotice } from '../domain/contextMenu'
+import { type LayoutVerdict } from '../domain/layoutFit'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 
 const SLIDE_LIST_WIDTH = 176
@@ -58,6 +59,23 @@ export function createUiStore() {
   function toggleLayoutPicker(): void {
     setContextMenu(menu => (menu.kind === 'on-slide' ? { ...menu, layoutPickerOpen: !menu.layoutPickerOpen } : menu))
   }
+  // Each right-click on a slide starts its own `check_slide_layouts` call;
+  // numbering them is what lets `settleLayoutFit` drop an answer that
+  // arrives after the menu it was for has been replaced or closed.
+  let lastLayoutFitRequestId = 0
+  /** Opens the menu on slide `index` and returns the request id its fit
+   * check's answer must be settled with. */
+  function openSlideContextMenu(index: number, x: number, y: number): number {
+    lastLayoutFitRequestId += 1
+    setContextMenu(openOnSlide(index, x, y, lastLayoutFitRequestId))
+    return lastLayoutFitRequestId
+  }
+  function settleLayoutFit(requestId: number, verdicts: readonly LayoutVerdict[] | null): void {
+    setContextMenu(menu => withLayoutFitResult(menu, requestId, verdicts))
+  }
+  function showLayoutNotice(notice: string): void {
+    setContextMenu(menu => withLayoutNotice(menu, notice))
+  }
   /** The index a slide-appending action (New Slide, Paste) should insert
    * after — the right-clicked slide, or the end of the list when the menu
    * is closed or was opened on empty space. */
@@ -104,6 +122,7 @@ export function createUiStore() {
   return {
     dragState, setDragState, draggedIndex, dragOverGap, dragDeltaY,
     contextMenu, setContextMenu, closeContextMenu, toggleLayoutPicker, contextMenuAppendIndex,
+    openSlideContextMenu, settleLayoutFit, showLayoutNotice,
     layoutPreviews, setLayoutPreviews, layoutPreviewStylesheetText, setLayoutPreviewCss,
     clipboardSlideText, setClipboardSlideText,
     presentMenuOpen, setPresentMenuOpen, presentPending, setPresentPending,
