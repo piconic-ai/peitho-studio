@@ -1197,6 +1197,8 @@ export function Studio() {
             const manifestIndex = manifestIndexAt(slideEntries(), index)
             return manifestIndex === null ? { name: '', timeMs: 0 } : render.sectionDraftOf(manifestIndex)
           }}
+          editingSectionIndex={ui.editingSectionIndex()}
+          onEditSection={index => ui.setEditingSectionIndex(index)}
           canvasWidth={render.canvasWidth()}
           canvasHeight={render.canvasHeight()}
           canvasFragmentOf={render.canvasFragmentOf}
@@ -1206,7 +1208,13 @@ export function Studio() {
           onSelectSlide={index => selectSlide(index)}
           onSectionNameInput={onSectionNameInput}
           onSectionTimeInput={onSectionTimeInput}
-          onCommitSectionEdit={index => void commitSectionEdit(index)}
+          onCommitSectionEdit={index => {
+            void commitSectionEdit(index)
+            // The header collapses back to its plain summary once focus
+            // leaves it — same trigger as saving it, so a spinner isn't
+            // left open just because the deck happens to be mid-save.
+            if (ui.editingSectionIndex() === index) ui.setEditingSectionIndex(null)
+          }}
         />
 
         <div

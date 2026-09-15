@@ -1,7 +1,7 @@
 'use client'
 
 import { type Manifest, type ManifestSection, type SectionDraft } from '../domain/render'
-import { type DurationPart, msToMinutesSeconds } from '../domain/slides'
+import { type DurationPart, formatDurationMs, msToMinutesSeconds } from '../domain/slides'
 import { type SlideListEntry } from '../domain/slideList'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 import { isFocusMovingWithinSectionHeader, showCanonicalValue } from '../dom/sectionHeader'
@@ -36,6 +36,13 @@ export interface SlideListProps {
    * `startIndex`, falling back to its saved values (`state/renderStore.ts`'s
    * `sectionDraftOf`). */
   sectionDraftOf: (startIndex: number) => SectionDraft
+  /** Which section header (by `sourceIndex`) currently shows its editable
+   * spinners instead of its plain collapsed summary — `null` when none do
+   * (see `state/uiStore.ts`'s `editingSectionIndex`). */
+  editingSectionIndex: number | null
+  /** Expands this section header's collapsed summary into its editable
+   * name/time spinners. */
+  onEditSection: (index: number) => void
   canvasWidth: number
   canvasHeight: number
   /** Pre-absolutized fragment HTML for `key` — a shadow root has no `<base
@@ -147,50 +154,77 @@ export function SlideList(props: SlideListProps) {
                 style={props.draggedIndex === entry.sourceIndex ? `transform: translateY(${String(props.dragDeltaY)}px) scale(0.95)` : ''}
               >
                 {props.sectionStartByIndex[entry.sourceIndex] ? (
-                  // The time is edited with two number spinners instead of
-                  // free text in peitho's `1m30s` format, so no input can
-                  // produce a time peitho rejects (see `domain/slides.ts`'s
-                  // `withDurationPart`). The header saves once focus leaves
-                  // it, not on each input's own blur (see
-                  // `isFocusMovingWithinSectionHeader`).
-                  <div data-section-header="" className="flex items-center gap-1 pt-3 pb-1">
-                    <input
-                      aria-label="Section name"
-                      value={props.sectionDraftOf(entry.sourceIndex).name}
-                      onInput={e => props.onSectionNameInput(entry.sourceIndex, e.target.value)}
-                      onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
-                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                      className="min-w-0 flex-1 bg-transparent outline-none text-xs font-semibold text-foreground/80"
-                    />
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      aria-label="Section minutes"
-                      value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes)}
-                      onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'minutes', e.target.valueAsNumber)}
-                      onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes))}
-                      onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
-                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                      className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
-                    />
-                    <span className="shrink-0 text-xs text-muted-foreground">m</span>
-                    {/* No `min`/`max` on the seconds spinner, so its arrows
-                        step past 59 and below 0 and carry into or borrow
-                        from the minutes. */}
-                    <input
-                      type="number"
-                      step="1"
-                      aria-label="Section seconds"
-                      value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds)}
-                      onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'seconds', e.target.valueAsNumber)}
-                      onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds))}
-                      onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
-                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                      className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
-                    />
-                    <span className="shrink-0 text-xs text-muted-foreground">s</span>
-                  </div>
+                  props.editingSectionIndex === entry.sourceIndex ? (
+                    // The time is edited with two number spinners instead of
+                    // free text in peitho's `1m30s` format, so no input can
+                    // produce a time peitho rejects (see `domain/slides.ts`'s
+                    // `withDurationPart`). The header saves — and collapses
+                    // back to its plain summary below — once focus leaves
+                    // it, not on each input's own blur (see
+                    // `isFocusMovingWithinSectionHeader`).
+                    <div data-section-header="" className="flex items-center gap-1 pt-3 pb-1">
+                      <input
+                        aria-label="Section name"
+                        // Mounts focused: entering edit mode is a deliberate
+                        // click, so the name field is ready to type in
+                        // immediately rather than making that click's own
+                        // target (the collapsed summary button below) also
+                        // double as a focus target to aim for.
+                        ref={el => el.focus()}
+                        value={props.sectionDraftOf(entry.sourceIndex).name}
+                        onInput={e => props.onSectionNameInput(entry.sourceIndex, e.target.value)}
+                        onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
+                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                        className="min-w-0 flex-1 bg-transparent outline-none text-xs font-semibold text-foreground/80"
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        aria-label="Section minutes"
+                        value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes)}
+                        onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'minutes', e.target.valueAsNumber)}
+                        onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes))}
+                        onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
+                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                        className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
+                      />
+                      <span className="shrink-0 text-xs text-muted-foreground">m</span>
+                      {/* No `min`/`max` on the seconds spinner, so its arrows
+                          step past 59 and below 0 and carry into or borrow
+                          from the minutes. */}
+                      <input
+                        type="number"
+                        step="1"
+                        aria-label="Section seconds"
+                        value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds)}
+                        onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'seconds', e.target.valueAsNumber)}
+                        onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds))}
+                        onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
+                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                        className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
+                      />
+                      <span className="shrink-0 text-xs text-muted-foreground">s</span>
+                    </div>
+                  ) : (
+                    // Collapsed by default: the native spinner arrows
+                    // permanently sitting in an otherwise plain list read as
+                    // an unstyled form, not a slide list, so they only
+                    // appear once someone actually asks to edit this header.
+                    <button
+                      type="button"
+                      aria-label="Edit section name and time"
+                      onClick={() => props.onEditSection(entry.sourceIndex)}
+                      className="w-full flex items-center gap-1 pt-3 pb-1 text-left"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground/80">
+                        {props.sectionDraftOf(entry.sourceIndex).name}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {formatDurationMs(props.sectionDraftOf(entry.sourceIndex).timeMs)}
+                      </span>
+                    </button>
+                  )
                 ) : null}
                 <button
                   type="button"
