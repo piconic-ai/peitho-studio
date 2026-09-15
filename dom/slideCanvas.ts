@@ -96,6 +96,59 @@ const mountRetryCounts = new WeakMap<HTMLElement, number>()
 // check on every slide and rebuild every canvas on every keystroke.
 const appliedFragments = new WeakMap<Element, string>()
 
+// A classic (non-module) inline script's `type` — absent, "", or one of
+// these two MIME types all mean "run it as an ordinary classic script";
+// anything else (module, importmap, application/json, a custom data
+// island, ...) isn't JS meant to run in the global scope and is left
+// alone below.
+const CLASSIC_JAVASCRIPT_TYPES = new Set(['', 'text/javascript', 'application/javascript'])
+
+function needsScopeWrap(script: HTMLScriptElement): boolean {
+  if (script.hasAttribute('src')) return false // external file — nothing here to wrap
+  return CLASSIC_JAVASCRIPT_TYPES.has((script.getAttribute('type') ?? '').trim().toLowerCase())
+}
+
+/** `<script>` elements produced by parsing HTML text (`innerHTML =`,
+ * `template.innerHTML =`, ...) are marked "already started" by the HTML
+ * parsing spec and never execute, no matter how many times they're moved
+ * or re-inserted afterward — even into a connected document. This
+ * replaces every such script under `root` with a freshly `createElement`d
+ * one carrying the same attributes and source text, which is NOT marked
+ * "already started" and so does execute once `root` (or an ancestor of
+ * it) is connected. A layout author's own `<script>` in a slide's
+ * rendered fragment is otherwise silently inert — ported from the same
+ * fix in `peitho`/`peitho-present`'s viewers (see
+ * `todo/layout-js-console-log.md`).
+ *
+ * A classic inline script (no `src`, no `type="module"`) is also wrapped
+ * in an IIFE: `mountSlideCanvas` runs once per host, but `patchSlideCanvas`
+ * re-executes a slide's script on every edit that changes its fragment
+ * (every keystroke, potentially) — a bare top-level `let`/`const` would
+ * throw "already declared" the second time, since the earlier
+ * declaration outlives the DOM node that introduced it (the page has one
+ * shared global scope, Shadow DOM only isolates the DOM tree/styles).
+ * A `type="module"` script already gets its own module scope, and a
+ * script with `src` has nothing here to wrap; both are swapped for a
+ * fresh element (so they still actually execute/load) but left
+ * otherwise as-is.
+ *
+ * Note what this does NOT solve: a script's own side effects (a
+ * `setInterval`, an event listener) aren't torn down when the fragment
+ * it came from is replaced — `patchSlideCanvas` swapping `.peitho-slide`
+ * out from under a running script leaves that script's own timers/
+ * listeners running against detached state. Left as-is for now (the
+ * same tradeoff `peitho build`'s distribution viewer already ships with
+ * — see `todo/layout-js-console-log.md`), not something to guess a fix
+ * for without seeing what real layout scripts actually need. */
+function executeInlineScripts(root: ParentNode): void {
+  for (const oldScript of Array.from(root.querySelectorAll('script'))) {
+    const newScript = document.createElement('script')
+    for (const attribute of Array.from(oldScript.attributes)) newScript.setAttribute(attribute.name, attribute.value)
+    newScript.textContent = needsScopeWrap(oldScript) ? `(function () {\n${oldScript.textContent ?? ''}\n})();` : oldScript.textContent
+    oldScript.replaceWith(newScript)
+  }
+}
+
 // Shadow roots that already have the interactive-mode link guard attached
 // — `mountSlideCanvas` re-runs on every selection change for the same
 // preview-pane host (a fresh `srcdoc`-style remount, not a `patchSlideCanvas`
@@ -166,6 +219,7 @@ export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragme
   host.style.setProperty('--peitho-canvas-width', `${String(canvas.width)}px`)
   host.style.setProperty('--peitho-canvas-height', `${String(canvas.height)}px`)
   shadow.innerHTML = fragmentHtml
+  executeInlineScripts(shadow)
   appliedFragments.set(host, fragmentHtml)
 }
 
@@ -183,6 +237,7 @@ export function patchSlideCanvas(host: HTMLElement, fragmentHtml: string): boole
   wrapper.innerHTML = fragmentHtml
   const next = wrapper.firstElementChild
   if (!next) return false
+  executeInlineScripts(next)
   current.replaceWith(next)
   appliedFragments.set(host, fragmentHtml)
   return true
