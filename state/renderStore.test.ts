@@ -30,7 +30,7 @@ describe('applyRenderPayload', () => {
   test('spec: populates manifest, assetBaseUrl, canvas size, and per-slide fragments', () => {
     createRoot(() => {
       const store = createRenderStore()
-      store.applyRenderPayload(payload())
+      store.applyRenderPayload(payload(), 'source')
       expect(store.manifest()?.title).toBe('Deck')
       expect(store.assetBaseUrl()).toBe('asset://base/')
       expect(store.canvasWidth()).toBe(1280)
@@ -48,7 +48,7 @@ describe('applyRenderPayload', () => {
           sections: [{ name: 'Intro', startIndex: 0, endIndex: 0, plannedDurationMs: 90_000 }],
           slides: [slide()],
         },
-      }))
+      }), 'source')
       expect(store.sectionDrafts()[0]).toEqual({ name: 'Intro', time: '1m30s' })
     })
   })
@@ -57,7 +57,7 @@ describe('applyRenderPayload', () => {
     createRoot(() => {
       const store = createRenderStore()
       store.setSectionDrafts({ 0: { name: 'stale', time: '1m0s' } })
-      store.applyRenderPayload(payload())
+      store.applyRenderPayload(payload(), 'source')
       expect(store.sectionDrafts()).toEqual({})
     })
   })
@@ -72,22 +72,43 @@ describe('applyRenderPayload', () => {
   test('adversarial: an unchanged slide keeps its previous object reference across two renders (stabilizeByKey)', () => {
     createRoot(() => {
       const store = createRenderStore()
-      store.applyRenderPayload(payload())
+      store.applyRenderPayload(payload(), 'source')
       const first = store.manifest()!.slides[0]
-      store.applyRenderPayload(payload({ fragments: { 'slide-1': '<div class="peitho-slide">one</div>' } }))
+      store.applyRenderPayload(payload({ fragments: { 'slide-1': '<div class="peitho-slide">one</div>' } }), 'source')
       const second = store.manifest()!.slides[0]
       expect(second).toBe(first)
+    })
+  })
+
+  test('spec: renderedSource holds exactly the source string this call was given, updated on each later render', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      expect(store.renderedSource()).toBe('')
+      store.applyRenderPayload(payload(), '# One\n')
+      expect(store.renderedSource()).toBe('# One\n')
+      store.applyRenderPayload(payload(), '# One\n\n---\n\n# Two\n')
+      expect(store.renderedSource()).toBe('# One\n\n---\n\n# Two\n')
+    })
+  })
+
+  test('adversarial: going back to an empty source string after a real one is not mistaken for "no render yet"', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.applyRenderPayload(payload(), 'not empty')
+      store.applyRenderPayload(payload(), '')
+      expect(store.renderedSource()).toBe('')
+      expect(store.manifest()).not.toBeNull()
     })
   })
 
   test('adversarial: an edited slide gets a fresh object reference, not the stale previous one', () => {
     createRoot(() => {
       const store = createRenderStore()
-      store.applyRenderPayload(payload())
+      store.applyRenderPayload(payload(), 'source')
       const first = store.manifest()!.slides[0]
       store.applyRenderPayload(payload({
         manifest: { title: 'Deck', slideCount: 1, canvasWidth: 1280, canvasHeight: 720, sections: [], slides: [slide({ text: { title: 'Changed', body: '', code: '' } })] },
-      }))
+      }), 'source')
       const second = store.manifest()!.slides[0]
       expect(second).not.toBe(first)
       expect(second.text.title).toBe('Changed')
@@ -102,7 +123,7 @@ describe('canvasFragmentOf', () => {
       store.applyRenderPayload(payload({
         assetBaseUrl: 'http://localhost:1234/',
         fragments: { 'slide-1': '<section class="peitho-slide"><img src="assets/a.png"></section>' },
-      }))
+      }), 'source')
       expect(store.canvasFragmentOf('slide-1'))
         .toBe('<section class="peitho-slide"><img src="http://localhost:1234/assets/a.png"></section>')
     })
@@ -112,8 +133,8 @@ describe('canvasFragmentOf', () => {
     createRoot(() => {
       const store = createRenderStore()
       const fragments = { 'slide-1': '<img src="assets/a.png">' }
-      store.applyRenderPayload(payload({ assetBaseUrl: 'http://localhost:1111/', fragments }))
-      store.applyRenderPayload(payload({ assetBaseUrl: 'http://localhost:2222/', fragments }))
+      store.applyRenderPayload(payload({ assetBaseUrl: 'http://localhost:1111/', fragments }), 'source')
+      store.applyRenderPayload(payload({ assetBaseUrl: 'http://localhost:2222/', fragments }), 'source')
       expect(store.canvasFragmentOf('slide-1')).toBe('<img src="http://localhost:2222/assets/a.png">')
     })
   })
@@ -122,7 +143,7 @@ describe('canvasFragmentOf', () => {
     createRoot(() => {
       const store = createRenderStore()
       const html = '<section class="peitho-slide"><img src="https://cdn.example.com/a.png"></section>'
-      store.applyRenderPayload(payload({ assetBaseUrl: 'http://localhost:1234/', fragments: { 'slide-1': html } }))
+      store.applyRenderPayload(payload({ assetBaseUrl: 'http://localhost:1234/', fragments: { 'slide-1': html } }), 'source')
       expect(store.canvasFragmentOf('slide-1')).toBe(html)
     })
   })
@@ -130,7 +151,7 @@ describe('canvasFragmentOf', () => {
   test('adversarial: no asset server resolved yet leaves the fragment alone instead of throwing', () => {
     createRoot(() => {
       const store = createRenderStore()
-      store.applyRenderPayload(payload({ assetBaseUrl: '', fragments: { 'slide-1': '<img src="assets/a.png">' } }))
+      store.applyRenderPayload(payload({ assetBaseUrl: '', fragments: { 'slide-1': '<img src="assets/a.png">' } }), 'source')
       expect(store.canvasFragmentOf('slide-1')).toBe('<img src="assets/a.png">')
     })
   })
@@ -143,7 +164,7 @@ describe('slideStylesheetText / fontFaceCss', () => {
       store.applyRenderPayload(payload({
         assetBaseUrl: 'http://localhost:1234/',
         css: '@font-face { src: url("theme-fonts/Inter.woff2"); }\n:root { --x: 1px; } .peitho-slide { color: red; }',
-      }))
+      }), 'source')
       expect(store.fontFaceCss()).toContain('url("http://localhost:1234/theme-fonts/Inter.woff2")')
       expect(store.slideStylesheetText()).not.toContain('@font-face')
       expect(store.slideStylesheetText()).toContain(':host { --x: 1px; }')
@@ -154,7 +175,7 @@ describe('slideStylesheetText / fontFaceCss', () => {
   test('adversarial: theme CSS with no @font-face leaves fontFaceCss empty', () => {
     createRoot(() => {
       const store = createRenderStore()
-      store.applyRenderPayload(payload({ css: '.peitho-slide { color: red; }' }))
+      store.applyRenderPayload(payload({ css: '.peitho-slide { color: red; }' }), 'source')
       expect(store.fontFaceCss()).toBe('')
       expect(store.slideStylesheetText()).toBe('.peitho-slide { color: red; }')
     })
@@ -174,11 +195,11 @@ describe('slideStylesheetText / fontFaceCss', () => {
       store.applyRenderPayload(payload({
         assetBaseUrl: 'http://localhost:1111/',
         css: '@font-face { src: url(theme-fonts/A.woff2); } .peitho-slide { color: red; }',
-      }))
+      }), 'source')
       store.applyRenderPayload(payload({
         assetBaseUrl: 'http://localhost:2222/',
         css: '@font-face { src: url(theme-fonts/B.woff2); } .peitho-slide { color: blue; }',
-      }))
+      }), 'source')
       expect(store.fontFaceCss()).toBe('@font-face { src: url(http://localhost:2222/theme-fonts/B.woff2); }')
       expect(store.slideStylesheetText()).toBe(' .peitho-slide { color: blue; }')
     })

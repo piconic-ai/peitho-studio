@@ -4,7 +4,7 @@ import { createSignal, createMemo, createEffect, onMount, onCleanup } from '@bar
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
-import { type ManifestSlide } from '../domain/render'
+import { type ManifestSlide, type RenderPayload } from '../domain/render'
 import { clampMenuPosition } from '../domain/geometry'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
@@ -87,8 +87,7 @@ export function Studio() {
     setErrorMessage(null)
     try {
       const info = await deckIpc.openDeck(path)
-      render.applyRenderPayload(info.render)
-      await refreshSource(false)
+      await refreshSource(false, info.render)
       setStatusMessage(`Opened ${info.deckPath}`)
       await dispatch({ type: 'opened', deckPath: info.deckPath })
     } catch (err) {
@@ -230,7 +229,12 @@ export function Studio() {
   // `updateSlideConfig`, this menu's own `index`, ...) is already a
   // `slideRanges` index, so a manifest-sized count would under-count the
   // deck whenever a draft slide is in it.
-  const slideEntries = createMemo(() => buildSlideList(editor.fullSource(), render.manifest()?.slides ?? []))
+  // `render.renderedSource()`, not `editor.fullSource()` — the two can
+  // briefly disagree (see `state/renderStore.ts`'s `renderedSource` doc
+  // comment for the exact scenario this fixes), and pairing `manifest()`
+  // with anything other than the source that actually produced it is
+  // exactly what corrupted a thumbnail's canvas permanently.
+  const slideEntries = createMemo(() => buildSlideList(render.renderedSource(), render.manifest()?.slides ?? []))
   const currentMenuItems = createMemo(() => computeMenuItems(ui.contextMenu(), {
     slideCount: slideEntries().length,
     hasClipboard: ui.clipboardSlideText() !== null,
@@ -316,7 +320,7 @@ export function Studio() {
     try {
       const payload = await deckIpc.renderDraft(content)
       if (generation !== previewGeneration) return
-      render.applyRenderPayload(payload)
+      render.applyRenderPayload(payload, content)
       setErrorMessage(null)
     } catch (err) {
       if (generation !== previewGeneration) return
@@ -393,8 +397,15 @@ export function Studio() {
     }
   })
 
-  async function refreshSource(preserveSelection: boolean): Promise<void> {
+  // `renderPayload`, when given, is applied together with the exact
+  // `source` this same call just read — see `state/renderStore.ts`'s
+  // `renderedSource` for why `applyRenderPayload` must always receive its
+  // matching source directly, rather than this function setting
+  // `editor.fullSource` off on its own and leaving the manifest to catch
+  // up separately.
+  async function refreshSource(preserveSelection: boolean, renderPayload?: RenderPayload): Promise<void> {
     const source = await deckIpc.readDeckSource()
+    if (renderPayload) render.applyRenderPayload(renderPayload, source)
     editor.setFullSource(source)
     const ranges = splitSlides(source)
     editor.setSlideRanges(ranges)
@@ -472,7 +483,7 @@ export function Studio() {
     setErrorMessage(null)
     try {
       const payload = await deckIpc.renderDraft(nextSource)
-      render.applyRenderPayload(payload)
+      render.applyRenderPayload(payload, nextSource)
       await deckIpc.saveDeckSource(nextSource)
       editor.setFullSource(nextSource)
       const ranges = splitSlides(nextSource)
