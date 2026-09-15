@@ -57,6 +57,13 @@ tags: [ui, section, time]
 - **0秒は保存時に1秒へクランプ**(`savableSectionTimeMs`)。peitho-core
   は`time must be greater than zero`で0を拒否する。編集中は0分0秒を表示
   できるようにした(分を0にしてから秒を打つ途中で秒欄を書き換えないため)。
+  同じく保存時に、他セクションとの合計が`MAX_DURATION_MS`を超えない
+  ようにもクランプする(peitho-coreは合計が`Number.MAX_SAFE_INTEGER` ms
+  を超えるデッキを拒否する)。
+- **打ちかけの入力(空欄、`-`、`1e`など。`valueAsNumber`がNaN)は時間を
+  変えない**(`withDurationPart`)。0として扱うと、`value`バインディングが
+  入力中の欄を`0`に書き換えてしまい、`-1`と打つと`01`になる。欄を離れた
+  ときに現在の値へ書き戻す。
 - **セクションヘッダーの保存は、フォーカスがヘッダーの外に出たとき**
   (`dom/sectionHeader.ts`の`isFocusMovingWithinSectionHeader`)。入力欄
   ごとのblurで保存すると、分→秒へTabした瞬間に保存が走り、その再描画で
@@ -98,8 +105,9 @@ tags: [ui, section, time]
     `slides.test.ts`が`example: ...`として実行する。
   - 非機能(堅牢性): `<input type="number">`が返しうる任意の数値
     (NaN/±Infinity/-0/巨大値/小数)に対し、保存される文字列が必ず
-    `parseDurationToMs`で同じ値に読み戻せること、および保存値が
-    `[1秒, MAX_DURATION_MS]`に収まることのプロパティテスト(fast-check)。
+    `parseDurationToMs`で同じ値に読み戻せること、および保存値が1秒以上で
+    他セクションとの合計が`MAX_DURATION_MS`以下に収まることのプロパティ
+    テスト(fast-check)。
   - `e2e/section-time-spinner.e2e.ts`: モックIPC経由で実際の
     SlideList→Studio→`save_deck_source`の経路を通すGiven-When-Then例。
     `e2e/helpers/mockTauri.ts`はPageCommentからセクションを組み立て、
@@ -138,6 +146,12 @@ tags: [ui, section, time]
 - 本文エディタの自動保存など、別の経路の再描画でも`applyRenderPayload`
   がセクションの下書きをリセットするため、スピナー編集中に別の保存が
   着地すると編集が消えうる(本タスク以前からの挙動)。
-- 1セクションを`MAX_DURATION_MS`にし、他のセクションも時間を持つと、
-  合計が`Number.MAX_SAFE_INTEGER`を超えてpeitho-coreがビルドを拒否する。
-  現実的な入力ではないため未対応。
+- 保存中(`commitChange`の完了前)に別のセクションのヘッダーを編集して
+  離れると、2つの保存が並行して走る。後から始まった保存が古い
+  `editor.fullSource()`を元に組み立てられて先の変更を上書きしたり、
+  `render.manifest()`だけ更新済みでfrontmatter合計がずれてビルドエラーに
+  なったりしうる(本タスク以前からの挙動。セクション名の編集でも起きる)。
+- 各セクションヘッダーのバインディングが`sectionDrafts`のRecord全体を
+  読んでいるため、1つのスピナーの編集で全セクションのバインディングが
+  再評価される(CLAUDE.mdの「Record全体を1つのシグナルに持たない」)。
+  セクション数は通常少ないため未対応。
