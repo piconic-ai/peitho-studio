@@ -10,6 +10,7 @@
 import type { Page } from '@playwright/test'
 import { splitSlides, extractPageComment, extractHeadingText, slugifyTitle, uniqueSlideKey } from '../../domain/slides'
 import type { Manifest, ManifestSlide, RenderPayload } from '../../domain/render'
+import type { DeckVariant } from '../../domain/deckVariants'
 
 export interface MockDeck {
   source: string
@@ -58,6 +59,13 @@ export interface MockDeck {
    * the launch warm-up didn't cover — see
    * `todo/archive/open-deck-cold-start-latency.md`). */
   openDeckDelayMs?: number
+  /** What `list_deck_variants` returns — defaults to none, which hides the
+   * deck header's variant switcher. */
+  deckVariants?: DeckVariant[]
+  /** Called with every `invoke()` that reaches the mock (after any
+   * `commandError` check passes), so a test can assert on which commands
+   * a UI action actually sent. */
+  onInvoke?: (cmd: string, args: Record<string, unknown>) => void
 }
 
 function sleep(ms: number): Promise<void> {
@@ -109,6 +117,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
     if (cmd === 'present_deck' && deck.presentDeckDelayMs) await sleep(deck.presentDeckDelayMs)
     if (cmd === 'open_deck' && deck.openDeckDelayMs) await sleep(deck.openDeckDelayMs)
     if (error !== null && error !== undefined) throw new Error(error)
+    deck.onInvoke?.(cmd, args)
     switch (cmd) {
       case 'dev_default_deck': return deck.devDefaultDeck === undefined ? '/fake/deck.md' : deck.devDefaultDeck
       case 'take_pending_deck': return null
@@ -122,6 +131,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         deck.source = args.content as string
         return null
       case 'preview_layouts': return { previews: [], css: '' }
+      case 'list_deck_variants': return deck.deckVariants ?? []
       case 'present_deck':
         // Fires after the spawn itself resolves, matching real timing —
         // `watch_present_readiness` (peitho.rs) only starts watching
