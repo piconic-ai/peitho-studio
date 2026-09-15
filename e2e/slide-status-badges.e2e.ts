@@ -14,6 +14,38 @@ import { mockTauri, type MockDeck } from './helpers/mockTauri'
 const DECK_WITH_SKIPPED_SLIDE = '# Opening\n\n---\n\n<!-- {"skip":true} -->\n# Backup Slide\n'
 const DECK_WITH_DRAFT_THEN_SKIPPED = '# Opening\n\n---\n\n<!-- {"draft":true} -->\n# Hidden\n\n---\n\n<!-- {"skip":true} -->\n# Backup Slide\n'
 
+// Explicit, stable per-slide keys — matching how Studio.tsx's addSlide
+// actually assigns them in production (computed once at creation time,
+// then baked into the PageComment forever after) — with three slides
+// sharing the same title, the scenario kfly8 hit on a real device: draft-
+// toggling one of them briefly paired a newer manifest with the previous
+// (not-yet-updated) source, mis-pairing a same-titled later slide's row
+// with the wrong manifest entry (fixed by `state/renderStore.ts`'s
+// `renderedSource`), and separately, a draft placeholder that reused its
+// own slide's explicit key left that slide's canvas blank forever once
+// un-drafted (fixed by `domain/slideList.ts` always using a
+// `placeholder:<sourceIndex>` key instead).
+const DECK_WITH_REPEATED_TITLES = [
+  '<!-- {"key":"cover"} -->',
+  '# Cover',
+  '',
+  '---',
+  '',
+  '<!-- {"key":"new-slide-1"} -->',
+  '# New Slide',
+  '',
+  '---',
+  '',
+  '<!-- {"key":"new-slide-2"} -->',
+  '# New Slide',
+  '',
+  '---',
+  '',
+  '<!-- {"key":"new-slide-3"} -->',
+  '# New Slide',
+  '',
+].join('\n')
+
 async function openDeck(page: Page, deck: MockDeck, rowCount = 2): Promise<void> {
   await mockTauri(page, deck)
   await page.goto('/')
@@ -161,6 +193,51 @@ test('Given a draft slide, when it is right-clicked, then "Skip in Present" and 
   // the two combinations peitho-core actually refuses are disabled.
   await expect(page.getByRole('button', { name: /^Mark as Draft/ })).toBeEnabled()
   await expect(page.getByRole('button', { name: /^Cut/ })).toBeEnabled()
+})
+
+test('Given three same-titled slides, when the middle one is marked draft, then the slide after it keeps rendering its own thumbnail canvas', async ({ page }) => {
+  await openDeck(page, { source: DECK_WITH_REPEATED_TITLES }, 4)
+  const laterRow = page.locator('[data-slide-row="3"]')
+  expect(await hasRenderedCanvas(laterRow)).toBe(true)
+
+  await page.locator('[data-slide-row="2"]').click({ button: 'right' })
+  await page.getByRole('button', { name: /^Mark as Draft/ }).click()
+  await expect(page.locator('[data-slide-row="2"]').locator('[data-slide-status="draft"]')).toBeVisible({ timeout: 5_000 })
+
+  // The bug this regresses: applyRenderPayload used to be given the new
+  // (post-draft) manifest before editor.fullSource caught up to match it,
+  // so buildSlideList briefly paired this same-titled later slide's row
+  // with the wrong manifest entry — corrupting its canvas permanently,
+  // not just transiently, once BarefootJS's keyed .map() collapsed the
+  // resulting duplicate key to one DOM scope.
+  expect(await hasRenderedCanvas(laterRow)).toBe(true)
+  await expect(laterRow.locator('h1')).toHaveText('New Slide')
+})
+
+test('Given a draft slide with an explicit key, when it is un-drafted, then its own thumbnail canvas renders again (not left blank)', async ({ page }) => {
+  await openDeck(page, { source: DECK_WITH_REPEATED_TITLES }, 4)
+  const row = page.locator('[data-slide-row="1"]')
+
+  await row.click({ button: 'right' })
+  await page.getByRole('button', { name: /^Mark as Draft/ }).click()
+  await expect(row.locator('[data-slide-status="draft"]')).toBeVisible({ timeout: 5_000 })
+
+  await row.click({ button: 'right' })
+  await page.getByRole('button', { name: /^Mark as Draft/ }).click()
+
+  // The bug this regresses: a draft placeholder reused the slide's own
+  // explicit PageComment key, so once un-drafted, this row's `rendered`
+  // branch shared a key with what had just been its own `placeholder`
+  // form — BarefootJS's keyed `.map()` doesn't re-run a canvas host's
+  // `ref` (and so never mounts it) when a key returns to `rendered` after
+  // a stint as `placeholder` on that same key, leaving the thumbnail
+  // permanently blank. `domain/slideList.ts`'s placeholder key is now
+  // always `placeholder:<sourceIndex>`, never the slide's own key, so
+  // every draft <-> rendered toggle is a fresh key as far as the `.map()`
+  // is concerned.
+  await expect(row.locator('[data-slide-status]')).toHaveCount(0, { timeout: 5_000 })
+  await expect(row.locator('[data-slide-canvas-key]')).toHaveCount(1)
+  expect(await hasRenderedCanvas(row)).toBe(true)
 })
 
 test.describe('non-functional: the badge overlay never gets in the way of interacting with the thumbnail', () => {
