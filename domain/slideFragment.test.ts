@@ -45,4 +45,42 @@ describe('absolutizeFragmentUrls', () => {
   test('adversarial: an empty fragment stays empty', () => {
     expect(absolutizeFragmentUrls('', 'http://localhost/')).toBe('')
   })
+
+  test('spec: a script tag\'s own src attribute is absolutized, same as an img', () => {
+    const html = '<section><script src="assets/deck.js"></script></section>'
+    expect(absolutizeFragmentUrls(html, 'http://localhost:1234/')).toBe(
+      '<section><script src="http://localhost:1234/assets/deck.js"></script></section>')
+  })
+
+  test('spec: a script tag\'s attributes other than src are left in place, in order', () => {
+    const html = '<script type="module" src="assets/deck.js" defer></script>'
+    expect(absolutizeFragmentUrls(html, 'http://localhost/')).toBe(
+      '<script type="module" src="http://localhost/assets/deck.js" defer></script>')
+  })
+
+  test('adversarial: text inside a script body that merely looks like a src attribute is left untouched', () => {
+    // A layout script that itself builds an <img> tag as a string must not
+    // have that string corrupted — only real HTML attributes are this
+    // function's job, never a script's own source text.
+    const html = '<script>const img = "<img src=\\"assets/icon.png\\">"</script>'
+    expect(absolutizeFragmentUrls(html, 'http://localhost/')).toBe(html)
+  })
+
+  test('adversarial: a script with no src is left untouched, body included', () => {
+    const html = '<script>console.log("assets/not-a-url")</script>'
+    expect(absolutizeFragmentUrls(html, 'http://localhost/')).toBe(html)
+  })
+
+  test('spec: an img before and after a script tag is still rewritten, the script body is not', () => {
+    const html = '<img src="assets/a.png"><script>const s = "assets/b.png"</script><img src="assets/c.png">'
+    expect(absolutizeFragmentUrls(html, 'http://localhost/')).toBe(
+      '<img src="http://localhost/assets/a.png"><script>const s = "assets/b.png"</script>'
+      + '<img src="http://localhost/assets/c.png">')
+  })
+
+  test('adversarial: multiple script tags are each handled independently', () => {
+    const html = '<script src="assets/a.js"></script><script src="assets/b.js"></script>'
+    expect(absolutizeFragmentUrls(html, 'http://localhost/')).toBe(
+      '<script src="http://localhost/assets/a.js"></script><script src="http://localhost/assets/b.js"></script>')
+  })
 })
