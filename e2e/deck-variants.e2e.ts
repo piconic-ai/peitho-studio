@@ -95,14 +95,15 @@ test('Given the open deck has no same-name siblings, when the deck is shown, the
 // Robustness (non-functional): the switcher is a convenience, so a folder
 // that can't be listed must not surface as an error or block editing.
 test('Given listing the deck folder fails, when the deck is opened, then no switcher and no error are shown and the deck is still editable', async ({ page }) => {
-  await mockTauri(page, {
+  const invocations = await openDeck(page, {
     source: '# Slide One\n',
     deckVariants: [variant('deck.md', null, true), variant('deck.ja.md', 'ja')],
     commandError: cmd => (cmd === 'list_deck_variants' ? 'simulated read_dir failure' : null),
   })
-  await page.goto('/')
-  await expect(page.locator('[data-slide-row]')).toHaveCount(1, { timeout: 10_000 })
 
+  // The switcher starts hidden, so wait for the failing call to have
+  // actually happened before asserting it stayed that way.
+  await expect.poll(() => invocations.some(i => i.cmd === 'list_deck_variants')).toBe(true)
   await expect(switcherButton(page)).toBeHidden()
   await expect(page.getByText('simulated read_dir failure')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Present', exact: true })).toBeEnabled()

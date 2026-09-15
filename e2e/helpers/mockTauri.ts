@@ -62,9 +62,9 @@ export interface MockDeck {
   /** What `list_deck_variants` returns — defaults to none, which hides the
    * deck header's variant switcher. */
   deckVariants?: DeckVariant[]
-  /** Called with every `invoke()` that reaches the mock (after any
-   * `commandError` check passes), so a test can assert on which commands
-   * a UI action actually sent. */
+  /** Called with every `invoke()` that reaches the mock — including ones
+   * `commandError` then fails — so a test can assert on which commands a
+   * UI action actually sent. */
   onInvoke?: (cmd: string, args: Record<string, unknown>) => void
 }
 
@@ -116,8 +116,8 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
     const error = deck.commandError?.(cmd, args)
     if (cmd === 'present_deck' && deck.presentDeckDelayMs) await sleep(deck.presentDeckDelayMs)
     if (cmd === 'open_deck' && deck.openDeckDelayMs) await sleep(deck.openDeckDelayMs)
-    if (error !== null && error !== undefined) throw new Error(error)
     deck.onInvoke?.(cmd, args)
+    if (error !== null && error !== undefined) throw new Error(error)
     switch (cmd) {
       case 'dev_default_deck': return deck.devDefaultDeck === undefined ? '/fake/deck.md' : deck.devDefaultDeck
       case 'take_pending_deck': return null
