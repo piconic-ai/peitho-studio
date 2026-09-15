@@ -149,6 +149,24 @@ function executeInlineScripts(root: ParentNode): void {
   }
 }
 
+/** Fired on `host` (bubbles into the light DOM, so code outside this
+ * shadow root can hear it) every time a canvas's shadow content is
+ * (re)mounted — `detail.root` is that shadow root itself. Exists for a
+ * script loaded via `executeInlineScripts` above to discover elements it
+ * needs to act on: `document.querySelectorAll`/`MutationObserver` never
+ * cross into a shadow root on their own (unlike `peitho build`'s
+ * light-DOM `canvas.innerHTML =` distribution viewer, where a plain
+ * `document`-level `MutationObserver` already sees everything). A script
+ * that wants to run the same "scan for my own marker attribute, mount
+ * something there" logic across all three peitho viewers listens for
+ * this event to get each shadow root explicitly, instead of assuming
+ * `document` reaches it. */
+export const CANVAS_MOUNTED_EVENT = 'peitho:canvas-mounted'
+
+function announceCanvasMounted(host: HTMLElement, root: ShadowRoot): void {
+  host.dispatchEvent(new CustomEvent(CANVAS_MOUNTED_EVENT, { bubbles: true, composed: true, detail: { root } }))
+}
+
 // Shadow roots that already have the interactive-mode link guard attached
 // — `mountSlideCanvas` re-runs on every selection change for the same
 // preview-pane host (a fresh `srcdoc`-style remount, not a `patchSlideCanvas`
@@ -220,6 +238,7 @@ export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragme
   host.style.setProperty('--peitho-canvas-height', `${String(canvas.height)}px`)
   shadow.innerHTML = fragmentHtml
   executeInlineScripts(shadow)
+  announceCanvasMounted(host, shadow)
   appliedFragments.set(host, fragmentHtml)
 }
 
@@ -231,14 +250,16 @@ export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragme
  * `host`, which the replacement inherits untouched. */
 export function patchSlideCanvas(host: HTMLElement, fragmentHtml: string): boolean {
   if (appliedFragments.get(host) === fragmentHtml) return false
-  const current = host.shadowRoot?.querySelector('.peitho-slide')
-  if (!current) return false
+  const shadow = host.shadowRoot
+  const current = shadow?.querySelector('.peitho-slide')
+  if (!shadow || !current) return false
   const wrapper = document.createElement('div')
   wrapper.innerHTML = fragmentHtml
   const next = wrapper.firstElementChild
   if (!next) return false
   executeInlineScripts(next)
   current.replaceWith(next)
+  announceCanvasMounted(host, shadow)
   appliedFragments.set(host, fragmentHtml)
   return true
 }
