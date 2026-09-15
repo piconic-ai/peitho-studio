@@ -8,8 +8,8 @@
 // A synthetic RenderPayload, not real peitho-core output — verified
 // against production behavior separately (run-peitho-studio skill).
 import type { Page } from '@playwright/test'
-import { splitSlides, extractPageComment, extractHeadingText, slugifyTitle, uniqueSlideKey } from '../../domain/slides'
-import type { Manifest, ManifestSlide, RenderPayload } from '../../domain/render'
+import { splitSlides, extractPageComment, extractHeadingText, slugifyTitle, uniqueSlideKey, parseDurationToMs } from '../../domain/slides'
+import type { Manifest, ManifestSection, ManifestSlide, RenderPayload } from '../../domain/render'
 import type { DeckVariant } from '../../domain/deckVariants'
 import type { LayoutVerdict } from '../../domain/layoutFit'
 
@@ -82,6 +82,11 @@ export interface MockDeck {
    * provided, so a test can assert a command never ran (e.g. nothing was
    * rendered or saved). */
   invokedCommands?: string[]
+  /** Milliseconds `render_draft` waits before resolving/rejecting —
+   * defaults to 0 (settles on the same tick). Set this to widen the window
+   * in which a save is still in flight, e.g. to exercise edits the user
+   * makes while a previous commit's re-render hasn't landed yet. */
+  renderDraftDelayMs?: number
 }
 
 function sleep(ms: number): Promise<void> {
@@ -92,6 +97,7 @@ function buildManifest(source: string): { manifest: Manifest; fragments: Record<
   const ranges = splitSlides(source)
   const keys: string[] = []
   const slides: ManifestSlide[] = []
+  const sections: ManifestSection[] = []
   // Mirrors real peitho-core: a slide marked `"draft":true` never reaches
   // the manifest at all (see `domain/slideList.ts`'s `buildSlideList`,
   // which is what actually copes with that on the frontend side). Getting
@@ -102,6 +108,18 @@ function buildManifest(source: string): { manifest: Manifest; fragments: Record<
   for (const range of ranges) {
     const { rest, config } = extractPageComment(range.text)
     if (config.draft === true) continue
+    // A slide whose PageComment sets both `section` and `time` starts a
+    // section running up to the next one, the same pairing peitho-core
+    // requires. Only the `1m30s`-style times `parseDurationToMs` reads are
+    // modeled; peitho-core also accepts `1h` and bare minute counts. The
+    // section's own index is the manifest index this slide is about to
+    // get (`slides.length`, not this range's raw position), since a
+    // draft slide earlier in the deck is never counted here either.
+    if (typeof config.section === 'string' && typeof config.time === 'string') {
+      const previous = sections[sections.length - 1]
+      if (previous) previous.endIndex = slides.length - 1
+      sections.push({ name: config.section, startIndex: slides.length, endIndex: ranges.length - 1, plannedDurationMs: parseDurationToMs(config.time) ?? 0 })
+    }
     const title = extractHeadingText(rest) ?? ''
     const key = config.key ?? uniqueSlideKey(slugifyTitle(title || `slide-${String(slides.length)}`), keys)
     keys.push(key)
@@ -113,7 +131,7 @@ function buildManifest(source: string): { manifest: Manifest; fragments: Record<
   const fragments: Record<string, string> = {}
   for (const s of slides) fragments[s.key] = `<section class="peitho-slide"><h1>${s.text.title}</h1></section>`
   const manifest: Manifest = {
-    title: 'Fake Deck', slideCount: slides.length, canvasWidth: 1280, canvasHeight: 720, sections: [], slides,
+    title: 'Fake Deck', slideCount: slides.length, canvasWidth: 1280, canvasHeight: 720, sections, slides,
   }
   return { manifest, fragments }
 }
@@ -134,6 +152,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
     if (cmd === 'present_deck' && deck.presentDeckDelayMs) await sleep(deck.presentDeckDelayMs)
     if (cmd === 'open_deck' && deck.openDeckDelayMs) await sleep(deck.openDeckDelayMs)
     if (cmd === 'check_slide_layouts' && deck.checkSlideLayoutsDelayMs) await sleep(deck.checkSlideLayoutsDelayMs)
+    if (cmd === 'render_draft' && deck.renderDraftDelayMs) await sleep(deck.renderDraftDelayMs)
     deck.onInvoke?.(cmd, args)
     if (error !== null && error !== undefined) throw new Error(error)
     switch (cmd) {
