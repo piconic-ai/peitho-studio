@@ -15,7 +15,7 @@ import { type LayoutVerdict } from '../domain/layoutFit'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
 import { buildSlideList, manifestIndexAt, sectionStartBySourceIndex } from '../domain/slideList'
 import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOptionsOf } from '../domain/deckVariants'
-import { waitForEventOrTimeout } from '../domain/eventRace'
+import { racePresentOutcome } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas } from '../dom/slideCanvas'
@@ -1128,7 +1128,11 @@ export function Studio() {
     ui.setPresentPending(true)
     try {
       await deckIpc.presentDeck(rehearsal)
-      await waitForEventOrTimeout(deckIpc.onPresentReady, PRESENT_READY_TIMEOUT_MS)
+      const outcome = await racePresentOutcome(deckIpc.onPresentReady, deckIpc.onPresentFailed, PRESENT_READY_TIMEOUT_MS)
+      if (outcome.kind === 'failed') {
+        setErrorMessage(outcome.message)
+        return
+      }
       setStatusMessage(rehearsal ? 'Presenting (rehearsal)…' : 'Presenting…')
     } catch (err) {
       setErrorMessage(String(err))

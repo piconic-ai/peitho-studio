@@ -53,6 +53,14 @@ export interface MockDeck {
    * via `commandError` — a failed spawn never starts a process to become
    * ready. */
   presentReadyDelayMs?: number
+  /** When set, `present_deck` emits `present-failed` (with this message)
+   * instead of `present-ready`, after `presentReadyDelayMs` — simulates
+   * the subprocess exiting without ever signaling readiness (e.g.
+   * `--rehearsal` rejected on a deck with no agenda sections; see
+   * `watch_present_failure` in peitho.rs). Ignored when `commandError`
+   * already fails `present_deck` itself — that's a failed spawn, which
+   * never gets far enough to report this way. */
+  presentFailedMessage?: string
   /** Milliseconds `open_deck` waits before resolving/rejecting — defaults
    * to 0 (settles on the same tick). Set this to observe Studio.tsx's
    * loading placeholder, which shows only until `open_deck` resolves (on a
@@ -183,12 +191,17 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         return deck.layoutVerdicts?.(args.content as string, args.slideIndex as number) ?? null
       case 'present_deck':
         // Fires after the spawn itself resolves, matching real timing —
-        // `watch_present_readiness` (peitho.rs) only starts watching
-        // stdout once `Command::spawn()` has already returned. Not a
-        // real subprocess, so this stands in for however long `peitho
-        // present` would take to render and start serving.
+        // `watch_present_readiness`/`watch_present_failure` (peitho.rs)
+        // only start watching stdout/stderr once `Command::spawn()` has
+        // already returned. Not a real subprocess, so this stands in for
+        // however long `peitho present` would take to either start
+        // serving or exit having never gotten that far.
         void sleep(deck.presentReadyDelayMs ?? 0).then(() => (
-          page.evaluate(() => { (window as unknown as { __mockEmitTauriEvent?: (event: string, payload: unknown) => void }).__mockEmitTauriEvent?.('present-ready', null) })
+          page.evaluate(({ event, payload }) => {
+            (window as unknown as { __mockEmitTauriEvent?: (event: string, payload: unknown) => void }).__mockEmitTauriEvent?.(event, payload)
+          }, deck.presentFailedMessage === undefined
+            ? { event: 'present-ready', payload: null }
+            : { event: 'present-failed', payload: deck.presentFailedMessage })
         ))
         return null
       case 'create_deck': return '/fake/new-deck/deck.md'

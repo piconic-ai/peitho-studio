@@ -69,6 +69,25 @@ test('Given an open deck, when Present is clicked and the spawn itself fails, th
   await expect(errorBanner).toContainText('simulated present_deck failure')
 })
 
+test('Given an open deck, when Present is clicked and the subprocess exits without ever becoming ready, then the busy state clears and the error shows', async ({ page }) => {
+  // Simulates `peitho present --rehearsal` on a deck with no agenda
+  // sections: the subprocess rejects immediately and stderr (captured by
+  // `watch_present_failure` in peitho.rs) becomes the `present-failed`
+  // payload — a case `commandError` (a failed `present_deck` invoke
+  // itself) can't represent, since here the spawn succeeds and only the
+  // subprocess it started fails.
+  const presentButton = await openDeckAndTriggerPresent(page, {
+    source: '# Slide One\n',
+    presentReadyDelayMs: 300,
+    presentFailedMessage: '--rehearsal requires agenda sections',
+  })
+
+  await expect(presentButton).toBeEnabled({ timeout: 5_000 })
+  const errorBanner = page.locator('.bg-destructive\\/10')
+  await expect(errorBanner).toBeVisible()
+  await expect(errorBanner).toContainText('--rehearsal requires agenda sections')
+})
+
 // Note: whether mashing the button can ever actually open a second present
 // window is explicitly left to real-device verification in
 // todo/action-click-feedback.md (queued there under "human judgment

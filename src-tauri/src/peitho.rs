@@ -10,12 +10,12 @@
 // comparing two decks side by side is the whole point of that feature.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdout, Command, Stdio};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -38,6 +38,16 @@ const DECK_FILE_CHANGED_EVENT: &str = "deck-file-changed";
 /// started serving it — see `watch_present_readiness` for where this fires.
 const PRESENT_READY_EVENT: &str = "present-ready";
 
+/// Event the frontend listens for when the `peitho present` subprocess
+/// exits (or is never heard from) without ever printing the readiness
+/// line — carries the subprocess's captured stderr as the payload. Without
+/// this, a startup failure (e.g. `--rehearsal` on a deck with no
+/// `{"section":...}` comments, which `peitho present` rejects immediately)
+/// was silently swallowed: stderr was discarded entirely, and the frontend
+/// waited out its own timeout before showing a "Presenting…" status
+/// message anyway — as if it had worked.
+const PRESENT_FAILED_EVENT: &str = "present-failed";
+
 /// The line `peitho present` (see `crates/peitho/src/main.rs` in the
 /// `peitho` repo) prints to stdout right after the deck finishes rendering
 /// and its local server starts, just before it launches the presentation
@@ -53,18 +63,50 @@ fn is_present_ready_line(line: &str) -> bool {
 /// Runs for the child's whole lifetime (not just until the readiness line
 /// appears) so a full stdout pipe buffer can never block the child from
 /// writing further output once we've stopped caring about individual
-/// lines. `None` (stdout wasn't piped) is a silent no-op.
-fn watch_present_readiness(stdout: Option<ChildStdout>, window: WebviewWindow) {
-    let Some(stdout) = stdout else { return };
+/// lines. `None` (stdout wasn't piped) is a silent no-op. Returns a flag
+/// `watch_present_failure` reads once stderr hits EOF — shared rather than
+/// each watcher keeping its own, so the failure watcher can tell "the
+/// process ended after we already know it succeeded" (nothing to report)
+/// from "the process ended and never told us it was ready" (a real
+/// failure).
+fn watch_present_readiness(stdout: Option<ChildStdout>, window: WebviewWindow) -> Arc<AtomicBool> {
+    let emitted = Arc::new(AtomicBool::new(false));
+    let Some(stdout) = stdout else { return emitted };
+    let emitted_for_reader = emitted.clone();
     std::thread::spawn(move || {
         let reader = BufReader::new(stdout);
-        let mut emitted = false;
         for line in reader.lines().map_while(Result::ok) {
-            if !emitted && is_present_ready_line(&line) {
+            if !emitted_for_reader.load(Ordering::SeqCst) && is_present_ready_line(&line) {
                 let _ = window.emit(PRESENT_READY_EVENT, ());
-                emitted = true;
+                emitted_for_reader.store(true, Ordering::SeqCst);
             }
         }
+    });
+    emitted
+}
+
+/// Captures stderr until the subprocess closes it (it exits, or something
+/// else kills it — e.g. a superseding present click, or the window/app
+/// closing while it was still starting up) and, only if `emitted` is still
+/// false at that point, reports it as a failure. A child that already
+/// signaled readiness, or one killed intentionally before ever doing so,
+/// both close stderr the same way — the `emitted` flag is what tells
+/// this apart from an actual startup error (see `PRESENT_FAILED_EVENT`).
+/// `None` (stderr wasn't piped) is a silent no-op.
+fn watch_present_failure(stderr: Option<ChildStderr>, emitted: Arc<AtomicBool>, window: WebviewWindow) {
+    let Some(mut stderr) = stderr else { return };
+    std::thread::spawn(move || {
+        let mut captured = String::new();
+        let _ = stderr.read_to_string(&mut captured);
+        if emitted.load(Ordering::SeqCst) {
+            return;
+        }
+        let message = if captured.trim().is_empty() {
+            "peitho present exited without starting the presentation".to_string()
+        } else {
+            captured.trim().to_string()
+        };
+        let _ = window.emit(PRESENT_FAILED_EVENT, message);
     });
 }
 
@@ -702,7 +744,7 @@ pub fn present_deck(rehearsal: bool, window: WebviewWindow, session: State<Peith
 
     let mut child = command
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|err| format!("failed to launch `peitho present`: {err}"))?;
 
@@ -710,8 +752,12 @@ pub fn present_deck(rehearsal: bool, window: WebviewWindow, session: State<Peith
     // call — near-instant regardless of deck size, well before the child
     // has actually rendered anything. Watching for its own readiness line
     // instead (see `watch_present_readiness`) gives the frontend a signal
-    // that tracks the part that's actually slow for a heavy deck.
-    watch_present_readiness(child.stdout.take(), window);
+    // that tracks the part that's actually slow for a heavy deck. If it
+    // instead exits having never printed that line (e.g. `--rehearsal` on
+    // a deck with no agenda sections, which `peitho present` rejects
+    // immediately), `watch_present_failure` reports why.
+    let emitted = watch_present_readiness(child.stdout.take(), window.clone());
+    watch_present_failure(child.stderr.take(), emitted, window);
 
     state.present_child = Some(child);
     Ok(())

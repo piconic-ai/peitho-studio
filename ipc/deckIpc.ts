@@ -70,10 +70,20 @@ export interface DeckIpc {
    * presentation is really up" than `presentDeck`'s own resolution, which
    * only means the subprocess was spawned. */
   onPresentReady(callback: () => void): Unsubscribe
+  /** Fires if the `peitho present` subprocess exits (or is otherwise heard
+   * from) without ever signaling readiness — the message is its captured
+   * stderr (e.g. `--rehearsal` rejected on a deck with no agenda
+   * sections). See `watch_present_failure` in peitho.rs. */
+  onPresentFailed(callback: (message: string) => void): Unsubscribe
 }
 
 function subscribe(event: string, callback: () => void): Unsubscribe {
   const unlisten = listen(event, () => { callback() })
+  return () => { void unlisten.then(stop => { stop() }) }
+}
+
+function subscribeWithPayload<T>(event: string, callback: (payload: T) => void): Unsubscribe {
+  const unlisten = listen<T>(event, e => { callback(e.payload) })
   return () => { void unlisten.then(stop => { stop() }) }
 }
 
@@ -95,5 +105,6 @@ export function createTauriDeckIpc(): DeckIpc {
     onDeckFileChanged: callback => subscribe('deck-file-changed', callback),
     onMenuNewDeck: callback => subscribe('menu:new-deck', callback),
     onPresentReady: callback => subscribe('present-ready', callback),
+    onPresentFailed: callback => subscribeWithPayload('present-failed', callback),
   }
 }

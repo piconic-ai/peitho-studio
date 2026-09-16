@@ -3,7 +3,8 @@
 // cares about via `overrides`; every call still lands in `calls` so a
 // test can assert on what was invoked and with what arguments, without a
 // real Tauri window. `emitDeckFileChanged`/`emitMenuNewDeck`/
-// `emitPresentReady` let a test simulate the Rust side pushing an event.
+// `emitPresentReady`/`emitPresentFailed` let a test simulate the Rust side
+// pushing an event.
 import type { DeckIpc, DeckSessionInfo, LayoutPreviewsPayload, RenderPayload } from './deckIpc'
 
 export interface RecordedCall {
@@ -16,6 +17,7 @@ export interface FakeDeckIpc extends DeckIpc {
   emitDeckFileChanged(): void
   emitMenuNewDeck(): void
   emitPresentReady(): void
+  emitPresentFailed(message: string): void
 }
 
 const emptyRenderPayload: RenderPayload = {
@@ -30,6 +32,7 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
   const deckFileChangedListeners = new Set<() => void>()
   const menuNewDeckListeners = new Set<() => void>()
   const presentReadyListeners = new Set<() => void>()
+  const presentFailedListeners = new Set<(message: string) => void>()
 
   function record(method: keyof DeckIpc, args: readonly unknown[]): void {
     calls.push({ method, args })
@@ -69,6 +72,10 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
       presentReadyListeners.add(callback)
       return () => { presentReadyListeners.delete(callback) }
     },
+    onPresentFailed: callback => {
+      presentFailedListeners.add(callback)
+      return () => { presentFailedListeners.delete(callback) }
+    },
   }
 
   return {
@@ -78,5 +85,6 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
     emitDeckFileChanged: () => { for (const cb of deckFileChangedListeners) cb() },
     emitMenuNewDeck: () => { for (const cb of menuNewDeckListeners) cb() },
     emitPresentReady: () => { for (const cb of presentReadyListeners) cb() },
+    emitPresentFailed: message => { for (const cb of presentFailedListeners) cb(message) },
   }
 }
