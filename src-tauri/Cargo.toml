@@ -41,7 +41,11 @@ sha2 = "0.10"
 # pinned to a release tag once this is validated, since peitho-core's API
 # carries no semver guarantee (it's the peitho CLI's internal engine, not a
 # published crate — see plan notes).
-peitho-core = { path = "/Users/kfly8/src/github.com/mizzy/peitho/crates/peitho-core" }
+#
+# Points at kfly8/peitho (a fork), not upstream mizzy/peitho: several fixes
+# this app relies on (asset-copy fallback, Range requests, script
+# re-execution) haven't landed upstream yet — see kfly8/peitho#1-#3.
+peitho-core = { path = "/Users/kfly8/src/github.com/kfly8/peitho/crates/peitho-core" }
 
 [dev-dependencies]
 tempfile = "3"
