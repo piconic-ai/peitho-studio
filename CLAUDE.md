@@ -83,6 +83,20 @@ see every file's status at a glance:
   caused a real incident (a misdirected click during a screen-shared
   meeting) and should be treated as a last resort, not the default.
 
+## Debugging a layout's own JavaScript
+
+A layout's `<script>` actually executes now in all three viewers (see
+`todo/archive/layout-js-console-log.md`), so its `console.log` shows up in
+ordinary DevTools — there's no dedicated log panel.
+
+- **Studio**: same WKWebView Inspect Element flow as the `devtools`
+  pitfall below.
+- **`peitho present`**: opens the system's actual default browser as an
+  independent OS process, not a Tauri window — its usual DevTools
+  (F12 / Cmd+Option+I) works with no Tauri-side setting to flip.
+- **`peitho build`'s distribution viewer**: a plain static page; open it
+  in any browser like `peitho present`.
+
 ## Commit granularity
 
 Commit by semantic unit. "Wrote the design rules," "extracted this logic
