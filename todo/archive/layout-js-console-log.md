@@ -1,6 +1,6 @@
 ---
-status: wip
-description: レイアウトHTMLにscriptを書けば実際に動く世界観にする(Studio側は実機確認まで完了 — 動画・Arcade・Terminal・Showcase全て動作確認済み。mizzy/peitho・barefootjs側は検証済み未コミット)
+status: done
+description: レイアウトHTMLにscriptを書けば実際に動く世界観にする — Studio/peitho present/peitho build全経路で実機確認済み。kfly8/peitho(PR#1-#3)・barefootjs(piconic-ai/barefootjs#3051,#3052)ともコミット・マージ済み。mizzy/peitho本家への上流PRのみ先送り。
 tags: [debug, layout, console, script-execution]
 ---
 
@@ -293,25 +293,28 @@ script のIIFE自動包み)を追加し、`mountSlideCanvas`(初回マウント)
 - [x] 追加修正後の実機再確認(Studio側、`bunx tauri dev`で
       `barefootjs/site/core/slides/overview`のデッキを開き、動画・
       Arcade・Terminal・Showcaseがすべて動くこと) — 2026-09-16、
-      DevToolsコンソールで直接確認済み(続報2参照)。Compiler/Trace
-      は未選択のまま(同じ`executeInlineScripts`/CORS/Range経路を
-      通るため個別の追加バグは想定していないが、実機での目視は
-      まだ)。
+      DevToolsコンソールで直接確認済み(続報2参照)。
+- [x] Compiler/Traceの実機確認 — 別セッションでこの2つの自動デモが
+      「めくる前から動いている」バグを発見・修正(`peitho:slidechange`
+      でリセット)、`peitho present`実プロセスに対するPlaywright検証で
+      確認済み(barefootjs側でコミット、後述)。
+- [x] `kfly8/peitho`側のコミット・PR化 — asset copy fallback・Range
+      request・script re-execution・shadow-mounted eventを含む3PRを
+      作成しマージ済み(kfly8/peitho#1, #2, #3)。peitho-studioの
+      `peitho-core`依存もこのforkに切り替え済み。
+- [x] barefootjs側のコミット・PR化 — Shadow DOM mount bridge +
+      Trace/Compilerの自動デモタイミング修正 + ビルド簡素化を
+      `piconic-ai/barefootjs#3051`、CI/デプロイのpeitho調達をkfly8/peitho
+      ソースビルドに切り替える変更を`#3052`としてPR化、pullfrogレビュー
+      対応込みでともにマージ済み。
 
 ## 先送り事項
 
-- **`mizzy/peitho`への上流PR**: `/Users/kfly8/src/github.com/kfly8/peitho`
-  (fork)に、present側(`packages/peitho-present/src/scripts.ts`+
-  `shell.ts`配線)・build側(`crates/peitho-core/src/render.rs`)両方の
-  実装・テストが揃っているが、まだコミット・PR化していない。
+- **`mizzy/peitho`への上流PR**: `kfly8/peitho`に実装・テストは揃って
+  マージ済みだが、本家`mizzy/peitho`へのissue/PR化はまだ行っていない。
 - **状態持続性の経路間の違い**(present: 初回のみ実行・持続 / build・
   Studio: 訪問/編集のたびに再実行・古いタイマー等は残ったまま)を
   統一するかどうかは意図的に未決着(kfly8: 「悩む場合は一旦様子見」)。
-- **barefootjs(`piconic-ai/barefootjs`)側の変更も未コミット**
-  (2026-09-16時点): `site/core/scripts/build-slides.ts`・
-  `site/core/slides/overview/component/mount.ts`・7つのlayout
-  ファイル・新規`site/core/slides/overview/assets/mount.js`。
-  kfly8のレビュー・コミット判断待ち。
 - **作業中の事故(復旧済み)**: 検証用の一時ビルド成果物を消すつもりで
   `barefootjs`リポジトリの`site/core/public/`を丸ごと`rm -rf`した際、
   同ディレクトリ配下の追跡対象ファイル4件
