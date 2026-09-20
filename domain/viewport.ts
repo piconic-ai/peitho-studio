@@ -58,3 +58,38 @@ export function effectiveCanvas(deck: Size, mode: ViewportMode, device: Size, fi
     }
   }
 }
+
+/** What phone display gives the canvas: `portrait` is the simulated phone's
+ * tall proportion, `deck` keeps the deck's own proportion (so the canvas is
+ * the same size as in PC display). */
+export type PhoneShape = 'portrait' | 'deck'
+
+/** The other phone shape, for the preview's shape toggle. A stray value that
+ * got past the type is treated as `portrait`, as `deviceForShape` treats it,
+ * so the next toggle lands on the deck's own proportion. */
+export function toggledPhoneShape(shape: PhoneShape): PhoneShape {
+  return shape === 'deck' ? 'portrait' : 'deck'
+}
+
+/** The device `effectiveCanvas` should reshape to for a phone shape.
+ * `portrait` is `DEFAULT_DEVICE`. `deck` is the deck's own size: reshaping a
+ * deck to its own proportion keeps its width and gives back its height, so
+ * the canvas comes out the same as PC display's without `reshapeCanvas` or
+ * `effectiveCanvas` knowing about shapes. A whole-pixel deck (the only kind
+ * peitho-core produces) comes back exactly; a fractional height may round up
+ * to the next whole pixel, and a deck with no usable size stays as it is
+ * (`reshapeCanvas` refuses a device with no usable proportion). */
+export function deviceForShape(shape: PhoneShape, deck: Size): Size {
+  switch (shape) {
+    case 'portrait':
+      return DEFAULT_DEVICE
+    case 'deck':
+      return { width: deck.width, height: deck.height }
+    default: {
+      // Compile-time exhaustiveness check; at runtime a stray shape gets
+      // the default phone proportion rather than a non-Size.
+      const _exhaustive: never = shape
+      return DEFAULT_DEVICE
+    }
+  }
+}

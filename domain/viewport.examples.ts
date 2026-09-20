@@ -4,7 +4,7 @@
 // Run by viewport.test.ts.
 import type { Size } from './geometry'
 import { defineExamples } from './spec'
-import { DEFAULT_DEVICE, type ViewportMode } from './viewport'
+import { DEFAULT_DEVICE, type PhoneShape, type ViewportMode } from './viewport'
 
 /** What the preview knows when it decides the canvas size. */
 export interface PreviewCanvasInput {
@@ -91,6 +91,109 @@ export const previewCanvasExamples = defineExamples<PreviewCanvasInput, PreviewL
       state: { deck: widescreen, mode: 'mobile', device: { width: 0, height: 844 }, fixedCanvas: false },
       event: 'preview-laid-out',
       expect: { width: 1280, height: 720 },
+      tags: ['boundary'],
+    },
+  ],
+)
+
+/** What the preview knows when the phone shape is a choice: the device is no
+ * longer an input, it follows from the shape and the deck
+ * (`deviceForShape`). */
+export interface PhoneShapeCanvasInput {
+  deck: Size
+  mode: ViewportMode
+  shape: PhoneShape
+  /** The selected slide's own `data-canvas="fixed"` opt-out. */
+  fixedCanvas: boolean
+}
+
+export const phoneShapeCanvasExamples = defineExamples<PhoneShapeCanvasInput, PreviewLaidOut, Size>(
+  'preview canvas size by phone shape',
+  [
+    {
+      id: 'widescreen-phone-portrait',
+      given: 'a 16:9 deck (1280x720), phone display, and the tall phone shape',
+      when: 'the preview lays out a normal slide',
+      then: 'the canvas grows to 1280x2770, the phone\'s proportion',
+      state: { deck: widescreen, mode: 'mobile', shape: 'portrait', fixedCanvas: false },
+      event: 'preview-laid-out',
+      expect: { width: 1280, height: 2770 },
+    },
+    {
+      id: 'widescreen-phone-deck-ratio',
+      given: 'a 16:9 deck (1280x720), phone display, and the same ratio as PC',
+      when: 'the preview lays out a normal slide',
+      then: 'the canvas is 1280x720, the same size PC display gives',
+      state: { deck: widescreen, mode: 'mobile', shape: 'deck', fixedCanvas: false },
+      event: 'preview-laid-out',
+      expect: { width: 1280, height: 720 },
+    },
+    {
+      id: 'standard-phone-portrait',
+      given: 'a 4:3 deck (960x720), phone display, and the tall phone shape',
+      when: 'the preview lays out a normal slide',
+      then: 'the canvas grows to 960x2078',
+      state: { deck: standard, mode: 'mobile', shape: 'portrait', fixedCanvas: false },
+      event: 'preview-laid-out',
+      expect: { width: 960, height: 2078 },
+    },
+    {
+      id: 'standard-phone-deck-ratio',
+      given: 'a 4:3 deck (960x720), phone display, and the same ratio as PC',
+      when: 'the preview lays out a normal slide',
+      then: 'the canvas stays 960x720, the deck\'s own 4:3',
+      state: { deck: standard, mode: 'mobile', shape: 'deck', fixedCanvas: false },
+      event: 'preview-laid-out',
+      expect: { width: 960, height: 720 },
+    },
+    {
+      id: 'desktop-ignores-portrait-shape',
+      given: 'PC display selected while the tall phone shape is remembered',
+      when: 'the preview lays out a normal slide',
+      then: 'the canvas is the deck\'s own 1280x720: the shape only matters in phone display',
+      state: { deck: widescreen, mode: 'desktop', shape: 'portrait', fixedCanvas: false },
+      event: 'preview-laid-out',
+      expect: { width: 1280, height: 720 },
+      tags: ['boundary'],
+    },
+    {
+      id: 'desktop-ignores-deck-ratio-shape',
+      given: 'PC display selected while the same-ratio shape is remembered',
+      when: 'the preview lays out a normal slide',
+      then: 'the canvas is the deck\'s own 1280x720',
+      state: { deck: widescreen, mode: 'desktop', shape: 'deck', fixedCanvas: false },
+      event: 'preview-laid-out',
+      expect: { width: 1280, height: 720 },
+      tags: ['boundary'],
+    },
+    {
+      id: 'fixed-slide-ignores-portrait-shape',
+      given: 'phone display with the tall phone shape and a slide marked data-canvas="fixed"',
+      when: 'the preview lays out that slide',
+      then: 'the canvas stays 1280x720',
+      state: { deck: widescreen, mode: 'mobile', shape: 'portrait', fixedCanvas: true },
+      event: 'preview-laid-out',
+      expect: { width: 1280, height: 720 },
+      tags: ['boundary'],
+    },
+    {
+      id: 'fixed-slide-ignores-deck-ratio-shape',
+      given: 'phone display with the same ratio as PC and a slide marked data-canvas="fixed"',
+      when: 'the preview lays out that slide',
+      then: 'the canvas stays 1280x720',
+      state: { deck: widescreen, mode: 'mobile', shape: 'deck', fixedCanvas: true },
+      event: 'preview-laid-out',
+      expect: { width: 1280, height: 720 },
+      tags: ['boundary'],
+    },
+    {
+      id: 'zero-sized-deck-ratio-phone',
+      given: 'a deck with no size (0x0), phone display, and the same ratio as PC',
+      when: 'the preview lays out a normal slide',
+      then: 'the canvas stays 0x0 instead of becoming NaN or infinite',
+      state: { deck: { width: 0, height: 0 }, mode: 'mobile', shape: 'deck', fixedCanvas: false },
+      event: 'preview-laid-out',
+      expect: { width: 0, height: 0 },
       tags: ['boundary'],
     },
   ],

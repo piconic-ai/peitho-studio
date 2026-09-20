@@ -1,8 +1,17 @@
 import { describe, expect, test } from 'bun:test'
 import fc from 'fast-check'
 import { isExhaustivelyAccountedFor } from './spec'
-import { DEFAULT_DEVICE, effectiveCanvas, reshapeCanvas, toggledViewportMode, type ViewportMode } from './viewport'
-import { previewCanvasExamples, standard, widescreen } from './viewport.examples'
+import {
+  DEFAULT_DEVICE,
+  deviceForShape,
+  effectiveCanvas,
+  reshapeCanvas,
+  toggledPhoneShape,
+  toggledViewportMode,
+  type PhoneShape,
+  type ViewportMode,
+} from './viewport'
+import { phoneShapeCanvasExamples, previewCanvasExamples, standard, widescreen } from './viewport.examples'
 
 const deckArb = fc.record({ width: fc.integer({ min: 1, max: 8000 }), height: fc.integer({ min: 1, max: 8000 }) })
 // Includes the values a device could never legitimately hold, so the
@@ -200,6 +209,158 @@ describe('toggledViewportMode', () => {
   test('property: toggling twice returns to where it started', () => {
     fc.assert(fc.property(fc.constantFrom<ViewportMode>('desktop', 'mobile'), mode => {
       expect(toggledViewportMode(toggledViewportMode(mode))).toBe(mode)
+    }))
+  })
+})
+
+describe('phone shape canvas examples', () => {
+  test.each(phoneShapeCanvasExamples.automated.map(e => [`${e.id}: Given ${e.given}, when ${e.when}, then ${e.then}`, e] as const))(
+    'example: %s',
+    (_title, example) => {
+      const { deck, mode, shape, fixedCanvas } = example.state
+      // The composition `Studio.tsx` performs for the preview.
+      expect(effectiveCanvas(deck, mode, deviceForShape(shape, deck), fixedCanvas)).toEqual(example.expect)
+    },
+  )
+
+  test('spec: every example is either automated or carries a manual reason', () => {
+    expect(isExhaustivelyAccountedFor(phoneShapeCanvasExamples)).toBe(true)
+  })
+})
+
+// A double that can be a fraction, zero, negative, NaN or infinite: every
+// value a deck should never carry but the properties below must survive.
+const wildDimension = fc.oneof(
+  fc.integer({ min: 1, max: 8000 }),
+  fc.double({ min: 0.001, max: 8000, noNaN: true }),
+  fc.constantFrom(0, -1, -0, Number.NaN, Infinity, -Infinity),
+)
+const wildDeckArb = fc.record({ width: wildDimension, height: wildDimension })
+
+describe('deviceForShape', () => {
+  test('spec: the tall phone shape is the default phone, whatever the deck', () => {
+    expect(deviceForShape('portrait', widescreen)).toBe(DEFAULT_DEVICE)
+    expect(deviceForShape('portrait', standard)).toBe(DEFAULT_DEVICE)
+  })
+
+  test('spec: the deck-ratio shape is the deck\'s own size', () => {
+    expect(deviceForShape('deck', widescreen)).toEqual({ width: 1280, height: 720 })
+    expect(deviceForShape('deck', standard)).toEqual({ width: 960, height: 720 })
+  })
+
+  test('spec: reshaping a deck to its own-size device gives the deck back (16:9 and 4:3)', () => {
+    expect(reshapeCanvas(widescreen, deviceForShape('deck', widescreen))).toEqual(widescreen)
+    expect(reshapeCanvas(standard, deviceForShape('deck', standard))).toEqual(standard)
+  })
+
+  test('spec: on a 4:3 deck the tall shape grows the canvas to 960x2078 while the deck-ratio shape leaves it at 960x720', () => {
+    expect(effectiveCanvas(standard, 'mobile', deviceForShape('portrait', standard), false)).toEqual({ width: 960, height: 2078 })
+    expect(effectiveCanvas(standard, 'mobile', deviceForShape('deck', standard), false)).toEqual(standard)
+  })
+
+  test('adversarial: the tall phone shape ignores an unusable deck', () => {
+    for (const bad of [0, -1, Number.NaN, Infinity]) {
+      expect(deviceForShape('portrait', { width: bad, height: bad })).toBe(DEFAULT_DEVICE)
+    }
+  })
+
+  test('adversarial: a deck with a zero, negative, NaN or infinite dimension stays as it is (no NaN or infinite canvas)', () => {
+    for (const bad of [0, -390, -0, Number.NaN, Infinity, -Infinity]) {
+      for (const deck of [{ width: bad, height: 720 }, { width: 1280, height: bad }, { width: bad, height: bad }]) {
+        expect(effectiveCanvas(deck, 'mobile', deviceForShape('deck', deck), false)).toEqual(deck)
+      }
+    }
+  })
+
+  test('adversarial: a deck with both dimensions negative is not read as its positive mirror image', () => {
+    const deck = { width: -1280, height: -720 }
+    expect(effectiveCanvas(deck, 'mobile', deviceForShape('deck', deck), false)).toEqual(deck)
+  })
+
+  test('adversarial: a fractional height below the half-pixel keeps the deck\'s own height', () => {
+    // Math.round(720.3) is 720, which the deck's own 720.3 outgrows.
+    expect(effectiveCanvas({ width: 1280, height: 720.3 }, 'mobile', deviceForShape('deck', { width: 1280, height: 720.3 }), false))
+      .toEqual({ width: 1280, height: 720.3 })
+  })
+
+  test('adversarial: a fractional height past the half-pixel rounds up to the next whole pixel, never down', () => {
+    // Pinned so that nobody expects an exact identity for a fractional deck:
+    // peitho-core only produces whole-pixel canvases, where it is exact.
+    const deck = { width: 1280, height: 720.7 }
+    expect(effectiveCanvas(deck, 'mobile', deviceForShape('deck', deck), false)).toEqual({ width: 1280, height: 721 })
+  })
+
+  test('adversarial: an extreme but usable deck (very wide, very tall) comes back whole', () => {
+    for (const deck of [{ width: 1, height: 1 }, { width: 100000, height: 1 }, { width: 1, height: 100000 }, { width: 8000, height: 8000 }]) {
+      expect(effectiveCanvas(deck, 'mobile', deviceForShape('deck', deck), false)).toEqual(deck)
+    }
+  })
+
+  test('adversarial: an overflowing deck (huge width times huge height) falls back to the deck', () => {
+    const huge = { width: Number.MAX_VALUE, height: Number.MAX_VALUE }
+    expect(effectiveCanvas(huge, 'mobile', deviceForShape('deck', huge), false)).toEqual(huge)
+  })
+
+  test('adversarial: an unknown shape string gets the default phone (only "deck" keeps the deck\'s proportion)', () => {
+    for (const stray of ['landscape', '', 'DECK', undefined, null]) {
+      expect(deviceForShape(stray as unknown as PhoneShape, widescreen)).toBe(DEFAULT_DEVICE)
+    }
+  })
+
+  test('purity: works on a frozen deck, repeats its answer, and hands back a copy rather than the deck itself', () => {
+    const deck = Object.freeze({ width: 1280, height: 720 })
+    const first = deviceForShape('deck', deck)
+    expect(first).toEqual(deviceForShape('deck', deck))
+    expect(first).not.toBe(deck)
+  })
+
+  test('property: a whole-pixel deck in phone display with the deck-ratio shape is exactly the deck', () => {
+    fc.assert(fc.property(deckArb, deck => {
+      expect(effectiveCanvas(deck, 'mobile', deviceForShape('deck', deck), false)).toEqual(deck)
+    }))
+  })
+
+  test('property: the tall phone shape is the default phone for any deck at all', () => {
+    fc.assert(fc.property(wildDeckArb, deck => {
+      expect(deviceForShape('portrait', deck)).toBe(DEFAULT_DEVICE)
+    }))
+  })
+
+  test('property: for any deck, the deck-ratio shape neither throws nor changes the width', () => {
+    fc.assert(fc.property(wildDeckArb, deck => {
+      const canvas = effectiveCanvas(deck, 'mobile', deviceForShape('deck', deck), false)
+      expect(Object.is(canvas.width, deck.width)).toBe(true)
+    }))
+  })
+
+  test('property: for a usable fractional deck, the deck-ratio shape never shrinks the height and grows it by under one pixel', () => {
+    const usable = fc.record({
+      width: fc.double({ min: 0.001, max: 8000, noNaN: true }),
+      height: fc.double({ min: 0.001, max: 8000, noNaN: true }),
+    })
+    fc.assert(fc.property(usable, deck => {
+      const canvas = effectiveCanvas(deck, 'mobile', deviceForShape('deck', deck), false)
+      expect(canvas.height).toBeGreaterThanOrEqual(deck.height)
+      expect(canvas.height - deck.height).toBeLessThan(1)
+    }))
+  })
+})
+
+describe('toggledPhoneShape', () => {
+  test('spec: the tall phone shape toggles to the deck-ratio shape and back', () => {
+    expect(toggledPhoneShape('portrait')).toBe('deck')
+    expect(toggledPhoneShape('deck')).toBe('portrait')
+  })
+
+  test('adversarial: an unknown shape string is treated as the tall phone shape, so it toggles to the deck-ratio shape', () => {
+    for (const stray of ['landscape', '', 'DECK', undefined, null]) {
+      expect(toggledPhoneShape(stray as unknown as PhoneShape)).toBe('deck')
+    }
+  })
+
+  test('property: toggling twice returns to where it started', () => {
+    fc.assert(fc.property(fc.constantFrom<PhoneShape>('portrait', 'deck'), shape => {
+      expect(toggledPhoneShape(toggledPhoneShape(shape))).toBe(shape)
     }))
   })
 })
