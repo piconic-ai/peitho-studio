@@ -1,6 +1,6 @@
 ---
 status: todo
-description: プレビューでPC表示/スマホ表示を切り替えられるようにする(設計確定済み: キャンバス寸法契約 + Container Queries。実装はPR-A/PR-Bの2本)
+description: プレビューでPC表示/スマホ表示を切り替えられるようにする(設計確定済み。キャンバス寸法契約 + Container Queries、実装はPR-A/PR-Bの2本)
 tags: [ui, preview, viewport]
 ---
 
@@ -52,8 +52,10 @@ overviewデッキ)。この結論は撤回し、下の「調査結果」に訂�
 
 推奨契約: **キャンバス寸法契約**。ビューアが`--peitho-canvas-width/
 height`を渡し、デッキは`.peitho-slide`自身に`container-type: size`を
-置いて`@container`のサイズクエリで分岐する。スライド単位の除外は既存の
-`data-canvas="fixed"`(root `<section>`)を全ビューア共通で尊重する。
+置いて`@container`のサイズクエリで分岐する。スライド単位の除外は
+`data-canvas="fixed"`(root `<section>`)。現状これを尊重するのは
+barefootjs overviewの`narration.ts`だけ(peitho-coreは定義していない)で、
+この契約はStudioを含む全ビューアが尊重する対象に広げる。
 
 | 候補 | ビューア中立 | Studio(Shadow DOM)で動く |
 |---|---|---|
@@ -115,7 +117,8 @@ height`を渡し、デッキは`.peitho-slide`自身に`container-type: size`を
 
 Fableの設計を採用した。判断を仰いだ5点はすべて推奨のとおり:
 
-1. 除外契約は`data-canvas="fixed"`を継続(既に流通している)。
+1. 除外契約は`data-canvas="fixed"`を継続(barefootjs overviewが既に
+   使っている)。
 2. スコープはプレビューのみ。サムネイル行の`ref`は一度きりでcanvasを
    捕捉するため、追従には全行の再マウント(#3009系)かhost全走査の
    effectが要り、176px幅の縦長サムネは実用性も低い。レイアウト
@@ -153,8 +156,12 @@ Fableの設計を採用した。判断を仰いだ5点はすべて推奨のと�
   Width()} …>`に渡す。`SlidePreview.tsx`のeffect(既にcanvas寸法を
   追跡→`mountSlideCanvas`がhostに変数を書く)は無変更で動く。
 - `dom/slideCanvas.ts`: `observeCanvasScale`が既観測hostでcanvasが変わ
-  ったとき、即座に`host.clientWidth/Height`で`--peitho-thumb-scale`を
-  書き直す。
+  ったとき、即座に`--peitho-thumb-scale`を書き直す。測定は既存の
+  `handleResize`と同じ`contentRect`(小数・paddingを除く)に揃える:
+  `host.clientWidth/Height`は整数でpaddingを含むため微妙にずれる。
+  案: `unobserve`→`observe`し直して観測を最初からやり直す(Chromeでは
+  `observe()`の再呼び出しだけでは再発火しなかった。`unobserve`を挟めば
+  発火するかは未検証 — 実装時に確認する)。
 - `components/SlidePreview.tsx`: ヘッダー行にトグルを足す。
   `viewportMode`/`onToggleViewportMode`(callback prop、setterは渡さない)
   をStudioから受ける。常時マウントで`hidden`切替にし、条件分岐`ref`内に
@@ -197,8 +204,11 @@ Fableの設計を採用した。判断を仰いだ5点はすべて推奨のと�
       と`ResizeObserver`の再フィットが期待どおり動くか(Chromeでしか
       検証していない)。Tauri v2のmacOS下限でContainer Queriesが使えるか
 - [ ] `container-type: size`(layout containmentを伴う)が実デッキの
-      `.peitho-slide`に副作用を出さないか(`.peitho-slide`は既に
-      `position: relative; overflow: hidden`なので小さいはずだが未確認)
+      `.peitho-slide`に副作用を出さないか。`position: relative`は
+      組み込みテーマ(`src-tauri/src/engine/builtin/base.css`)ではページ
+      番号ありの場合だけで、barefootjs overviewのテーマは常時付いている。
+      layout containmentは絶対配置の子孫のcontaining blockを変えるため、
+      両方のテーマの実デッキで見た目が変わらないか確認する
 - [ ] PR-C(barefootjs側の移行提案)を出すか / PR-D(`kfly8/peitho`の
       docs・`themes/base.css`)を出すか
 
