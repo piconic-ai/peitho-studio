@@ -73,7 +73,7 @@ export function SlidePreview(props: SlidePreviewProps) {
               aria-label="Phone canvas shape"
               aria-haspopup="menu"
               aria-expanded={props.phoneShapeMenuOpen ? 'true' : 'false'}
-              onClick={() => props.onOpenPhoneShapeMenu()}
+              onClick={() => (props.phoneShapeMenuOpen ? props.onClosePhoneShapeMenu() : props.onOpenPhoneShapeMenu())}
               className={(props.viewportMode === 'mobile' ? 'flex' : 'hidden') + ' items-center px-2 text-xs bg-primary text-primary-foreground border-l border-primary-foreground/25'}
             >
               <span aria-hidden="true">▾</span>
@@ -81,12 +81,19 @@ export function SlidePreview(props: SlidePreviewProps) {
           </div>
           {/* The overlay swallows the outside click that closes the menu
               (the same trick as the Present / variant menus), so the click
-              never reaches whatever is underneath. `z-10` / `z-20` put both
-              above the canvas. */}
+              never reaches whatever is underneath. A right-click closes it
+              too, without the native context menu. `z-10` / `z-20` put both
+              above the canvas. The ▾ toggles rather than only opens, so a
+              keyboard user (the overlay only shields the mouse) can collapse
+              the menu from it. */}
           <div
             data-phone-shape-backdrop
             className={(props.phoneShapeMenuOpen ? '' : 'hidden ') + 'fixed top-0 right-0 bottom-0 left-0 z-10'}
             onClick={() => props.onClosePhoneShapeMenu()}
+            onContextMenu={event => {
+              event.preventDefault()
+              props.onClosePhoneShapeMenu()
+            }}
           />
           <div
             role="menu"
@@ -146,8 +153,11 @@ export function SlidePreview(props: SlidePreviewProps) {
           second one started on the new host. (`SlideContextMenu` is kept
           permanently mounted for a related reason.) */}
       {/* `isolate` keeps a deck's own `z-index` (a positioned
-          `.peitho-slide` or anything in it) inside this box, so it can never
-          stack above the shape menu or its click-catching overlay. */}
+          `.peitho-slide` with a large one, or anything a layout script adds
+          beside it) inside this box: without it the slide's own `z-index`
+          competes with the shape menu and its click-catching overlay, and a
+          large one wins (checked with a probe; the slide's `transform` only
+          contains what is inside it). */}
       <div
         data-preview-host
         ref={el => {

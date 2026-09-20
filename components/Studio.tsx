@@ -266,6 +266,13 @@ export function Studio() {
   // what lets the preview pane (below) depend on "which slide is
   // selected" without also depending on "has its content changed".
   const selectedSlideKey = createMemo<string | null>(() => selectedSlide()?.key ?? null)
+  // The preview's header (and the phone shape menu in it) is hidden while no
+  // slide is selected — a draft placeholder or no slide at all — so an open
+  // menu goes with it instead of reappearing already open on the next
+  // selection.
+  createEffect(() => {
+    if (selectedSlideKey() === null) ui.closePhoneShapeMenu()
+  })
 
   // The canvas the *preview pane* lays the selected slide out on: the
   // deck's own, or (phone display, tall shape) the same width grown to a
@@ -1052,9 +1059,14 @@ export function Studio() {
     const unlistenMenuNew = deckIpc.onMenuNewDeck(() => { void handleNewDeck() })
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && ui.phoneShapeMenuOpen()) {
-        event.preventDefault()
-        ui.closePhoneShapeMenu()
+      // While the phone shape menu is open, Escape closes it and every other
+      // shortcut waits: arrows would move the selection, and Delete or Cmd+X
+      // would act on a slide behind the open menu.
+      if (ui.phoneShapeMenuOpen()) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          ui.closePhoneShapeMenu()
+        }
         return
       }
       if (event.key === 'Escape' && ui.contextMenu().kind !== 'closed') {
