@@ -12,6 +12,13 @@ export interface DevicePreset extends Size { name: string }
 /** The one device the toggle simulates (no picker, by design). */
 export const DEFAULT_DEVICE: DevicePreset = { name: 'Phone (portrait)', width: 390, height: 844 }
 
+/** The other mode, for the preview's toggle button. A stray value that got
+ * past the type is treated as PC display, as `effectiveCanvas` treats it, so
+ * the next toggle lands on phone display. */
+export function toggledViewportMode(mode: ViewportMode): ViewportMode {
+  return mode === 'mobile' ? 'desktop' : 'mobile'
+}
+
 function isUsableDimension(value: number): boolean {
   return Number.isFinite(value) && value > 0
 }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import fc from 'fast-check'
 import { isExhaustivelyAccountedFor } from './spec'
-import { DEFAULT_DEVICE, effectiveCanvas, reshapeCanvas, type ViewportMode } from './viewport'
+import { DEFAULT_DEVICE, effectiveCanvas, reshapeCanvas, toggledViewportMode, type ViewportMode } from './viewport'
 import { previewCanvasExamples, standard, widescreen } from './viewport.examples'
 
 const deckArb = fc.record({ width: fc.integer({ min: 1, max: 8000 }), height: fc.integer({ min: 1, max: 8000 }) })
@@ -181,6 +181,25 @@ describe('effectiveCanvas', () => {
   test('property: phone display on a normal slide is exactly reshapeCanvas', () => {
     fc.assert(fc.property(deckArb, deviceArb, (deck, device) => {
       expect(effectiveCanvas(deck, 'mobile', device, false)).toEqual(reshapeCanvas(deck, device))
+    }))
+  })
+})
+
+describe('toggledViewportMode', () => {
+  test('spec: PC display toggles to phone display and back', () => {
+    expect(toggledViewportMode('desktop')).toBe('mobile')
+    expect(toggledViewportMode('mobile')).toBe('desktop')
+  })
+
+  test('adversarial: an unknown mode string is treated as PC display, so it toggles to phone display', () => {
+    for (const stray of ['tablet', '', 'MOBILE', undefined, null]) {
+      expect(toggledViewportMode(stray as unknown as ViewportMode)).toBe('mobile')
+    }
+  })
+
+  test('property: toggling twice returns to where it started', () => {
+    fc.assert(fc.property(fc.constantFrom<ViewportMode>('desktop', 'mobile'), mode => {
+      expect(toggledViewportMode(toggledViewportMode(mode))).toBe(mode)
     }))
   })
 })

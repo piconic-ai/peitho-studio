@@ -3,6 +3,7 @@ import { type DragState } from '../domain/drag'
 import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withLayoutFitResult, withLayoutNotice } from '../domain/contextMenu'
 import { type LayoutVerdict } from '../domain/layoutFit'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
+import { type ViewportMode, toggledViewportMode } from '../domain/viewport'
 
 const SLIDE_LIST_WIDTH = 176
 const EDITOR_WIDTH = 420
@@ -129,6 +130,14 @@ export function createUiStore() {
   // can be active").
   const [editingSectionIndex, setEditingSectionIndex] = createSignal<number | null>(null)
 
+  // Whether the preview pane shows the deck's own canvas or a phone-shaped
+  // one. Session-only, like the two column widths above. The setter stays
+  // private: callers can only flip the mode, not assign one.
+  const [viewportMode, setViewportMode] = createSignal<ViewportMode>('desktop')
+  function toggleViewportMode(): void {
+    setViewportMode(toggledViewportMode)
+  }
+
   return {
     dragState, setDragState, draggedIndex, dragOverGap, dragDeltaY,
     contextMenu, setContextMenu, closeContextMenu, toggleLayoutPicker, contextMenuAppendIndex,
@@ -139,5 +148,6 @@ export function createUiStore() {
     variantMenuOpen, setVariantMenuOpen,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth,
     editingSectionIndex, setEditingSectionIndex,
+    viewportMode, toggleViewportMode,
   }
 }

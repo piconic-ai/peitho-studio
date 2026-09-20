@@ -114,3 +114,53 @@ describe('layoutPreviewStylesheetText', () => {
     })
   })
 })
+
+describe('preview viewport mode', () => {
+  test('spec: Given a fresh session, when nothing was toggled, then the preview shows PC display', () => {
+    createRoot(() => {
+      expect(createUiStore().viewportMode()).toBe('desktop')
+    })
+  })
+
+  test('spec: Given PC display, when the toggle is pressed, then phone display shows, and pressing again returns to PC display', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.toggleViewportMode()
+      expect(store.viewportMode()).toBe('mobile')
+      store.toggleViewportMode()
+      expect(store.viewportMode()).toBe('desktop')
+    })
+  })
+
+  test('adversarial: an odd number of rapid presses ends on phone display, an even number on PC display', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      for (let presses = 1; presses <= 9; presses += 1) {
+        store.toggleViewportMode()
+        expect(store.viewportMode()).toBe(presses % 2 === 1 ? 'mobile' : 'desktop')
+      }
+    })
+  })
+
+  test('adversarial: each store instance keeps its own mode (a second window does not follow the first)', () => {
+    createRoot(() => {
+      const first = createUiStore()
+      const second = createUiStore()
+      first.toggleViewportMode()
+      expect(first.viewportMode()).toBe('mobile')
+      expect(second.viewportMode()).toBe('desktop')
+    })
+  })
+
+  test('adversarial: toggling leaves the other UI state alone', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.setSlideListWidth(300)
+      store.setPresentMenuOpen(true)
+      store.toggleViewportMode()
+      expect(store.slideListWidth()).toBe(300)
+      expect(store.presentMenuOpen()).toBe(true)
+      expect(store.contextMenu()).toEqual({ kind: 'closed' })
+    })
+  })
+})
