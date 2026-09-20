@@ -5,7 +5,9 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
 import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
-import { clampMenuPosition } from '../domain/geometry'
+import { clampMenuPosition, type Size } from '../domain/geometry'
+import { DEFAULT_DEVICE, effectiveCanvas } from '../domain/viewport'
+import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
@@ -264,6 +266,37 @@ export function Studio() {
   // what lets the preview pane (below) depend on "which slide is
   // selected" without also depending on "has its content changed".
   const selectedSlideKey = createMemo<string | null>(() => selectedSlide()?.key ?? null)
+
+  // The canvas the *preview pane* lays the selected slide out on: the
+  // deck's own, or (phone display) the same width grown to a phone's
+  // proportion — see `domain/viewport.ts`. Only the preview follows the
+  // toggle; the thumbnail list and layout picker keep reading
+  // `render.canvasWidth()/canvasHeight()` directly.
+  //
+  // Two separate number memos rather than one memo of a `Size`:
+  // `SlidePreview`'s mount effect tracks both dimensions, and `effectiveCanvas`
+  // hands back a fresh object every call, so a single object-valued memo
+  // would notify it (and re-mount the canvas) on every keystroke, where
+  // number memos are `Object.is`-guarded and notify only when a dimension
+  // really changes. `selectedSlideIsFixedCanvas` is likewise its own memo:
+  // reading the fragment makes it re-run on every edit of the selected
+  // slide (and absolutizes the whole fragment, which only the slide's own
+  // opt-out needs a look at), so the two dimension memos share its
+  // boolean result instead of each re-deriving it.
+  const selectedSlideIsFixedCanvas = createMemo<boolean>(() => {
+    const key = selectedSlideKey()
+    return key !== null && hasFixedCanvas(render.canvasFragmentOf(key))
+  })
+  function previewCanvas(): Size {
+    return effectiveCanvas(
+      { width: render.canvasWidth(), height: render.canvasHeight() },
+      ui.viewportMode(),
+      DEFAULT_DEVICE,
+      selectedSlideIsFixedCanvas(),
+    )
+  }
+  const previewCanvasWidth = createMemo<number>(() => previewCanvas().width)
+  const previewCanvasHeight = createMemo<number>(() => previewCanvas().height)
 
   // One `CSSStyleSheet` shared by every Shadow DOM thumbnail canvas, so a
   // theme change costs a single `replaceSync` here instead of a re-parse
@@ -1249,8 +1282,10 @@ export function Studio() {
           hasDeck={Boolean(render.assetBaseUrl())}
           canvasFragmentOf={render.canvasFragmentOf}
           slideStylesheet={getSlideStylesheet}
-          canvasWidth={render.canvasWidth()}
-          canvasHeight={render.canvasHeight()}
+          viewportMode={ui.viewportMode()}
+          onToggleViewportMode={ui.toggleViewportMode}
+          canvasWidth={previewCanvasWidth()}
+          canvasHeight={previewCanvasHeight()}
         />
       </div>
       )}
