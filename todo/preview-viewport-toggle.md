@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: プレビューでPC表示/スマホ表示を切り替えられるようにする(設計確定済み。キャンバス寸法契約 + Container Queries、実装はPR-A/PR-Bの2本)
 tags: [ui, preview, viewport]
 ---
@@ -193,7 +193,7 @@ Fableの設計を採用した。判断を仰いだ5点はすべて推奨のと�
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] PR-A: `domain/viewport.ts` + `hasFixedCanvas` + テスト
+- [x] PR-A: `domain/viewport.ts` + `hasFixedCanvas` + テスト
 - [ ] PR-B: `dom/slideCanvas.ts`の再フィット(独立コミット)、`uiStore`、
       `SlidePreview.tsx`のトグルUI、`Studio.tsx`のmemo、e2e
 - [ ] `bun test` / `bun run typecheck` グリーン
