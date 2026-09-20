@@ -32,9 +32,10 @@ overviewデッキ)。この結論は撤回し、下の「調査結果」に訂�
   - サムネイル一覧・レイアウトピッカーをトグルに追従させること
     (プレビューのみ)。
   - 端末プリセットの選択UI・トグル状態の永続化(390x844の1種固定、
-    セッション内のみ)。ただしPhone内の2択のshape切替(縦長/PCと同じ
-    比率、下の「方針」の追加要望3)は含める。プリセット(端末の種類)を
-    選ぶUIではなく、shapeもセッション内のみで永続化しない。
+    セッション内のみ)。ただしPhoneのときに▾のメニューから選ぶ2択の
+    shape(Tall / Same ratio as PC、下の「方針」の追加要望3)は含める。
+    プリセット(端末の種類)を選ぶUIではなく、shapeもセッション内のみで
+    永続化しない。
   - `body.bf-compact`のようなデッキ固有のbodyクラスを、Studioがシミュ
     レートすること。
 - **受け入れ条件**:
@@ -50,13 +51,19 @@ overviewデッキ)。この結論は撤回し、下の「調査結果」に訂�
   - (追加要望)ヘッダーのスイッチはアイコン(PC=モニター、Phone=
     スマートフォン)で、文言("PC"/"Phone")を持たない。`aria-label`は
     維持され、各セグメントに`title`が付く。ヘッダー行の下線は無く、
-    スイッチ自身の枠線は残る。
-  - (追加要望)Phone表示のときだけ、スイッチの隣にshapeの2択が出る
-    (PCのときは`hidden`)。既定は縦長で、hostの`--peitho-canvas-height`
-    は`2770px`。「PCと同じ比率」にすると`720px`(4:3のデッキは幅960で
-    `720px`)、縦長に戻すと`2770px`。PC↔Phoneを行き来してもshapeは保持
-    され、`data-canvas="fixed"`のスライドとサムネイル一覧はshapeの
-    影響を受けず、shape切替でも`--peitho-thumb-scale`が追従する。
+    ピル自身の枠線は残る。ピルは1つだけで、shape用の別ピルは無い。
+  - (追加要望)Phoneが選択中のときだけ、Phoneセグメントの右に区切り線と
+    ▾が出る(PCのときは`hidden`)。▾を押すとその真下にメニュー(項目は
+    Tall / Same ratio as PC。各項目はアイコン+ラベル+1行の説明+選択中の
+    チェック)が開き、開くだけではモードもキャンバスも変わらない。
+    既定はTallで、hostの`--peitho-canvas-height`は`2770px`。Same ratio
+    as PCを選ぶと`720px`(4:3のデッキは幅960で`720px`)、Tallに戻すと
+    `2770px`。項目を選ぶ・外側をクリックする・Escを押す・PCに切り替える
+    のいずれでもメニューは閉じる。メニューは画面内に収まり、キャンバス
+    (デッキ自身のz-indexが大きくても)より手前に出る。PC↔Phoneを行き来
+    してもshapeは保持され、`data-canvas="fixed"`のスライドとサムネイル
+    一覧はshapeの影響を受けず、shape切替でも`--peitho-thumb-scale`が
+    追従する。
 
 ## 背景・調査結果
 
@@ -154,11 +161,12 @@ kfly8からの追加要望3点(2026-09-20):
 2. **PC/Phoneを載せているコンテナの境界線をなくす。** 対象はヘッダー
    行の下線(`border-b border-border`)だけ。スイッチ自身の丸い枠線は
    残す(ユーザーが「ヘッダー行の下線だけ」を選んだ)。行の高さ
-   (`h-9`)・余白・`hidden`切替は変えていない。
+   (`h-9`)・余白(`px-3`)・`hidden`切替は変えていない(ピル自体は文字→
+   アイコンで、セグメントの縦paddingが`py-0.5`→`py-1`になり約2px高い)。
 3. **Phoneの中で、縦長(390x844比)とPCと同じ比率を選べるようにする。**
    ユーザーが選んだ解釈。`domain/viewport.ts`に`PhoneShape`
-   (`'portrait' | 'deck'`)・`toggledPhoneShape`・`deviceForShape(shape,
-   deck)`を足し、`deviceForShape('deck', deck)`がdeck自身の寸法を返す
+   (`'portrait' | 'deck'`)・`deviceForShape(shape, deck)`を足し、
+   `deviceForShape('deck', deck)`がdeck自身の寸法を返す
    ことで実現した。`effectiveCanvas(deck, 'mobile', deck自身, fixed)`は
    `reshapeCanvas(deck, deck)`、つまり幅はそのまま・高さは
    `max(deck.height, round(deck.width * deck.height / deck.width))`=
@@ -166,18 +174,32 @@ kfly8からの追加要望3点(2026-09-20):
    `toggledViewportMode`のシグネチャ・挙動は変えていない**(整数寸法の
    デッキで恒等になることをpropertyテストで固定。小数の高さは最大で
    次の整数へ切り上がる)。状態は`uiStore`の`phoneShape`(初期値
-   `'portrait'`)と`togglePhoneShape()`(setterは非公開)で、
-   `viewportMode`とは独立のsignalなのでPC↔Phoneを行き来しても保持
+   `'portrait'`)と、明示選択の`selectPhoneShape(shape)`(setterは非公開)
+   で、`viewportMode`とは独立のsignalなのでPC↔Phoneを行き来しても保持
    される。永続化なし。`Studio.tsx`のcanvas memoは
    `effectiveCanvas(deck, mode, deviceForShape(shape, deck), fixed)`
    で、幅・高さは別々のnumber memoのまま。
-   - UIは、Phone表示のときだけスイッチの隣に出る2セグメントの
-     `role="switch"`(`data-phone-shape-toggle`、`aria-label`は
-     "Same ratio as PC"、`aria-checked`はdeck比率のとき`true`、各
-     セグメントの`title`は"Tall phone canvas"/"Same ratio as PC")。
-     既存のPC/Phoneスイッチと同じ作りで、`setter`を公開しない
-     `togglePhoneShape`だけで動く。常時マウントして`hidden`クラスで
-     切り替える(条件分岐した`ref`内の`createEffect`のリーク、#2927)。
+   - UI(初版は別ピルの縦長/横長アイコン2つだったが、意味が分からない
+     との指摘で作り直した)。ピルは`[PC | Phone]`の1つだけで、Phoneが
+     選択中のときだけ、Phoneセグメントの右に区切り線と▾が出る
+     (`DeckHeader.tsx`のPresent ▾と同じスプリットボタンの形)。▾
+     (`data-phone-shape-menu-button`、`aria-haspopup="menu"`/
+     `aria-expanded`)を押すと真下にメニュー(`role="menu"`、項目は
+     `role="menuitemradio"`+`aria-checked`、`data-phone-shape-option=
+     "portrait|deck"`)が開く。項目はTall("A tall canvas shaped like a
+     portrait phone")とSame ratio as PC("Keeps the deck's own ratio
+     (16:9 / 4:3)")。開閉は`uiStore`の`phoneShapeMenuOpen`+
+     `openPhoneShapeMenu()`/`closePhoneShapeMenu()`(`variantMenuOpen`に
+     倣う)。Phone表示でなければ開けず、PCに戻すと閉じるので、「PC表示で
+     メニューが開いている」状態はstoreが取り得ない。外側クリックは全面
+     オーバーレイ(`fixed`、`z-10`)が受け、Escは`Studio.tsx`の
+     keydownが閉じる。メニューとオーバーレイは常時マウントで`hidden`
+     クラス切替(`variantMenuOpen`のメニューと同じ流儀。この▾とメニュー
+     には`ref`も`createEffect`も無いので#2927のリークは起きないが、
+     コンポーネント全体の流儀に合わせている)。プレビューのhostに
+     `isolate`を付け、デッキ自身の`z-index`(大きい`z-index`を持つ
+     `.peitho-slide`がメニューとオーバーレイを覆うことをプローブで
+     確認した)がメニューより手前に出ないようにしている。
    - **既知の帰結**: Phone + 「PCと同じ比率」のキャンバス寸法は
      PCと同一(1280x720 / 960x720)になる。ユーザーはそれを承知で
      選択した。phone枠(デバイスのフレーム)の描画はスコープ外で、
@@ -195,14 +217,22 @@ kfly8からの追加要望3点(2026-09-20):
   // dimensions fall back to the deck canvas unchanged.
   export function reshapeCanvas(deck: Size, device: Size): Size
   export function effectiveCanvas(deck: Size, mode: ViewportMode, device: Size, fixedCanvas: boolean): Size
+  // 追加要望3(後から追記): Phone内のshapeと、それに対応するdevice。
+  export type PhoneShape = 'portrait' | 'deck'
+  // 'portrait' → DEFAULT_DEVICE、'deck' → deck自身の寸法
+  export function deviceForShape(shape: PhoneShape, deck: Size): Size
   ```
 - `domain/slideFragment.ts`: `hasFixedCanvas(fragmentHtml): boolean`
   (root `<section>`の開始タグだけを見る)。
 - `state/uiStore.ts`: `viewportMode` signal + `toggleViewportMode()`。
-  永続化なし(列幅と同じセッション内のみ)。
+  永続化なし(列幅と同じセッション内のみ)。追加要望3で、`phoneShape` +
+  `selectPhoneShape(shape)`、メニューの`phoneShapeMenuOpen` +
+  `openPhoneShapeMenu()`/`closePhoneShapeMenu()`を足した(setterはどれも
+  非公開)。
 - `components/Studio.tsx`: `previewCanvasWidth`/`previewCanvasHeight`を
   **別々のnumber memo**にする(`effectiveCanvas(render.canvasWidth/
-  Height, ui.viewportMode(), DEFAULT_DEVICE, hasFixedCanvas(選択
+  Height, ui.viewportMode(), deviceForShape(ui.phoneShape(), deck)
+  〔初版はDEFAULT_DEVICE固定〕, hasFixedCanvas(選択
   スライドのfragment))`)。オブジェクト1個のmemoだと毎キーストローク
   で`SlidePreview`のeffectが再マウントする(`renderStore`がcanvasを
   分離している理由と同じ)。`<SlidePreview canvasWidth={previewCanvas
@@ -219,7 +249,9 @@ kfly8からの追加要望3点(2026-09-20):
   `viewportMode`/`onToggleViewportMode`(callback prop、setterは渡さない)
   をStudioから受ける。常時マウントで`hidden`切替にし、条件分岐`ref`内に
   `createEffect`を置かない(#2927)。スマホ枠を描くなら`inset-0`は使わず
-  `top-0 right-0 bottom-0 left-0`と書く。
+  `top-0 right-0 bottom-0 left-0`と書く。追加要望3では、Phone選択中だけ
+  出る▾とそのメニュー(`phoneShape`/`phoneShapeMenuOpen`と開閉・選択の
+  callback prop)をここに足した。
 - Rust側(`src-tauri/`)は変更なし: レンダリング経路にビューポート入力は
   要らない。
 
@@ -252,11 +284,13 @@ kfly8からの追加要望3点(2026-09-20):
 - [x] `bun test` / `bun run typecheck` グリーン
 - [x] `bun run test:e2e`グリーン
 - [x] 追加要望(2026-09-20): `domain/viewport.ts`の`PhoneShape`/
-      `toggledPhoneShape`/`deviceForShape`+テスト、`uiStore`の
-      `phoneShape`、`SlidePreview.tsx`のアイコン化・ヘッダー下線の削除・
-      shapeの2択、`Studio.tsx`の配線、e2e。`bun test`/`bun run
-      typecheck`/e2eグリーン(e2eはPlaywrightでPC/Phone縦長/Phone PCと
-      同じ比率の3状態のヘッダーを目視確認済み。ダークテーマも確認)
+      `deviceForShape`+テスト、`uiStore`の`phoneShape`/`selectPhoneShape`/
+      `phoneShapeMenuOpen`+テスト、`SlidePreview.tsx`のアイコン化・
+      ヘッダー下線の削除・Phone選択中だけ出る▾とshapeメニュー、
+      `Studio.tsx`の配線、e2e。`bun test`/`bun run typecheck`/
+      `bun run test:e2e`グリーン(Playwrightで PC / Phone(メニュー閉) /
+      Phone(メニュー開)の3状態を目視確認済み。メニューはPresentの
+      メニューと同じ見た目で、画面内に収まりキャンバスより手前に出る)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機(`run-peitho-studio` skill)での確認: WKWebViewで`@container`
@@ -271,12 +305,14 @@ kfly8からの追加要望3点(2026-09-20):
 - [ ] PR-C(barefootjs側の移行提案)を出すか / PR-D(`kfly8/peitho`の
       docs・`themes/base.css`)を出すか
 - [ ] 実機(WKWebView)での確認(2026-09-20の追加要望分。Chromeでしか
-      検証していない): ヘッダーのインラインSVGアイコン(PC/Phone/縦長/
-      PCと同じ比率)が潰れず描画され、lit/unlitが見分けられるか。
-      ヘッダー行の下線が消えているか。Phoneでshapeを切り替えたとき
-      `--peitho-thumb-scale`が追従し、スライドが再フィットされるか。
-      Phone + PCと同じ比率がPCと同一の見た目になることを承知の上で、
-      phone枠の描画(別todo候補)を要するか
+      検証していない): ヘッダーのインラインSVGアイコン(PC/Phone、
+      メニュー内のTall/Same ratio as PC)が潰れず描画され、lit/unlitが
+      見分けられるか。ヘッダー行の下線が消えているか。▾のメニューが
+      WKWebViewでも切れず、実デッキ(`z-index`を持つテーマを含む)の
+      キャンバスより手前に出るか。外側クリック・Escで閉じるか。Phoneで
+      shapeを切り替えたとき`--peitho-thumb-scale`が追従し、スライドが
+      再フィットされるか。Phone + Same ratio as PCがPCと同一の見た目に
+      なることを承知の上で、phone枠の描画(別todo候補)を要するか
 
 ## 先送り事項
 
@@ -296,11 +332,21 @@ kfly8からの追加要望3点(2026-09-20):
   canvas`を書けるようにする。
 - 端末プリセットの選択UI・永続化、サムネイル/ピッカーの追従は、必要に
   なったら別todoとして切り出す。
-- **Phone + 「PCと同じ比率」がPCと見分けにくい**: 2つはキャンバス寸法が
+- **Phone + Same ratio as PC がPCと見分けにくい**: 2つはキャンバス寸法が
   同一なので、プレビューの見た目だけではどちらの表示か分からない
-  (スイッチの点灯だけが手がかり)。phone枠(デバイスのフレーム)を
-  プレビューに描くことを別todoとして検討する(枠を描くときは`inset-0`を
-  使わず`top-0 right-0 bottom-0 left-0`と書く)。
+  (スイッチの点灯とメニューのチェックだけが手がかり)。phone枠(デバイス
+  のフレーム)をプレビューに描くことを別todoとして検討する(枠を描く
+  ときは`inset-0`を使わず`top-0 right-0 bottom-0 left-0`と書く)。
+- **Phoneでもキャンバス幅は390にならない**: `reshapeCanvas`はデッキの幅を
+  保って高さだけ伸ばすので、Tallでも幅は1280(4:3なら960)のまま。幅に
+  対する`@container (max-width: …)`で分岐するデッキは、このトグルでは
+  狭い側の分岐を確認できない(高さ/縦横比に対するクエリだけが発火する)。
+  幅も端末に合わせる案(390幅の実キャンバス)は、レイアウトが別物になる
+  ので別todoとして検討する。
+- 選択中のスライドが`data-canvas="fixed"`のとき、PC/Phoneのスイッチと
+  shapeメニューは操作できるがキャンバスは変わらない(スイッチの点灯と
+  メニューのチェックだけが動く)。無効化やヒントの表示は必要になったら
+  別todoで検討する。
 - トグルでプレビューが再マウントされ、レイアウトの`<script>`が再実行
   される(選択変更時と同じ既存挙動)。
 - スマホ表示中に固定キャンバスのスライドと通常のスライドをまたいで選択
