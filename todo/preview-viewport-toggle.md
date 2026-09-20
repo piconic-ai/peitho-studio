@@ -32,7 +32,9 @@ overviewデッキ)。この結論は撤回し、下の「調査結果」に訂�
   - サムネイル一覧・レイアウトピッカーをトグルに追従させること
     (プレビューのみ)。
   - 端末プリセットの選択UI・トグル状態の永続化(390x844の1種固定、
-    セッション内のみ)。
+    セッション内のみ)。ただしPhone内の2択のshape切替(縦長/PCと同じ
+    比率、下の「方針」の追加要望3)は含める。プリセット(端末の種類)を
+    選ぶUIではなく、shapeもセッション内のみで永続化しない。
   - `body.bf-compact`のようなデッキ固有のbodyクラスを、Studioがシミュ
     レートすること。
 - **受け入れ条件**:
@@ -45,6 +47,16 @@ overviewデッキ)。この結論は撤回し、下の「調査結果」に訂�
     の`css`に`@container`を入れて確認)。
   - トグル後、プレビューの`--peitho-thumb-scale`がhostの現在サイズに
     追従している(`observeCanvasScale`の再フィット修正)。
+  - (追加要望)ヘッダーのスイッチはアイコン(PC=モニター、Phone=
+    スマートフォン)で、文言("PC"/"Phone")を持たない。`aria-label`は
+    維持され、各セグメントに`title`が付く。ヘッダー行の下線は無く、
+    スイッチ自身の枠線は残る。
+  - (追加要望)Phone表示のときだけ、スイッチの隣にshapeの2択が出る
+    (PCのときは`hidden`)。既定は縦長で、hostの`--peitho-canvas-height`
+    は`2770px`。「PCと同じ比率」にすると`720px`(4:3のデッキは幅960で
+    `720px`)、縦長に戻すと`2770px`。PC↔Phoneを行き来してもshapeは保持
+    され、`data-canvas="fixed"`のスライドとサムネイル一覧はshapeの
+    影響を受けず、shape切替でも`--peitho-thumb-scale`が追従する。
 
 ## 背景・調査結果
 
@@ -130,6 +142,47 @@ Fableの設計を採用した。判断を仰いだ5点はすべて推奨のと�
    **`kfly8/peitho`(fork)**へ。upstream(`mizzy/peitho`)ではない。
 5. `observeCanvasScale`の再フィット修正はPR-B内の**独立コミット**。
 
+### 後から加わったユーザー要望(2026-09-20、PR #70に追加コミットで実装)
+
+kfly8からの追加要望3点(2026-09-20):
+
+1. **PC/Phoneの文言をアイコンにする。** 依存を足さずインラインSVG
+   (lucide風の線画、`aria-hidden`)で書いた。文言を消すぶん、ボタンの
+   `aria-label`("Preview as phone")は維持し、各セグメントに
+   `title="PC"`/`title="Phone"`を付けた。`data-viewport-toggle`・
+   `role="switch"`・`aria-checked`の意味は変えていない。
+2. **PC/Phoneを載せているコンテナの境界線をなくす。** 対象はヘッダー
+   行の下線(`border-b border-border`)だけ。スイッチ自身の丸い枠線は
+   残す(ユーザーが「ヘッダー行の下線だけ」を選んだ)。行の高さ
+   (`h-9`)・余白・`hidden`切替は変えていない。
+3. **Phoneの中で、縦長(390x844比)とPCと同じ比率を選べるようにする。**
+   ユーザーが選んだ解釈。`domain/viewport.ts`に`PhoneShape`
+   (`'portrait' | 'deck'`)・`toggledPhoneShape`・`deviceForShape(shape,
+   deck)`を足し、`deviceForShape('deck', deck)`がdeck自身の寸法を返す
+   ことで実現した。`effectiveCanvas(deck, 'mobile', deck自身, fixed)`は
+   `reshapeCanvas(deck, deck)`、つまり幅はそのまま・高さは
+   `max(deck.height, round(deck.width * deck.height / deck.width))`=
+   deck.heightになる。**`reshapeCanvas`/`effectiveCanvas`/
+   `toggledViewportMode`のシグネチャ・挙動は変えていない**(整数寸法の
+   デッキで恒等になることをpropertyテストで固定。小数の高さは最大で
+   次の整数へ切り上がる)。状態は`uiStore`の`phoneShape`(初期値
+   `'portrait'`)と`togglePhoneShape()`(setterは非公開)で、
+   `viewportMode`とは独立のsignalなのでPC↔Phoneを行き来しても保持
+   される。永続化なし。`Studio.tsx`のcanvas memoは
+   `effectiveCanvas(deck, mode, deviceForShape(shape, deck), fixed)`
+   で、幅・高さは別々のnumber memoのまま。
+   - UIは、Phone表示のときだけスイッチの隣に出る2セグメントの
+     `role="switch"`(`data-phone-shape-toggle`、`aria-label`は
+     "Same ratio as PC"、`aria-checked`はdeck比率のとき`true`、各
+     セグメントの`title`は"Tall phone canvas"/"Same ratio as PC")。
+     既存のPC/Phoneスイッチと同じ作りで、`setter`を公開しない
+     `togglePhoneShape`だけで動く。常時マウントして`hidden`クラスで
+     切り替える(条件分岐した`ref`内の`createEffect`のリーク、#2927)。
+   - **既知の帰結**: Phone + 「PCと同じ比率」のキャンバス寸法は
+     PCと同一(1280x720 / 960x720)になる。ユーザーはそれを承知で
+     選択した。phone枠(デバイスのフレーム)の描画はスコープ外で、
+     別todo候補として「先送り事項」に残した。
+
 ## レイヤー配置
 
 - `domain/viewport.ts`(新規・純粋):
@@ -198,6 +251,12 @@ Fableの設計を採用した。判断を仰いだ5点はすべて推奨のと�
       `SlidePreview.tsx`のトグルUI、`Studio.tsx`のmemo、e2e
 - [x] `bun test` / `bun run typecheck` グリーン
 - [x] `bun run test:e2e`グリーン
+- [x] 追加要望(2026-09-20): `domain/viewport.ts`の`PhoneShape`/
+      `toggledPhoneShape`/`deviceForShape`+テスト、`uiStore`の
+      `phoneShape`、`SlidePreview.tsx`のアイコン化・ヘッダー下線の削除・
+      shapeの2択、`Studio.tsx`の配線、e2e。`bun test`/`bun run
+      typecheck`/e2eグリーン(e2eはPlaywrightでPC/Phone縦長/Phone PCと
+      同じ比率の3状態のヘッダーを目視確認済み。ダークテーマも確認)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機(`run-peitho-studio` skill)での確認: WKWebViewで`@container`
@@ -211,6 +270,13 @@ Fableの設計を採用した。判断を仰いだ5点はすべて推奨のと�
       両方のテーマの実デッキで見た目が変わらないか確認する
 - [ ] PR-C(barefootjs側の移行提案)を出すか / PR-D(`kfly8/peitho`の
       docs・`themes/base.css`)を出すか
+- [ ] 実機(WKWebView)での確認(2026-09-20の追加要望分。Chromeでしか
+      検証していない): ヘッダーのインラインSVGアイコン(PC/Phone/縦長/
+      PCと同じ比率)が潰れず描画され、lit/unlitが見分けられるか。
+      ヘッダー行の下線が消えているか。Phoneでshapeを切り替えたとき
+      `--peitho-thumb-scale`が追従し、スライドが再フィットされるか。
+      Phone + PCと同じ比率がPCと同一の見た目になることを承知の上で、
+      phone枠の描画(別todo候補)を要するか
 
 ## 先送り事項
 
@@ -230,6 +296,11 @@ Fableの設計を採用した。判断を仰いだ5点はすべて推奨のと�
   canvas`を書けるようにする。
 - 端末プリセットの選択UI・永続化、サムネイル/ピッカーの追従は、必要に
   なったら別todoとして切り出す。
+- **Phone + 「PCと同じ比率」がPCと見分けにくい**: 2つはキャンバス寸法が
+  同一なので、プレビューの見た目だけではどちらの表示か分からない
+  (スイッチの点灯だけが手がかり)。phone枠(デバイスのフレーム)を
+  プレビューに描くことを別todoとして検討する(枠を描くときは`inset-0`を
+  使わず`top-0 right-0 bottom-0 left-0`と書く)。
 - トグルでプレビューが再マウントされ、レイアウトの`<script>`が再実行
   される(選択変更時と同じ既存挙動)。
 - スマホ表示中に固定キャンバスのスライドと通常のスライドをまたいで選択
