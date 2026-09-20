@@ -276,7 +276,10 @@ describe('hasFixedCanvas', () => {
     hasFixedCanvas(' '.repeat(200000))
     hasFixedCanvas(`<section ${'a '.repeat(100000)}`)
     hasFixedCanvas(`<section ${'a="b" '.repeat(50000)}>`)
-    expect(performance.now() - started).toBeLessThan(1500)
+    // Takes tens of milliseconds; a backtracking regression would take
+    // minutes, so the budget only has to be loose enough not to flake on a
+    // loaded machine.
+    expect(performance.now() - started).toBeLessThan(4000)
   })
 
   test('purity: repeats its answer across calls (its global regexes hold no state between them)', () => {

@@ -42,10 +42,20 @@ export function absolutizeFragmentUrls(html: string, baseUrl: string): string {
 
 // A slide opts out of the preview's phone-shaped canvas with
 // `data-canvas="fixed"` on its root `<section>` (a layout authored in
-// absolute 16:9 coordinates). Only that one start tag is read: a layout's
-// leading comment often documents the attribute in prose, and a child
-// element may carry the same attribute for its own reasons — neither is the
-// slide's own opt-out.
+// absolute 16:9 coordinates). The attribute is a convention of the barefootjs
+// overview deck (its `narration.ts` honors it) that Studio also honors;
+// peitho-core itself does not define it. Only that one start tag is read: a
+// layout's leading comment often documents the attribute in prose, and a
+// child element may carry the same attribute for its own reasons — neither
+// is the slide's own opt-out.
+//
+// Scope: the fragment is expected to open with its root `<section>` after any
+// comments, as every built-in layout and the barefootjs overview's do
+// (peitho-core itself only requires a layout to hold exactly one
+// `<section>`, so a layout that puts a `<style>` or wrapper element before
+// it is not detected). The start tag is read as well-formed HTML, without
+// entity decoding: malformed tags may be read differently than a browser
+// would.
 
 /** Whitespace and HTML comments a fragment may open with (peitho-core keeps
  * a layout's leading `<!-- ... -->` block ahead of its root element). */
@@ -80,7 +90,8 @@ function attributeValue(attributes: string, name: string): string | null {
 
 /** Whether the slide's root `<section>` carries `data-canvas="fixed"`. The
  * value is matched exactly (`FIXED` is not `fixed`), as the CSS selector
- * `section[data-canvas="fixed"]` the other viewers use would. */
+ * `section[data-canvas="fixed"]` (the barefootjs overview's own check)
+ * would. */
 export function hasFixedCanvas(fragmentHtml: string): boolean {
   const attributes = rootSectionAttributes(fragmentHtml)
   return attributes !== null && attributeValue(attributes, 'data-canvas') === 'fixed'

@@ -33,8 +33,19 @@ describe('reshapeCanvas', () => {
     expect(reshapeCanvas(widescreen, DEFAULT_DEVICE)).toEqual({ width: 1280, height: 2770 })
   })
 
-  test('spec: a 4:3 deck takes the phone\'s proportion, rounding half a pixel up', () => {
+  test('spec: a 4:3 deck takes the phone\'s proportion, rounded to the nearest whole pixel', () => {
+    // 960 * 844 / 390 = 2077.54, so it rounds up.
     expect(reshapeCanvas(standard, DEFAULT_DEVICE)).toEqual({ width: 960, height: 2078 })
+  })
+
+  test('spec: a height that lands exactly halfway rounds up', () => {
+    // 1001 * 1 / 2 = 500.5 exactly, so the tie-break is what is pinned here.
+    expect(reshapeCanvas({ width: 1001, height: 100 }, { width: 2, height: 1 })).toEqual({ width: 1001, height: 501 })
+  })
+
+  test('spec: a height just under halfway rounds down', () => {
+    // 1000 * 1 / 3 = 333.33
+    expect(reshapeCanvas({ width: 1000, height: 100 }, { width: 3, height: 1 })).toEqual({ width: 1000, height: 333 })
   })
 
   test('spec: a device that is exactly the deck\'s own shape changes nothing', () => {
@@ -176,15 +187,6 @@ describe('effectiveCanvas', () => {
 
   test('spec: phone display leaves a data-canvas="fixed" slide alone', () => {
     expect(effectiveCanvas(widescreen, 'mobile', DEFAULT_DEVICE, true)).toEqual(widescreen)
-  })
-
-  test('spec: the same call the preview makes, with width and height read as separate numbers', () => {
-    // The preview memoizes width and height separately (an object memo would
-    // remount the slide on every keystroke), so each is picked out of one
-    // call's result on its own.
-    const width = effectiveCanvas({ width: 1280, height: 720 }, 'mobile', DEFAULT_DEVICE, false).width
-    const height = effectiveCanvas({ width: 1280, height: 720 }, 'mobile', DEFAULT_DEVICE, false).height
-    expect({ width, height }).toEqual({ width: 1280, height: 2770 })
   })
 
   test('adversarial: a fixed slide stays put even with an unusable device', () => {

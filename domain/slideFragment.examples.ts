@@ -38,7 +38,7 @@ export const fixedCanvasExamples = defineExamples<string, PreviewChecksSlide, bo
         + '<section class="peitho-slide" data-canvas="fixed" data-slide-key="a"></section>',
       event: 'preview-checks-slide',
       expect: true,
-      tags: ['bug-regression'],
+      tags: ['boundary'],
     },
     {
       id: 'ordinary-slide-after-explaining-comment',
@@ -48,7 +48,7 @@ export const fixedCanvasExamples = defineExamples<string, PreviewChecksSlide, bo
       state: '<!-- Example: <section data-canvas="fixed"> keeps 16:9 -->\n<section class="peitho-slide" data-slide-key="a"></section>',
       event: 'preview-checks-slide',
       expect: false,
-      tags: ['bug-regression'],
+      tags: ['boundary'],
     },
     {
       id: 'only-a-child-is-marked',

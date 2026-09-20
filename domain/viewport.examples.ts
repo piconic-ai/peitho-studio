@@ -38,7 +38,7 @@ export const previewCanvasExamples = defineExamples<PreviewCanvasInput, PreviewL
       id: 'standard-deck-on-phone',
       given: 'a 4:3 deck (960x720) and the phone preset (390x844) selected',
       when: 'the preview lays out a normal slide',
-      then: 'the canvas keeps its 960 width and grows to 2078 high (2077.5 rounded to a whole pixel)',
+      then: 'the canvas keeps its 960 width and grows to 2078 high (2077.54 rounded to a whole pixel)',
       state: { deck: standard, mode: 'mobile', device: DEFAULT_DEVICE, fixedCanvas: false },
       event: 'preview-laid-out',
       expect: { width: 960, height: 2078 },

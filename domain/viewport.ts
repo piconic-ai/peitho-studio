@@ -7,7 +7,7 @@ import type { Size } from './geometry'
 
 export type ViewportMode = 'desktop' | 'mobile'
 
-export interface DevicePreset { name: string; width: number; height: number }
+export interface DevicePreset extends Size { name: string }
 
 /** The one device the toggle simulates (no picker, by design). */
 export const DEFAULT_DEVICE: DevicePreset = { name: 'Phone (portrait)', width: 390, height: 844 }
@@ -21,7 +21,9 @@ function isUsableDimension(value: number): boolean {
  * rule the barefootjs overview viewer's `fitCanvas` applies). Never shrinks
  * below the deck's own height, so a landscape device leaves the canvas as it
  * is. A device with a non-finite or non-positive dimension carries no usable
- * proportion, so the deck comes back unchanged. */
+ * proportion, so the deck comes back unchanged. There is no upper bound on
+ * the height: `DEFAULT_DEVICE` is the only device the preview offers, so an
+ * absurd proportion cannot arise until a device picker exists. */
 export function reshapeCanvas(deck: Size, device: Size): Size {
   if (!isUsableDimension(device.width) || !isUsableDimension(device.height)) return deck
   const proportionalHeight = Math.round(deck.width * device.height / device.width)
