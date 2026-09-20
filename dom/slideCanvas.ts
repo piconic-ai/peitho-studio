@@ -290,9 +290,16 @@ function handleResize(entries: ResizeObserverEntry[], observer: ResizeObserver):
  * `ResizeObserver` shared by every mounted canvas rather than one each.
  * `canvas` is the deck's native slide size, not `host`'s own box. Fitting
  * against `contentRect` keeps a transform applied to `host` itself (the
- * `scale(0.95)` a drag puts on a row) out of the measurement. */
+ * `scale(0.95)` a drag puts on a row) out of the measurement.
+ *
+ * Safe to call again for an already-observed `host` with a different
+ * `canvas` (the preview's PC/phone toggle does), which re-fits the scale
+ * without waiting for `host` to resize. `unobserve()` comes first because an
+ * observer only reports a size that differs from the one it last reported,
+ * and a bare repeated `observe()` does not reset that (Chrome 153). */
 export function observeCanvasScale(host: HTMLElement, canvas: Size): void {
   canvasSizes.set(host, canvas)
   sharedObserver ??= new ResizeObserver(handleResize)
+  sharedObserver.unobserve(host)
   sharedObserver.observe(host)
 }
