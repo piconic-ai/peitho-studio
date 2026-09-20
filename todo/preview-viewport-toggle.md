@@ -159,9 +159,9 @@ Fableの設計を採用した。判断を仰いだ5点はすべて推奨のと�
   ったとき、即座に`--peitho-thumb-scale`を書き直す。測定は既存の
   `handleResize`と同じ`contentRect`(小数・paddingを除く)に揃える:
   `host.clientWidth/Height`は整数でpaddingを含むため微妙にずれる。
-  案: `unobserve`→`observe`し直して観測を最初からやり直す(Chromeでは
-  `observe()`の再呼び出しだけでは再発火しなかった。`unobserve`を挟めば
-  発火するかは未検証 — 実装時に確認する)。
+  `unobserve`→`observe`し直して観測を最初からやり直す。Chrome 153で
+  確認済み: `observe()`の再呼び出しだけでは再発火せず、`unobserve`を
+  挟むと毎回1回発火する(WKWebViewは未確認、下の人間判断項目)。
 - `components/SlidePreview.tsx`: ヘッダー行にトグルを足す。
   `viewportMode`/`onToggleViewportMode`(callback prop、setterは渡さない)
   をStudioから受ける。常時マウントで`hidden`切替にし、条件分岐`ref`内に
@@ -194,10 +194,10 @@ Fableの設計を採用した。判断を仰いだ5点はすべて推奨のと�
 
 自動で確認できる項目(ループが自分で判定してよい):
 - [x] PR-A: `domain/viewport.ts` + `hasFixedCanvas` + テスト
-- [ ] PR-B: `dom/slideCanvas.ts`の再フィット(独立コミット)、`uiStore`、
+- [x] PR-B: `dom/slideCanvas.ts`の再フィット(独立コミット)、`uiStore`、
       `SlidePreview.tsx`のトグルUI、`Studio.tsx`のmemo、e2e
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `bun run test:e2e`グリーン
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `bun run test:e2e`グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機(`run-peitho-studio` skill)での確認: WKWebViewで`@container`
@@ -232,3 +232,8 @@ Fableの設計を採用した。判断を仰いだ5点はすべて推奨のと�
   なったら別todoとして切り出す。
 - トグルでプレビューが再マウントされ、レイアウトの`<script>`が再実行
   される(選択変更時と同じ既存挙動)。
+- スマホ表示中に固定キャンバスのスライドと通常のスライドをまたいで選択
+  すると、プレビューのmount effectが同一フレーム内に2回走る(スライドの
+  keyとcanvas高さの2つのmemoがそれぞれ通知するため)。どちらの回も新しい
+  canvasで一貫した値を書くので見た目は正しいが、レイアウトの`<script>`は
+  その分2回実行される。実害が出たらbatch化を検討する。
