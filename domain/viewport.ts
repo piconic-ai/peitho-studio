@@ -1,8 +1,10 @@
 // The preview pane's PC / phone toggle, as pure canvas arithmetic. The
 // preview feeds the resulting size to the slide host as
 // `--peitho-canvas-width/height`; a deck whose CSS branches on the canvas's
-// own shape (`@container`) then lays itself out for a tall canvas. See
-// `todo/preview-viewport-toggle.md` for the contract and its rationale.
+// own shape (`@container`) then lays itself out for a tall canvas. Phone
+// display has two shapes: the phone's tall proportion, or the deck's own
+// (`PhoneShape`, `deviceForShape`). See `todo/preview-viewport-toggle.md` for
+// the contract and its rationale.
 import type { Size } from './geometry'
 
 export type ViewportMode = 'desktop' | 'mobile'

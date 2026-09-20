@@ -1,6 +1,6 @@
 ---
 status: wip
-description: プレビューでPC表示/スマホ表示を切り替えられるようにする(設計確定済み。キャンバス寸法契約 + Container Queries、実装はPR-A/PR-Bの2本)
+description: プレビューでPC表示/スマホ表示を切り替えられるようにする(設計確定済み。キャンバス寸法契約 + Container Queries、実装はPR-A/PR-Bの2本で完了、後から追加したPhone内のshape選択メニューまで実装済み。実機確認が残っている)
 tags: [ui, preview, viewport]
 ---
 
@@ -16,7 +16,8 @@ tags: [ui, preview, viewport]
 いなかった**。ビューアが`--peitho-canvas-height`を上書きし、デッキが
 それに反応するCSSを持てば縦長レイアウトを組める(実例: barefootjsの
 overviewデッキ)。この結論は撤回し、下の「調査結果」に訂正を残す。
-設計はFableに依頼して確定した(実装はまだ)。
+設計はFableに依頼して確定し、PR-A/PR-Bで実装した(実機確認だけが残っている。
+後から加わった要望は「方針」の末尾に記録した)。
 
 ## スコープ
 
@@ -59,7 +60,9 @@ overviewデッキ)。この結論は撤回し、下の「調査結果」に訂�
     既定はTallで、hostの`--peitho-canvas-height`は`2770px`。Same ratio
     as PCを選ぶと`720px`(4:3のデッキは幅960で`720px`)、Tallに戻すと
     `2770px`。項目を選ぶ・外側をクリックする・Escを押す・PCに切り替える
-    のいずれでもメニューは閉じる。メニューは画面内に収まり、キャンバス
+    のいずれか(右クリック、▾の再押下、選択スライドが失われたときも)で
+    メニューは閉じ、開いている間はEsc以外のショートカット(矢印・Delete
+    など)は待つ。メニューは画面内に収まり、キャンバス
     (デッキ自身のz-indexが大きくても)より手前に出る。PC↔Phoneを行き来
     してもshapeは保持され、`data-canvas="fixed"`のスライドとサムネイル
     一覧はshapeの影響を受けず、shape切替でも`--peitho-thumb-scale`が
@@ -191,9 +194,13 @@ kfly8からの追加要望3点(2026-09-20):
      (16:9 / 4:3)")。開閉は`uiStore`の`phoneShapeMenuOpen`+
      `openPhoneShapeMenu()`/`closePhoneShapeMenu()`(`variantMenuOpen`に
      倣う)。Phone表示でなければ開けず、PCに戻すと閉じるので、「PC表示で
-     メニューが開いている」状態はstoreが取り得ない。外側クリックは全面
-     オーバーレイ(`fixed`、`z-10`)が受け、Escは`Studio.tsx`の
-     keydownが閉じる。メニューとオーバーレイは常時マウントで`hidden`
+     メニューが開いている」状態はstoreが取り得ない(PCへの切り替えでは
+     先に閉じてからモードを変えるので、途中の状態もobserverから見えない)。
+     外側クリックと右クリックは全面オーバーレイ(`fixed`、`z-10`)が受け、
+     Escは`Studio.tsx`のkeydownが閉じる(開いている間は他のショートカット
+     を通さない)。▾はPresent ▾と同じくトグルで、キーボードからも閉じ
+     られる。選択スライドが失われると(ドラフトのプレースホルダなど)
+     ヘッダーごとメニューも閉じる。メニューとオーバーレイは常時マウントで`hidden`
      クラス切替(`variantMenuOpen`のメニューと同じ流儀。この▾とメニュー
      には`ref`も`createEffect`も無いので#2927のリークは起きないが、
      コンポーネント全体の流儀に合わせている)。プレビューのhostに
@@ -270,6 +277,33 @@ kfly8からの追加要望3点(2026-09-20):
     (`'fixed'`/無引用)、大文字、`<script>`内の文字列、前置コメント、
     空文字。
 - `state/uiStore.test.ts`: トグル往復(desktop→mobile→desktop)。
+- (追加要望3)`domain/viewport.test.ts` / `domain/viewport.examples.ts`
+  (`deviceForShape`。`phoneShapeCanvasExamples`のGiven-When-Then)
+  - spec: `'portrait'`はDEFAULT_DEVICE、`'deck'`はdeck自身の寸法。16:9・
+    4:3のデッキで`effectiveCanvas(deck, 'mobile', deviceForShape('deck',
+    deck), false)`がdeckそのもの(1280x720 / 960x720)、Tallは1280x2770 /
+    960x2078、`desktop`と`fixedCanvas: true`はshapeによらず不変。
+  - adversarial: deckの幅・高さが0/負/NaN/Infinity/両方負のとき、NaNや
+    無限のキャンバスにならずdeckのまま。小数の高さ(720.3はdeckのまま、
+    720.7は721へ切り上がる)、極端な寸法、オーバーフロー、未知のshape
+    文字列(Tallとして扱う)、frozenなdeckで純粋。
+  - property: 整数寸法のdeckで恒等、`'portrait'`は任意のdeckで
+    DEFAULT_DEVICE、任意のdeck(非有限を含む)で幅は不変、小数のdeckで
+    高さは縮まず1px未満しか伸びない。
+- (追加要望3)`state/uiStore.test.ts`: `selectPhoneShape`(明示選択・
+  同じshapeの再選択・PC↔Phoneで保持・windowごとに独立)、
+  `phoneShapeMenuOpen`(PC表示では開けない、PCに戻すと閉じてPhoneに戻して
+  も再び開かない、開閉がshape・モードに触れない、setterを公開しない)、
+  PC表示でメニューが開いた状態をどのobserverも見ないこと(effectで検証)。
+- (追加要望)e2e: アイコン(各titleの下の図形・stroke・サイズ)、ヘッダー
+  行の下線なし・高さ36px・ピル1つ、▾のPC/Phoneでの出し分け、メニューの
+  項目・チェック・a11y属性、メニューが画面内で(大きいz-indexのデッキ
+  でも)キャンバスより手前に出ること、Tall→`2770px`/Same ratio as PC→
+  `720px`(4:3は幅960)、Esc・外側クリック・右クリック・▾の再押下(キー
+  ボード)・PCへの切り替え・選択スライドが失われたときの閉じ方、メニュー
+  が開いている間ショートカットが待つこと、PC↔Phoneでのshape保持、
+  fixedなスライド、サムネイル、`--peitho-thumb-scale`の追従、1タスク内の
+  連続選択、編集時に再マウントしないこと、リロードで戻ること。
 - e2e(`e2e/`、mockTauri): トグル後にpreview hostのインライン
   `--peitho-canvas-height`が`2770px`、fixedなfragmentでは`720px`、
   サムネイルは不変。mockのペイロードの`css`に`@container`を入れれば
