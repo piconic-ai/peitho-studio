@@ -6,7 +6,6 @@ import {
   deviceForShape,
   effectiveCanvas,
   reshapeCanvas,
-  toggledPhoneShape,
   toggledViewportMode,
   type PhoneShape,
   type ViewportMode,
@@ -342,25 +341,6 @@ describe('deviceForShape', () => {
       const canvas = effectiveCanvas(deck, 'mobile', deviceForShape('deck', deck), false)
       expect(canvas.height).toBeGreaterThanOrEqual(deck.height)
       expect(canvas.height - deck.height).toBeLessThan(1)
-    }))
-  })
-})
-
-describe('toggledPhoneShape', () => {
-  test('spec: the tall phone shape toggles to the deck-ratio shape and back', () => {
-    expect(toggledPhoneShape('portrait')).toBe('deck')
-    expect(toggledPhoneShape('deck')).toBe('portrait')
-  })
-
-  test('adversarial: an unknown shape string is treated as the tall phone shape, so it toggles to the deck-ratio shape', () => {
-    for (const stray of ['landscape', '', 'DECK', undefined, null]) {
-      expect(toggledPhoneShape(stray as unknown as PhoneShape)).toBe('deck')
-    }
-  })
-
-  test('property: toggling twice returns to where it started', () => {
-    fc.assert(fc.property(fc.constantFrom<PhoneShape>('portrait', 'deck'), shape => {
-      expect(toggledPhoneShape(toggledPhoneShape(shape))).toBe(shape)
     }))
   })
 })

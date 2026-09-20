@@ -3,7 +3,7 @@ import { type DragState } from '../domain/drag'
 import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withLayoutFitResult, withLayoutNotice } from '../domain/contextMenu'
 import { type LayoutVerdict } from '../domain/layoutFit'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
-import { type PhoneShape, type ViewportMode, toggledPhoneShape, toggledViewportMode } from '../domain/viewport'
+import { type PhoneShape, type ViewportMode, toggledViewportMode } from '../domain/viewport'
 
 const SLIDE_LIST_WIDTH = 176
 const EDITOR_WIDTH = 420
@@ -158,11 +158,7 @@ export function createUiStore() {
   // so the choice survives a trip back to PC display. Session-only, and the
   // setter stays private for the same reason.
   const [phoneShape, setPhoneShape] = createSignal<PhoneShape>('portrait')
-  function togglePhoneShape(): void {
-    setPhoneShape(toggledPhoneShape)
-  }
-  /** An explicit choice, for the shape menu's items (which name the shape
-   * they pick, unlike a toggle). */
+  /** An explicit choice: the shape menu's items each name the shape they pick. */
   function selectPhoneShape(shape: PhoneShape): void {
     setPhoneShape(shape)
   }
@@ -177,7 +173,7 @@ export function createUiStore() {
     variantMenuOpen, setVariantMenuOpen,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth,
     editingSectionIndex, setEditingSectionIndex,
-    viewportMode, toggleViewportMode, phoneShape, togglePhoneShape, selectPhoneShape,
+    viewportMode, toggleViewportMode, phoneShape, selectPhoneShape,
     phoneShapeMenuOpen, openPhoneShapeMenu, closePhoneShapeMenu,
   }
 }

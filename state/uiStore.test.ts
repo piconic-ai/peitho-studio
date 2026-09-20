@@ -166,18 +166,18 @@ describe('preview viewport mode', () => {
 })
 
 describe('preview phone shape', () => {
-  test('spec: Given a fresh session, when nothing was toggled, then phone display would be the tall phone shape', () => {
+  test('spec: Given a fresh session, when nothing was chosen, then phone display would be the tall phone shape', () => {
     createRoot(() => {
       expect(createUiStore().phoneShape()).toBe('portrait')
     })
   })
 
-  test('spec: Given the tall shape, when the shape toggle is pressed, then the deck-ratio shape shows, and pressing again returns to the tall one', () => {
+  test('spec: Given the tall shape, when the deck-ratio shape is selected by name, then the shape is that one, and selecting the tall one returns to it', () => {
     createRoot(() => {
       const store = createUiStore()
-      store.togglePhoneShape()
+      store.selectPhoneShape('deck')
       expect(store.phoneShape()).toBe('deck')
-      store.togglePhoneShape()
+      store.selectPhoneShape('portrait')
       expect(store.phoneShape()).toBe('portrait')
     })
   })
@@ -186,7 +186,7 @@ describe('preview phone shape', () => {
     createRoot(() => {
       const store = createUiStore()
       store.toggleViewportMode()
-      store.togglePhoneShape()
+      store.selectPhoneShape('deck')
       store.toggleViewportMode()
       expect(store.viewportMode()).toBe('desktop')
       expect(store.phoneShape()).toBe('deck')
@@ -196,20 +196,32 @@ describe('preview phone shape', () => {
     })
   })
 
-  test('adversarial: an odd number of rapid presses ends on the deck-ratio shape, an even number on the tall one', () => {
+  test('adversarial: selecting the shape that is already chosen leaves it chosen (a select is not a toggle)', () => {
     createRoot(() => {
       const store = createUiStore()
-      for (let presses = 1; presses <= 9; presses += 1) {
-        store.togglePhoneShape()
-        expect(store.phoneShape()).toBe(presses % 2 === 1 ? 'deck' : 'portrait')
+      store.selectPhoneShape('portrait')
+      expect(store.phoneShape()).toBe('portrait')
+      store.selectPhoneShape('deck')
+      store.selectPhoneShape('deck')
+      expect(store.phoneShape()).toBe('deck')
+    })
+  })
+
+  test('adversarial: a run of selections ends on the last one (however many, in whatever order)', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      const run = ['deck', 'portrait', 'portrait', 'deck', 'portrait', 'deck', 'deck'] as const
+      for (const shape of run) {
+        store.selectPhoneShape(shape)
+        expect(store.phoneShape()).toBe(shape)
       }
     })
   })
 
-  test('adversarial: the shape and the viewport mode are independent (toggling one never moves the other)', () => {
+  test('adversarial: the shape and the viewport mode are independent (selecting one never moves the other)', () => {
     createRoot(() => {
       const store = createUiStore()
-      store.togglePhoneShape()
+      store.selectPhoneShape('deck')
       expect(store.viewportMode()).toBe('desktop')
       store.toggleViewportMode()
       expect(store.phoneShape()).toBe('deck')
@@ -220,24 +232,18 @@ describe('preview phone shape', () => {
     createRoot(() => {
       const first = createUiStore()
       const second = createUiStore()
-      first.togglePhoneShape()
+      first.selectPhoneShape('deck')
       expect(first.phoneShape()).toBe('deck')
       expect(second.phoneShape()).toBe('portrait')
     })
   })
 
-  test('adversarial: the store does not expose a setter for the shape (callers can only flip it)', () => {
-    createRoot(() => {
-      expect('setPhoneShape' in createUiStore()).toBe(false)
-    })
-  })
-
-  test('adversarial: toggling leaves the other UI state alone', () => {
+  test('adversarial: selecting a shape leaves the other UI state alone', () => {
     createRoot(() => {
       const store = createUiStore()
       store.setSlideListWidth(300)
       store.setPresentMenuOpen(true)
-      store.togglePhoneShape()
+      store.selectPhoneShape('deck')
       expect(store.slideListWidth()).toBe(300)
       expect(store.presentMenuOpen()).toBe(true)
       expect(store.contextMenu()).toEqual({ kind: 'closed' })
@@ -260,27 +266,6 @@ describe('preview phone shape menu', () => {
       expect(store.phoneShapeMenuOpen()).toBe(true)
       store.closePhoneShapeMenu()
       expect(store.phoneShapeMenuOpen()).toBe(false)
-    })
-  })
-
-  test('spec: Given the tall shape, when the deck-ratio shape is selected by name, then the shape is that one, and selecting the tall one returns to it', () => {
-    createRoot(() => {
-      const store = createUiStore()
-      store.selectPhoneShape('deck')
-      expect(store.phoneShape()).toBe('deck')
-      store.selectPhoneShape('portrait')
-      expect(store.phoneShape()).toBe('portrait')
-    })
-  })
-
-  test('adversarial: selecting the shape that is already chosen leaves it chosen (a select is not a toggle)', () => {
-    createRoot(() => {
-      const store = createUiStore()
-      store.selectPhoneShape('portrait')
-      expect(store.phoneShape()).toBe('portrait')
-      store.selectPhoneShape('deck')
-      store.selectPhoneShape('deck')
-      expect(store.phoneShape()).toBe('deck')
     })
   })
 
@@ -338,19 +323,6 @@ describe('preview phone shape menu', () => {
       store.closePhoneShapeMenu()
       expect(store.phoneShape()).toBe('deck')
       expect(store.viewportMode()).toBe('mobile')
-    })
-  })
-
-  test('adversarial: the shape chosen in the menu survives a trip through PC display', () => {
-    createRoot(() => {
-      const store = createUiStore()
-      store.toggleViewportMode()
-      store.openPhoneShapeMenu()
-      store.selectPhoneShape('deck')
-      store.closePhoneShapeMenu()
-      store.toggleViewportMode()
-      store.toggleViewportMode()
-      expect(store.phoneShape()).toBe('deck')
     })
   })
 

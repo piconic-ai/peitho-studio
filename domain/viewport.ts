@@ -29,8 +29,10 @@ function isUsableDimension(value: number): boolean {
  * below the deck's own height, so a landscape device leaves the canvas as it
  * is. A device with a non-finite or non-positive dimension carries no usable
  * proportion, so the deck comes back unchanged. There is no upper bound on
- * the height: `DEFAULT_DEVICE` is the only device the preview offers, so an
- * absurd proportion cannot arise until a device picker exists. */
+ * the height: `DEFAULT_DEVICE` is the only device that grows the canvas (the
+ * deck-ratio phone shape hands over the deck's own size, which changes
+ * nothing), so an absurd proportion cannot arise until a device picker
+ * exists. */
 export function reshapeCanvas(deck: Size, device: Size): Size {
   if (!isUsableDimension(device.width) || !isUsableDimension(device.height)) return deck
   const proportionalHeight = Math.round(deck.width * device.height / device.width)
@@ -63,13 +65,6 @@ export function effectiveCanvas(deck: Size, mode: ViewportMode, device: Size, fi
  * tall proportion, `deck` keeps the deck's own proportion (so the canvas is
  * the same size as in PC display). */
 export type PhoneShape = 'portrait' | 'deck'
-
-/** The other phone shape, for the preview's shape toggle. A stray value that
- * got past the type is treated as `portrait`, as `deviceForShape` treats it,
- * so the next toggle lands on the deck's own proportion. */
-export function toggledPhoneShape(shape: PhoneShape): PhoneShape {
-  return shape === 'deck' ? 'portrait' : 'deck'
-}
 
 /** The device `effectiveCanvas` should reshape to for a phone shape.
  * `portrait` is `DEFAULT_DEVICE`. `deck` is the deck's own size: reshaping a
