@@ -268,9 +268,11 @@ export function Studio() {
   const selectedSlideKey = createMemo<string | null>(() => selectedSlide()?.key ?? null)
 
   // The canvas the *preview pane* lays the selected slide out on: the
-  // deck's own, or (phone display) the same width grown to a phone's
-  // proportion — see `domain/viewport.ts`. The thumbnail list and layout
-  // picker keep reading `render.canvasWidth()/canvasHeight()` directly.
+  // deck's own, or (phone display, tall shape) the same width grown to a
+  // phone's proportion — see `domain/viewport.ts`. Phone display with the
+  // deck-ratio shape is the deck's own canvas again. The thumbnail list and
+  // layout picker keep reading `render.canvasWidth()/canvasHeight()`
+  // directly.
   //
   // Number memos, not one memo of a `Size`: `effectiveCanvas` returns a
   // fresh object every call, and `SlidePreview`'s mount effect would
@@ -1050,6 +1052,11 @@ export function Studio() {
     const unlistenMenuNew = deckIpc.onMenuNewDeck(() => { void handleNewDeck() })
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && ui.phoneShapeMenuOpen()) {
+        event.preventDefault()
+        ui.closePhoneShapeMenu()
+        return
+      }
       if (event.key === 'Escape' && ui.contextMenu().kind !== 'closed') {
         event.preventDefault()
         ui.closeContextMenu()
@@ -1275,7 +1282,10 @@ export function Studio() {
           viewportMode={ui.viewportMode()}
           onToggleViewportMode={ui.toggleViewportMode}
           phoneShape={ui.phoneShape()}
-          onTogglePhoneShape={ui.togglePhoneShape}
+          phoneShapeMenuOpen={ui.phoneShapeMenuOpen()}
+          onOpenPhoneShapeMenu={ui.openPhoneShapeMenu}
+          onClosePhoneShapeMenu={ui.closePhoneShapeMenu}
+          onSelectPhoneShape={ui.selectPhoneShape}
           canvasWidth={previewCanvasWidth()}
           canvasHeight={previewCanvasHeight()}
         />
