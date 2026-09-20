@@ -4,14 +4,11 @@ import { createEffect, untrack } from '@barefootjs/client'
 import type { ViewportMode } from '../domain/viewport'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 
-// Props here are values (`viewportMode={ui.viewportMode()}`), not signal
-// getters — see `components/WelcomeScreen.tsx` for why (BF044).
 export interface SlidePreviewProps {
   selectedSlideKey: string | null
   hasDeck: boolean
-  /** Which segment of the PC/phone toggle is lit. The canvas size that goes
-   * with it arrives as `canvasWidth`/`canvasHeight`, already worked out by
-   * `Studio.tsx`; this component never derives one from the mode itself. */
+  /** Which toggle segment is lit; the canvas size for it arrives as
+   * `canvasWidth`/`canvasHeight`. */
   viewportMode: ViewportMode
   onToggleViewportMode: () => void
   canvasFragmentOf: (key: string) => string
@@ -58,9 +55,7 @@ export function SlidePreview(props: SlidePreviewProps) {
           // `patchSlideCanvases` — which finds this host by the
           // `data-slide-canvas-key` set here — instead of re-mounting the
           // whole canvas on every keystroke. A canvas change (the PC/phone
-          // toggle, or moving between a fixed-canvas slide and an ordinary
-          // one in phone display) does re-mount, and `observeCanvasScale`
-          // then re-fits the scale to the new canvas on its own.
+          // toggle) does re-mount, and `observeCanvasScale` re-fits it.
           createEffect(() => {
             const key = props.selectedSlideKey
             if (key === null) return

@@ -85,13 +85,18 @@ export function createRenderStore() {
     }
     return entry
   }
+  /** A slide's fragment HTML exactly as rendered ('' for a key never
+   * rendered) — for readers that only inspect its markup, not display it. */
+  function fragmentOf(key: string): string {
+    return fragmentSignal(key)[0]()
+  }
   /** The fragment HTML a Shadow DOM canvas needs: read-only (the setter
    * never crosses the component boundary, per docs/architecture.md's
    * "children never receive a setter" rule) and absolutized, since a shadow
    * root has no `<base href>` to resolve a slide's `src="assets/…"` against
    * — those would otherwise resolve against the app's own document URL. */
   function canvasFragmentOf(key: string): string {
-    return absolutizeFragmentUrls(fragmentSignal(key)[0](), assetBaseUrl() ?? '')
+    return absolutizeFragmentUrls(fragmentOf(key), assetBaseUrl() ?? '')
   }
 
   // `slide` (edited or not) arrives as a freshly-deserialized object on every
@@ -142,7 +147,7 @@ export function createRenderStore() {
   return {
     assetBaseUrl, canvasWidth, canvasHeight, manifest, renderedSource, sectionStartByIndex,
     sectionDrafts, setSectionDrafts, sectionDraftOf,
-    fragmentSignal, canvasFragmentOf, applyRenderPayload,
+    fragmentSignal, fragmentOf, canvasFragmentOf, applyRenderPayload,
     slideStylesheetText, fontFaceCss,
   }
 }

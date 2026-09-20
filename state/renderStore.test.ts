@@ -187,6 +187,32 @@ describe('canvasFragmentOf', () => {
   })
 })
 
+describe('fragmentOf', () => {
+  test('spec: returns the fragment as rendered, without rewriting its asset URLs', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      const html = '<section class="peitho-slide"><img src="assets/a.png"></section>'
+      store.applyRenderPayload(payload({ assetBaseUrl: 'http://localhost:1234/', fragments: { 'slide-1': html } }), 'source')
+      expect(store.fragmentOf('slide-1')).toBe(html)
+    })
+  })
+
+  test('adversarial: a key that was never rendered reads as an empty fragment', () => {
+    createRoot(() => {
+      expect(createRenderStore().fragmentOf('never-rendered')).toBe('')
+    })
+  })
+
+  test('adversarial: an edit that changes the fragment is visible to the next read', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.applyRenderPayload(payload({ fragments: { 'slide-1': '<section>one</section>' } }), 'source')
+      store.applyRenderPayload(payload({ fragments: { 'slide-1': '<section>two</section>' } }), 'source')
+      expect(store.fragmentOf('slide-1')).toBe('<section>two</section>')
+    })
+  })
+})
+
 describe('slideStylesheetText / fontFaceCss', () => {
   test('spec: splits @font-face out of the theme CSS, absolutized and :root-scoped', () => {
     createRoot(() => {

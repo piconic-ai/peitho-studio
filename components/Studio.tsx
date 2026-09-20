@@ -269,23 +269,17 @@ export function Studio() {
 
   // The canvas the *preview pane* lays the selected slide out on: the
   // deck's own, or (phone display) the same width grown to a phone's
-  // proportion — see `domain/viewport.ts`. Only the preview follows the
-  // toggle; the thumbnail list and layout picker keep reading
-  // `render.canvasWidth()/canvasHeight()` directly.
+  // proportion — see `domain/viewport.ts`. The thumbnail list and layout
+  // picker keep reading `render.canvasWidth()/canvasHeight()` directly.
   //
-  // Two separate number memos rather than one memo of a `Size`:
-  // `SlidePreview`'s mount effect tracks both dimensions, and `effectiveCanvas`
-  // hands back a fresh object every call, so a single object-valued memo
-  // would notify it (and re-mount the canvas) on every keystroke, where
-  // number memos are `Object.is`-guarded and notify only when a dimension
-  // really changes. `selectedSlideIsFixedCanvas` is likewise its own memo:
-  // reading the fragment makes it re-run on every edit of the selected
-  // slide (and absolutizes the whole fragment, which only the slide's own
-  // opt-out needs a look at), so the two dimension memos share its
-  // boolean result instead of each re-deriving it.
+  // Number memos, not one memo of a `Size`: `effectiveCanvas` returns a
+  // fresh object every call, and `SlidePreview`'s mount effect would
+  // re-mount on every notification. `selectedSlideIsFixedCanvas` reads the
+  // fragment, so it re-runs on every edit of the selected slide; as its own
+  // boolean memo it notifies nobody until the opt-out really flips.
   const selectedSlideIsFixedCanvas = createMemo<boolean>(() => {
     const key = selectedSlideKey()
-    return key !== null && hasFixedCanvas(render.canvasFragmentOf(key))
+    return key !== null && hasFixedCanvas(render.fragmentOf(key))
   })
   function previewCanvas(): Size {
     return effectiveCanvas(
