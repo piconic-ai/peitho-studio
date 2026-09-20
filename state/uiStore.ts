@@ -143,8 +143,10 @@ export function createUiStore() {
   const [phoneShapeMenuOpen, setPhoneShapeMenuOpen] = createSignal(false)
   function toggleViewportMode(): void {
     const next = toggledViewportMode(viewportMode())
-    setViewportMode(next)
+    // Close first: an effect that reads both signals must never see PC
+    // display with the menu still open.
     if (next !== 'mobile') setPhoneShapeMenuOpen(false)
+    setViewportMode(next)
   }
   function openPhoneShapeMenu(): void {
     if (viewportMode() === 'mobile') setPhoneShapeMenuOpen(true)

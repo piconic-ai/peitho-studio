@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { createRoot } from '@barefootjs/client'
+import { createEffect, createRoot } from '@barefootjs/client'
 import { createUiStore } from './uiStore'
 import { chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import type { LayoutVerdict } from '../domain/layoutFit'
@@ -313,7 +313,7 @@ describe('preview phone shape menu', () => {
     })
   })
 
-  test('adversarial: selecting a shape neither opens nor closes the menu, and the menu never changes the shape or the mode', () => {
+  test('adversarial: selecting a shape neither opens nor closes the menu', () => {
     createRoot(() => {
       const store = createUiStore()
       store.toggleViewportMode()
@@ -321,8 +321,38 @@ describe('preview phone shape menu', () => {
       store.selectPhoneShape('deck')
       expect(store.phoneShapeMenuOpen()).toBe(true)
       store.closePhoneShapeMenu()
+      store.selectPhoneShape('portrait')
+      expect(store.phoneShapeMenuOpen()).toBe(false)
+    })
+  })
+
+  test('adversarial: opening and closing the menu changes neither the chosen shape nor the mode', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.toggleViewportMode()
+      store.selectPhoneShape('deck')
+      store.openPhoneShapeMenu()
       expect(store.phoneShape()).toBe('deck')
       expect(store.viewportMode()).toBe('mobile')
+      store.closePhoneShapeMenu()
+      expect(store.phoneShape()).toBe('deck')
+      expect(store.viewportMode()).toBe('mobile')
+    })
+  })
+
+  test('adversarial: no observer ever sees PC display with the menu open, not even in between the two changes leaving phone display makes', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      const seen: string[] = []
+      createEffect(() => {
+        seen.push(`${store.viewportMode()}/${store.phoneShapeMenuOpen() ? 'open' : 'closed'}`)
+      })
+      store.toggleViewportMode()
+      store.openPhoneShapeMenu()
+      store.toggleViewportMode()
+      expect(seen).toContain('mobile/open')
+      expect(seen).not.toContain('desktop/open')
+      expect(seen[seen.length - 1]).toBe('desktop/closed')
     })
   })
 
