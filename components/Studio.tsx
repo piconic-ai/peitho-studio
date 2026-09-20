@@ -6,7 +6,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
 import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
 import { clampMenuPosition, type Size } from '../domain/geometry'
-import { DEFAULT_DEVICE, effectiveCanvas } from '../domain/viewport'
+import { deviceForShape, effectiveCanvas } from '../domain/viewport'
 import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
@@ -282,12 +282,8 @@ export function Studio() {
     return key !== null && hasFixedCanvas(render.fragmentOf(key))
   })
   function previewCanvas(): Size {
-    return effectiveCanvas(
-      { width: render.canvasWidth(), height: render.canvasHeight() },
-      ui.viewportMode(),
-      DEFAULT_DEVICE,
-      selectedSlideIsFixedCanvas(),
-    )
+    const deck = { width: render.canvasWidth(), height: render.canvasHeight() }
+    return effectiveCanvas(deck, ui.viewportMode(), deviceForShape(ui.phoneShape(), deck), selectedSlideIsFixedCanvas())
   }
   const previewCanvasWidth = createMemo<number>(() => previewCanvas().width)
   const previewCanvasHeight = createMemo<number>(() => previewCanvas().height)
@@ -1278,6 +1274,8 @@ export function Studio() {
           slideStylesheet={getSlideStylesheet}
           viewportMode={ui.viewportMode()}
           onToggleViewportMode={ui.toggleViewportMode}
+          phoneShape={ui.phoneShape()}
+          onTogglePhoneShape={ui.togglePhoneShape}
           canvasWidth={previewCanvasWidth()}
           canvasHeight={previewCanvasHeight()}
         />
