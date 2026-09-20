@@ -192,21 +192,25 @@ kfly8からの追加要望3点(2026-09-20):
      "portrait|deck"`)が開く。項目はTall("A tall canvas shaped like a
      portrait phone")とSame ratio as PC("Keeps the deck's own ratio
      (16:9 / 4:3)")。開閉は`uiStore`の`phoneShapeMenuOpen`+
-     `openPhoneShapeMenu()`/`closePhoneShapeMenu()`(`variantMenuOpen`に
-     倣う)。Phone表示でなければ開けず、PCに戻すと閉じるので、「PC表示で
+     `togglePhoneShapeMenu()`/`closePhoneShapeMenu()`(`variantMenuOpen`に
+     倣う)で、項目を選ぶ`selectPhoneShape(shape)`はshapeを変えてメニューも
+     閉じる(「選ぶと閉じる」はstoreの規則)。Phone表示でなければ開けず、
+     PCに戻すと閉じるので、「PC表示で
      メニューが開いている」状態はstoreが取り得ない(PCへの切り替えでは
      先に閉じてからモードを変えるので、途中の状態もobserverから見えない)。
      外側クリックと右クリックは全面オーバーレイ(`fixed`、`z-10`)が受け、
      Escは`Studio.tsx`のkeydownが閉じる(開いている間は他のショートカット
      を通さない)。▾はPresent ▾と同じくトグルで、キーボードからも閉じ
      られる。選択スライドが失われると(ドラフトのプレースホルダなど)
-     ヘッダーごとメニューも閉じる。メニューとオーバーレイは常時マウントで`hidden`
-     クラス切替(`variantMenuOpen`のメニューと同じ流儀。この▾とメニュー
+     ヘッダーごとメニューも閉じる。メニューとオーバーレイは常時マウントで
+     `hidden`クラス切替(`variantMenuOpen`のメニューと同じ流儀。この▾とメニュー
      には`ref`も`createEffect`も無いので#2927のリークは起きないが、
-     コンポーネント全体の流儀に合わせている)。プレビューのhostに
-     `isolate`を付け、デッキ自身の`z-index`(大きい`z-index`を持つ
-     `.peitho-slide`がメニューとオーバーレイを覆うことをプローブで
-     確認した)がメニューより手前に出ないようにしている。
+     コンポーネント全体の流儀に合わせている)。デッキ自身の`z-index`
+     (大きい`z-index`を持つ`.peitho-slide`がメニューとオーバーレイを覆う
+     ことをプローブで確認した)がメニューより手前に出ないよう、
+     `dom/slideCanvas.ts`の共有`:host`規則に`isolation: isolate`を足した
+     (サムネイル・レイアウトピッカーの共通のhostなので、その近くに出る
+     ポップアップにも効く)。
    - **既知の帰結**: Phone + 「PCと同じ比率」のキャンバス寸法は
      PCと同一(1280x720 / 960x720)になる。ユーザーはそれを承知で
      選択した。phone枠(デバイスのフレーム)の描画はスコープ外で、
@@ -234,7 +238,7 @@ kfly8からの追加要望3点(2026-09-20):
 - `state/uiStore.ts`: `viewportMode` signal + `toggleViewportMode()`。
   永続化なし(列幅と同じセッション内のみ)。追加要望3で、`phoneShape` +
   `selectPhoneShape(shape)`、メニューの`phoneShapeMenuOpen` +
-  `openPhoneShapeMenu()`/`closePhoneShapeMenu()`を足した(setterはどれも
+  `togglePhoneShapeMenu()`/`closePhoneShapeMenu()`を足した(setterはどれも
   非公開)。
 - `components/Studio.tsx`: `previewCanvasWidth`/`previewCanvasHeight`を
   **別々のnumber memo**にする(`effectiveCanvas(render.canvasWidth/
@@ -292,8 +296,9 @@ kfly8からの追加要望3点(2026-09-20):
     高さは縮まず1px未満しか伸びない。
 - (追加要望3)`state/uiStore.test.ts`: `selectPhoneShape`(明示選択・
   同じshapeの再選択・PC↔Phoneで保持・windowごとに独立)、
-  `phoneShapeMenuOpen`(PC表示では開けない、PCに戻すと閉じてPhoneに戻して
-  も再び開かない、開閉がshape・モードに触れない、setterを公開しない)、
+  `phoneShapeMenuOpen`(PC表示では開かない、選ぶと閉じる、PCに戻すと閉じて
+  Phoneに戻しても再び開かない、開閉がshape・モードに触れない、setterを
+  公開しない)、
   PC表示でメニューが開いた状態をどのobserverも見ないこと(effectで検証)。
 - (追加要望)e2e: アイコン(各titleの下の図形・stroke・サイズ)、ヘッダー
   行の下線なし・高さ36px・ピル1つ、▾のPC/Phoneでの出し分け、メニューの
