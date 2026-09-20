@@ -164,3 +164,83 @@ describe('preview viewport mode', () => {
     })
   })
 })
+
+describe('preview phone shape', () => {
+  test('spec: Given a fresh session, when nothing was toggled, then phone display would be the tall phone shape', () => {
+    createRoot(() => {
+      expect(createUiStore().phoneShape()).toBe('portrait')
+    })
+  })
+
+  test('spec: Given the tall shape, when the shape toggle is pressed, then the deck-ratio shape shows, and pressing again returns to the tall one', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.togglePhoneShape()
+      expect(store.phoneShape()).toBe('deck')
+      store.togglePhoneShape()
+      expect(store.phoneShape()).toBe('portrait')
+    })
+  })
+
+  test('spec: Given the deck-ratio shape chosen in phone display, when the user goes to PC display and back, then the shape is still the deck-ratio one', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.toggleViewportMode()
+      store.togglePhoneShape()
+      store.toggleViewportMode()
+      expect(store.viewportMode()).toBe('desktop')
+      expect(store.phoneShape()).toBe('deck')
+      store.toggleViewportMode()
+      expect(store.viewportMode()).toBe('mobile')
+      expect(store.phoneShape()).toBe('deck')
+    })
+  })
+
+  test('adversarial: an odd number of rapid presses ends on the deck-ratio shape, an even number on the tall one', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      for (let presses = 1; presses <= 9; presses += 1) {
+        store.togglePhoneShape()
+        expect(store.phoneShape()).toBe(presses % 2 === 1 ? 'deck' : 'portrait')
+      }
+    })
+  })
+
+  test('adversarial: the shape and the viewport mode are independent (toggling one never moves the other)', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.togglePhoneShape()
+      expect(store.viewportMode()).toBe('desktop')
+      store.toggleViewportMode()
+      expect(store.phoneShape()).toBe('deck')
+    })
+  })
+
+  test('adversarial: each store instance keeps its own shape (a second window does not follow the first)', () => {
+    createRoot(() => {
+      const first = createUiStore()
+      const second = createUiStore()
+      first.togglePhoneShape()
+      expect(first.phoneShape()).toBe('deck')
+      expect(second.phoneShape()).toBe('portrait')
+    })
+  })
+
+  test('adversarial: the store does not expose a setter for the shape (callers can only flip it)', () => {
+    createRoot(() => {
+      expect('setPhoneShape' in createUiStore()).toBe(false)
+    })
+  })
+
+  test('adversarial: toggling leaves the other UI state alone', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.setSlideListWidth(300)
+      store.setPresentMenuOpen(true)
+      store.togglePhoneShape()
+      expect(store.slideListWidth()).toBe(300)
+      expect(store.presentMenuOpen()).toBe(true)
+      expect(store.contextMenu()).toEqual({ kind: 'closed' })
+    })
+  })
+})

@@ -3,7 +3,7 @@ import { type DragState } from '../domain/drag'
 import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withLayoutFitResult, withLayoutNotice } from '../domain/contextMenu'
 import { type LayoutVerdict } from '../domain/layoutFit'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
-import { type ViewportMode, toggledViewportMode } from '../domain/viewport'
+import { type PhoneShape, type ViewportMode, toggledPhoneShape, toggledViewportMode } from '../domain/viewport'
 
 const SLIDE_LIST_WIDTH = 176
 const EDITOR_WIDTH = 420
@@ -138,6 +138,15 @@ export function createUiStore() {
     setViewportMode(toggledViewportMode)
   }
 
+  // Which canvas phone display gives: the phone's tall proportion, or the
+  // deck's own (the same size as PC display). Independent of `viewportMode`,
+  // so the choice survives a trip back to PC display. Session-only, and the
+  // setter stays private for the same reason.
+  const [phoneShape, setPhoneShape] = createSignal<PhoneShape>('portrait')
+  function togglePhoneShape(): void {
+    setPhoneShape(toggledPhoneShape)
+  }
+
   return {
     dragState, setDragState, draggedIndex, dragOverGap, dragDeltaY,
     contextMenu, setContextMenu, closeContextMenu, toggleLayoutPicker, contextMenuAppendIndex,
@@ -148,6 +157,6 @@ export function createUiStore() {
     variantMenuOpen, setVariantMenuOpen,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth,
     editingSectionIndex, setEditingSectionIndex,
-    viewportMode, toggleViewportMode,
+    viewportMode, toggleViewportMode, phoneShape, togglePhoneShape,
   }
 }
