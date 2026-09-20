@@ -134,8 +134,23 @@ export function createUiStore() {
   // one. Session-only, like the two column widths above. The setter stays
   // private: callers can only flip the mode, not assign one.
   const [viewportMode, setViewportMode] = createSignal<ViewportMode>('desktop')
+  // The shape menu (the ▾ beside the Phone segment) is declared here, ahead
+  // of the flip below, because leaving phone display closes it. It only
+  // exists while phone display is on: `openPhoneShapeMenu` refuses to open
+  // it in PC display, so "menu open in PC display" is not a state this store
+  // can be in. `variantMenuOpen` above is the same kind of dropdown (an
+  // overlay closes it on an outside click).
+  const [phoneShapeMenuOpen, setPhoneShapeMenuOpen] = createSignal(false)
   function toggleViewportMode(): void {
-    setViewportMode(toggledViewportMode)
+    const next = toggledViewportMode(viewportMode())
+    setViewportMode(next)
+    if (next !== 'mobile') setPhoneShapeMenuOpen(false)
+  }
+  function openPhoneShapeMenu(): void {
+    if (viewportMode() === 'mobile') setPhoneShapeMenuOpen(true)
+  }
+  function closePhoneShapeMenu(): void {
+    setPhoneShapeMenuOpen(false)
   }
 
   // Which canvas phone display gives: the phone's tall proportion, or the
@@ -145,6 +160,11 @@ export function createUiStore() {
   const [phoneShape, setPhoneShape] = createSignal<PhoneShape>('portrait')
   function togglePhoneShape(): void {
     setPhoneShape(toggledPhoneShape)
+  }
+  /** An explicit choice, for the shape menu's items (which name the shape
+   * they pick, unlike a toggle). */
+  function selectPhoneShape(shape: PhoneShape): void {
+    setPhoneShape(shape)
   }
 
   return {
@@ -157,6 +177,7 @@ export function createUiStore() {
     variantMenuOpen, setVariantMenuOpen,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth,
     editingSectionIndex, setEditingSectionIndex,
-    viewportMode, toggleViewportMode, phoneShape, togglePhoneShape,
+    viewportMode, toggleViewportMode, phoneShape, togglePhoneShape, selectPhoneShape,
+    phoneShapeMenuOpen, openPhoneShapeMenu, closePhoneShapeMenu,
   }
 }

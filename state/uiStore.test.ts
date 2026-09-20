@@ -244,3 +244,147 @@ describe('preview phone shape', () => {
     })
   })
 })
+
+describe('preview phone shape menu', () => {
+  test('spec: Given a fresh session, when nothing was done, then the shape menu is closed', () => {
+    createRoot(() => {
+      expect(createUiStore().phoneShapeMenuOpen()).toBe(false)
+    })
+  })
+
+  test('spec: Given phone display, when the menu is opened and then closed, then it follows', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.toggleViewportMode()
+      store.openPhoneShapeMenu()
+      expect(store.phoneShapeMenuOpen()).toBe(true)
+      store.closePhoneShapeMenu()
+      expect(store.phoneShapeMenuOpen()).toBe(false)
+    })
+  })
+
+  test('spec: Given the tall shape, when the deck-ratio shape is selected by name, then the shape is that one, and selecting the tall one returns to it', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.selectPhoneShape('deck')
+      expect(store.phoneShape()).toBe('deck')
+      store.selectPhoneShape('portrait')
+      expect(store.phoneShape()).toBe('portrait')
+    })
+  })
+
+  test('adversarial: selecting the shape that is already chosen leaves it chosen (a select is not a toggle)', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.selectPhoneShape('portrait')
+      expect(store.phoneShape()).toBe('portrait')
+      store.selectPhoneShape('deck')
+      store.selectPhoneShape('deck')
+      expect(store.phoneShape()).toBe('deck')
+    })
+  })
+
+  test('adversarial: opening the menu in PC display is refused (it has no ▾ there)', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.openPhoneShapeMenu()
+      expect(store.phoneShapeMenuOpen()).toBe(false)
+    })
+  })
+
+  test('adversarial: Given the menu open in phone display, when the user goes back to PC display, then the menu is closed, and phone display again does not reopen it', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.toggleViewportMode()
+      store.openPhoneShapeMenu()
+      store.toggleViewportMode()
+      expect(store.viewportMode()).toBe('desktop')
+      expect(store.phoneShapeMenuOpen()).toBe(false)
+      store.toggleViewportMode()
+      expect(store.viewportMode()).toBe('mobile')
+      expect(store.phoneShapeMenuOpen()).toBe(false)
+    })
+  })
+
+  test('adversarial: opening twice and closing twice ends in the last state asked for', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.toggleViewportMode()
+      store.openPhoneShapeMenu()
+      store.openPhoneShapeMenu()
+      expect(store.phoneShapeMenuOpen()).toBe(true)
+      store.closePhoneShapeMenu()
+      store.closePhoneShapeMenu()
+      expect(store.phoneShapeMenuOpen()).toBe(false)
+    })
+  })
+
+  test('adversarial: closing a menu that is not open changes nothing (also in PC display)', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.closePhoneShapeMenu()
+      expect(store.phoneShapeMenuOpen()).toBe(false)
+      expect(store.viewportMode()).toBe('desktop')
+    })
+  })
+
+  test('adversarial: selecting a shape neither opens nor closes the menu, and the menu never changes the shape or the mode', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.toggleViewportMode()
+      store.openPhoneShapeMenu()
+      store.selectPhoneShape('deck')
+      expect(store.phoneShapeMenuOpen()).toBe(true)
+      store.closePhoneShapeMenu()
+      expect(store.phoneShape()).toBe('deck')
+      expect(store.viewportMode()).toBe('mobile')
+    })
+  })
+
+  test('adversarial: the shape chosen in the menu survives a trip through PC display', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.toggleViewportMode()
+      store.openPhoneShapeMenu()
+      store.selectPhoneShape('deck')
+      store.closePhoneShapeMenu()
+      store.toggleViewportMode()
+      store.toggleViewportMode()
+      expect(store.phoneShape()).toBe('deck')
+    })
+  })
+
+  test('adversarial: each store instance keeps its own menu (a second window does not follow the first)', () => {
+    createRoot(() => {
+      const first = createUiStore()
+      const second = createUiStore()
+      first.toggleViewportMode()
+      second.toggleViewportMode()
+      first.openPhoneShapeMenu()
+      expect(first.phoneShapeMenuOpen()).toBe(true)
+      expect(second.phoneShapeMenuOpen()).toBe(false)
+    })
+  })
+
+  test('adversarial: the store does not expose the setters (callers open, close and select only)', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      expect('setPhoneShapeMenuOpen' in store).toBe(false)
+      expect('setPhoneShape' in store).toBe(false)
+      expect('setViewportMode' in store).toBe(false)
+    })
+  })
+
+  test('adversarial: the shape menu leaves the other dropdowns alone', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.setPresentMenuOpen(true)
+      store.setVariantMenuOpen(true)
+      store.toggleViewportMode()
+      store.openPhoneShapeMenu()
+      store.toggleViewportMode()
+      expect(store.presentMenuOpen()).toBe(true)
+      expect(store.variantMenuOpen()).toBe(true)
+    })
+  })
+})
