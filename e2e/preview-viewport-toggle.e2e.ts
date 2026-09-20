@@ -408,7 +408,6 @@ test.describe('Given the preview header', () => {
     expect(Object.values(inner)).toEqual(['0px', '0px'])
 
     await expect(headerRow(page).locator('.rounded-full')).toHaveCount(1)
-    await expect(page.locator('[data-phone-shape-toggle]')).toHaveCount(0)
   })
 
   test('when the lit segment moves, then only it carries the highlight (PC lit at first, Phone lit after the press)', async ({ page }) => {
@@ -476,6 +475,17 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
   test('when the menu is open, then it is fully on screen and in front of the canvas, even for a slide (and content in it) with a huge z-index, and a click on that canvas only closes the menu', async ({ page }) => {
     await openDeck(page, deckWith({ css: `${CONTAINER_QUERY_CSS}.peitho-slide { position: relative; z-index: 100000; } .peitho-slide h1 { position: relative; z-index: 100000; }` }))
     await press(page)
+    // A point well inside the canvas (clear of the menu, and of the few pixels
+    // the slide overshoots its host), checked to be the canvas while the menu
+    // is closed: only then is a click there a click on the canvas.
+    const onCanvas = await page.locator(PREVIEW).evaluate(host => {
+      const box = host.getBoundingClientRect()
+      const x = box.left + 20
+      const y = box.bottom - 20
+      return { x, y, isCanvas: document.elementFromPoint(x, y) === host }
+    })
+    expect(onCanvas.isCanvas).toBe(true)
+
     await page.locator(MENU_BUTTON).click()
     await expect(page.locator(MENU)).toBeVisible()
 
@@ -487,18 +497,15 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
       return {
         overlapsCanvas: m.right > h.left && m.left < h.right && m.bottom > h.top && m.top < h.bottom,
         onScreen: m.left >= 0 && m.top >= 0 && m.right <= window.innerWidth && m.bottom <= window.innerHeight,
-        frontmost: document.elementFromPoint(x, y)?.closest(menu) !== null,
+        // `!= null` twice over: a point nothing can be hit at is not "frontmost".
+        frontmost: (document.elementFromPoint(x, y)?.closest(menu) ?? null) != null,
       }
     }, { menu: MENU, host: PREVIEW })
     expect(placement).toEqual({ overlapsCanvas: true, onScreen: true, frontmost: true })
 
-    // The overlay is above the canvas too: a click on the slide itself (the
-    // lower left of it, clear of the menu) is the menu's outside click.
-    const onSlide = await page.locator(PREVIEW).evaluate(host => {
-      const slide = host.shadowRoot!.querySelector('.peitho-slide')!.getBoundingClientRect()
-      return { x: slide.left + 6, y: slide.bottom - 6 }
-    })
-    await page.mouse.click(onSlide.x, onSlide.y)
+    // The overlay is above the canvas too: with the menu open, a click on the
+    // canvas is the menu's outside click and reaches nothing else.
+    await page.mouse.click(onCanvas.x, onCanvas.y)
     await expect(page.locator(MENU)).toBeHidden()
   })
 
@@ -512,6 +519,9 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect(page.locator(MENU_BUTTON)).toHaveAttribute('aria-expanded', 'false')
     await expect(page.locator(OPTION('deck'))).toHaveAttribute('aria-checked', 'true')
     await expect(page.locator(OPTION('portrait'))).toHaveAttribute('aria-checked', 'false')
+    // The check mark follows the choice.
+    await expect(page.locator(OPTION('deck'))).toContainText('✓')
+    await expect(page.locator(OPTION('portrait'))).not.toContainText('✓')
     await expect.poll(() => previewCanvasHeight(page)).toBe(PC_HEIGHT)
     expect(await previewCanvasWidth(page)).toBe('1280px')
     // The deck's own `@container` branch follows the canvas's shape too.
@@ -523,6 +533,8 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await chooseShape(page, 'portrait')
     await expect(page.locator(MENU)).toBeHidden()
     await expect(page.locator(OPTION('portrait'))).toHaveAttribute('aria-checked', 'true')
+    await expect(page.locator(OPTION('portrait'))).toContainText('✓')
+    await expect(page.locator(OPTION('deck'))).not.toContainText('✓')
     await expect.poll(() => previewCanvasHeight(page)).toBe(PHONE_HEIGHT)
     expect(await previewCanvasWidth(page)).toBe('1280px')
     await expect.poll(() => previewProbeColor(page)).toBe(RED)
@@ -573,16 +585,81 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect(page.locator(PREVIEW)).toHaveAttribute('data-slide-canvas-key', 'arcade')
   })
 
-  test('when the ▾ is pressed again while the menu is open, then the menu closes', async ({ page }) => {
+  test('when the ▾ is pressed again while the menu is open (from the keyboard, which the overlay does not shield), then the menu closes, and pressing it once more opens it', async ({ page }) => {
     await openDeck(page, deckWith())
     await press(page)
     await page.locator(MENU_BUTTON).click()
     await expect(page.locator(MENU)).toBeVisible()
 
-    const caret = (await page.locator(MENU_BUTTON).boundingBox())!
-    await page.mouse.click(caret.x + caret.width / 2, caret.y + caret.height / 2)
+    await page.locator(MENU_BUTTON).press('Enter')
     await expect(page.locator(MENU)).toBeHidden()
     await expect(page.locator(MENU_BUTTON)).toHaveAttribute('aria-expanded', 'false')
+
+    await page.locator(MENU_BUTTON).press('Enter')
+    await expect(page.locator(MENU)).toBeVisible()
+    await expect(page.locator(MENU_BUTTON)).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  test('when the user right-clicks while the menu is open, then the menu closes and the click opens no native or slide context menu', async ({ page }) => {
+    await openDeck(page, deckWith())
+    await press(page)
+    await page.locator(MENU_BUTTON).click()
+    await expect(page.locator(MENU)).toBeVisible()
+    await page.evaluate(() => {
+      window.addEventListener('contextmenu', event => {
+        (window as unknown as { __contextMenuPrevented: boolean }).__contextMenuPrevented = event.defaultPrevented
+      })
+    })
+
+    const row = (await page.locator('[data-slide-row="1"]').boundingBox())!
+    await page.mouse.click(row.x + row.width / 2, row.y + row.height / 2, { button: 'right' })
+    await expect(page.locator(MENU)).toBeHidden()
+    expect(await page.evaluate(() => (window as unknown as { __contextMenuPrevented: boolean }).__contextMenuPrevented)).toBe(true)
+    // Nothing underneath was right-clicked: no slide context menu is up.
+    await expect(page.getByRole('button', { name: /^Change Layout/ })).toBeHidden()
+  })
+
+  test('when the menu is open, then the keyboard shortcuts wait (arrows do not move the slide behind it), and Escape closes it and gives them back', async ({ page }) => {
+    await openDeck(page, deckWith())
+    await press(page)
+    await page.locator(MENU_BUTTON).click()
+    await expect(page.locator(MENU)).toBeVisible()
+
+    await page.keyboard.press('ArrowDown')
+    await twoFrames(page)
+    await expect(page.locator(PREVIEW)).toHaveAttribute('data-slide-canvas-key', 'wide')
+
+    await page.keyboard.press('Escape')
+    await expect(page.locator(MENU)).toBeHidden()
+    await page.keyboard.press('ArrowDown')
+    await expect(page.locator(PREVIEW)).toHaveAttribute('data-slide-canvas-key', 'arcade')
+  })
+
+  test('when the selection is lost with the menu open (a draft slide is selected), then the menu goes with the header and does not come back open', async ({ page }) => {
+    const draftDeck = deckWith({ source: ['<!-- {"key":"first"} -->\n# First\n', '<!-- {"key":"hidden","draft":true} -->\n# Hidden\n', '<!-- {"key":"last"} -->\n# Last\n'].join('\n---\n\n') })
+    await mockTauri(page, draftDeck)
+    await page.goto('/')
+    await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 10_000 })
+    await expect(page.locator(PREVIEW)).toHaveAttribute('data-slide-canvas-key', 'first')
+    await press(page)
+    await page.locator(MENU_BUTTON).click()
+    await expect(page.locator(MENU)).toBeVisible()
+
+    // The overlay shields the mouse, so select the draft row programmatically.
+    await page.locator('[data-slide-row="1"] button[title]').evaluate(select => (select as HTMLElement).click())
+    await expect(page.locator(TOGGLE)).toBeHidden()
+    await expect(page.locator(MENU)).toBeHidden()
+
+    await page.locator('[data-slide-row="2"]').click()
+    await expect(page.locator(PREVIEW)).toHaveAttribute('data-slide-canvas-key', 'last')
+    await expect(page.locator(TOGGLE)).toBeVisible()
+    await expect(page.locator(MENU)).toBeHidden()
+    await expect(page.locator('[data-phone-shape-backdrop]')).toBeHidden()
+    await expect(page.locator(MENU_BUTTON)).toHaveAttribute('aria-expanded', 'false')
+    // ...and the shortcuts are not held back by a menu nobody can see: ArrowUp
+    // walks back onto the draft row, which hides the header again.
+    await page.keyboard.press('ArrowUp')
+    await expect(page.locator(TOGGLE)).toBeHidden()
   })
 
   test('when the user leaves phone display with the menu open (from the keyboard), then the menu closes and phone display does not bring it back', async ({ page }) => {
