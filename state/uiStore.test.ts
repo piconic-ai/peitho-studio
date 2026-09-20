@@ -258,21 +258,37 @@ describe('preview phone shape menu', () => {
     })
   })
 
-  test('spec: Given phone display, when the menu is opened and then closed, then it follows', () => {
+  test('spec: Given phone display, when the ▾ is toggled, then the menu opens, and toggling again (or closing it) shuts it', () => {
     createRoot(() => {
       const store = createUiStore()
       store.toggleViewportMode()
-      store.openPhoneShapeMenu()
+      store.togglePhoneShapeMenu()
       expect(store.phoneShapeMenuOpen()).toBe(true)
+      store.togglePhoneShapeMenu()
+      expect(store.phoneShapeMenuOpen()).toBe(false)
+      store.togglePhoneShapeMenu()
       store.closePhoneShapeMenu()
       expect(store.phoneShapeMenuOpen()).toBe(false)
     })
   })
 
-  test('adversarial: opening the menu in PC display is refused (it has no ▾ there)', () => {
+  test('spec: Given the menu open, when a shape is picked, then the shape is that one and the menu is closed', () => {
     createRoot(() => {
       const store = createUiStore()
-      store.openPhoneShapeMenu()
+      store.toggleViewportMode()
+      store.togglePhoneShapeMenu()
+      store.selectPhoneShape('deck')
+      expect(store.phoneShape()).toBe('deck')
+      expect(store.phoneShapeMenuOpen()).toBe(false)
+    })
+  })
+
+  test('adversarial: toggling the menu in PC display does not open it (it has no ▾ there), however many times', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.togglePhoneShapeMenu()
+      expect(store.phoneShapeMenuOpen()).toBe(false)
+      store.togglePhoneShapeMenu()
       expect(store.phoneShapeMenuOpen()).toBe(false)
     })
   })
@@ -281,25 +297,12 @@ describe('preview phone shape menu', () => {
     createRoot(() => {
       const store = createUiStore()
       store.toggleViewportMode()
-      store.openPhoneShapeMenu()
+      store.togglePhoneShapeMenu()
       store.toggleViewportMode()
       expect(store.viewportMode()).toBe('desktop')
       expect(store.phoneShapeMenuOpen()).toBe(false)
       store.toggleViewportMode()
       expect(store.viewportMode()).toBe('mobile')
-      expect(store.phoneShapeMenuOpen()).toBe(false)
-    })
-  })
-
-  test('adversarial: opening twice and closing twice ends in the last state asked for', () => {
-    createRoot(() => {
-      const store = createUiStore()
-      store.toggleViewportMode()
-      store.openPhoneShapeMenu()
-      store.openPhoneShapeMenu()
-      expect(store.phoneShapeMenuOpen()).toBe(true)
-      store.closePhoneShapeMenu()
-      store.closePhoneShapeMenu()
       expect(store.phoneShapeMenuOpen()).toBe(false)
     })
   })
@@ -313,15 +316,13 @@ describe('preview phone shape menu', () => {
     })
   })
 
-  test('adversarial: selecting a shape neither opens nor closes the menu', () => {
+  test('adversarial: picking the shape that is already chosen still closes the menu and leaves the shape', () => {
     createRoot(() => {
       const store = createUiStore()
       store.toggleViewportMode()
-      store.openPhoneShapeMenu()
-      store.selectPhoneShape('deck')
-      expect(store.phoneShapeMenuOpen()).toBe(true)
-      store.closePhoneShapeMenu()
+      store.togglePhoneShapeMenu()
       store.selectPhoneShape('portrait')
+      expect(store.phoneShape()).toBe('portrait')
       expect(store.phoneShapeMenuOpen()).toBe(false)
     })
   })
@@ -331,7 +332,7 @@ describe('preview phone shape menu', () => {
       const store = createUiStore()
       store.toggleViewportMode()
       store.selectPhoneShape('deck')
-      store.openPhoneShapeMenu()
+      store.togglePhoneShapeMenu()
       expect(store.phoneShape()).toBe('deck')
       expect(store.viewportMode()).toBe('mobile')
       store.closePhoneShapeMenu()
@@ -348,7 +349,7 @@ describe('preview phone shape menu', () => {
         seen.push(`${store.viewportMode()}/${store.phoneShapeMenuOpen() ? 'open' : 'closed'}`)
       })
       store.toggleViewportMode()
-      store.openPhoneShapeMenu()
+      store.togglePhoneShapeMenu()
       store.toggleViewportMode()
       expect(seen).toContain('mobile/open')
       expect(seen).not.toContain('desktop/open')
@@ -362,13 +363,13 @@ describe('preview phone shape menu', () => {
       const second = createUiStore()
       first.toggleViewportMode()
       second.toggleViewportMode()
-      first.openPhoneShapeMenu()
+      first.togglePhoneShapeMenu()
       expect(first.phoneShapeMenuOpen()).toBe(true)
       expect(second.phoneShapeMenuOpen()).toBe(false)
     })
   })
 
-  test('adversarial: the store does not expose the setters (callers open, close and select only)', () => {
+  test('adversarial: the store does not expose the setters (callers toggle, close and select only)', () => {
     createRoot(() => {
       const store = createUiStore()
       expect('setPhoneShapeMenuOpen' in store).toBe(false)
@@ -383,7 +384,7 @@ describe('preview phone shape menu', () => {
       store.setPresentMenuOpen(true)
       store.setVariantMenuOpen(true)
       store.toggleViewportMode()
-      store.openPhoneShapeMenu()
+      store.togglePhoneShapeMenu()
       store.toggleViewportMode()
       expect(store.presentMenuOpen()).toBe(true)
       expect(store.variantMenuOpen()).toBe(true)

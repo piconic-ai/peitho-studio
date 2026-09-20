@@ -1295,7 +1295,7 @@ export function Studio() {
           onToggleViewportMode={ui.toggleViewportMode}
           phoneShape={ui.phoneShape()}
           phoneShapeMenuOpen={ui.phoneShapeMenuOpen()}
-          onOpenPhoneShapeMenu={ui.openPhoneShapeMenu}
+          onTogglePhoneShapeMenu={ui.togglePhoneShapeMenu}
           onClosePhoneShapeMenu={ui.closePhoneShapeMenu}
           onSelectPhoneShape={ui.selectPhoneShape}
           canvasWidth={previewCanvasWidth()}

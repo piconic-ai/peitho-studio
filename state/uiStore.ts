@@ -136,20 +136,20 @@ export function createUiStore() {
   const [viewportMode, setViewportMode] = createSignal<ViewportMode>('desktop')
   // The shape menu (the ▾ beside the Phone segment) is declared here, ahead
   // of the flip below, because leaving phone display closes it. It only
-  // exists while phone display is on: `openPhoneShapeMenu` refuses to open
-  // it in PC display, so "menu open in PC display" is not a state this store
+  // exists while phone display is on: `togglePhoneShapeMenu` never opens it
+  // in PC display, so "menu open in PC display" is not a state this store
   // can be in. `variantMenuOpen` above is the same kind of dropdown (an
   // overlay closes it on an outside click).
   const [phoneShapeMenuOpen, setPhoneShapeMenuOpen] = createSignal(false)
   function toggleViewportMode(): void {
-    const next = toggledViewportMode(viewportMode())
     // Close first: an effect that reads both signals must never see PC
-    // display with the menu still open.
-    if (next !== 'mobile') setPhoneShapeMenuOpen(false)
-    setViewportMode(next)
+    // display with the menu still open. (Entering phone display, the menu is
+    // already closed, so this is a no-op there.)
+    setPhoneShapeMenuOpen(false)
+    setViewportMode(toggledViewportMode)
   }
-  function openPhoneShapeMenu(): void {
-    if (viewportMode() === 'mobile') setPhoneShapeMenuOpen(true)
+  function togglePhoneShapeMenu(): void {
+    setPhoneShapeMenuOpen(open => viewportMode() === 'mobile' && !open)
   }
   function closePhoneShapeMenu(): void {
     setPhoneShapeMenuOpen(false)
@@ -160,9 +160,11 @@ export function createUiStore() {
   // so the choice survives a trip back to PC display. Session-only, and the
   // setter stays private for the same reason.
   const [phoneShape, setPhoneShape] = createSignal<PhoneShape>('portrait')
-  /** An explicit choice: the shape menu's items each name the shape they pick. */
+  /** A pick from the shape menu: the items each name the shape they choose,
+   * and choosing one closes the menu. */
   function selectPhoneShape(shape: PhoneShape): void {
     setPhoneShape(shape)
+    setPhoneShapeMenuOpen(false)
   }
 
   return {
@@ -176,6 +178,6 @@ export function createUiStore() {
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth,
     editingSectionIndex, setEditingSectionIndex,
     viewportMode, toggleViewportMode, phoneShape, selectPhoneShape,
-    phoneShapeMenuOpen, openPhoneShapeMenu, closePhoneShapeMenu,
+    phoneShapeMenuOpen, togglePhoneShapeMenu, closePhoneShapeMenu,
   }
 }

@@ -15,7 +15,7 @@ export interface SlidePreviewProps {
    * shows in phone display. */
   phoneShape: PhoneShape
   phoneShapeMenuOpen: boolean
-  onOpenPhoneShapeMenu: () => void
+  onTogglePhoneShapeMenu: () => void
   onClosePhoneShapeMenu: () => void
   onSelectPhoneShape: (shape: PhoneShape) => void
   canvasFragmentOf: (key: string) => string
@@ -37,7 +37,7 @@ export function SlidePreview(props: SlidePreviewProps) {
           segment's `title` carry the words. */}
       <div className={(props.selectedSlideKey === null ? 'hidden ' : '') + 'shrink-0 h-9 flex items-center justify-end px-3'}>
         <div className="relative">
-          <div className="flex items-stretch rounded-full border border-border overflow-hidden">
+          <div className="flex rounded-full border border-border overflow-hidden">
             <button
               type="button"
               role="switch"
@@ -45,7 +45,7 @@ export function SlidePreview(props: SlidePreviewProps) {
               aria-label="Preview as phone"
               aria-checked={props.viewportMode === 'mobile' ? 'true' : 'false'}
               onClick={() => props.onToggleViewportMode()}
-              className="flex items-stretch"
+              className="flex"
             >
               <span title="PC" className={(props.viewportMode === 'desktop' ? 'bg-primary text-primary-foreground ' : 'text-muted-foreground ') + 'flex items-center px-2.5 py-1'}>
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="block w-3.5 h-3.5">
@@ -73,7 +73,7 @@ export function SlidePreview(props: SlidePreviewProps) {
               aria-label="Phone canvas shape"
               aria-haspopup="menu"
               aria-expanded={props.phoneShapeMenuOpen ? 'true' : 'false'}
-              onClick={() => (props.phoneShapeMenuOpen ? props.onClosePhoneShapeMenu() : props.onOpenPhoneShapeMenu())}
+              onClick={() => props.onTogglePhoneShapeMenu()}
               className={(props.viewportMode === 'mobile' ? 'flex' : 'hidden') + ' items-center px-2 text-xs bg-primary text-primary-foreground border-l border-primary-foreground/25'}
             >
               <span aria-hidden="true">▾</span>
@@ -85,7 +85,8 @@ export function SlidePreview(props: SlidePreviewProps) {
               too, without the native context menu. `z-10` / `z-20` put both
               above the canvas. The ▾ toggles rather than only opens, so a
               keyboard user (the overlay only shields the mouse) can collapse
-              the menu from it. */}
+              the menu from it; picking an option closes it too (the store
+              does both). */}
           <div
             data-phone-shape-backdrop
             className={(props.phoneShapeMenuOpen ? '' : 'hidden ') + 'fixed top-0 right-0 bottom-0 left-0 z-10'}
@@ -106,10 +107,7 @@ export function SlidePreview(props: SlidePreviewProps) {
               role="menuitemradio"
               data-phone-shape-option="portrait"
               aria-checked={props.phoneShape === 'portrait' ? 'true' : 'false'}
-              onClick={() => {
-                props.onSelectPhoneShape('portrait')
-                props.onClosePhoneShapeMenu()
-              }}
+              onClick={() => props.onSelectPhoneShape('portrait')}
               className="w-full text-left px-3 py-1.5 hover:bg-accent flex items-start gap-2"
             >
               <span aria-hidden="true" className="w-3 text-sm">{props.phoneShape === 'portrait' ? '✓' : ''}</span>
@@ -126,10 +124,7 @@ export function SlidePreview(props: SlidePreviewProps) {
               role="menuitemradio"
               data-phone-shape-option="deck"
               aria-checked={props.phoneShape === 'deck' ? 'true' : 'false'}
-              onClick={() => {
-                props.onSelectPhoneShape('deck')
-                props.onClosePhoneShapeMenu()
-              }}
+              onClick={() => props.onSelectPhoneShape('deck')}
               className="w-full text-left px-3 py-1.5 hover:bg-accent flex items-start gap-2"
             >
               <span aria-hidden="true" className="w-3 text-sm">{props.phoneShape === 'deck' ? '✓' : ''}</span>
@@ -152,12 +147,6 @@ export function SlidePreview(props: SlidePreviewProps) {
           the `ref`'s effect below running against the detached host while a
           second one started on the new host. (`SlideContextMenu` is kept
           permanently mounted for a related reason.) */}
-      {/* `isolate` keeps a deck's own `z-index` (a positioned
-          `.peitho-slide` with a large one, or anything a layout script adds
-          beside it) inside this box: without it the slide's own `z-index`
-          competes with the shape menu and its click-catching overlay, and a
-          large one wins (checked with a probe; the slide's `transform` only
-          contains what is inside it). */}
       <div
         data-preview-host
         ref={el => {
@@ -178,7 +167,7 @@ export function SlidePreview(props: SlidePreviewProps) {
             observeCanvasScale(el, canvas)
           })
         }}
-        className={(props.selectedSlideKey === null ? 'hidden ' : '') + 'flex-1 w-full isolate'}
+        className={(props.selectedSlideKey === null ? 'hidden ' : '') + 'flex-1 w-full'}
       />
       <div className={(props.selectedSlideKey === null ? '' : 'hidden ') + 'flex-1 flex items-center justify-center text-sm text-muted-foreground'}>
         {props.hasDeck ? 'Select a slide to preview it.' : 'Open a deck to preview it.'}
