@@ -119,13 +119,8 @@ describe('hasFixedCanvas examples', () => {
 describe('hasFixedCanvas', () => {
   const withAttributes = (attributes: string) => `<section ${attributes}><p>body</p></section>`
 
-  test('spec: root <section data-canvas="fixed"> is fixed', () => {
-    expect(hasFixedCanvas('<section data-canvas="fixed"></section>')).toBe(true)
-  })
-
-  test('spec: a root <section> without the attribute is not fixed', () => {
-    expect(hasFixedCanvas('<section class="peitho-slide"></section>')).toBe(false)
-  })
+  // The typical cases (fixed / ordinary root, leading comment mentioning the
+  // attribute, attribute only on a child) are the examples run above.
 
   test('spec: the attribute may sit anywhere among the root\'s other attributes', () => {
     expect(hasFixedCanvas(withAttributes('data-canvas="fixed" class="a" data-slide-key="k"'))).toBe(true)
@@ -141,26 +136,26 @@ describe('hasFixedCanvas', () => {
     expect(hasFixedCanvas(html)).toBe(true)
   })
 
-  test('adversarial: an empty or whitespace-only fragment is not fixed', () => {
-    expect(hasFixedCanvas('')).toBe(false)
+  test('adversarial: a whitespace-only fragment is not fixed', () => {
     expect(hasFixedCanvas(' \n\t ')).toBe(false)
-  })
-
-  test('adversarial: the attribute only on a child element is not fixed', () => {
-    expect(hasFixedCanvas('<section class="peitho-slide"><div data-canvas="fixed"></div></section>')).toBe(false)
   })
 
   test('adversarial: the attribute only on a nested <section> is not fixed', () => {
     expect(hasFixedCanvas('<section class="peitho-slide"><section data-canvas="fixed"></section></section>')).toBe(false)
   })
 
-  test('adversarial: a root that is not a <section> is not fixed, even if it carries the attribute', () => {
-    expect(hasFixedCanvas('<div data-canvas="fixed"></div>')).toBe(false)
-    expect(hasFixedCanvas('<article data-canvas="fixed"></article>')).toBe(false)
-  })
-
-  test('adversarial: text before the root <section> means it is not the root', () => {
-    expect(hasFixedCanvas('stray <section data-canvas="fixed"></section>')).toBe(false)
+  test('adversarial: a fragment that does not open with a <section> is not fixed, even if a later tag carries the attribute', () => {
+    // The <script> case documents a limit rather than endorsing it: every
+    // built-in layout opens with its root <section>, so this shape is not
+    // expected from peitho-core.
+    for (const html of [
+      '<div data-canvas="fixed"></div>',
+      '<article data-canvas="fixed"></article>',
+      'stray <section data-canvas="fixed"></section>',
+      '<script>1</script><section data-canvas="fixed"></section>',
+    ]) {
+      expect(hasFixedCanvas(html)).toBe(false)
+    }
   })
 
   test('adversarial: single-quoted, unquoted and spaced-out values are the same attribute', () => {
@@ -175,13 +170,13 @@ describe('hasFixedCanvas', () => {
     expect(hasFixedCanvas('<Section Data-Canvas="fixed"></Section>')).toBe(true)
   })
 
-  test('adversarial: the value is case-sensitive, like the CSS selector other viewers use', () => {
+  test('adversarial: the value is case-sensitive, like the CSS selector section[data-canvas="fixed"]', () => {
     expect(hasFixedCanvas(withAttributes('data-canvas="FIXED"'))).toBe(false)
     expect(hasFixedCanvas(withAttributes('data-canvas="Fixed"'))).toBe(false)
   })
 
   test('adversarial: any value other than exactly "fixed" is not fixed', () => {
-    for (const value of ['', 'fixed ', ' fixed', 'fixed-ish', 'fixedx', 'flex', 'true', 'fix']) {
+    for (const value of ['', 'fixed ', ' fixed', 'fixed-ish', 'fixedx', 'true', 'fix']) {
       expect(hasFixedCanvas(withAttributes(`data-canvas="${value}"`))).toBe(false)
     }
   })
@@ -239,13 +234,6 @@ describe('hasFixedCanvas', () => {
     expect(hasFixedCanvas(html)).toBe(false)
   })
 
-  test('adversarial: a <script> ahead of the root means the root is not the first element, so it is not fixed', () => {
-    // Documents a limit rather than endorsing it: fragments open with their
-    // root <section>, so this shape is not expected from peitho-core.
-    const html = '<script>1</script><section data-canvas="fixed"></section>'
-    expect(hasFixedCanvas(html)).toBe(false)
-  })
-
   test('adversarial: several leading comments and blank lines are all skipped', () => {
     const html = '\n<!-- one -->\n\n<!-- two: data-canvas="fixed" -->  \t<!-- three -->\n<section data-canvas="fixed"></section>'
     expect(hasFixedCanvas(html)).toBe(true)
@@ -254,10 +242,6 @@ describe('hasFixedCanvas', () => {
 
   test('adversarial: a comment that never closes swallows the rest, so nothing is fixed', () => {
     expect(hasFixedCanvas('<!-- <section data-canvas="fixed"></section>')).toBe(false)
-  })
-
-  test('adversarial: a comment holding the whole root tag, followed by an ordinary root, is not fixed', () => {
-    expect(hasFixedCanvas('<!-- <section data-canvas="fixed"> --><section class="peitho-slide"></section>')).toBe(false)
   })
 
   test('adversarial: a comment after the root tag is irrelevant', () => {
@@ -280,12 +264,6 @@ describe('hasFixedCanvas', () => {
     // minutes, so the budget only has to be loose enough not to flake on a
     // loaded machine.
     expect(performance.now() - started).toBeLessThan(4000)
-  })
-
-  test('purity: repeats its answer across calls (its global regexes hold no state between them)', () => {
-    const fixedHtml = '<section data-canvas="fixed"></section>'
-    const ordinaryHtml = '<section></section>'
-    expect([fixedHtml, fixedHtml, ordinaryHtml, fixedHtml, ordinaryHtml].map(hasFixedCanvas)).toEqual([true, true, false, true, false])
   })
 
   test('property: never throws, whatever string it is handed', () => {

@@ -1,3 +1,7 @@
+// Pure string-level readers of a slide fragment's HTML: absolutizing its
+// asset URLs (first half of this file) and reading its root `<section>`'s
+// `data-canvas` opt-out (`hasFixedCanvas`, at the bottom).
+//
 // A slide fragment's only relative references are `<img src="assets/...">`,
 // a `<video poster="assets/...">`/`<source src="assets/...">`, and a layout
 // author's own `<script src="assets/...">` — a Shadow root has no

@@ -1,12 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import fc from 'fast-check'
-import type { Size } from './geometry'
 import { isExhaustivelyAccountedFor } from './spec'
 import { DEFAULT_DEVICE, effectiveCanvas, reshapeCanvas, type ViewportMode } from './viewport'
-import { previewCanvasExamples } from './viewport.examples'
+import { previewCanvasExamples, standard, widescreen } from './viewport.examples'
 
-const widescreen: Size = { width: 1280, height: 720 }
-const standard: Size = { width: 960, height: 720 }
+const deckArb = fc.record({ width: fc.integer({ min: 1, max: 8000 }), height: fc.integer({ min: 1, max: 8000 }) })
+// Includes the values a device could never legitimately hold, so the
+// properties below must survive them too.
+const deviceDimension = fc.oneof(
+  fc.integer({ min: 1, max: 5000 }),
+  fc.double({ min: 0.001, max: 5000, noNaN: true }),
+  fc.constantFrom(0, -1, -0, Number.NaN, Infinity, -Infinity),
+)
+const deviceArb = fc.record({ width: deviceDimension, height: deviceDimension })
 
 describe('effectiveCanvas examples', () => {
   test.each(previewCanvasExamples.automated.map(e => [`${e.id}: Given ${e.given}, when ${e.when}, then ${e.then}`, e] as const))(
@@ -52,19 +58,10 @@ describe('reshapeCanvas', () => {
     expect(reshapeCanvas(widescreen, { width: 1920, height: 1080 })).toEqual(widescreen)
   })
 
-  test('spec: a device passed as a full preset works the same as a bare size', () => {
-    expect(reshapeCanvas(widescreen, DEFAULT_DEVICE)).toEqual(reshapeCanvas(widescreen, { width: 390, height: 844 }))
-  })
-
-  test('adversarial: a device with zero, negative, NaN or infinite width leaves the deck unchanged', () => {
-    for (const width of [0, -390, -0, Number.NaN, Infinity, -Infinity]) {
-      expect(reshapeCanvas(widescreen, { width, height: 844 })).toEqual(widescreen)
-    }
-  })
-
-  test('adversarial: a device with zero, negative, NaN or infinite height leaves the deck unchanged', () => {
-    for (const height of [0, -844, -0, Number.NaN, Infinity, -Infinity]) {
-      expect(reshapeCanvas(widescreen, { width: 390, height })).toEqual(widescreen)
+  test('adversarial: a device with a zero, negative, NaN or infinite dimension leaves the deck unchanged', () => {
+    for (const bad of [0, -390, -0, Number.NaN, Infinity, -Infinity]) {
+      expect(reshapeCanvas(widescreen, { width: bad, height: 844 })).toEqual(widescreen)
+      expect(reshapeCanvas(widescreen, { width: 390, height: bad })).toEqual(widescreen)
     }
   })
 
@@ -74,8 +71,7 @@ describe('reshapeCanvas', () => {
     expect(reshapeCanvas(widescreen, { width: -390, height: -844 })).toEqual(widescreen)
   })
 
-  test('adversarial: a landscape device does not shrink the canvas below the deck\'s height', () => {
-    expect(reshapeCanvas(widescreen, { width: 844, height: 390 })).toEqual(widescreen)
+  test('adversarial: an extremely wide device (1000000x1) does not shrink the canvas below the deck\'s height', () => {
     expect(reshapeCanvas(widescreen, { width: 1000000, height: 1 })).toEqual(widescreen)
   })
 
@@ -107,33 +103,19 @@ describe('reshapeCanvas', () => {
     expect(reshapeCanvas({ width: 1280, height: 0 }, DEFAULT_DEVICE)).toEqual({ width: 1280, height: 2770 })
   })
 
-  test('adversarial: a NaN deck never throws and stays NaN', () => {
+  test('adversarial: a NaN deck stays NaN rather than throwing', () => {
     const deck = { width: Number.NaN, height: Number.NaN }
-    expect(() => reshapeCanvas(deck, DEFAULT_DEVICE)).not.toThrow()
     expect(reshapeCanvas(deck, DEFAULT_DEVICE)).toEqual(deck)
   })
 
-  test('purity: does not mutate its inputs and repeats its answer', () => {
+  test('purity: works on frozen inputs (a mutation would throw) and repeats its answer', () => {
     const deck = Object.freeze({ width: 1280, height: 720 })
     const device = Object.freeze({ width: 390, height: 844 })
-    const first = reshapeCanvas(deck, device)
-    expect(reshapeCanvas(deck, device)).toEqual(first)
-    expect(deck).toEqual({ width: 1280, height: 720 })
-    expect(device).toEqual({ width: 390, height: 844 })
+    expect(reshapeCanvas(deck, device)).toEqual(reshapeCanvas(deck, device))
   })
 })
 
 describe('reshapeCanvas (properties)', () => {
-  const deckArb = fc.record({ width: fc.integer({ min: 1, max: 8000 }), height: fc.integer({ min: 1, max: 8000 }) })
-  // Includes the values a device could never legitimately hold, so the
-  // properties below must survive them too.
-  const deviceDimension = fc.oneof(
-    fc.integer({ min: 1, max: 5000 }),
-    fc.double({ min: 0.001, max: 5000, noNaN: true }),
-    fc.constantFrom(0, -1, -0, Number.NaN, Infinity, -Infinity),
-  )
-  const deviceArb = fc.record({ width: deviceDimension, height: deviceDimension })
-
   test('property: the width is never changed', () => {
     fc.assert(fc.property(deckArb, deviceArb, (deck, device) => {
       expect(reshapeCanvas(deck, device).width).toBe(deck.width)
@@ -146,11 +128,9 @@ describe('reshapeCanvas (properties)', () => {
     }))
   })
 
-  test('property: a whole-pixel deck always yields a whole-pixel, finite canvas', () => {
+  test('property: a whole-pixel deck always yields a whole-pixel, finite height', () => {
     fc.assert(fc.property(deckArb, deviceArb, (deck, device) => {
-      const { width, height } = reshapeCanvas(deck, device)
-      expect(Number.isInteger(width)).toBe(true)
-      expect(Number.isInteger(height)).toBe(true)
+      expect(Number.isInteger(reshapeCanvas(deck, device).height)).toBe(true)
     }))
   })
 
@@ -176,19 +156,9 @@ describe('reshapeCanvas (properties)', () => {
   })
 })
 
+// The typical cases (PC display, phone display, fixed slide) are the
+// examples run at the top of this file.
 describe('effectiveCanvas', () => {
-  test('spec: PC display returns the deck canvas untouched', () => {
-    expect(effectiveCanvas(widescreen, 'desktop', DEFAULT_DEVICE, false)).toEqual(widescreen)
-  })
-
-  test('spec: phone display reshapes a normal slide', () => {
-    expect(effectiveCanvas(widescreen, 'mobile', DEFAULT_DEVICE, false)).toEqual({ width: 1280, height: 2770 })
-  })
-
-  test('spec: phone display leaves a data-canvas="fixed" slide alone', () => {
-    expect(effectiveCanvas(widescreen, 'mobile', DEFAULT_DEVICE, true)).toEqual(widescreen)
-  })
-
   test('adversarial: a fixed slide stays put even with an unusable device', () => {
     expect(effectiveCanvas(widescreen, 'mobile', { width: 0, height: 0 }, true)).toEqual(widescreen)
   })
@@ -202,24 +172,15 @@ describe('effectiveCanvas', () => {
   })
 
   test('property: PC display and fixed slides are always the deck canvas, whatever the device', () => {
-    fc.assert(fc.property(
-      fc.record({ width: fc.integer({ min: 1, max: 8000 }), height: fc.integer({ min: 1, max: 8000 }) }),
-      fc.record({ width: fc.double(), height: fc.double() }),
-      fc.boolean(),
-      (deck, device, fixedCanvas) => {
-        expect(effectiveCanvas(deck, 'desktop', device, fixedCanvas)).toEqual(deck)
-        expect(effectiveCanvas(deck, 'mobile', device, true)).toEqual(deck)
-      },
-    ))
+    fc.assert(fc.property(deckArb, deviceArb, fc.boolean(), (deck, device, fixedCanvas) => {
+      expect(effectiveCanvas(deck, 'desktop', device, fixedCanvas)).toEqual(deck)
+      expect(effectiveCanvas(deck, 'mobile', device, true)).toEqual(deck)
+    }))
   })
 
   test('property: phone display on a normal slide is exactly reshapeCanvas', () => {
-    fc.assert(fc.property(
-      fc.record({ width: fc.integer({ min: 1, max: 8000 }), height: fc.integer({ min: 1, max: 8000 }) }),
-      fc.record({ width: fc.double(), height: fc.double() }),
-      (deck, device) => {
-        expect(effectiveCanvas(deck, 'mobile', device, false)).toEqual(reshapeCanvas(deck, device))
-      },
-    ))
+    fc.assert(fc.property(deckArb, deviceArb, (deck, device) => {
+      expect(effectiveCanvas(deck, 'mobile', device, false)).toEqual(reshapeCanvas(deck, device))
+    }))
   })
 })

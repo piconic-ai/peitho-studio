@@ -19,8 +19,9 @@ export interface PreviewCanvasInput {
  * selected slide. */
 type PreviewLaidOut = 'preview-laid-out'
 
-const widescreen: Size = { width: 1280, height: 720 }
-const standard: Size = { width: 960, height: 720 }
+/** The deck canvases peitho-core produces: 16:9 and 4:3. */
+export const widescreen: Size = { width: 1280, height: 720 }
+export const standard: Size = { width: 960, height: 720 }
 
 export const previewCanvasExamples = defineExamples<PreviewCanvasInput, PreviewLaidOut, Size>(
   'preview canvas size',
