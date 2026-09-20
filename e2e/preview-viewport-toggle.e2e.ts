@@ -18,11 +18,12 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 import { containScale } from '../domain/geometry'
+import type { PhoneShape } from '../domain/viewport'
 
 const TOGGLE = '[data-viewport-toggle]'
 const MENU_BUTTON = '[data-phone-shape-menu-button]'
 const MENU = '[data-phone-shape-menu]'
-const OPTION = (shape: 'portrait' | 'deck'): string => `[data-phone-shape-option="${shape}"]`
+const OPTION = (shape: PhoneShape): string => `[data-phone-shape-option="${shape}"]`
 const PREVIEW = '[data-preview-host]'
 const THUMBNAILS = '[data-slide-canvas-key]:not([data-preview-host])'
 
@@ -59,11 +60,11 @@ const CONTAINER_QUERY_CSS = `
 
 const deckWith = (overrides: Partial<MockDeck> = {}): MockDeck => ({ source: SOURCE, fragmentFor, css: CONTAINER_QUERY_CSS, ...overrides })
 
-async function openDeck(page: Page, deck: MockDeck): Promise<void> {
+async function openDeck(page: Page, deck: MockDeck, firstKey = 'wide'): Promise<void> {
   await mockTauri(page, deck)
   await page.goto('/')
   await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 10_000 })
-  await expect(page.locator(PREVIEW)).toHaveAttribute('data-slide-canvas-key', 'wide')
+  await expect(page.locator(PREVIEW)).toHaveAttribute('data-slide-canvas-key', firstKey)
 }
 
 function inlineVar(page: Page, selector: string, name: string): Promise<string> {
@@ -131,15 +132,25 @@ async function press(page: Page, times = 1): Promise<void> {
 }
 
 /** Opens the shape menu from its ▾ and picks `shape` (phone display only). */
-async function chooseShape(page: Page, shape: 'portrait' | 'deck'): Promise<void> {
+async function chooseShape(page: Page, shape: PhoneShape): Promise<void> {
   await page.locator(MENU_BUTTON).click()
   await page.locator(OPTION(shape)).click()
+}
+
+/** Phone display with the shape menu open (the state most menu tests start from). */
+async function openShapeMenu(page: Page): Promise<void> {
+  await press(page)
+  await page.locator(MENU_BUTTON).click()
+  await expect(page.locator(MENU)).toBeVisible()
 }
 
 /** The pill the PC / Phone switch (and, in phone display, the ▾) sits in,
  * and the header row that holds the pill. */
 const pill = (page: Page): Locator => page.locator(TOGGLE).locator('xpath=..')
 const headerRow = (page: Page): Locator => page.locator(TOGGLE).locator('xpath=../../..')
+
+/** The background colour `locator`'s element is painted with. */
+const fillOf = (locator: Locator): Promise<string> => locator.evaluate(el => getComputedStyle(el).backgroundColor)
 
 const twoFrames = (page: Page): Promise<unknown> => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 
@@ -233,7 +244,7 @@ test.describe('Given a slide marked data-canvas="fixed"', () => {
     // "Nothing changed" cannot be polled for, so let two frames pass first:
     // a wrong canvas would have been applied (and the tall-canvas branch
     // fired) by then.
-    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await twoFrames(page)
     expect(await previewProbeColor(page)).toBe(BLUE)
     expect(await previewCanvasWidth(page)).toBe('1280px')
     expect(await previewCanvasHeight(page)).toBe(PC_HEIGHT)
@@ -338,9 +349,7 @@ test.describe('Given the preview header', () => {
 
   test('when the icons render, then each is the drawing it should be (monitor, smartphone, tall and wide rectangles), stroked and at its full size', async ({ page }) => {
     await openDeck(page, deckWith())
-    await press(page)
-    await page.locator(MENU_BUTTON).click()
-    await expect(page.locator(MENU)).toBeVisible()
+    await openShapeMenu(page)
 
     const describeIcons = (selector: string): Promise<{ namespace: string | null, tags: string[], width: number, height: number, stroke: string }[]> =>
       page.locator(selector).evaluateAll(svgs => svgs.map(svg => {
@@ -412,8 +421,7 @@ test.describe('Given the preview header', () => {
 
   test('when the lit segment moves, then only it carries the highlight (PC lit at first, Phone lit after the press)', async ({ page }) => {
     await openDeck(page, deckWith())
-    const segment = (index: number): Locator => page.locator(`${TOGGLE} > span`).nth(index)
-    const fill = (index: number): Promise<string> => segment(index).evaluate(el => getComputedStyle(el).backgroundColor)
+    const fill = (index: number): Promise<string> => fillOf(page.locator(`${TOGGLE} > span`).nth(index))
     const transparent = 'rgba(0, 0, 0, 0)'
 
     expect(await fill(0)).not.toBe(transparent)
@@ -440,8 +448,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect(page.locator(MENU_BUTTON)).toHaveAttribute('aria-expanded', 'false')
     // Closed until it is asked for.
     await expect(page.locator(MENU)).toBeHidden()
-    const fill = (locator: Locator): Promise<string> => locator.evaluate(el => getComputedStyle(el).backgroundColor)
-    expect(await fill(page.locator(MENU_BUTTON))).toBe(await fill(page.locator(`${TOGGLE} > span`).nth(1)))
+    expect(await fillOf(page.locator(MENU_BUTTON))).toBe(await fillOf(page.locator(`${TOGGLE} > span`).nth(1)))
 
     await press(page)
     await expect(page.locator(MENU_BUTTON)).toBeHidden()
@@ -554,9 +561,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
 
   test('when Escape is pressed with the menu open, then it closes and nothing else changes', async ({ page }) => {
     await openDeck(page, deckWith())
-    await press(page)
-    await page.locator(MENU_BUTTON).click()
-    await expect(page.locator(MENU)).toBeVisible()
+    await openShapeMenu(page)
 
     await page.keyboard.press('Escape')
     await expect(page.locator(MENU)).toBeHidden()
@@ -569,9 +574,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
 
   test('when the user clicks outside the menu, then it closes and the click does not reach what is underneath (no slide is selected by it)', async ({ page }) => {
     await openDeck(page, deckWith())
-    await press(page)
-    await page.locator(MENU_BUTTON).click()
-    await expect(page.locator(MENU)).toBeVisible()
+    await openShapeMenu(page)
 
     const row = (await page.locator('[data-slide-row="1"]').boundingBox())!
     await page.mouse.click(row.x + row.width / 2, row.y + row.height / 2)
@@ -587,9 +590,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
 
   test('when the ▾ is pressed again while the menu is open (from the keyboard, which the overlay does not shield), then the menu closes, and pressing it once more opens it', async ({ page }) => {
     await openDeck(page, deckWith())
-    await press(page)
-    await page.locator(MENU_BUTTON).click()
-    await expect(page.locator(MENU)).toBeVisible()
+    await openShapeMenu(page)
 
     await page.locator(MENU_BUTTON).press('Enter')
     await expect(page.locator(MENU)).toBeHidden()
@@ -602,9 +603,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
 
   test('when the user right-clicks while the menu is open, then the menu closes and the click opens no native or slide context menu', async ({ page }) => {
     await openDeck(page, deckWith())
-    await press(page)
-    await page.locator(MENU_BUTTON).click()
-    await expect(page.locator(MENU)).toBeVisible()
+    await openShapeMenu(page)
     await page.evaluate(() => {
       window.addEventListener('contextmenu', event => {
         (window as unknown as { __contextMenuPrevented: boolean }).__contextMenuPrevented = event.defaultPrevented
@@ -621,9 +620,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
 
   test('when the menu is open, then the keyboard shortcuts wait (arrows do not move the slide behind it), and Escape closes it and gives them back', async ({ page }) => {
     await openDeck(page, deckWith())
-    await press(page)
-    await page.locator(MENU_BUTTON).click()
-    await expect(page.locator(MENU)).toBeVisible()
+    await openShapeMenu(page)
 
     await page.keyboard.press('ArrowDown')
     await twoFrames(page)
@@ -637,13 +634,8 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
 
   test('when the selection is lost with the menu open (a draft slide is selected), then the menu goes with the header and does not come back open', async ({ page }) => {
     const draftDeck = deckWith({ source: ['<!-- {"key":"first"} -->\n# First\n', '<!-- {"key":"hidden","draft":true} -->\n# Hidden\n', '<!-- {"key":"last"} -->\n# Last\n'].join('\n---\n\n') })
-    await mockTauri(page, draftDeck)
-    await page.goto('/')
-    await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 10_000 })
-    await expect(page.locator(PREVIEW)).toHaveAttribute('data-slide-canvas-key', 'first')
-    await press(page)
-    await page.locator(MENU_BUTTON).click()
-    await expect(page.locator(MENU)).toBeVisible()
+    await openDeck(page, draftDeck, 'first')
+    await openShapeMenu(page)
 
     // The overlay shields the mouse, so select the draft row programmatically.
     await page.locator('[data-slide-row="1"] button[title]').evaluate(select => (select as HTMLElement).click())
@@ -664,9 +656,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
 
   test('when the user leaves phone display with the menu open (from the keyboard), then the menu closes and phone display does not bring it back', async ({ page }) => {
     await openDeck(page, deckWith())
-    await press(page)
-    await page.locator(MENU_BUTTON).click()
-    await expect(page.locator(MENU)).toBeVisible()
+    await openShapeMenu(page)
 
     await page.locator(TOGGLE).press('Enter')
     await expect(page.locator(TOGGLE)).toHaveAttribute('aria-checked', 'false')
@@ -727,15 +717,13 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect.poll(() => previewCanvasHeight(page)).toBe(PHONE_HEIGHT)
 
     // Programmatic clicks, so that no frame passes between two of them.
-    const chooseManyTimes = (finalShape: 'portrait' | 'deck'): Promise<void> => page.evaluate(({ button, deck, portrait, last }) => {
+    const chooseManyTimes = (finalShape: PhoneShape): Promise<void> => page.evaluate(({ button, picks }) => {
       const click = (selector: string): void => (document.querySelector(selector) as HTMLElement).click()
-      for (let i = 0; i < 6; i += 1) {
+      for (const pick of picks) {
         click(button)
-        click(i % 2 === 0 ? deck : portrait)
+        click(pick)
       }
-      click(button)
-      click(last === 'deck' ? deck : portrait)
-    }, { button: MENU_BUTTON, deck: OPTION('deck'), portrait: OPTION('portrait'), last: finalShape })
+    }, { button: MENU_BUTTON, picks: [OPTION('deck'), OPTION('portrait'), OPTION('deck'), OPTION('portrait'), OPTION('deck'), OPTION('portrait'), OPTION(finalShape)] })
 
     await chooseManyTimes('deck')
     await expect(page.locator(OPTION('deck'))).toHaveAttribute('aria-checked', 'true')
