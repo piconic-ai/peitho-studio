@@ -1,6 +1,6 @@
 ---
 status: wip
-description: プレビューでPC表示/スマホ表示を切り替えられるようにする(設計確定済み。キャンバス寸法契約 + Container Queries、実装はPR-A/PR-Bの2本で完了、後から追加したPhone内のshape選択メニューまで実装済み。実機確認が残っている)
+description: プレビューでPC表示/スマホ表示を切り替えられるようにする(実装はマージ済み。残りは実機確認と、別リポジトリの作業PR-C/PR-Dの進め方の相談)
 tags: [ui, preview, viewport]
 ---
 
@@ -16,8 +16,13 @@ tags: [ui, preview, viewport]
 いなかった**。ビューアが`--peitho-canvas-height`を上書きし、デッキが
 それに反応するCSSを持てば縦長レイアウトを組める(実例: barefootjsの
 overviewデッキ)。この結論は撤回し、下の「調査結果」に訂正を残す。
-設計はFableに依頼して確定し、PR-A/PR-Bで実装した(実機確認だけが残っている。
-後から加わった要望は「方針」の末尾に記録した)。
+設計はFableに依頼して確定し、PR-A/PR-B(と後から加わった要望)を
+スタックPR #68 / #69 / #70として実装し、2026-09-21にマージ済み(マージ
+コミット`4377e59`)。残っているのは、実機確認と、別リポジトリの作業
+(PR-C/PR-D)の進め方の相談だけ。後から加わった要望は「方針」の末尾に
+記録した。Studio内で完結する先送り事項は、別todo
+(`todo/preview-phone-frame.md`、`todo/preview-phone-real-width-canvas.md`、
+どちらも`status: inbox`)に切り出した。
 
 ## スコープ
 
@@ -341,8 +346,11 @@ kfly8からの追加要望3点(2026-09-20):
       番号ありの場合だけで、barefootjs overviewのテーマは常時付いている。
       layout containmentは絶対配置の子孫のcontaining blockを変えるため、
       両方のテーマの実デッキで見た目が変わらないか確認する
-- [ ] PR-C(barefootjs側の移行提案)を出すか / PR-D(`kfly8/peitho`の
-      docs・`themes/base.css`)を出すか
+- [ ] PR-C(barefootjs側の移行提案)/ PR-D(`kfly8/peitho`のdocs・
+      `themes/base.css`)の進め方をkfly8と相談して決める。**方向として
+      はやりたい**(kfly8, 2026-09-21)が、別リポジトリの作業なので
+      進め方(誰がどの手順で出すか、Studioのループに拾わせるか)にためらい
+      がある。相談がつくまで着手せず、この台帳ではタスク化もしない
 - [ ] 実機(WKWebView)での確認(2026-09-20の追加要望分。Chromeでしか
       検証していない): ヘッダーのインラインSVGアイコン(PC/Phone、
       メニュー内のTall/Same ratio as PC)が潰れず描画され、lit/unlitが
@@ -351,10 +359,14 @@ kfly8からの追加要望3点(2026-09-20):
       キャンバスより手前に出るか。外側クリック・Escで閉じるか。Phoneで
       shapeを切り替えたとき`--peitho-thumb-scale`が追従し、スライドが
       再フィットされるか。Phone + Same ratio as PCがPCと同一の見た目に
-      なることを承知の上で、phone枠の描画(別todo候補)を要するか
+      なることを承知の上で、phone枠の描画(`todo/preview-phone-frame.md`
+      に切り出した)を要するか
 
 ## 先送り事項
 
+- **PR-C / PR-Dの扱い(2026-09-21)**: 方向としてはやりたいが、別リポジトリ
+  の作業の進め方は相談してから決める(上の「人間の判断が必要な項目」)。
+  以下は相談のための材料で、実行計画ではない。
 - **PR-C(別リポジトリの提案)**: barefootjs overviewが`bf-compact`依存
   をやめる場合、`css/base.css`の`.peitho-slide`に`container-type: size;
   container-name: peitho-canvas`を足し、`body.bf-compact X {…}`を
@@ -373,15 +385,14 @@ kfly8からの追加要望3点(2026-09-20):
   なったら別todoとして切り出す。
 - **Phone + Same ratio as PC がPCと見分けにくい**: 2つはキャンバス寸法が
   同一なので、プレビューの見た目だけではどちらの表示か分からない
-  (スイッチの点灯とメニューのチェックだけが手がかり)。phone枠(デバイス
-  のフレーム)をプレビューに描くことを別todoとして検討する(枠を描く
-  ときは`inset-0`を使わず`top-0 right-0 bottom-0 left-0`と書く)。
+  (スイッチの点灯とメニューのチェックだけが手がかり)。→ phone枠(デバイス
+  のフレーム)を描く案を`todo/preview-phone-frame.md`(`inbox`)に切り出した。
 - **Phoneでもキャンバス幅は390にならない**: `reshapeCanvas`はデッキの幅を
   保って高さだけ伸ばすので、Tallでも幅は1280(4:3なら960)のまま。幅に
   対する`@container (max-width: …)`で分岐するデッキは、このトグルでは
   狭い側の分岐を確認できない(高さ/縦横比に対するクエリだけが発火する)。
-  幅も端末に合わせる案(390幅の実キャンバス)は、レイアウトが別物になる
-  ので別todoとして検討する。
+  → 幅も端末に合わせる案(390幅の実キャンバス)を
+  `todo/preview-phone-real-width-canvas.md`(`inbox`)に切り出した。
 - 選択中のスライドが`data-canvas="fixed"`のとき、PC/Phoneのスイッチと
   shapeメニューは操作できるがキャンバスは変わらない(スイッチの点灯と
   メニューのチェックだけが動く)。無効化やヒントの表示は必要になったら
