@@ -1,6 +1,6 @@
 ---
-status: wip
-description: プレビューでPC表示/スマホ表示を切り替えられるようにする(設計確定済み。キャンバス寸法契約 + Container Queries、実装はPR-A/PR-Bの2本で完了、後から追加したPhone内のshape選択メニューまで実装済み。実機確認が残っている)
+status: done
+description: プレビューでPC表示/スマホ表示を切り替えられるようにする(実装はマージ済み、実機のWKWebViewでも確認済み。別リポジトリの作業PR-C/PR-Dの進め方は相談待ち)
 tags: [ui, preview, viewport]
 ---
 
@@ -16,8 +16,13 @@ tags: [ui, preview, viewport]
 いなかった**。ビューアが`--peitho-canvas-height`を上書きし、デッキが
 それに反応するCSSを持てば縦長レイアウトを組める(実例: barefootjsの
 overviewデッキ)。この結論は撤回し、下の「調査結果」に訂正を残す。
-設計はFableに依頼して確定し、PR-A/PR-Bで実装した(実機確認だけが残っている。
-後から加わった要望は「方針」の末尾に記録した)。
+設計はFableに依頼して確定し、PR-A/PR-B(と後から加わった要望)を
+スタックPR #68 / #69 / #70として実装し、2026-09-21にマージ済み(マージ
+コミット`4377e59`)。実機のWKWebViewでの確認も2026-09-21に済んだ
+(「完了条件」に観測値を記録した)。別リポジトリの作業(PR-C/PR-D)の
+進め方の相談は、この台帳の範囲外として先送り事項に残した。後から加わった
+要望は「方針」の末尾に記録した。Studio内で完結する先送り事項(phone枠・実幅キャンバス)は、
+kfly8の判断(2026-09-21)で起票しない。欲しくなってから考える。
 
 ## スコープ
 
@@ -331,30 +336,55 @@ kfly8からの追加要望3点(2026-09-20):
       Phone(メニュー開)の3状態を目視確認済み。メニューはPresentの
       メニューと同じ見た目で、画面内に収まりキャンバスより手前に出る)
 
-人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機(`run-peitho-studio` skill)での確認: WKWebViewで`@container`
-      と`ResizeObserver`の再フィットが期待どおり動くか(Chromeでしか
-      検証していない)。Tauri v2のmacOS下限でContainer Queriesが使えるか
-- [ ] `container-type: size`(layout containmentを伴う)が実デッキの
-      `.peitho-slide`に副作用を出さないか。`position: relative`は
-      組み込みテーマ(`src-tauri/src/engine/builtin/base.css`)ではページ
-      番号ありの場合だけで、barefootjs overviewのテーマは常時付いている。
-      layout containmentは絶対配置の子孫のcontaining blockを変えるため、
-      両方のテーマの実デッキで見た目が変わらないか確認する
-- [ ] PR-C(barefootjs側の移行提案)を出すか / PR-D(`kfly8/peitho`の
-      docs・`themes/base.css`)を出すか
-- [ ] 実機(WKWebView)での確認(2026-09-20の追加要望分。Chromeでしか
-      検証していない): ヘッダーのインラインSVGアイコン(PC/Phone、
-      メニュー内のTall/Same ratio as PC)が潰れず描画され、lit/unlitが
-      見分けられるか。ヘッダー行の下線が消えているか。▾のメニューが
-      WKWebViewでも切れず、実デッキ(`z-index`を持つテーマを含む)の
-      キャンバスより手前に出るか。外側クリック・Escで閉じるか。Phoneで
-      shapeを切り替えたとき`--peitho-thumb-scale`が追従し、スライドが
-      再フィットされるか。Phone + Same ratio as PCがPCと同一の見た目に
-      なることを承知の上で、phone枠の描画(別todo候補)を要するか
+人間の判断が必要な項目(2026-09-21にすべて決着):
+- [x] 実機(WKWebView)での確認。`e2e-tauri/`の仕組み(`tauri-plugin-
+      playwright`。実ウィンドウの`WKWebView.evaluateJavaScript`を直接呼ぶ。
+      OSレベルのGUI操作は使わない)で、マージ後の`4377e59`を検証した。
+      環境はmacOS 26.6.2、Tauri 2.11.5、wry 0.55.1(1台のみ)。プローブ
+      デッキ(`.peitho-slide { container-type: size }`と`@container
+      (max-aspect-ratio: 1)`で`h1`が青→赤になる)で観測した値:
+      - `@container`がShadow DOM内で発火する: PC=`rgb(0,0,255)`、
+        Phone(Tall)=`rgb(255,0,0)`、Same ratio as PC=青、PCに戻す=青。
+        `data-canvas="fixed"`のスライドはTall/Same ratioどちらでも青で
+        computedサイズ1280x720。
+      - hostの`--peitho-canvas-height`: PC=`720px`、Tall=`2770px`、
+        Same ratio=`720px`、fixed=`720px`。サムネイルは全時点で`720px`。
+      - `--peitho-thumb-scale`は期待式`min(内容幅/canvas幅, 内容高/canvas
+        高)*1.02`と全スナップショットで一致(PC=0.66619、Tall=0.27986)。
+        トグルと同じタスク内では旧値のまま、約1ms後のResizeObserver
+        コールバックで新値になり、最初のrAFより前だった。
+      - ヘッダー: `svg`2つ(各14x14)・文言なし・`aria-label`と各`title`あり。
+        ヘッダー行の`border-bottom-width`は`0px`、ピルの枠線は残る。▾は
+        PCで`display:none`、Phoneで表示。
+      - ▾メニュー: 開くと矩形がビューポート内に収まり、五点の
+        `elementFromPoint`がすべてメニュー内(デッキの`z-index: 2147483647`
+        でも手前)。Esc・外側クリック・項目選択・PCへの切替で閉じる。
+      - スクリーンショット(2880x1800)を目視: アイコンは潰れず、選択中
+        (黒地・白線)と非選択(白地・灰線)を見分けられる。
+      限界: 1台・現行macOSのみ(Container Queriesが使えるmacOS/WebKitの
+      下限は確定していない。「Safari 16.0+」は記憶ベースのまま)。プラグイン
+      のクリック・Escは`el.click()`や合成イベントで、信頼できる実マウス・
+      実キーボードのイベントではない。ウィンドウが遮蔽されると`rAF`と
+      `ResizeObserver`が止まる(隠れた状態から戻したときの再フィットは未観測)。
+- [x] `container-type: size`の副作用: Studio自身は`container-type`を設定
+      しない(`main`を検索して確認)。デッキがopt-inしたときにだけ効く
+      ので、この台帳の対象外。PR-C/PR-Dの検討に移す(`position: relative`は
+      組み込みテーマではページ番号ありの場合だけ、barefootjs overviewの
+      テーマは常時。layout containmentは絶対配置の子孫のcontaining block
+      を変える)。Studioが全デッキのcanvas hostに足した`isolation: isolate`
+      は、上のプローブデッキ(サムネイル・プレビュー)で描画が崩れないこと
+      を確認した。
+- [x] PR-C / PR-D: この台帳の範囲外(「やらないこと」に入れていた)。
+      **方向としてはやりたい**(kfly8, 2026-09-21)が、別リポジトリの作業の
+      進め方は相談してから決める。この台帳ではタスク化しない(下の先送り事項)。
+- [x] phone枠の描画は今は要しない(kfly8, 2026-09-21。起票もしない。欲しく
+      なってから考える)。
 
 ## 先送り事項
 
+- **PR-C / PR-Dの扱い(2026-09-21)**: 方向としてはやりたいが、別リポジトリ
+  の作業の進め方は相談してから決める(上の「人間の判断が必要な項目」)。
+  以下は相談のための材料で、実行計画ではない。
 - **PR-C(別リポジトリの提案)**: barefootjs overviewが`bf-compact`依存
   をやめる場合、`css/base.css`の`.peitho-slide`に`container-type: size;
   container-name: peitho-canvas`を足し、`body.bf-compact X {…}`を
@@ -373,15 +403,15 @@ kfly8からの追加要望3点(2026-09-20):
   なったら別todoとして切り出す。
 - **Phone + Same ratio as PC がPCと見分けにくい**: 2つはキャンバス寸法が
   同一なので、プレビューの見た目だけではどちらの表示か分からない
-  (スイッチの点灯とメニューのチェックだけが手がかり)。phone枠(デバイス
-  のフレーム)をプレビューに描くことを別todoとして検討する(枠を描く
-  ときは`inset-0`を使わず`top-0 right-0 bottom-0 left-0`と書く)。
+  (スイッチの点灯とメニューのチェックだけが手がかり)。→ phone枠(デバイス
+  のフレーム)を描く案は、起票しない(kfly8, 2026-09-21。欲しくなって
+  から考える)。
 - **Phoneでもキャンバス幅は390にならない**: `reshapeCanvas`はデッキの幅を
   保って高さだけ伸ばすので、Tallでも幅は1280(4:3なら960)のまま。幅に
   対する`@container (max-width: …)`で分岐するデッキは、このトグルでは
   狭い側の分岐を確認できない(高さ/縦横比に対するクエリだけが発火する)。
-  幅も端末に合わせる案(390幅の実キャンバス)は、レイアウトが別物になる
-  ので別todoとして検討する。
+  → 幅も端末に合わせる案(390幅の実キャンバス)は、レイアウトが別物に
+  なるので、起票しない(kfly8, 2026-09-21。欲しくなってから考える)。
 - 選択中のスライドが`data-canvas="fixed"`のとき、PC/Phoneのスイッチと
   shapeメニューは操作できるがキャンバスは変わらない(スイッチの点灯と
   メニューのチェックだけが動く)。無効化やヒントの表示は必要になったら
@@ -393,3 +423,23 @@ kfly8からの追加要望3点(2026-09-20):
   keyとcanvas高さの2つのmemoがそれぞれ通知するため)。どちらの回も新しい
   canvasで一貫した値を書くので見た目は正しいが、レイアウトの`<script>`は
   その分2回実行される。実害が出たらbatch化を検討する。
+- **実機検証(2026-09-21)で人の目・手でしか確かめていないこと**(実害が出たら
+  起票する): 信頼できる実マウス・実キーボードでの操作感(Tabのフォーカス、
+  Spaceでの切替、フォーカスリング)。ダークモードなどシステム外観違いの見た
+  目(検証時の外観は記録していない)。狭いウィンドウでのメニュー(`w-96`=
+  384px)が切れないか(1440px幅でしか試していない)。macOS 26.6.2より古い
+  環境での`@container`。
+- **メニューが開いている間、実マウスでPCセグメントを押すと、最初のクリック
+  はバックドロップが受けてメニューを閉じるだけ**(全面のバックドロップが
+  トグルの手前にあるため。`elementFromPoint`で確認)。PCへ切り替えるには
+  もう一度押す。外側クリックで閉じる既存メニューと同じ作りで、現状は仕様と
+  して受け入れている。
+- **Phone(Tall)のスライド背景に、ごく薄い斜めの明暗が見える**(実機の
+  スクリーンショット。組み込みテーマに`gradient`は無く、DOM検査でも
+  異常は出ていない。原因不明で、機能への影響は見えない)。自分の実機で
+  気になるようなら調べる。
+- **`e2e-tauri/tests/present-double-click.tauri.e2e.ts`が古いセレクタで
+  赤**(今回のトグルとは無関係): `header button`の0番目が、後から
+  `DeckHeader.tsx`に足されたdeck variantスイッチャーの▾(class `hidden`で
+  常時マウント)になっていて、`expected "▾" to contain "Present"`で落ちる。
+  Presentをクリックする前に落ちるので`peitho present`は起動していない。

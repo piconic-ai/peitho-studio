@@ -1,4 +1,4 @@
-// The preview pane's PC / phone toggle (todo/preview-viewport-toggle.md).
+// The preview pane's PC / phone toggle (todo/archive/preview-viewport-toggle.md).
 // Pressing it hands the preview slide a phone-shaped canvas: the deck's width
 // grown to the phone's proportion, fed to the slide host as
 // `--peitho-canvas-width/height`. A deck whose CSS branches on the canvas's
