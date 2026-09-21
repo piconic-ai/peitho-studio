@@ -5,7 +5,9 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
 import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
-import { clampMenuPosition } from '../domain/geometry'
+import { clampMenuPosition, type Size } from '../domain/geometry'
+import { deviceForShape, effectiveCanvas } from '../domain/viewport'
+import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
@@ -264,6 +266,36 @@ export function Studio() {
   // what lets the preview pane (below) depend on "which slide is
   // selected" without also depending on "has its content changed".
   const selectedSlideKey = createMemo<string | null>(() => selectedSlide()?.key ?? null)
+  // The preview's header (and the phone shape menu in it) is hidden while no
+  // slide is selected — a draft placeholder or no slide at all — so an open
+  // menu goes with it instead of reappearing already open on the next
+  // selection.
+  createEffect(() => {
+    if (selectedSlideKey() === null) ui.closePhoneShapeMenu()
+  })
+
+  // The canvas the *preview pane* lays the selected slide out on: the
+  // deck's own, or (phone display, tall shape) the same width grown to a
+  // phone's proportion — see `domain/viewport.ts`. Phone display with the
+  // deck-ratio shape is the deck's own canvas again. The thumbnail list and
+  // layout picker keep reading `render.canvasWidth()/canvasHeight()`
+  // directly.
+  //
+  // Number memos, not one memo of a `Size`: `effectiveCanvas` returns a
+  // fresh object every call, and `SlidePreview`'s mount effect would
+  // re-mount on every notification. `selectedSlideIsFixedCanvas` reads the
+  // fragment, so it re-runs on every edit of the selected slide; as its own
+  // boolean memo it notifies nobody until the opt-out really flips.
+  const selectedSlideIsFixedCanvas = createMemo<boolean>(() => {
+    const key = selectedSlideKey()
+    return key !== null && hasFixedCanvas(render.fragmentOf(key))
+  })
+  function previewCanvas(): Size {
+    const deck = { width: render.canvasWidth(), height: render.canvasHeight() }
+    return effectiveCanvas(deck, ui.viewportMode(), deviceForShape(ui.phoneShape(), deck), selectedSlideIsFixedCanvas())
+  }
+  const previewCanvasWidth = createMemo<number>(() => previewCanvas().width)
+  const previewCanvasHeight = createMemo<number>(() => previewCanvas().height)
 
   // One `CSSStyleSheet` shared by every Shadow DOM thumbnail canvas, so a
   // theme change costs a single `replaceSync` here instead of a re-parse
@@ -1027,6 +1059,16 @@ export function Studio() {
     const unlistenMenuNew = deckIpc.onMenuNewDeck(() => { void handleNewDeck() })
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // While the phone shape menu is open, Escape closes it and every other
+      // shortcut waits: arrows would move the selection, and Delete or Cmd+X
+      // would act on a slide behind the open menu.
+      if (ui.phoneShapeMenuOpen()) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          ui.closePhoneShapeMenu()
+        }
+        return
+      }
       if (event.key === 'Escape' && ui.contextMenu().kind !== 'closed') {
         event.preventDefault()
         ui.closeContextMenu()
@@ -1249,8 +1291,15 @@ export function Studio() {
           hasDeck={Boolean(render.assetBaseUrl())}
           canvasFragmentOf={render.canvasFragmentOf}
           slideStylesheet={getSlideStylesheet}
-          canvasWidth={render.canvasWidth()}
-          canvasHeight={render.canvasHeight()}
+          viewportMode={ui.viewportMode()}
+          onToggleViewportMode={ui.toggleViewportMode}
+          phoneShape={ui.phoneShape()}
+          phoneShapeMenuOpen={ui.phoneShapeMenuOpen()}
+          onTogglePhoneShapeMenu={ui.togglePhoneShapeMenu}
+          onClosePhoneShapeMenu={ui.closePhoneShapeMenu}
+          onSelectPhoneShape={ui.selectPhoneShape}
+          canvasWidth={previewCanvasWidth()}
+          canvasHeight={previewCanvasHeight()}
         />
       </div>
       )}

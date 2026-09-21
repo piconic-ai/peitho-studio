@@ -1,3 +1,7 @@
+// Pure string-level readers of a slide fragment's HTML: absolutizing its
+// asset URLs (first half of this file) and reading its root `<section>`'s
+// `data-canvas` opt-out (`hasFixedCanvas`, at the bottom).
+//
 // A slide fragment's only relative references are `<img src="assets/...">`,
 // a `<video poster="assets/...">`/`<source src="assets/...">`, and a layout
 // author's own `<script src="assets/...">` — a Shadow root has no
@@ -38,4 +42,61 @@ export function absolutizeFragmentUrls(html: string, baseUrl: string): string {
       ? part.replace(SCRIPT_OPEN_TAG_PATTERN, openTag => absolutizeSrcAttributes(openTag, baseUrl))
       : absolutizeSrcAttributes(part, baseUrl)))
     .join('')
+}
+
+// A slide opts out of the preview's phone-shaped canvas with
+// `data-canvas="fixed"` on its root `<section>` (a layout authored in
+// absolute 16:9 coordinates). The attribute is a convention of the barefootjs
+// overview deck (its `narration.ts` honors it) that Studio also honors;
+// peitho-core itself does not define it. Only that one start tag is read: a
+// layout's leading comment often documents the attribute in prose, and a
+// child element may carry the same attribute for its own reasons — neither
+// is the slide's own opt-out.
+//
+// Scope: the fragment is expected to open with its root `<section>` after any
+// comments, as every built-in layout and the barefootjs overview's do
+// (peitho-core itself only requires a layout to hold exactly one
+// `<section>`, so a layout that puts a `<style>` or wrapper element before
+// it is not detected). The start tag is read as well-formed HTML, without
+// entity decoding: malformed tags may be read differently than a browser
+// would.
+
+/** Whitespace and HTML comments a fragment may open with (peitho-core keeps
+ * a layout's leading `<!-- ... -->` block ahead of its root element). */
+const LEADING_TRIVIA_PATTERN = /^(?:\s|<!--[\s\S]*?-->)*/
+
+/** The root `<section>`'s start tag, capturing its attribute text. A quoted
+ * value may contain `>`, so quotes are consumed as units. The lookahead
+ * keeps `<section-x>` and `<sections>` from matching. */
+const SECTION_START_TAG_PATTERN = /^<section(?=[\s/>])((?:[^>"']|"[^"]*"|'[^']*')*)>/i
+
+/** One attribute: name, then an optional double-quoted, single-quoted or
+ * unquoted value. Read left to right, so a quoted value is never mistaken
+ * for further attributes. */
+const ATTRIBUTE_PATTERN = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g
+
+/** The attribute text of the fragment's root `<section>` start tag, or null
+ * when the fragment does not open with one. */
+function rootSectionAttributes(fragmentHtml: string): string | null {
+  const body = fragmentHtml.replace(LEADING_TRIVIA_PATTERN, '')
+  return SECTION_START_TAG_PATTERN.exec(body)?.[1] ?? null
+}
+
+/** An attribute's value ('' when it has none), or null when absent. Names
+ * are case-insensitive and the first of a duplicated name wins, as in an
+ * HTML parser. */
+function attributeValue(attributes: string, name: string): string | null {
+  for (const match of attributes.matchAll(ATTRIBUTE_PATTERN)) {
+    if (match[1].toLowerCase() === name) return match[2] ?? match[3] ?? match[4] ?? ''
+  }
+  return null
+}
+
+/** Whether the slide's root `<section>` carries `data-canvas="fixed"`. The
+ * value is matched exactly (`FIXED` is not `fixed`), as the CSS selector
+ * `section[data-canvas="fixed"]` (the barefootjs overview's own check)
+ * would. */
+export function hasFixedCanvas(fragmentHtml: string): boolean {
+  const attributes = rootSectionAttributes(fragmentHtml)
+  return attributes !== null && attributeValue(attributes, 'data-canvas') === 'fixed'
 }

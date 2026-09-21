@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { absolutizeFragmentUrls } from './slideFragment'
+import fc from 'fast-check'
+import { absolutizeFragmentUrls, hasFixedCanvas } from './slideFragment'
+import { fixedCanvasExamples } from './slideFragment.examples'
+import { isExhaustivelyAccountedFor } from './spec'
 
 describe('absolutizeFragmentUrls', () => {
   test('spec: a relative assets/ src is resolved against the base', () => {
@@ -97,5 +100,196 @@ describe('absolutizeFragmentUrls', () => {
   test('adversarial: an attribute merely ending in "poster" is not mistaken for poster', () => {
     const html = '<div data-poster="assets/a.png"></div>'
     expect(absolutizeFragmentUrls(html, 'http://localhost/')).toBe(html)
+  })
+})
+
+describe('hasFixedCanvas examples', () => {
+  test.each(fixedCanvasExamples.automated.map(e => [`${e.id}: Given ${e.given}, when ${e.when}, then ${e.then}`, e] as const))(
+    'example: %s',
+    (_title, example) => {
+      expect(hasFixedCanvas(example.state)).toBe(example.expect)
+    },
+  )
+
+  test('spec: every example is either automated or carries a manual reason', () => {
+    expect(isExhaustivelyAccountedFor(fixedCanvasExamples)).toBe(true)
+  })
+})
+
+describe('hasFixedCanvas', () => {
+  const withAttributes = (attributes: string) => `<section ${attributes}><p>body</p></section>`
+
+  // The typical cases (fixed / ordinary root, leading comment mentioning the
+  // attribute, attribute only on a child) are the examples run above.
+
+  test('spec: the attribute may sit anywhere among the root\'s other attributes', () => {
+    expect(hasFixedCanvas(withAttributes('data-canvas="fixed" class="a" data-slide-key="k"'))).toBe(true)
+    expect(hasFixedCanvas(withAttributes('class="a" data-canvas="fixed" data-slide-key="k"'))).toBe(true)
+    expect(hasFixedCanvas(withAttributes('class="a" data-slide-key="k" data-canvas="fixed"'))).toBe(true)
+  })
+
+  test('spec: a real rendered arcade fragment (leading comment, script child) is fixed', () => {
+    const html = '<!--\n  Full-bleed slide.\n\n  data-canvas="fixed": the play field is authored in 1280x720 coordinates.\n-->\n'
+      + '<section class="peitho-slide layout-arcade" data-ground="dark" data-canvas="fixed" data-slide-key="what-arcade">\n'
+      + '  <div class="bf-mount arcade-mount" data-bf="Arcade"></div>\n'
+      + '  <script type="module" src="assets/mount.js"></script>\n</section>\n'
+    expect(hasFixedCanvas(html)).toBe(true)
+  })
+
+  test('adversarial: a whitespace-only fragment is not fixed', () => {
+    expect(hasFixedCanvas(' \n\t ')).toBe(false)
+  })
+
+  test('adversarial: the attribute only on a nested <section> is not fixed', () => {
+    expect(hasFixedCanvas('<section class="peitho-slide"><section data-canvas="fixed"></section></section>')).toBe(false)
+  })
+
+  test('adversarial: a fragment that does not open with a <section> is not fixed, even if a later tag carries the attribute', () => {
+    // The <script> case documents a limit rather than endorsing it: every
+    // built-in layout opens with its root <section>, so this shape is not
+    // expected from peitho-core.
+    for (const html of [
+      '<div data-canvas="fixed"></div>',
+      '<article data-canvas="fixed"></article>',
+      'stray <section data-canvas="fixed"></section>',
+      '<script>1</script><section data-canvas="fixed"></section>',
+    ]) {
+      expect(hasFixedCanvas(html)).toBe(false)
+    }
+  })
+
+  test('adversarial: single-quoted, unquoted and spaced-out values are the same attribute', () => {
+    expect(hasFixedCanvas(withAttributes(`data-canvas='fixed'`))).toBe(true)
+    expect(hasFixedCanvas(withAttributes('data-canvas=fixed'))).toBe(true)
+    expect(hasFixedCanvas(withAttributes('data-canvas = "fixed"'))).toBe(true)
+    expect(hasFixedCanvas(withAttributes(`data-canvas\n=\n'fixed'`))).toBe(true)
+  })
+
+  test('adversarial: the tag and attribute names are case-insensitive, like HTML', () => {
+    expect(hasFixedCanvas('<SECTION DATA-CANVAS="fixed"></SECTION>')).toBe(true)
+    expect(hasFixedCanvas('<Section Data-Canvas="fixed"></Section>')).toBe(true)
+  })
+
+  test('adversarial: the value is case-sensitive, like the CSS selector section[data-canvas="fixed"]', () => {
+    expect(hasFixedCanvas(withAttributes('data-canvas="FIXED"'))).toBe(false)
+    expect(hasFixedCanvas(withAttributes('data-canvas="Fixed"'))).toBe(false)
+  })
+
+  test('adversarial: any value other than exactly "fixed" is not fixed', () => {
+    for (const value of ['', 'fixed ', ' fixed', 'fixed-ish', 'fixedx', 'true', 'fix']) {
+      expect(hasFixedCanvas(withAttributes(`data-canvas="${value}"`))).toBe(false)
+    }
+  })
+
+  test('adversarial: the attribute with no value, or an empty one, is not fixed', () => {
+    expect(hasFixedCanvas('<section data-canvas></section>')).toBe(false)
+    expect(hasFixedCanvas('<section data-canvas=""></section>')).toBe(false)
+    expect(hasFixedCanvas('<section data-canvas=></section>')).toBe(false)
+  })
+
+  test('adversarial: lookalike attribute names are not data-canvas', () => {
+    for (const name of ['data-canvasx', 'xdata-canvas', 'data-canvas-mode', 'canvas', 'data_canvas', 'data-canvas:x']) {
+      expect(hasFixedCanvas(withAttributes(`${name}="fixed"`))).toBe(false)
+    }
+  })
+
+  test('adversarial: lookalike tag names are not <section>', () => {
+    for (const tag of ['sectionx', 'section-x', 'sections', 'sect']) {
+      expect(hasFixedCanvas(`<${tag} data-canvas="fixed"></${tag}>`)).toBe(false)
+    }
+  })
+
+  test('adversarial: data-canvas="fixed" inside another attribute\'s value is not the attribute', () => {
+    expect(hasFixedCanvas(`<section title='data-canvas="fixed"'></section>`)).toBe(false)
+    expect(hasFixedCanvas(`<section title="data-canvas='fixed'"></section>`)).toBe(false)
+    expect(hasFixedCanvas('<section data-note="x data-canvas=fixed"></section>')).toBe(false)
+  })
+
+  test('adversarial: a ">" inside a quoted value does not end the start tag early', () => {
+    expect(hasFixedCanvas('<section title="a>b" data-canvas="fixed"></section>')).toBe(true)
+    expect(hasFixedCanvas(`<section title='a>b' data-canvas='fixed'></section>`)).toBe(true)
+  })
+
+  test('adversarial: with a duplicated attribute the first one wins, as in an HTML parser', () => {
+    expect(hasFixedCanvas(withAttributes('data-canvas="fixed" data-canvas="flex"'))).toBe(true)
+    expect(hasFixedCanvas(withAttributes('data-canvas="flex" data-canvas="fixed"'))).toBe(false)
+  })
+
+  test('adversarial: newlines and tabs between attributes are fine', () => {
+    expect(hasFixedCanvas('<section\n  class="peitho-slide"\n\tdata-canvas="fixed"\n>\n</section>')).toBe(true)
+  })
+
+  test('adversarial: a self-closing start tag still reads its attributes', () => {
+    expect(hasFixedCanvas('<section data-canvas="fixed"/>')).toBe(true)
+  })
+
+  test('adversarial: a start tag that never closes is not fixed', () => {
+    expect(hasFixedCanvas('<section data-canvas="fixed"')).toBe(false)
+    expect(hasFixedCanvas('<section data-canvas="fixed')).toBe(false)
+    expect(hasFixedCanvas('<section')).toBe(false)
+  })
+
+  test('adversarial: a string inside a <script> that looks like the root tag is not fixed', () => {
+    const html = `<section class="peitho-slide"><script>const s = '<section data-canvas="fixed">'</script></section>`
+    expect(hasFixedCanvas(html)).toBe(false)
+  })
+
+  test('adversarial: several leading comments and blank lines are all skipped', () => {
+    const html = '\n<!-- one -->\n\n<!-- two: data-canvas="fixed" -->  \t<!-- three -->\n<section data-canvas="fixed"></section>'
+    expect(hasFixedCanvas(html)).toBe(true)
+    expect(hasFixedCanvas(html.replace('<section data-canvas="fixed">', '<section>'))).toBe(false)
+  })
+
+  test('adversarial: a comment that never closes swallows the rest, so nothing is fixed', () => {
+    expect(hasFixedCanvas('<!-- <section data-canvas="fixed"></section>')).toBe(false)
+  })
+
+  test('adversarial: a comment after the root tag is irrelevant', () => {
+    expect(hasFixedCanvas('<section class="peitho-slide"><!-- data-canvas="fixed" --></section>')).toBe(false)
+  })
+
+  test('adversarial: emoji, CJK and other non-ASCII text around the tag does not confuse it', () => {
+    expect(hasFixedCanvas('<!-- 日本語のコメント 🎮 --><section data-canvas="fixed" data-title="🎮 ゲーム"></section>')).toBe(true)
+  })
+
+  test('adversarial: pathological input finishes quickly instead of backtracking forever', () => {
+    const started = performance.now()
+    hasFixedCanvas(`<section ${'a="'.repeat(20000)}`)
+    hasFixedCanvas(`<section ${`a='`.repeat(20000)}`)
+    hasFixedCanvas('<!--'.repeat(20000))
+    hasFixedCanvas(' '.repeat(200000))
+    hasFixedCanvas(`<section ${'a '.repeat(100000)}`)
+    hasFixedCanvas(`<section ${'a="b" '.repeat(50000)}>`)
+    // Takes tens of milliseconds; a backtracking regression would take
+    // minutes, so the budget only has to be loose enough not to flake on a
+    // loaded machine.
+    expect(performance.now() - started).toBeLessThan(4000)
+  })
+
+  test('property: never throws, whatever string it is handed', () => {
+    fc.assert(fc.property(fc.string({ unit: 'binary' }), html => {
+      expect(typeof hasFixedCanvas(html)).toBe('boolean')
+    }))
+  })
+
+  test('property: only the root start tag decides — whatever follows it changes nothing', () => {
+    fc.assert(fc.property(
+      fc.constantFrom('<section data-canvas="fixed">', '<section class="peitho-slide">'),
+      fc.string({ unit: 'binary' }),
+      (startTag, tail) => {
+        expect(hasFixedCanvas(startTag + tail)).toBe(startTag.includes('data-canvas'))
+      },
+    ))
+  })
+
+  test('property: a leading comment, whatever it says, changes nothing', () => {
+    const commentBody = fc.string({ unit: 'binary' }).filter(text => !text.includes('-->'))
+    fc.assert(fc.property(
+      fc.constantFrom('<section data-canvas="fixed"></section>', '<section></section>'),
+      commentBody,
+      (slide, body) => {
+        expect(hasFixedCanvas(`<!--${body}-->${slide}`)).toBe(hasFixedCanvas(slide))
+      },
+    ))
   })
 })

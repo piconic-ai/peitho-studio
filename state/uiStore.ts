@@ -3,6 +3,7 @@ import { type DragState } from '../domain/drag'
 import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withLayoutFitResult, withLayoutNotice } from '../domain/contextMenu'
 import { type LayoutVerdict } from '../domain/layoutFit'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
+import { type PhoneShape, type ViewportMode, toggledViewportMode } from '../domain/viewport'
 
 const SLIDE_LIST_WIDTH = 176
 const EDITOR_WIDTH = 420
@@ -129,6 +130,43 @@ export function createUiStore() {
   // can be active").
   const [editingSectionIndex, setEditingSectionIndex] = createSignal<number | null>(null)
 
+  // Whether the preview pane shows the deck's own canvas or a phone-shaped
+  // one. Session-only, like the two column widths above. The setter stays
+  // private: callers can only flip the mode, not assign one.
+  const [viewportMode, setViewportMode] = createSignal<ViewportMode>('desktop')
+  // The shape menu (the ▾ beside the Phone segment) is declared here, ahead
+  // of the flip below, because leaving phone display closes it. It only
+  // exists while phone display is on: `togglePhoneShapeMenu` never opens it
+  // in PC display, so "menu open in PC display" is not a state this store
+  // can be in. `variantMenuOpen` above is the same kind of dropdown (an
+  // overlay closes it on an outside click).
+  const [phoneShapeMenuOpen, setPhoneShapeMenuOpen] = createSignal(false)
+  function toggleViewportMode(): void {
+    // Close first: an effect that reads both signals must never see PC
+    // display with the menu still open. (Entering phone display, the menu is
+    // already closed, so this is a no-op there.)
+    setPhoneShapeMenuOpen(false)
+    setViewportMode(toggledViewportMode)
+  }
+  function togglePhoneShapeMenu(): void {
+    setPhoneShapeMenuOpen(open => viewportMode() === 'mobile' && !open)
+  }
+  function closePhoneShapeMenu(): void {
+    setPhoneShapeMenuOpen(false)
+  }
+
+  // Which canvas phone display gives: the phone's tall proportion, or the
+  // deck's own (the same size as PC display). Independent of `viewportMode`,
+  // so the choice survives a trip back to PC display. Session-only, and the
+  // setter stays private for the same reason.
+  const [phoneShape, setPhoneShape] = createSignal<PhoneShape>('portrait')
+  /** A pick from the shape menu: the items each name the shape they choose,
+   * and choosing one closes the menu. */
+  function selectPhoneShape(shape: PhoneShape): void {
+    setPhoneShape(shape)
+    setPhoneShapeMenuOpen(false)
+  }
+
   return {
     dragState, setDragState, draggedIndex, dragOverGap, dragDeltaY,
     contextMenu, setContextMenu, closeContextMenu, toggleLayoutPicker, contextMenuAppendIndex,
@@ -139,5 +177,7 @@ export function createUiStore() {
     variantMenuOpen, setVariantMenuOpen,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth,
     editingSectionIndex, setEditingSectionIndex,
+    viewportMode, toggleViewportMode, phoneShape, selectPhoneShape,
+    phoneShapeMenuOpen, togglePhoneShapeMenu, closePhoneShapeMenu,
   }
 }

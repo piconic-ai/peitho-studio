@@ -27,8 +27,14 @@ import { containScale, type Size } from '../domain/geometry'
 // sets no `text-align` for this to override. Applies to both modes (unlike
 // `THUMBNAIL_CONSTRAINT_CSS` below) since any host's ancestor chain could
 // carry an inherited `text-align`, not just a thumbnail row's `<button>`.
+// `isolation: isolate` is the same kind of guard for stacking: a deck's own
+// `z-index` (a positioned `.peitho-slide`, or content it adds) stays inside
+// the host instead of competing with the app's popups above it — a large one
+// covered the preview's phone shape menu and its click-catching overlay. (The
+// slide's own `transform` only contains what is inside it, not its own
+// `z-index`.)
 const BASE_LAYOUT_CSS = `
-  :host { display: flex; align-items: center; justify-content: center; overflow: hidden; text-align: left; }
+  :host { display: flex; align-items: center; justify-content: center; overflow: hidden; text-align: left; isolation: isolate; }
   .peitho-slide { flex-shrink: 0; transform: scale(var(--peitho-thumb-scale, 1)); transform-origin: center center; }
 `
 // `mode: 'thumbnail'` only — a thumbnail/layout-picker host is itself the
@@ -290,9 +296,16 @@ function handleResize(entries: ResizeObserverEntry[], observer: ResizeObserver):
  * `ResizeObserver` shared by every mounted canvas rather than one each.
  * `canvas` is the deck's native slide size, not `host`'s own box. Fitting
  * against `contentRect` keeps a transform applied to `host` itself (the
- * `scale(0.95)` a drag puts on a row) out of the measurement. */
+ * `scale(0.95)` a drag puts on a row) out of the measurement.
+ *
+ * Safe to call again for an already-observed `host` with a different
+ * `canvas` (the preview's PC/phone toggle does), which re-fits the scale
+ * without waiting for `host` to resize. `unobserve()` comes first because an
+ * observer only reports a size that differs from the one it last reported,
+ * and a bare repeated `observe()` does not reset that (Chrome 153). */
 export function observeCanvasScale(host: HTMLElement, canvas: Size): void {
   canvasSizes.set(host, canvas)
   sharedObserver ??= new ResizeObserver(handleResize)
+  sharedObserver.unobserve(host)
   sharedObserver.observe(host)
 }

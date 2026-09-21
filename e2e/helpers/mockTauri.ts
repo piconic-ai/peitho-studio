@@ -12,6 +12,7 @@ import { splitSlides, extractPageComment, extractHeadingText, slugifyTitle, uniq
 import type { Manifest, ManifestSection, ManifestSlide, RenderPayload } from '../../domain/render'
 import type { DeckVariant } from '../../domain/deckVariants'
 import type { LayoutVerdict } from '../../domain/layoutFit'
+import type { Size } from '../../domain/geometry'
 
 export interface MockDeck {
   source: string
@@ -75,9 +76,9 @@ export interface MockDeck {
    * `commandError` then fails — so a test can assert on which commands a
    * UI action actually sent. */
   onInvoke?: (cmd: string, args: Record<string, unknown>) => void
-  /** Layout names `preview_layouts` lists (each with an empty fragment, so
-   * the picker shows name-only cards) — defaults to none ("No layouts
-   * found"). */
+  /** Layout names `preview_layouts` lists (each with `layoutFragment`,
+   * empty by default, so the picker shows name-only cards) — defaults to
+   * none ("No layouts found"). */
   layouts?: string[]
   /** What `check_slide_layouts` answers for the given source/slide index —
    * defaults to `null` (nothing to judge, every layout stays choosable).
@@ -100,13 +101,29 @@ export interface MockDeck {
    * default template can't produce (e.g. an embedded `<script>`, testing
    * `dom/slideCanvas.ts`'s script-execution fix). */
   fragmentFor?: (title: string) => string
+  /** The deck's theme CSS (the payload's `css`) — defaults to a bare
+   * `.peitho-slide { color: black; }`, which does not size the slide. Set it
+   * to exercise CSS that reacts to the canvas's own shape (an `@container`
+   * rule on `.peitho-slide`, which needs the same `width`/`height` from
+   * `--peitho-canvas-width/height` that the real theme gives it). */
+  css?: string
+  /** The deck's native canvas size (the manifest's `canvasWidth/Height`) —
+   * defaults to 16:9, 1280x720. peitho-core only produces that or 4:3
+   * (960x720). */
+  canvas?: Size
+  /** The fragment every `preview_layouts` entry carries — defaults to an
+   * empty one (the picker then draws name-only cards and mounts no canvas).
+   * Set it to give the picker real slide canvases to inspect. */
+  layoutFragment?: string
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-function buildManifest(source: string, fragmentFor: (title: string) => string): { manifest: Manifest; fragments: Record<string, string> } {
+const DEFAULT_CANVAS: Size = { width: 1280, height: 720 }
+
+function buildManifest(source: string, fragmentFor: (title: string) => string, canvas: Size): { manifest: Manifest; fragments: Record<string, string> } {
   const ranges = splitSlides(source)
   const keys: string[] = []
   const slides: ManifestSlide[] = []
@@ -147,16 +164,18 @@ function buildManifest(source: string, fragmentFor: (title: string) => string): 
   const fragments: Record<string, string> = {}
   for (const s of slides) fragments[s.key] = fragmentFor(s.text.title)
   const manifest: Manifest = {
-    title: 'Fake Deck', slideCount: slides.length, canvasWidth: 1280, canvasHeight: 720, sections, slides,
+    title: 'Fake Deck', slideCount: slides.length, canvasWidth: canvas.width, canvasHeight: canvas.height, sections, slides,
   }
   return { manifest, fragments }
 }
 
 const DEFAULT_FRAGMENT_FOR = (title: string): string => `<section class="peitho-slide"><h1>${title}</h1></section>`
 
-function renderPayloadFor(source: string, fragmentFor: (title: string) => string): RenderPayload {
-  const { manifest, fragments } = buildManifest(source, fragmentFor)
-  return { manifest, fragments, assetBaseUrl: 'http://localhost:9/', css: '.peitho-slide { color: black; }' }
+const DEFAULT_CSS = '.peitho-slide { color: black; }'
+
+function renderPayloadFor(source: string, deck: MockDeck): RenderPayload {
+  const { manifest, fragments } = buildManifest(source, deck.fragmentFor ?? DEFAULT_FRAGMENT_FOR, deck.canvas ?? DEFAULT_CANVAS)
+  return { manifest, fragments, assetBaseUrl: 'http://localhost:9/', css: deck.css ?? DEFAULT_CSS }
 }
 
 /** Wires `page` up to open `deck.source` as a fake deck on load, and keeps
@@ -178,14 +197,14 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'take_pending_deck': return null
       case 'get_recent_decks': return deck.recentDecks ?? []
       case 'open_deck':
-        return { deckPath: deck.source, deckDir: '/fake', render: renderPayloadFor(deck.source, deck.fragmentFor ?? DEFAULT_FRAGMENT_FOR) }
+        return { deckPath: deck.source, deckDir: '/fake', render: renderPayloadFor(deck.source, deck) }
       case 'render_draft':
-        return renderPayloadFor(args.content as string, deck.fragmentFor ?? DEFAULT_FRAGMENT_FOR)
+        return renderPayloadFor(args.content as string, deck)
       case 'read_deck_source': return deck.source
       case 'save_deck_source':
         deck.source = args.content as string
         return null
-      case 'preview_layouts': return { previews: (deck.layouts ?? []).map(name => ({ name, fragment: '' })), css: '' }
+      case 'preview_layouts': return { previews: (deck.layouts ?? []).map(name => ({ name, fragment: deck.layoutFragment ?? '' })), css: '' }
       case 'list_deck_variants': return deck.deckVariants ?? []
       case 'check_slide_layouts':
         return deck.layoutVerdicts?.(args.content as string, args.slideIndex as number) ?? null
