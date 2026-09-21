@@ -3,7 +3,7 @@
 // `--peitho-canvas-width/height`; a deck whose CSS branches on the canvas's
 // own shape (`@container`) then lays itself out for a tall canvas. Phone
 // display has two shapes: the phone's tall proportion, or the deck's own
-// (`PhoneShape`, `deviceForShape`). See `todo/preview-viewport-toggle.md` for
+// (`PhoneShape`, `deviceForShape`). See `todo/archive/preview-viewport-toggle.md` for
 // the contract and its rationale.
 import type { Size } from './geometry'
 
