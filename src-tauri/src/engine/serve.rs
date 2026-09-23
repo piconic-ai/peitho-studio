@@ -168,7 +168,7 @@ fn respond(state: &Mutex<ServedState>, url: &str) -> Result<(Vec<u8>, &'static s
         // `RenderOutput::image_assets`), not by `name` alone.
         if let Some(source) = state.image_assets.get(path) {
             if let Ok(bytes) = std::fs::read(source) {
-                return Ok((bytes, image_content_type(name)));
+                return Ok((bytes, asset_content_type(name)));
             }
             return Err(404);
         }
@@ -219,7 +219,8 @@ fn image_content_type(name: &str) -> &'static str {
 }
 
 /// Beyond `image_content_type`'s images: video (a layout's own
-/// `<video>`/`<source>`) and JS (a layout's own `<script src>`). A
+/// `<video>`/`<source>`) and JS (a layout's own `<script src>`) — for
+/// both the hashed assets a render resolved and the `assets/` fallback. A
 /// `type="module"` script in particular fails to load at all under an
 /// incorrect MIME type — browsers enforce a strict JavaScript-MIME check
 /// for those, unlike a classic script.
@@ -345,6 +346,19 @@ mod tests {
             assert_eq!(bytes, b"png bytes");
             assert_eq!(content_type, "image/png");
         }
+    }
+
+    #[test]
+    fn respond_spec_a_resolved_layout_script_is_served_as_javascript() {
+        // A `type="module"` script is refused outright under a non-JS MIME
+        // type, so a layout's own `<script src>` (resolved to a hashed
+        // path like a Markdown image) must not fall into the image table.
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("mount.js");
+        std::fs::write(&source, b"export {}").unwrap();
+        let state = state_for(dir.path().to_path_buf(), HashMap::from([("assets/abc123-mount.js".to_string(), source)]));
+
+        assert_eq!(respond(&state, "/assets/abc123-mount.js").unwrap().1, "text/javascript; charset=utf-8");
     }
 
     #[test]
