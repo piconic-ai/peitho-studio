@@ -12,7 +12,7 @@ use peitho_core::phase::Parsed;
 use peitho_core::{
     build_manifest, build_theme_css, check_deck, dispatch_by_convention, manifest_json,
     parse_deck_and_transform, parse_frontmatter, render_deck, resolve_image_paths, BuildError, Deck,
-    ImageRequest, ResolvedImageAsset, ResolvedImagePath,
+    EditAnnotations, ImageRequest, LayoutAssets, Layouts, ResolvedImageAsset, ResolvedImagePath,
 };
 
 use super::assets::{self, ResolvedAssets};
@@ -104,13 +104,18 @@ pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, Str
     .map_err(|err| err.to_string())?;
 
     let mut resolver = DraftImageResolver::new(deck_dir);
-    let (resolved, image_assets) =
+    let (resolved, mut image_assets) =
         resolve_image_paths(checked, |request| resolver.resolve(request)).map_err(|err| err.to_string())?;
+    // Resolved after Markdown images so a file referenced from both dedupes
+    // onto the asset the Markdown path already registered (same order as
+    // `peitho`'s own `build_artifacts`).
+    let layout_assets = resolve_layout_assets(&layouts, &mut resolver, &mut image_assets)?;
 
     let manifest = build_manifest(&resolved, &image_assets);
     let manifest_json = manifest_json(&manifest).map_err(|err| err.to_string())?;
 
-    let rendered = render_deck(resolved, highlighter, theme_css).map_err(|err| err.to_string())?;
+    let rendered = render_deck(resolved, highlighter, theme_css, EditAnnotations::Off, &layout_assets)
+        .map_err(|err| err.to_string())?;
     let has_math = rendered.math_assets().is_some();
     let css = rendered.css().to_string();
 
@@ -126,6 +131,42 @@ pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, Str
         .collect();
 
     Ok(RenderOutput { manifest_json, fragments, css, has_math, image_assets, fonts_dir, deck_dir: deck_dir.to_path_buf() })
+}
+
+/// Resolves every deck-relative asset a layout's own HTML references
+/// (`<video src>`, `poster`, `<script src>`, ...) to its hashed
+/// `assets/<hash>-<name>` path, mirroring `peitho`'s `resolve_layout_assets`
+/// (crates/peitho/src/main.rs). Each newly seen asset is appended to
+/// `image_assets` so `engine::serve` can serve it like a Markdown image.
+fn resolve_layout_assets(
+    layouts: &Layouts,
+    resolver: &mut DraftImageResolver,
+    image_assets: &mut Vec<ResolvedImageAsset>,
+) -> Result<LayoutAssets, String> {
+    let mut per_layout = BTreeMap::new();
+    for layout in layouts.iter() {
+        let mut resolved = BTreeMap::new();
+        for reference in layout.asset_refs() {
+            let asset = resolver.resolve_deck_relative(reference.raw()).map_err(|err| {
+                format!(
+                    "{} (referenced by <{} {}=\"{}\"> in layout '{}')",
+                    err.message,
+                    reference.element(),
+                    reference.attribute(),
+                    reference.raw(),
+                    layout.name()
+                )
+            })?;
+            if !image_assets.iter().any(|existing| existing.dist_rel == asset.dist_rel) {
+                image_assets.push(asset.clone());
+            }
+            resolved.insert(reference.raw().to_owned(), asset.dist_rel);
+        }
+        if !resolved.is_empty() {
+            per_layout.insert(layout.name().to_owned(), resolved);
+        }
+    }
+    Ok(LayoutAssets::new(per_layout))
 }
 
 /// Resolves an author-written image path to an `assets/<hash>-<name>`
@@ -145,7 +186,12 @@ impl DraftImageResolver {
     }
 
     fn resolve(&mut self, request: ImageRequest<'_>) -> peitho_core::Result<ResolvedImageAsset> {
-        let display_path = request.raw.as_str();
+        self.resolve_deck_relative(request.raw.as_str())
+    }
+
+    /// Resolves any deck-relative path, whether a Markdown image or a
+    /// layout's own asset reference referenced it.
+    fn resolve_deck_relative(&mut self, display_path: &str) -> peitho_core::Result<ResolvedImageAsset> {
         let source = self.deck_dir.join(display_path);
         let asset_error = |message: String, help: &str| {
             BuildError::new(peitho_core::error::ErrorKind::Asset, None, message, help.to_string())
