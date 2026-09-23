@@ -1,6 +1,6 @@
 'use client'
 
-import { createSignal, createMemo, createEffect, onMount, onCleanup } from '@barefootjs/client'
+import { createSignal, createMemo, createEffect, onMount, onCleanup, untrack } from '@barefootjs/client'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
@@ -20,7 +20,7 @@ import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOpti
 import { racePresentOutcome } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
-import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas } from '../dom/slideCanvas'
+import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, setManifestKeysSource } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
 import { createRenderStore } from '../state/renderStore'
 import { createEditorStore } from '../state/editorStore'
@@ -888,6 +888,10 @@ export function Studio() {
   function existingSlideKeys(): string[] {
     return (render.manifest()?.slides ?? []).map(s => s.key)
   }
+  // Untracked: canvases are mounted from inside effects, and a tracked
+  // read here would subscribe them to the manifest — remounting every
+  // canvas on each edit.
+  setManifestKeysSource(() => untrack(existingSlideKeys))
 
   // Inserts a blank new slide right after `index`, with an explicit
   // PageComment `key` — pressing "New Slide" more than once always

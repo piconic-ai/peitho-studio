@@ -11,13 +11,13 @@ import { test, expect } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 
 function fragmentWithMountPoint(title: string): string {
-  return `<section class="peitho-slide" data-slide-key="marked" data-slide-index="0"><h1>${title}</h1><div data-bf="Thing"></div></section>`
+  return `<section class="peitho-slide" data-slide-key="marked"><h1>${title}</h1><div data-bf="Thing"></div></section>`
 }
 
 type Detail = { root: ShadowRoot; key: string; index: number }
 
 test('Given a slide fragment with a data-bf marker, when its canvas mounts, then a light-DOM listener receives the event with that shadow root and slide identity', async ({ page }) => {
-  const deck: MockDeck = { source: '# Marked Slide\n', fragmentFor: fragmentWithMountPoint }
+  const deck: MockDeck = { source: '<!-- {"key":"marked"} -->\n# Marked Slide\n', fragmentFor: fragmentWithMountPoint }
   await mockTauri(page, deck)
   await page.addInitScript(() => {
     document.addEventListener('peitho:shadow-mounted', event => {
@@ -37,7 +37,7 @@ test('Given a slide fragment with a data-bf marker, when its canvas mounts, then
 })
 
 test('Given canvases have mounted, when a script loads later, then the backlog holds one entry per live shadow root', async ({ page }) => {
-  const deck: MockDeck = { source: '# Marked Slide\n', fragmentFor: fragmentWithMountPoint }
+  const deck: MockDeck = { source: '<!-- {"key":"marked"} -->\n# Marked Slide\n', fragmentFor: fragmentWithMountPoint }
   await mockTauri(page, deck)
 
   await page.goto('/')
@@ -51,14 +51,14 @@ test('Given canvases have mounted, when a script loads later, then the backlog h
     return {
       allLive: roots.every(root => root.host.isConnected),
       unique: new Set(roots).size === roots.length,
-      keys: backlog.map(detail => detail.key),
+      entries: backlog.map(detail => `${detail.key}#${String(detail.index)}`),
       edited: roots.some(root => root.querySelector('h1')?.textContent === 'Marked Slide Edited'),
     }
-  })).toMatchObject({ allLive: true, unique: true, edited: true })
+  })).toMatchObject({ allLive: true, unique: true, edited: true, entries: expect.arrayContaining(['marked#0']) })
 })
 
 test('Given that same listener, when the slide is edited (re-patching its canvas), then the event fires again with the new shadow content', async ({ page }) => {
-  const deck: MockDeck = { source: '# Marked Slide\n', fragmentFor: fragmentWithMountPoint }
+  const deck: MockDeck = { source: '<!-- {"key":"marked"} -->\n# Marked Slide\n', fragmentFor: fragmentWithMountPoint }
   await mockTauri(page, deck)
   await page.addInitScript(() => {
     (window as unknown as { __shadowMountedCount: number }).__shadowMountedCount = 0

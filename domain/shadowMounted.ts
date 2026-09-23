@@ -15,14 +15,16 @@ export interface ShadowMountedDetail<Root> {
   index: number
 }
 
-/** A slide's identity as peitho writes it on `.peitho-slide`
- * (`data-slide-key`/`data-slide-index`). A fragment missing either
- * attribute (never produced by peitho-core itself) still yields a detail
- * of the documented shape — an empty key and index `-1` — rather than
- * `undefined`/`NaN` leaking into a layout script. */
-export function slideIdentity(slideKey: string | undefined, slideIndex: string | undefined): { key: string; index: number } {
-  const index = slideIndex !== undefined && /^\d+$/.test(slideIndex) ? Number(slideIndex) : -1
-  return { key: slideKey ?? '', index }
+/** A slide's identity for the event detail: `key` as peitho writes it on
+ * `.peitho-slide` (`data-slide-key`), `index` its position in the
+ * manifest's slide list — the same value peitho's shell puts on each host
+ * (`data-slide-index`), which the fragment itself doesn't carry. A key the
+ * manifest doesn't list (a draft, or a layout-picker preview that isn't a
+ * real slide) still yields the documented shape — index `-1` — rather than
+ * `undefined` leaking into a layout script. */
+export function slideIdentity(slideKey: string | undefined, manifestKeys: readonly string[]): { key: string; index: number } {
+  const key = slideKey ?? ''
+  return { key, index: slideKey === undefined ? -1 : manifestKeys.indexOf(key) }
 }
 
 /** The backlog after announcing `detail`: entries whose root is no longer

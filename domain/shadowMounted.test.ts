@@ -2,23 +2,23 @@ import { describe, expect, test } from 'bun:test'
 import { nextShadowMountedBacklog, slideIdentity } from './shadowMounted'
 
 describe('slideIdentity', () => {
-  test('spec: the key and index peitho writes on .peitho-slide are read as-is', () => {
-    expect(slideIdentity('cover', '0')).toEqual({ key: 'cover', index: 0 })
-    expect(slideIdentity('wrap-up', '12')).toEqual({ key: 'wrap-up', index: 12 })
+  const keys = ['cover', 'body', 'wrap-up']
+
+  test('spec: the index is the key\'s position in the manifest', () => {
+    expect(slideIdentity('cover', keys)).toEqual({ key: 'cover', index: 0 })
+    expect(slideIdentity('wrap-up', keys)).toEqual({ key: 'wrap-up', index: 2 })
   })
 
-  test('adversarial: missing attributes yield an empty key and index -1', () => {
-    expect(slideIdentity(undefined, undefined)).toEqual({ key: '', index: -1 })
+  test('adversarial: a key the manifest does not list gets index -1', () => {
+    expect(slideIdentity('draft-slide', keys)).toEqual({ key: 'draft-slide', index: -1 })
   })
 
-  test('adversarial: an empty key is kept, not replaced', () => {
-    expect(slideIdentity('', '3')).toEqual({ key: '', index: 3 })
+  test('adversarial: a missing key yields an empty key and index -1, even if the manifest has an empty key', () => {
+    expect(slideIdentity(undefined, ['', 'a'])).toEqual({ key: '', index: -1 })
   })
 
-  test('adversarial: a non-integer index is -1, never NaN', () => {
-    for (const raw of ['', 'abc', '-1', '1.5', ' 2', '2 ', '1e3']) {
-      expect(slideIdentity('k', raw).index).toBe(-1)
-    }
+  test('adversarial: an empty manifest gives every key index -1', () => {
+    expect(slideIdentity('cover', [])).toEqual({ key: 'cover', index: -1 })
   })
 })
 

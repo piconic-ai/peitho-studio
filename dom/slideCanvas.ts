@@ -158,6 +158,15 @@ function executeInlineScripts(root: ParentNode): void {
 
 type MountedDetail = ShadowMountedDetail<ShadowRoot>
 
+let manifestKeys: () => readonly string[] = () => []
+
+/** Where `announceShadowMounted` reads the manifest's slide keys from, to
+ * give each announced slide its manifest index. Set once by the component
+ * that owns the render state. */
+export function setManifestKeysSource(source: () => readonly string[]): void {
+  manifestKeys = source
+}
+
 // Kept as the same array for the page's lifetime (updated in place): a
 // layout script may hold on to the reference it read at load time.
 function shadowMountedBacklog(): MountedDetail[] {
@@ -174,7 +183,7 @@ function shadowMountedBacklog(): MountedDetail[] {
  * never cross into a shadow root on their own. */
 function announceShadowMounted(host: HTMLElement, root: ShadowRoot): void {
   const slide = root.querySelector<HTMLElement>('.peitho-slide')
-  const detail: MountedDetail = { root, ...slideIdentity(slide?.dataset.slideKey, slide?.dataset.slideIndex) }
+  const detail: MountedDetail = { root, ...slideIdentity(slide?.dataset.slideKey, manifestKeys()) }
   const backlog = shadowMountedBacklog()
   backlog.splice(0, backlog.length, ...nextShadowMountedBacklog(backlog, detail, r => r.host.isConnected))
   host.dispatchEvent(new CustomEvent(SHADOW_MOUNTED_EVENT, { bubbles: true, composed: true, detail }))
