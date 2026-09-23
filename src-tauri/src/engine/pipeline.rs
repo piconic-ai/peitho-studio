@@ -36,9 +36,8 @@ pub struct RenderOutput {
     pub fonts_dir: Option<PathBuf>,
     /// The deck's own directory — `engine::serve` falls back to reading
     /// `deck_dir/assets/<name>` directly for a request `image_assets`
-    /// doesn't recognize (e.g. a video/script a layout author references
-    /// straight from an `assets/` file, never through markdown image
-    /// syntax, so peitho-core's own asset-discovery never counted it).
+    /// doesn't recognize (e.g. a module chunk a layout's own script
+    /// imports relatively, which no layout attribute names).
     pub deck_dir: PathBuf,
 }
 
