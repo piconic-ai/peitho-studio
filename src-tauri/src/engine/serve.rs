@@ -164,18 +164,20 @@ fn respond(state: &Mutex<ServedState>, url: &str) -> Result<(Vec<u8>, &'static s
     }
 
     if let Some(name) = path.strip_prefix("assets/") {
-        if let Some(source) = state.image_assets.get(name) {
+        // Keyed by the full `assets/<hash>-<name>` dist path (see
+        // `RenderOutput::image_assets`), not by `name` alone.
+        if let Some(source) = state.image_assets.get(path) {
             if let Ok(bytes) = std::fs::read(source) {
-                return Ok((bytes, image_content_type(name)));
+                return Ok((bytes, asset_content_type(name)));
             }
             return Err(404);
         }
-        // Not one of peitho-core's own resolved (markdown-referenced)
-        // images — fall back to the deck's own `assets/` directory
-        // verbatim, for a layout author's `<video>`/`<script src>` etc.
-        // that reference a file there directly, never through markdown
-        // image syntax (so peitho-core's asset discovery never counted
-        // it in `image_assets` to begin with). Same path-escape guard as
+        // Not an asset the render resolved (a Markdown image or a
+        // layout's own `src`/`poster`/`href`) — fall back to the deck's
+        // own `assets/` directory verbatim, for a file only reachable
+        // through one of those, e.g. a chunk a layout's module script
+        // imports relatively (`./index-XXXX.js` from the hashed
+        // `assets/<hash>-mount.js`). Same path-escape guard as
         // `DraftImageResolver` (pipeline.rs): canonicalize and check
         // containment before reading, not just string-level `..`
         // rejection, which a symlink could route around.
@@ -217,7 +219,8 @@ fn image_content_type(name: &str) -> &'static str {
 }
 
 /// Beyond `image_content_type`'s images: video (a layout's own
-/// `<video>`/`<source>`) and JS (a layout's own `<script src>`). A
+/// `<video>`/`<source>`) and JS (a layout's own `<script src>`) — for
+/// both the hashed assets a render resolved and the `assets/` fallback. A
 /// `type="module"` script in particular fails to load at all under an
 /// incorrect MIME type — browsers enforce a strict JavaScript-MIME check
 /// for those, unlike a classic script.
@@ -310,12 +313,52 @@ mod tests {
         // path came from `image_assets`, not the fallback.
         let resolved_source = dir.path().join("elsewhere.png");
         std::fs::write(&resolved_source, b"resolved bytes").unwrap();
-        let state = state_for(dir.path().to_path_buf(), HashMap::from([("abc123-photo.png".to_string(), resolved_source)]));
+        let state = state_for(dir.path().to_path_buf(), HashMap::from([("assets/abc123-photo.png".to_string(), resolved_source)]));
 
         let (bytes, content_type) = respond(&state, "/assets/abc123-photo.png").unwrap();
 
         assert_eq!(bytes, b"resolved bytes");
         assert_eq!(content_type, "image/png");
+    }
+
+    // Feeds a real `render_source` output through, rather than a hand-built
+    // `image_assets` map, so the key shape the pipeline produces and the one
+    // `respond` looks up can't silently drift apart again.
+    #[test]
+    fn respond_spec_serves_every_image_asset_a_real_render_references() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("photo.png"), b"png bytes").unwrap();
+        std::fs::create_dir(dir.path().join("layouts")).unwrap();
+        let base = crate::engine::builtin::LAYOUT_HTML;
+        let root_end = base.find('>').unwrap() + 1;
+        let layout = format!("{}<img src=\"photo.png\" alt=\"\">{}", &base[..root_end], &base[root_end..]);
+        std::fs::write(dir.path().join("layouts/photo.html"), layout).unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let source = "<!-- {\"key\":\"a\"} -->\n# Title\n";
+        std::fs::write(&deck_path, source).unwrap();
+        let output = crate::engine::pipeline::render_source(&deck_path, source).expect("deck should render");
+        assert!(!output.image_assets.is_empty());
+        let state = state_for(output.deck_dir.clone(), output.image_assets.clone());
+
+        for dist_rel in output.image_assets.keys() {
+            assert!(output.fragments["a"].contains(dist_rel.as_str()), "fragment should reference {dist_rel}");
+            let (bytes, content_type) = respond(&state, &format!("/{dist_rel}")).expect("referenced asset should be served");
+            assert_eq!(bytes, b"png bytes");
+            assert_eq!(content_type, "image/png");
+        }
+    }
+
+    #[test]
+    fn respond_spec_a_resolved_layout_script_is_served_as_javascript() {
+        // A `type="module"` script is refused outright under a non-JS MIME
+        // type, so a layout's own `<script src>` (resolved to a hashed
+        // path like a Markdown image) must not fall into the image table.
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("mount.js");
+        std::fs::write(&source, b"export {}").unwrap();
+        let state = state_for(dir.path().to_path_buf(), HashMap::from([("assets/abc123-mount.js".to_string(), source)]));
+
+        assert_eq!(respond(&state, "/assets/abc123-mount.js").unwrap().1, "text/javascript; charset=utf-8");
     }
 
     #[test]
@@ -327,7 +370,7 @@ mod tests {
         std::fs::create_dir(dir.path().join("assets")).unwrap();
         std::fs::write(dir.path().join("assets/abc123-photo.png"), b"decoy").unwrap();
         let missing_source = dir.path().join("does-not-exist.png");
-        let state = state_for(dir.path().to_path_buf(), HashMap::from([("abc123-photo.png".to_string(), missing_source)]));
+        let state = state_for(dir.path().to_path_buf(), HashMap::from([("assets/abc123-photo.png".to_string(), missing_source)]));
 
         assert_eq!(respond(&state, "/assets/abc123-photo.png"), Err(404));
     }

@@ -12,7 +12,7 @@ use peitho_core::phase::Parsed;
 use peitho_core::{
     build_manifest, build_theme_css, check_deck, dispatch_by_convention, manifest_json,
     parse_deck_and_transform, parse_frontmatter, render_deck, resolve_image_paths, BuildError, Deck,
-    ImageRequest, ResolvedImageAsset, ResolvedImagePath,
+    EditAnnotations, ImageRequest, LayoutAssets, Layouts, ResolvedImageAsset, ResolvedImagePath,
 };
 
 use super::assets::{self, ResolvedAssets};
@@ -36,9 +36,8 @@ pub struct RenderOutput {
     pub fonts_dir: Option<PathBuf>,
     /// The deck's own directory — `engine::serve` falls back to reading
     /// `deck_dir/assets/<name>` directly for a request `image_assets`
-    /// doesn't recognize (e.g. a video/script a layout author references
-    /// straight from an `assets/` file, never through markdown image
-    /// syntax, so peitho-core's own asset-discovery never counted it).
+    /// doesn't recognize (e.g. a module chunk a layout's own script
+    /// imports relatively, which no layout attribute names).
     pub deck_dir: PathBuf,
 }
 
@@ -104,13 +103,18 @@ pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, Str
     .map_err(|err| err.to_string())?;
 
     let mut resolver = DraftImageResolver::new(deck_dir);
-    let (resolved, image_assets) =
+    let (resolved, mut image_assets) =
         resolve_image_paths(checked, |request| resolver.resolve(request)).map_err(|err| err.to_string())?;
+    // Resolved after Markdown images so a file referenced from both dedupes
+    // onto the asset the Markdown path already registered (same order as
+    // `peitho`'s own `build_artifacts`).
+    let layout_assets = resolve_layout_assets(&layouts, &mut resolver, &mut image_assets)?;
 
     let manifest = build_manifest(&resolved, &image_assets);
     let manifest_json = manifest_json(&manifest).map_err(|err| err.to_string())?;
 
-    let rendered = render_deck(resolved, highlighter, theme_css).map_err(|err| err.to_string())?;
+    let rendered = render_deck(resolved, highlighter, theme_css, EditAnnotations::Off, &layout_assets)
+        .map_err(|err| err.to_string())?;
     let has_math = rendered.math_assets().is_some();
     let css = rendered.css().to_string();
 
@@ -126,6 +130,42 @@ pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, Str
         .collect();
 
     Ok(RenderOutput { manifest_json, fragments, css, has_math, image_assets, fonts_dir, deck_dir: deck_dir.to_path_buf() })
+}
+
+/// Resolves every deck-relative asset a layout's own HTML references
+/// (`<video src>`, `poster`, `<script src>`, ...) to its hashed
+/// `assets/<hash>-<name>` path, mirroring `peitho`'s `resolve_layout_assets`
+/// (crates/peitho/src/main.rs). Each newly seen asset is appended to
+/// `image_assets` so `engine::serve` can serve it like a Markdown image.
+fn resolve_layout_assets(
+    layouts: &Layouts,
+    resolver: &mut DraftImageResolver,
+    image_assets: &mut Vec<ResolvedImageAsset>,
+) -> Result<LayoutAssets, String> {
+    let mut per_layout = BTreeMap::new();
+    for layout in layouts.iter() {
+        let mut resolved = BTreeMap::new();
+        for reference in layout.asset_refs() {
+            let asset = resolver.resolve_deck_relative(reference.raw()).map_err(|err| {
+                format!(
+                    "{} (referenced by <{} {}=\"{}\"> in layout '{}')",
+                    err.message,
+                    reference.element(),
+                    reference.attribute(),
+                    reference.raw(),
+                    layout.name()
+                )
+            })?;
+            if !image_assets.iter().any(|existing| existing.dist_rel == asset.dist_rel) {
+                image_assets.push(asset.clone());
+            }
+            resolved.insert(reference.raw().to_owned(), asset.dist_rel);
+        }
+        if !resolved.is_empty() {
+            per_layout.insert(layout.name().to_owned(), resolved);
+        }
+    }
+    Ok(LayoutAssets::new(per_layout))
 }
 
 /// Resolves an author-written image path to an `assets/<hash>-<name>`
@@ -145,7 +185,12 @@ impl DraftImageResolver {
     }
 
     fn resolve(&mut self, request: ImageRequest<'_>) -> peitho_core::Result<ResolvedImageAsset> {
-        let display_path = request.raw.as_str();
+        self.resolve_deck_relative(request.raw.as_str())
+    }
+
+    /// Resolves any deck-relative path, whether a Markdown image or a
+    /// layout's own asset reference referenced it.
+    fn resolve_deck_relative(&mut self, display_path: &str) -> peitho_core::Result<ResolvedImageAsset> {
         let source = self.deck_dir.join(display_path);
         let asset_error = |message: String, help: &str| {
             BuildError::new(peitho_core::error::ErrorKind::Asset, None, message, help.to_string())
@@ -430,6 +475,64 @@ mod tests {
         assert_eq!((slides[0]["key"].as_str(), slides[0]["index"].as_u64()), (Some("opening"), Some(0)));
         assert!(slides[0].get("draft").is_none());
         assert!(!output.fragments.contains_key("wip"));
+    }
+
+    // A layout that references its own asset directly (not through Markdown
+    // image syntax) — the shape of a video-background cover slide.
+    fn write_video_layout_deck(dir: &std::path::Path, with_asset: bool) -> std::path::PathBuf {
+        let layouts_dir = dir.join("layouts");
+        std::fs::create_dir_all(&layouts_dir).unwrap();
+        // The built-in layout satisfies the built-in theme's slot selectors;
+        // splice the video in right after its root `<section ...>` tag.
+        let base = crate::engine::builtin::LAYOUT_HTML;
+        let root_end = base.find('>').expect("built-in layout has a root tag") + 1;
+        let html = format!("{}<video src=\"assets/hero.mp4\" autoplay muted></video>{}", &base[..root_end], &base[root_end..]);
+        std::fs::write(layouts_dir.join("cover.html"), html).unwrap();
+        if with_asset {
+            std::fs::create_dir_all(dir.join("assets")).unwrap();
+            std::fs::write(dir.join("assets/hero.mp4"), b"not really a video").unwrap();
+        }
+        let deck_path = dir.join("deck.md");
+        std::fs::write(&deck_path, "<!-- {\"key\":\"cover\"} -->\n# Cover\n").unwrap();
+        deck_path
+    }
+
+    #[test]
+    fn render_source_spec_a_layout_asset_is_rewritten_to_its_hashed_path_and_served() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = write_video_layout_deck(dir.path(), true);
+        let source = std::fs::read_to_string(&deck_path).unwrap();
+
+        let output = render_source(&deck_path, &source).expect("a deck whose layout asset exists should render");
+
+        let (dist_rel, source_abs) = output
+            .image_assets
+            .iter()
+            .find(|(dist_rel, _)| dist_rel.ends_with("-hero.mp4"))
+            .expect("the layout's video should be registered for engine::serve");
+        assert!(dist_rel.starts_with("assets/"), "unexpected dist path: {dist_rel}");
+        assert_eq!(source_abs, &std::fs::canonicalize(dir.path().join("assets/hero.mp4")).unwrap());
+        assert!(
+            output.fragments["cover"].contains(&format!("src=\"{dist_rel}\"")),
+            "fragment should reference the hashed path: {}",
+            output.fragments["cover"]
+        );
+    }
+
+    #[test]
+    fn render_source_adversarial_a_missing_layout_asset_names_the_layout_and_attribute() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = write_video_layout_deck(dir.path(), false);
+        let source = std::fs::read_to_string(&deck_path).unwrap();
+
+        match render_source(&deck_path, &source) {
+            Ok(_) => panic!("expected a missing-asset error, got Ok"),
+            Err(err) => {
+                assert!(err.contains("assets/hero.mp4"), "unexpected error: {err}");
+                assert!(err.contains("<video src="), "unexpected error: {err}");
+                assert!(err.contains("layout 'cover'"), "unexpected error: {err}");
+            }
+        }
     }
 
     #[test]

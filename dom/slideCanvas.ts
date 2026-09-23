@@ -4,6 +4,7 @@
 // verify via `run-peitho-studio`.
 
 import { containScale, type Size } from '../domain/geometry'
+import { nextShadowMountedBacklog, SHADOW_MOUNTED_EVENT, slideIdentity, type ShadowMountedDetail } from '../domain/shadowMounted'
 
 // Adopted by every mounted canvas alongside its theme sheet — one shared
 // `CSSStyleSheet` rather than a `<style>` re-parsed per thumbnail
@@ -124,7 +125,7 @@ function needsScopeWrap(script: HTMLScriptElement): boolean {
  * it) is connected. A layout author's own `<script>` in a slide's
  * rendered fragment is otherwise silently inert — ported from the same
  * fix in `peitho`/`peitho-present`'s viewers (see
- * `todo/layout-js-console-log.md`).
+ * `todo/archive/layout-js-console-log.md`).
  *
  * A classic inline script (no `src`, no `type="module"`) is also wrapped
  * in an IIFE: `mountSlideCanvas` runs once per host, but `patchSlideCanvas`
@@ -144,7 +145,7 @@ function needsScopeWrap(script: HTMLScriptElement): boolean {
  * out from under a running script leaves that script's own timers/
  * listeners running against detached state. Left as-is for now (the
  * same tradeoff `peitho build`'s distribution viewer already ships with
- * — see `todo/layout-js-console-log.md`), not something to guess a fix
+ * — see `todo/archive/layout-js-console-log.md`), not something to guess a fix
  * for without seeing what real layout scripts actually need. */
 function executeInlineScripts(root: ParentNode): void {
   for (const oldScript of Array.from(root.querySelectorAll('script'))) {
@@ -155,22 +156,37 @@ function executeInlineScripts(root: ParentNode): void {
   }
 }
 
-/** Fired on `host` (bubbles into the light DOM, so code outside this
- * shadow root can hear it) every time a canvas's shadow content is
- * (re)mounted — `detail.root` is that shadow root itself. Exists for a
- * script loaded via `executeInlineScripts` above to discover elements it
- * needs to act on: `document.querySelectorAll`/`MutationObserver` never
- * cross into a shadow root on their own (unlike `peitho build`'s
- * light-DOM `canvas.innerHTML =` distribution viewer, where a plain
- * `document`-level `MutationObserver` already sees everything). A script
- * that wants to run the same "scan for my own marker attribute, mount
- * something there" logic across all three peitho viewers listens for
- * this event to get each shadow root explicitly, instead of assuming
- * `document` reaches it. */
-export const CANVAS_MOUNTED_EVENT = 'peitho:canvas-mounted'
+type MountedDetail = ShadowMountedDetail<ShadowRoot>
 
-function announceCanvasMounted(host: HTMLElement, root: ShadowRoot): void {
-  host.dispatchEvent(new CustomEvent(CANVAS_MOUNTED_EVENT, { bubbles: true, composed: true, detail: { root } }))
+let manifestKeys: () => readonly string[] = () => []
+
+/** Where `announceShadowMounted` reads the manifest's slide keys from, to
+ * give each announced slide its manifest index. Set once by the component
+ * that owns the render state. */
+export function setManifestKeysSource(source: () => readonly string[]): void {
+  manifestKeys = source
+}
+
+// Kept as the same array for the page's lifetime (updated in place): a
+// layout script may hold on to the reference it read at load time.
+function shadowMountedBacklog(): MountedDetail[] {
+  const win = window as Window & { __peithoShadowRoots?: unknown }
+  if (!Array.isArray(win.__peithoShadowRoots)) win.__peithoShadowRoots = []
+  return win.__peithoShadowRoots as MountedDetail[]
+}
+
+/** Announces a (re)mounted canvas the way peitho's own viewers do (see
+ * `domain/shadowMounted.ts`): records it in `window.__peithoShadowRoots`
+ * and fires `peitho:shadow-mounted` on `host`, bubbling and composed so
+ * light-DOM code outside the shadow root hears it. A layout script needs
+ * this to find its slide: `document.querySelectorAll`/`MutationObserver`
+ * never cross into a shadow root on their own. */
+function announceShadowMounted(host: HTMLElement, root: ShadowRoot): void {
+  const slide = root.querySelector<HTMLElement>('.peitho-slide')
+  const detail: MountedDetail = { root, ...slideIdentity(slide?.dataset.slideKey, manifestKeys()) }
+  const backlog = shadowMountedBacklog()
+  backlog.splice(0, backlog.length, ...nextShadowMountedBacklog(backlog, detail, r => r.host.isConnected))
+  host.dispatchEvent(new CustomEvent(SHADOW_MOUNTED_EVENT, { bubbles: true, composed: true, detail }))
 }
 
 // Shadow roots that already have the interactive-mode link guard attached
@@ -243,8 +259,9 @@ export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragme
   host.style.setProperty('--peitho-canvas-width', `${String(canvas.width)}px`)
   host.style.setProperty('--peitho-canvas-height', `${String(canvas.height)}px`)
   shadow.innerHTML = fragmentHtml
+  shadowMountedBacklog() // exists before any layout script below reads it
   executeInlineScripts(shadow)
-  announceCanvasMounted(host, shadow)
+  announceShadowMounted(host, shadow)
   appliedFragments.set(host, fragmentHtml)
 }
 
@@ -263,9 +280,10 @@ export function patchSlideCanvas(host: HTMLElement, fragmentHtml: string): boole
   wrapper.innerHTML = fragmentHtml
   const next = wrapper.firstElementChild
   if (!next) return false
+  shadowMountedBacklog() // exists before any layout script below reads it
   executeInlineScripts(next)
   current.replaceWith(next)
-  announceCanvasMounted(host, shadow)
+  announceShadowMounted(host, shadow)
   appliedFragments.set(host, fragmentHtml)
   return true
 }

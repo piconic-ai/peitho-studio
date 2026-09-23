@@ -4,7 +4,7 @@
 // "already started" — it never executes, no matter how it's later moved or
 // reconnected. `executeInlineScripts` (see that file) swaps every such
 // script for a freshly created one, which does. See
-// `todo/layout-js-console-log.md` for the investigation and the matching
+// `todo/archive/layout-js-console-log.md` for the investigation and the matching
 // fix ported into `peitho`/`peitho-present`'s own viewers.
 import { test, expect } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
