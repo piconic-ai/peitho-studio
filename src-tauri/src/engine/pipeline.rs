@@ -478,6 +478,64 @@ mod tests {
         assert!(!output.fragments.contains_key("wip"));
     }
 
+    // A layout that references its own asset directly (not through Markdown
+    // image syntax) — the shape of a video-background cover slide.
+    fn write_video_layout_deck(dir: &std::path::Path, with_asset: bool) -> std::path::PathBuf {
+        let layouts_dir = dir.join("layouts");
+        std::fs::create_dir_all(&layouts_dir).unwrap();
+        // The built-in layout satisfies the built-in theme's slot selectors;
+        // splice the video in right after its root `<section ...>` tag.
+        let base = crate::engine::builtin::LAYOUT_HTML;
+        let root_end = base.find('>').expect("built-in layout has a root tag") + 1;
+        let html = format!("{}<video src=\"assets/hero.mp4\" autoplay muted></video>{}", &base[..root_end], &base[root_end..]);
+        std::fs::write(layouts_dir.join("cover.html"), html).unwrap();
+        if with_asset {
+            std::fs::create_dir_all(dir.join("assets")).unwrap();
+            std::fs::write(dir.join("assets/hero.mp4"), b"not really a video").unwrap();
+        }
+        let deck_path = dir.join("deck.md");
+        std::fs::write(&deck_path, "<!-- {\"key\":\"cover\"} -->\n# Cover\n").unwrap();
+        deck_path
+    }
+
+    #[test]
+    fn render_source_spec_a_layout_asset_is_rewritten_to_its_hashed_path_and_served() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = write_video_layout_deck(dir.path(), true);
+        let source = std::fs::read_to_string(&deck_path).unwrap();
+
+        let output = render_source(&deck_path, &source).expect("a deck whose layout asset exists should render");
+
+        let (dist_rel, source_abs) = output
+            .image_assets
+            .iter()
+            .find(|(dist_rel, _)| dist_rel.ends_with("-hero.mp4"))
+            .expect("the layout's video should be registered for engine::serve");
+        assert!(dist_rel.starts_with("assets/"), "unexpected dist path: {dist_rel}");
+        assert_eq!(source_abs, &std::fs::canonicalize(dir.path().join("assets/hero.mp4")).unwrap());
+        assert!(
+            output.fragments["cover"].contains(&format!("src=\"{dist_rel}\"")),
+            "fragment should reference the hashed path: {}",
+            output.fragments["cover"]
+        );
+    }
+
+    #[test]
+    fn render_source_adversarial_a_missing_layout_asset_names_the_layout_and_attribute() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = write_video_layout_deck(dir.path(), false);
+        let source = std::fs::read_to_string(&deck_path).unwrap();
+
+        match render_source(&deck_path, &source) {
+            Ok(_) => panic!("expected a missing-asset error, got Ok"),
+            Err(err) => {
+                assert!(err.contains("assets/hero.mp4"), "unexpected error: {err}");
+                assert!(err.contains("<video src="), "unexpected error: {err}");
+                assert!(err.contains("layout 'cover'"), "unexpected error: {err}");
+            }
+        }
+    }
+
     #[test]
     fn short_sha256_hex_spec_matches_a_known_sha256_prefix() {
         // sha256("") == e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
