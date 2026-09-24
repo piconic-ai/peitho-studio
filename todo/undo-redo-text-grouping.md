@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: Cmd+Zをテキスト編集とスライド操作をまたぐ1本の時系列にする(統一Undo/Redoの第2段階)
 tags: [undo-redo, editor, codemirror]
 ---
@@ -187,11 +187,29 @@ tags: [undo-redo, editor, codemirror]
 
 自動で確認できる項目(ループが自分で判定してよい):
 - [x] 要調査1〜4をFableのレビューを踏まえて決め、このファイルに記録
-- [ ] 実装とテスト
-- [ ] `bun test` / `bun run typecheck` / `bun run test:e2e` グリーン
+- [x] 実装とテスト
+- [x] `bun test` / `bun run typecheck` / `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機確認: 受け入れ条件の1〜4と、vimの`u`との組み合わせ
+
+## 実装メモ
+
+- 写しは`EditorState`ごとに持つ(`dom/textHistoryTracking.ts`の`WeakMap`)。
+  スライドを離れるときの状態(`dom/editorSlideStates.ts`)と一緒に番号も
+  戻ってくる。別のスライドの目印が有効かどうかは、その保存された状態で
+  判定する(`peek`)。
+- CodeMirrorの切り詰めのほか、履歴に積まない変更が最新のグループを
+  消す場合(`addMapping`)と、undoで下のグループが消える場合にも深さに
+  合わせて写しを削る。実際のCodeMirrorの履歴に対してテストした
+  (`dom/textHistoryTracking.test.ts`)。
+- 区切りは、スライド操作の記録とundo/redoの再生のほか、一方のエディタで
+  新しいグループができたときにもう一方のエディタへ、保存した状態を戻す
+  とき(`restoreCodeEditor`)にも入れる。
+- 計画からの逸脱: 電話の形のメニューが開いている間は、今までどおり
+  時系列を止め、フォーカスのあるエディタだけがvimの`u`と同じように自分の
+  履歴を戻す(既存のe2eが確かめている挙動を保つため)。その目印は後で
+  飛ばされる。
 
 ## 先送り事項
 
