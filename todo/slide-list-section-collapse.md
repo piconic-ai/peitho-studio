@@ -41,9 +41,11 @@ tags: [ui, slide-list, section]
     押すとそのセクションの全スライドのサムネイルが隠れ、ヘッダーだけ残る。
     もう一度押すと元に戻る。
   - 他のセクションのスライドは影響を受けない。
-  - 折りたたみ中のセクション内のスライドが選択中(例: 右クリック→
-    New Slideで追加された直後)なら、その1枚だけは表示されたままになる
-    (選択中のスライドが一覧から消えない)。
+  - 選択が折りたたみ中のセクション内のスライドへ*移った*とき(例:
+    折りたたんだヘッダー行を右クリック→New Slide)、そのセクションは自動で
+    展開される(選択が一覧の見えない所へ行かない)。開いているスライドの
+    セクションをユーザー自身が折りたたむのは意図的な操作なので、その場合は
+    折りたたんだままにする。
   - スライドの追加・削除・並べ替えで行番号がずれても、折りたたみは
     同じセクションに付いたまま(先頭スライドのキーで覚える)。
 
@@ -86,26 +88,32 @@ tags: [ui, slide-list, section]
 ## レイヤー配置
 
 - `domain/sectionCollapse.ts`: `toggleCollapsedKey`, `sectionSpans`,
-  `collapsedSectionStarts`, `rowVisibilities`, `lastVisibleRow`(すべて純粋)。
+  `collapseKeyAt`, `collapsedSectionStarts`, `rowVisibilities`,
+  `collapsedSectionContaining`, `lastVisibleRow`(すべて純粋)。
 - `state/uiStore.ts`: `collapsedSectionKeys` signal + `toggleSectionCollapsed`。
 - `components/Studio.tsx`: 上記を`createMemo`で組み合わせて`SlideList`へ渡す。
+  選択(`editor.selectedIndex`)の変化だけを追う`createEffect`で、選択が
+  折りたたみセクションに入ったらそのセクションを展開する(折りたたみ状態は
+  `untrack`で読むので、折りたたみ操作自体では発火しない)。
 - `components/SlideList.tsx`: シェブロンボタンと`hidden`クラスの適用のみ。
 
 ## テスト
 
 - `domain/sectionCollapse.test.ts`: 各純粋関数のspec(Given-When-Then)と
   adversarial(空リスト、範囲外・重複・未ソートのセクション開始、存在
-  しないキー、プレースホルダー行、選択なし/範囲外の選択)。
+  しないキー、プレースホルダー行、null/範囲外の行)と、大きなデッキでの
+  計算時間の非機能テスト。
 - `state/uiStore.test.ts`: トグルが同じキーで往復すること。
 - `e2e/section-collapse.e2e.ts`: 実フロントエンドを通したGWT
   (折りたたみ/展開、他セクション非影響、上へのスライド追加後も同じ
-  セクションが折りたたまれたまま、編集サマリーが引き続き動く)。
+  セクションが折りたたまれたまま、選択が入ると展開、最後のセクションを
+  折りたたんだ状態での末尾ドロップ線、編集サマリーが引き続き動く)。
 
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `e2e/section-collapse.e2e.ts` および既存のe2eがグリーン
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `e2e/section-collapse.e2e.ts` および既存のe2eがグリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機(`run-peitho-studio` skill)での見た目/挙動確認 — シェブロンの
@@ -113,7 +121,14 @@ tags: [ui, slide-list, section]
   再表示されること(`display:none`から戻ったときの`observeCanvasScale`の
   ResizeObserver再計算はWKWebView依存でe2eでは保証できない)、折り
   たたみセクションをまたぐドラッグ並べ替えの手触り
+- [ ] 折りたたんだヘッダー行を右クリックすると(右クリックがそのスライドを
+  選択するため)セクションが展開される挙動で良いか
 
 ## 先送り事項
 
-(実装時に見つかった、本筋と無関係な改善点があればここに書き出す)
+- 折りたたんだセクションの直後(次のセクションヘッダーの上)へスライドを
+  ドロップすると、peitho上はそのスライドが折りたたみ側のセクション末尾に
+  入るため、選択中でないスライドなら一覧から見えなくなる(展開されない)。
+  展開中でも「ヘッダー行の上の線 = 前のセクションの末尾」という既存の
+  挙動と同じで、折りたたみで見え方が変わるだけ。ドロップ先のセクションを
+  展開する/ドロップ先を次のセクション先頭にする等は別途検討。
