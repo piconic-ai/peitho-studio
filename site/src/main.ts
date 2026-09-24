@@ -11,3 +11,14 @@ if (download) render(download, 'DownloadPanel', {})
 
 const tour = document.getElementById('tour-root')
 if (tour) render(tour, 'FeatureTour', {})
+
+// The download panel's "Build from source" fallback button links to
+// `#build`, a <details>; jumping to a collapsed one shows only its summary,
+// so open it whenever the hash points at it.
+const openBuild = () => {
+  if (location.hash !== '#build') return
+  const details = document.getElementById('build') as HTMLDetailsElement | null
+  if (details) details.open = true
+}
+openBuild()
+window.addEventListener('hashchange', openBuild)
