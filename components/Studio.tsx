@@ -9,7 +9,7 @@ import { clampMenuPosition, type Size } from '../domain/geometry'
 import { deviceForShape, effectiveCanvas } from '../domain/viewport'
 import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
-import { type SelectionPlan, type SlideFields, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
+import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
 import { type HistoryStep, type StepOutcome, commandForStep, inverseStep, slideConfigOfText } from '../domain/editorHistory'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
@@ -22,7 +22,8 @@ import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOpti
 import { racePresentOutcome } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
-import { blurEditorFieldOnRowPress, replayFocusedFieldHistory } from '../dom/fieldFocus'
+import { blurEditorFieldOnRowPress, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
+import { createCodeEditor, resetCodeEditorText, setCodeEditorText } from '../dom/codeEditor'
 import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, setManifestKeysSource } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
@@ -161,7 +162,7 @@ export function Studio() {
   // reactivity tracking, which `bf debug graph`'s static analysis doesn't
   // capture. See CLAUDE.md's BarefootJS pitfalls for the full account.
   const ui = createUiStore()
-  // Structural undo/redo (Cmd+Z / Cmd+Shift+Z outside the textareas) — see
+  // Structural undo/redo (Cmd+Z / Cmd+Shift+Z outside the text editors) — see
   // `state/historyStore.ts` and `replayHistory` below.
   const history = createHistoryStore()
   // Distinct from `isBusy` above (the deck-lifecycle one): this guards
@@ -187,52 +188,52 @@ export function Studio() {
   const [deckVariants, setDeckVariants] = createSignal<DeckVariant[]>([])
   const variantSwitcher = createMemo(() => toVariantSwitcher(deckVariants()))
 
-  // Plain (non-reactive) DOM handles for the two editor textareas — see the
-  // note above `syncEditorFields` for why these are *not* driven by a
-  // reactive `value={...}` binding.
-  let bodyTextareaEl: HTMLTextAreaElement | undefined
-  let noteTextareaEl: HTMLTextAreaElement | undefined
+  // The two CodeMirror editors (body and notes) — created once their host
+  // `<div>`s mount, and written to only by `syncEditorFields`, never from a
+  // reactive binding (see the note above it).
+  let bodyEditor: ReturnType<typeof createCodeEditor> | undefined
+  let noteEditor: ReturnType<typeof createCodeEditor> | undefined
   // The context menu is permanently mounted (only its `hidden` class
   // toggles — see the comment above its JSX for why), so its `ref` fires
   // exactly once and this stays valid for the component's whole lifetime.
   let contextMenuEl: HTMLElement | undefined
-  // Tracks an in-progress IME composition (kana->kanji conversion, etc.) on
-  // each textarea, via `compositionstart`/`compositionend`. `syncEditorFields`
-  // must never touch `.value` while one is active: WebKit owns the
-  // in-progress composition buffer separately from the element's `.value`
-  // during that window, and an external `.value` write — even to a byte-
-  // identical string — can desync the two, surfacing as dropped characters
-  // or a backspace that appears to delete the wrong thing.
-  let bodyComposing = false
-  let noteComposing = false
 
-  // Pushes the current bodyDraft/noteDraft signal values into the actual
-  // textarea DOM nodes. Call this after any *non-typing* change to those
-  // signals (switching slides, a save response, an external-file merge) —
-  // never react to the signals directly with a `value={...}` JSX binding.
-  // A reactive binding re-assigns `.value` on every keystroke too, since
-  // our own onInput handler is what changes the signal in the first place;
-  // WebKit's textarea can drop or misplace a keystroke (a space swallowed,
-  // the cursor jumping a line) when `.value` is reassigned while the user
-  // is actively typing/composing. Uncontrolled + explicit imperative sync
-  // avoids that class of bug entirely.
-  function syncEditorFields(): void {
-    if (bodyTextareaEl && !bodyComposing && bodyTextareaEl.value !== editor.bodyDraft()) bodyTextareaEl.value = editor.bodyDraft()
-    if (noteTextareaEl && !noteComposing && noteTextareaEl.value !== editor.noteDraft()) noteTextareaEl.value = editor.noteDraft()
+  // Pushes the current bodyDraft/noteDraft signal values into the editors.
+  // Call this after any *non-typing* change to those signals — never react
+  // to the signals directly: our own `onChange` is what changes them while
+  // the user types, and writing the text back under the user mid-keystroke
+  // (or mid-IME-conversion) can drop keystrokes or move the cursor. Both
+  // writes skip an editor with an IME composition in progress
+  // (`dom/codeEditor.ts`).
+  //
+  // - `same-slide` (a save response for the slide still open): touches only
+  //   what differs, keeps the cursor and the undo history, and stays out of
+  //   the history itself.
+  // - `new-slide` (a slide switch, a deck read fresh from disk): also drops
+  //   the undo history, so Undo can't bring back another slide's text.
+  function syncEditorFields(scope: 'same-slide' | 'new-slide'): void {
+    const write = scope === 'new-slide' ? resetCodeEditorText : setCodeEditorText
+    if (bodyEditor) write(bodyEditor, editor.bodyDraft())
+    if (noteEditor) write(noteEditor, editor.noteDraft())
   }
 
-  function onBodyTextareaRef(el: HTMLTextAreaElement): void {
-    bodyTextareaEl = el
-    el.value = editor.bodyDraft()
-    el.addEventListener('compositionstart', () => { bodyComposing = true })
-    el.addEventListener('compositionend', () => { bodyComposing = false })
+  // A host remounts only with the whole editor pane (a deck-lifecycle
+  // branch), so the previous editor, if any, is already detached.
+  function onBodyEditorHost(el: HTMLElement): void {
+    bodyEditor?.destroy()
+    bodyEditor = createCodeEditor(el, editor.bodyDraft(), {
+      monospace: true,
+      spellcheck: false,
+      onChange: text => editor.setEditorSession(session => withDraftBody(session, text)),
+    })
   }
 
-  function onNoteTextareaRef(el: HTMLTextAreaElement): void {
-    noteTextareaEl = el
-    el.value = editor.noteDraft()
-    el.addEventListener('compositionstart', () => { noteComposing = true })
-    el.addEventListener('compositionend', () => { noteComposing = false })
+  function onNoteEditorHost(el: HTMLElement): void {
+    noteEditor?.destroy()
+    noteEditor = createCodeEditor(el, editor.noteDraft(), {
+      placeholder: 'Notes for the presenter — not shown to the audience.',
+      onChange: text => editor.setEditorSession(session => withDraftNote(session, text)),
+    })
   }
 
   const layoutPickerView = createMemo<'loading' | 'empty' | 'ready'>(() => {
@@ -501,7 +502,7 @@ export function Studio() {
       const fields: SlideFields = { body: rest, note, config }
       editor.setEditorSession({ kind: 'editing', index: nextIndex, saved: fields, draft: fields })
     }
-    syncEditorFields()
+    syncEditorFields('new-slide')
   }
 
   async function refreshRecentDecks(): Promise<void> {
@@ -601,10 +602,10 @@ export function Studio() {
       editor.setEditorSession(next)
       // `next === now` means the user moved on (a different selection, or
       // no change resolved) and this deliberately left it alone — nothing
-      // to push into the textareas. Otherwise `saved` refreshed and/or
+      // to push into the editors. Otherwise `saved` refreshed and/or
       // `draft` synced to it, so re-sync (a no-op if `draft` itself didn't
       // actually change, e.g. the user kept typing through the gap).
-      if (next !== now) syncEditorFields()
+      if (next !== now) syncEditorFields(opensSameSlide(plan) ? 'same-slide' : 'new-slide')
       setStatusMessage('Saved')
       return true
     } catch (err) {
@@ -644,7 +645,7 @@ export function Studio() {
     const { rest, config } = extractPageComment(withoutNote)
     const fields: SlideFields = { body: rest, note, config }
     editor.setEditorSession({ kind: 'editing', index, saved: fields, draft: fields })
-    syncEditorFields()
+    syncEditorFields('new-slide')
   }
 
   async function handleSave(): Promise<void> {
@@ -849,7 +850,7 @@ export function Studio() {
     return (event: MouseEvent) => {
       if ((event.target as HTMLElement).closest('input, textarea')) return
       // Any button, so Cmd+Z after a right-click menu operation also
-      // reaches the structural undo rather than the body textarea.
+      // reaches the structural undo rather than the body editor.
       blurEditorFieldOnRowPress()
       if (event.button !== 0) return
       // Without this, the browser's own native text-selection drag runs
@@ -1206,8 +1207,7 @@ export function Studio() {
         ui.closeContextMenu()
         return
       }
-      const tag = document.activeElement?.tagName.toLowerCase()
-      if (tag === 'input' || tag === 'textarea') return
+      if (isTypingInField()) return
       // Cmd+Z / Cmd+Shift+Z aren't handled here: left alone, they reach the
       // Edit menu's Undo/Redo accelerators, the one path for both keyboard
       // and mouse (see `onMenuHistory` above).
@@ -1410,10 +1410,8 @@ export function Studio() {
         >
           <SlideEditor
             hasSelection={editor.selectedRange() !== null}
-            onBodyRef={onBodyTextareaRef}
-            onNoteRef={onNoteTextareaRef}
-            onBodyInput={value => editor.setEditorSession(session => withDraftBody(session, value))}
-            onNoteInput={value => editor.setEditorSession(session => withDraftNote(session, value))}
+            onBodyHost={onBodyEditorHost}
+            onNoteHost={onNoteEditorHost}
           />
         </div>
 
