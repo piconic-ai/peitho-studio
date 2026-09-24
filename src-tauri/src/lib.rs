@@ -2,6 +2,7 @@ mod deck_variants;
 mod edit_menu;
 mod engine;
 mod peitho;
+mod settings;
 
 use peitho::{PeithoSession, PendingDecks};
 use tauri::menu::{AboutMetadata, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -15,7 +16,8 @@ const WARM_UP_RECENT_DECKS: usize = 3;
 /// `Menu::default()` produces (App/Edit/View/Window/Help, with all the
 /// platform-standard items — Quit, Cut/Copy/Paste, About, etc. — wired
 /// automatically) and adds "New Deck…"/"Open Deck…"/"Open Recent" at the
-/// top of File, with Edit's Undo/Redo swapped for `edit_menu`'s own items.
+/// top of File, "Settings…" (Cmd+,) to the app menu, with Edit's Undo/Redo
+/// swapped for `edit_menu`'s own items.
 /// Kept as an explicit rebuild rather than mutating
 /// `Menu::default()`'s output, since that method doesn't hand back the
 /// File submenu separately to prepend into.
@@ -60,6 +62,11 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>) -> taur
             &new_deck,
             &open_deck,
             &recent_menu,
+            &PredefinedMenuItem::separator(app)?,
+            // macOS has it in the app menu instead, where its users look.
+            #[cfg(not(target_os = "macos"))]
+            &settings::menu_item(app)?,
+            #[cfg(not(target_os = "macos"))]
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::close_window(app, None)?,
             #[cfg(not(target_os = "macos"))]
@@ -118,6 +125,8 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>) -> taur
                 true,
                 &[
                     &PredefinedMenuItem::about(app, None, Some(about_metadata))?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &settings::menu_item(app)?,
                     &PredefinedMenuItem::separator(app)?,
                     &PredefinedMenuItem::services(app, None)?,
                     &PredefinedMenuItem::separator(app)?,
@@ -180,6 +189,10 @@ pub fn run() {
             let id = event.id().as_ref();
             if edit_menu::forward(app_handle, id) {
                 // Undo/Redo: handled by the focused window's frontend.
+            } else if id == settings::MENU_ID {
+                // The settings panel is an in-app modal: open it in the
+                // window the user is looking at.
+                edit_menu::emit_to_focused(app_handle, settings::MENU_EVENT);
             } else if id == "new_deck" {
                 // Needs the in-app name-entry modal, so it's routed back
                 // through the frontend rather than handled here.
@@ -253,6 +266,8 @@ pub fn run() {
             peitho::preview_layouts,
             peitho::check_slide_layouts,
             peitho::present_deck,
+            settings::get_settings,
+            settings::update_settings,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
