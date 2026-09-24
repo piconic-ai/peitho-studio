@@ -59,7 +59,10 @@ see every file's status at a glance:
     logic out of the command as a function and test that instead.
 - **e2e is wanted too, but it's fine to get there incrementally.** The
   Playwright suite under `e2e/` runs against the dev server (the frontend
-  half of `bun run dev`), no Tauri window involved. `welcome.e2e.ts` is a
+  half of `bun run dev`), no Tauri window involved. It builds and serves
+  its own copy on port 3013 (never reusing a server already there), so
+  worktrees running e2e at the same time each need their own
+  `E2E_PORT` (`E2E_PORT=3014 bun run test:e2e`). `welcome.e2e.ts` is a
   bare smoke test with no IPC bridge at all. `e2e/helpers/mockTauri.ts`
   stubs `window.__TAURI_INTERNALS__.invoke` (via `page.exposeFunction`) so
   a test can get past the welcome screen and drive the real frontend
