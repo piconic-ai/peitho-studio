@@ -10,11 +10,15 @@ import {
   pushRedo,
   pushUndo,
   record,
+  selectionForReplay,
   slideConfigOfText,
+  takeLive,
   takeRedo,
   takeUndo,
   type EditorHistory,
   type HistoryStep,
+  type StructuralStep,
+  type TextStep,
 } from './editorHistory'
 import { applyCommand, validate, type SlideCommand } from './slideCommands'
 
@@ -24,7 +28,7 @@ const LAYOUT_OFF: HistoryStep = { kind: 'config', index: 0, patch: { layout: und
 
 /** Runs `step` against `texts` the way Studio.tsx does, returning the new
  * list and the step that undoes it. */
-function perform(texts: string[], step: HistoryStep): { texts: string[]; inverse: HistoryStep } {
+function perform(texts: string[], step: StructuralStep): { texts: string[]; inverse: StructuralStep } {
   const cmd = commandForStep(texts, step)
   const rejection = validate(texts, cmd)
   if (rejection) throw new Error(`rejected: ${rejection.reason}`)
@@ -272,5 +276,135 @@ describe('undo/redo round trips (functional requirements)', () => {
     const shrunk = ['a']
 
     expect(validate(shrunk, commandForStep(shrunk, inserted.inverse))).not.toBeNull()
+  })
+})
+
+const TEXT_A: TextStep = { kind: 'text', index: 0, field: 'body', seq: 1 }
+const TEXT_B: TextStep = { kind: 'text', index: 1, field: 'note', seq: 2 }
+const TEXT_C: TextStep = { kind: 'text', index: 0, field: 'body', seq: 3 }
+
+describe('text markers: functional requirements', () => {
+  test('spec: Given a text marker, then its inverse is the same marker, so undo and redo both point at that group', () => {
+    expect(inverseStep(['a', 'b'], TEXT_A)).toBe(TEXT_A)
+  })
+
+  test('spec: Given typing, a slide operation, and more typing, when undo is taken three times, then they come back newest first, text and slide operations alike', () => {
+    let history = EMPTY_HISTORY
+    for (const step of [TEXT_A, DELETE_0, TEXT_C]) history = record(history, step)
+
+    const order: HistoryStep[] = []
+    for (let taken = takeUndo(history); taken; taken = takeUndo(taken.history)) order.push(taken.step)
+
+    expect(order).toEqual([TEXT_C, DELETE_0, TEXT_A])
+  })
+})
+
+describe('takeLive: skipping text markers the editor already took back', () => {
+  const allLive = () => true
+  const noneLive = () => false
+
+  test('spec: Given a live text marker on top, then it is taken', () => {
+    const history = record(record(EMPTY_HISTORY, DELETE_0), TEXT_A)
+
+    const taken = takeLive(history, 'undo', allLive)
+
+    expect(taken).toEqual({ step: TEXT_A, history: { undo: [DELETE_0], redo: [] } })
+  })
+
+  test('spec: Given text markers vim already undid on top, then they are dropped and the next live one is taken', () => {
+    const history: EditorHistory = { undo: [TEXT_A, TEXT_B, TEXT_C], redo: [] }
+
+    const taken = takeLive(history, 'undo', step => step.seq === TEXT_A.seq)
+
+    expect(taken).toEqual({ step: TEXT_A, history: { undo: [], redo: [] } })
+  })
+
+  test('spec: Given a stale text marker above a slide operation, then skipping stops at the slide operation', () => {
+    const history: EditorHistory = { undo: [TEXT_A, DELETE_0, TEXT_C], redo: [] }
+
+    const taken = takeLive(history, 'undo', noneLive)
+
+    expect(taken).toEqual({ step: DELETE_0, history: { undo: [TEXT_A], redo: [] } })
+  })
+
+  test('spec: Given only stale text markers, then nothing is taken and all of them are dropped', () => {
+    const history: EditorHistory = { undo: [TEXT_A, TEXT_C], redo: [MOVE_1_0] }
+
+    const taken = takeLive(history, 'undo', noneLive)
+
+    expect(taken).toEqual({ step: null, history: { undo: [], redo: [MOVE_1_0] } })
+  })
+
+  test('spec: Given redo, then it skips on the redo stack and leaves the undo stack alone', () => {
+    const history: EditorHistory = { undo: [DELETE_0], redo: [TEXT_A, TEXT_C] }
+
+    const taken = takeLive(history, 'redo', step => step === TEXT_A)
+
+    expect(taken).toEqual({ step: TEXT_A, history: { undo: [DELETE_0], redo: [] } })
+  })
+
+  test('spec: Given a slide operation on top, then liveness is never asked about', () => {
+    const history = record(EMPTY_HISTORY, DELETE_0)
+    let asked = 0
+
+    const taken = takeLive(history, 'undo', () => { asked++; return false })
+
+    expect(taken.step).toEqual(DELETE_0)
+    expect(asked).toBe(0)
+  })
+
+  test('adversarial: Given an empty history, then nothing is taken and the history stays empty', () => {
+    expect(takeLive(EMPTY_HISTORY, 'undo', allLive)).toEqual({ step: null, history: EMPTY_HISTORY })
+    expect(takeLive(EMPTY_HISTORY, 'redo', allLive)).toEqual({ step: null, history: EMPTY_HISTORY })
+  })
+
+  test('adversarial: Given a stack at its full depth of stale markers, then all are dropped in one call', () => {
+    const undo = Array.from({ length: MAX_HISTORY_DEPTH }, (_, seq): HistoryStep => ({ kind: 'text', index: 0, field: 'body', seq }))
+
+    const taken = takeLive({ undo, redo: [] }, 'undo', noneLive)
+
+    expect(taken).toEqual({ step: null, history: EMPTY_HISTORY })
+  })
+})
+
+describe('selectionForReplay: which slide an undo or redo opens', () => {
+  test('spec: Given a layout change on another slide, when it is undone, then that slide is opened', () => {
+    const step: StructuralStep = { kind: 'config', index: 2, patch: { layout: 'cover' } }
+
+    expect(selectionForReplay(step, commandForStep(['a', 'b', 'c'], step), 0)).toEqual({ kind: 'select', index: 2 })
+  })
+
+  test('spec: Given a layout change on the open slide, when it is undone, then the open slide stays as it is', () => {
+    const step: StructuralStep = { kind: 'config', index: 1, patch: { layout: 'cover' } }
+
+    expect(selectionForReplay(step, commandForStep(['a', 'b'], step), 1)).toEqual({ kind: 'keep' })
+  })
+
+  test('spec: Given a reorder of a slide other than the open one, when it is undone, then the moved slide is opened where it lands', () => {
+    const step: StructuralStep = { kind: 'slides', cmd: { type: 'move', from: 2, to: 0 } }
+
+    expect(selectionForReplay(step, step.cmd, 1)).toEqual({ kind: 'select', index: 0 })
+  })
+
+  test('spec: Given a reorder of the open slide, when it is undone, then the open slide follows its move', () => {
+    const step: StructuralStep = { kind: 'slides', cmd: { type: 'move', from: 1, to: 0 } }
+
+    expect(selectionForReplay(step, step.cmd, 1)).toEqual({ kind: 'follow-move', from: 1, to: 0 })
+  })
+
+  test('spec: Given an insert or a delete, then the selection is the one the operation itself makes', () => {
+    const insert: StructuralStep = { kind: 'slides', cmd: { type: 'insert', at: 1, text: 'x' } }
+    const remove: StructuralStep = { kind: 'slides', cmd: { type: 'delete', index: 1 } }
+
+    expect(selectionForReplay(insert, insert.cmd, 0)).toEqual({ kind: 'select', index: 1 })
+    expect(selectionForReplay(remove, remove.cmd, 0)).toEqual({ kind: 'clamp-after-delete', deleted: 1 })
+  })
+
+  test('adversarial: Given no slide open, then a config change or a reorder still opens the affected slide', () => {
+    const config: StructuralStep = { kind: 'config', index: 0, patch: { skip: true } }
+    const move: StructuralStep = { kind: 'slides', cmd: { type: 'move', from: 0, to: 1 } }
+
+    expect(selectionForReplay(config, commandForStep(['a'], config), null)).toEqual({ kind: 'select', index: 0 })
+    expect(selectionForReplay(move, move.cmd, null)).toEqual({ kind: 'select', index: 1 })
   })
 })
