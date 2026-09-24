@@ -4,6 +4,7 @@ import { createSignal, createMemo, createEffect, onMount, onCleanup, untrack } f
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
+import { createTauriSettingsIpc } from '../ipc/settingsIpc'
 import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
 import { clampMenuPosition, type Size } from '../domain/geometry'
 import { deviceForShape, effectiveCanvas } from '../domain/viewport'
@@ -31,6 +32,7 @@ import { createRenderStore } from '../state/renderStore'
 import { createEditorStore } from '../state/editorStore'
 import { createDeckStore } from '../state/deckStore'
 import { createHistoryStore } from '../state/historyStore'
+import { createSettingsStore } from '../state/settingsStore'
 import {
   splitSlides,
   extractNote,
@@ -52,6 +54,7 @@ import {
 } from '../domain/slides'
 import { WelcomeScreen } from './WelcomeScreen'
 import { NewDeckModal } from './NewDeckModal'
+import { SettingsPanel } from './SettingsPanel'
 import { DeckHeader } from './DeckHeader'
 import { StatusBar } from './StatusBar'
 import { SlidePreview } from './SlidePreview'
@@ -165,6 +168,11 @@ export function Studio() {
   // Structural undo/redo (Cmd+Z / Cmd+Shift+Z outside the text editors) — see
   // `state/historyStore.ts` and `replayHistory` below.
   const history = createHistoryStore()
+  // App-wide settings and whether this window's settings panel is open —
+  // see `state/settingsStore.ts`. Saved and shared Rust-side
+  // (`src-tauri/src/settings.rs`); nothing reads a setting yet.
+  const settingsIpc = createTauriSettingsIpc()
+  const settings = createSettingsStore()
   // Distinct from `isBusy` above (the deck-lifecycle one): this guards
   // `commitChange`'s own in-flight save, which used to share the same
   // `isBusy` signal with the welcome-screen open/create flow. The two
@@ -1140,8 +1148,20 @@ export function Studio() {
     setStatusMessage('Reloaded — the deck changed on disk.')
   }
 
+  async function loadSettings(): Promise<void> {
+    try {
+      settings.applyLoaded(await settingsIpc.getSettings())
+    } catch {
+      // Best-effort like `refreshRecentDecks`: the defaults stay in place.
+      // `get_settings` itself never fails (a bad file reads as defaults),
+      // so only a broken IPC bridge lands here, and an error banner would
+      // be cleared by the deck opening at the same time anyway.
+    }
+  }
+
   onMount(() => {
     void refreshRecentDecks()
+    void loadSettings()
 
     // A window spawned by `open_deck_window` (native "Open Deck…"/"Open
     // Recent", or this app's own welcome-screen buttons) has a deck
@@ -1177,6 +1197,14 @@ export function Studio() {
     // needs anything this webview can do.
     const unlistenMenuNew = deckIpc.onMenuNewDeck(() => { void handleNewDeck() })
 
+    // App menu "Settings…" (Cmd+,), sent to the focused window only; and
+    // any window's saved change, sent to every window.
+    const unlistenMenuSettings = settingsIpc.onMenuSettings(() => {
+      ui.closeContextMenu()
+      settings.openPanel()
+    })
+    const unlistenSettingsChanged = settingsIpc.onSettingsChanged(settings.applyChanged)
+
     // Edit > Undo/Redo, by mouse or by Cmd+Z / Cmd+Shift+Z (see
     // `src-tauri/src/edit_menu.rs`): a focused text field gets its own text
     // undo, anything else undoes a slide operation. Only the slide operation
@@ -1185,13 +1213,23 @@ export function Studio() {
     // open that menu, and its text undo must still run.
     const onMenuHistory = (direction: 'undo' | 'redo') => {
       if (replayFocusedFieldHistory(direction)) return
-      if (ui.phoneShapeMenuOpen()) return
+      if (ui.phoneShapeMenuOpen() || settings.panelOpen()) return
       void replayHistory(direction)
     }
     const unlistenMenuUndo = deckIpc.onMenuUndo(() => { onMenuHistory('undo') })
     const unlistenMenuRedo = deckIpc.onMenuRedo(() => { onMenuHistory('redo') })
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // While the settings panel is open, Escape closes it and every other
+      // shortcut waits, since Delete or an arrow key would otherwise act on
+      // the slides behind it.
+      if (settings.panelOpen()) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          settings.closePanel()
+        }
+        return
+      }
       // While the phone shape menu is open, Escape closes it and every other
       // shortcut waits: arrows would move the selection, and Delete or Cmd+X
       // would act on a slide behind the open menu.
@@ -1280,6 +1318,8 @@ export function Studio() {
       window.removeEventListener('mousedown', closeSectionEditorOnOutsidePress, true)
       unlistenFileChanged()
       unlistenMenuNew()
+      unlistenMenuSettings()
+      unlistenSettingsChanged()
       unlistenMenuUndo()
       unlistenMenuRedo()
     })
@@ -1484,6 +1524,11 @@ export function Studio() {
         onNameChange={name => void dispatch({ type: 'name-changed', name })}
         onCancel={() => { setErrorMessage(null); void dispatch({ type: 'create-cancelled' }) }}
         onConfirm={() => void dispatch({ type: 'create-confirmed' })}
+      />
+
+      <SettingsPanel
+        isOpen={settings.panelOpen()}
+        onClose={settings.closePanel}
       />
     </div>
   )
