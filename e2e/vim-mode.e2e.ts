@@ -211,6 +211,44 @@ test.describe('functional', () => {
   })
 })
 
+test.describe('Tab', () => {
+  /** Whether keyboard focus is inside the body editor. */
+  const bodyHasFocus = (page: Page) => page.evaluate(() => document.activeElement?.closest('[data-editor="body"]') !== null)
+
+  test('Given vim mode is on and the body in insert mode, when Tab is pressed, then a tab is typed and focus stays in the body', async ({ page }) => {
+    await openDeck(page, { source: TWO_SLIDES, settings: { vimMode: true } })
+    await focusBodyTop(page)
+    await page.keyboard.type('i')
+
+    await page.keyboard.press('Tab')
+    await page.keyboard.type('x')
+
+    await expect.poll(() => editorText(page)).toBe('\tx# Slide One\n\nfirst line\nsecond line')
+    expect(await bodyHasFocus(page)).toBe(true)
+  })
+
+  test('Given vim mode is on and the body in normal mode, when Tab is pressed, then nothing is typed and focus stays in the body', async ({ page }) => {
+    await openDeck(page, { source: TWO_SLIDES, settings: { vimMode: true } })
+    await focusBodyTop(page)
+
+    await page.keyboard.press('Tab')
+
+    expect(await bodyHasFocus(page)).toBe(true)
+    await expect(vimStatus(page)).toContainText('NORMAL')
+    await expect.poll(() => editorText(page)).toBe('# Slide One\n\nfirst line\nsecond line')
+  })
+
+  test('Given vim mode is off, when Tab is pressed in the body, then focus moves on as before and nothing is typed', async ({ page }) => {
+    await openDeck(page, { source: TWO_SLIDES })
+    await editorContent(page).click()
+
+    await page.keyboard.press('Tab')
+
+    expect(await bodyHasFocus(page)).toBe(false)
+    await expect.poll(() => editorText(page)).toBe('# Slide One\n\nfirst line\nsecond line')
+  })
+})
+
 test.describe('robustness', () => {
   test('Given the clipboard holds no text, when the window takes focus back, then "p" still puts the last yank', async ({ page }) => {
     const deck: MockDeck = { source: TWO_SLIDES, settings: { vimMode: true } }
