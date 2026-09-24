@@ -274,15 +274,42 @@ test.describe('robustness', () => {
     await expect.poll(() => editorText(page)).toBe('Slide Two')
   })
 
-  test('Given saving the setting fails, when Vim mode is checked, then an error is shown and the editor stays as it was', async ({ page }) => {
+  test('Given saving the setting fails, when Vim mode is checked, then an error is shown, the box is unchecked again, and the editor stays as it was', async ({ page }) => {
     await openDeck(page, {
       source: TWO_SLIDES,
       commandError: cmd => (cmd === 'update_settings' ? 'simulated disk full' : null),
     })
     await emit(page, 'menu:settings', null, 'main')
-    await page.getByRole('checkbox', { name: /Vim mode/ }).check()
+    const box = page.getByRole('checkbox', { name: /Vim mode/ })
+    // `click`, not `check`: `check` insists the box ends up checked.
+    await box.click()
 
     await expect(page.getByText(/Could not save the vim mode setting/)).toBeVisible()
+    await expect(box).not.toBeChecked()
     await expect(vimStatus(page)).toHaveCount(0)
+  })
+
+  test('Given vim mode is on, when slides are switched back and forth, then the editors add no more CSS rules to the page', async ({ page }) => {
+    await openDeck(page, { source: TWO_SLIDES, settings: { vimMode: true } })
+    // Every CSS rule the page holds, in `<style>` elements and in the
+    // constructed sheets CodeMirror adopts.
+    const ruleCount = () => page.evaluate(() => {
+      const sheets = [...document.styleSheets, ...document.adoptedStyleSheets]
+      return sheets.reduce((sum, sheet) => sum + sheet.cssRules.length, 0)
+    })
+    const selectSlide = async (row: number) => {
+      await page.locator(`[data-slide-row="${row}"] button[title]`).first().click()
+      await expect.poll(() => editorText(page)).toContain(row === 0 ? 'Slide One' : 'Slide Two')
+    }
+    await selectSlide(1)
+    await selectSlide(0)
+    const before = await ruleCount()
+
+    for (let i = 0; i < 5; i++) {
+      await selectSlide(1)
+      await selectSlide(0)
+    }
+
+    expect(await ruleCount()).toBe(before)
   })
 })
