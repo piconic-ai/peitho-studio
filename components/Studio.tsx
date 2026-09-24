@@ -655,7 +655,10 @@ export function Studio() {
     const newSlideText = buildSlideText(editor.pageConfig(), body, note)
     const source = editor.fullSource()
     const nextSource = source.slice(0, range.start) + newSlideText + source.slice(range.end)
-    await commitChange(nextSource, { kind: 'keep' }, { body, note })
+    // Typed text can itself re-split the deck (a `---` line, an unclosed code
+    // fence), shifting the positions every history step addresses slides by.
+    const resplits = splitSlides(nextSource).length !== editor.slideRanges().length
+    if (await commitChange(nextSource, { kind: 'keep' }, { body, note }) && resplits) history.clear()
   }
 
   // Rebuilds `fullSource` from an ordered list of slide texts, preserving
@@ -753,15 +756,10 @@ export function Studio() {
     const patch = { section: draft.name, time: formatDurationMs(timeMs) }
     const updatedSlideText = updatePageComment(slideText, patch)
     if (updatedSlideText === slideText) return
-    const undoStep = inverseStep(currentSlideTexts(), { kind: 'config', index: startIndex, patch })
-
-    let nextSource = editor.fullSource()
-    nextSource = nextSource.slice(0, range.start) + updatedSlideText + nextSource.slice(range.end)
-
-    // time here doesn't quietly break the next build.
-    nextSource = updateFrontmatterTime(nextSource, otherSectionsMs + timeMs)
-
-    if (await commitChange(nextSource, { kind: 'keep' })) history.record(undoStep)
+    // Through the same path as every other structural operation, so it is
+    // undoable; `syncedSource` re-totals the frontmatter `time:` from every
+    // section's own time, keeping the next build from rejecting a stale total.
+    await perform({ kind: 'config', index: startIndex, patch })
   }
 
   // `selectionPlanFor(move)` is `follow-move`, not "select `to`":
@@ -786,22 +784,36 @@ export function Studio() {
     return ok ? { kind: 'done', inverse } : { kind: 'failed' }
   }
 
-  // A new structural operation: runs it and records how to undo it.
-  async function perform(step: HistoryStep): Promise<void> {
-    const outcome = await runStep(step)
-    if (outcome.kind === 'done') history.record(outcome.inverse)
+  // Structural operations and undo/redo run one at a time: each reads the
+  // slides only once the previous one has landed. Run concurrently, both
+  // would compute from the same slides, the later whole-file save would
+  // silently overwrite the earlier, and the history would record a step for
+  // a change that is no longer in the file.
+  let structuralQueue: Promise<void> = Promise.resolve()
+  function serialized(run: () => Promise<void>): Promise<void> {
+    const next = structuralQueue.then(run)
+    structuralQueue = next.catch(() => undefined)
+    return next
   }
 
-  // Cmd+Z (`undo`) / Cmd+Shift+Z (`redo`) outside the textareas. The step is
-  // popped before the commit is awaited (see `state/historyStore.ts`), and a
-  // press while any commit is still in flight is ignored — the step would be
-  // computed against slides that are about to change. On success the
-  // opposite step goes onto the other stack; a failed commit puts the step
-  // back so it can be retried; a rejected one means the history no longer
-  // matches the deck, so it is dropped whole rather than left to misfire on
-  // the next press.
-  async function replayHistory(direction: 'undo' | 'redo'): Promise<void> {
-    if (isSavingSlide()) return
+  // A new structural operation: runs it and records how to undo it.
+  function perform(step: HistoryStep): Promise<void> {
+    return serialized(async () => {
+      const outcome = await runStep(step)
+      if (outcome.kind === 'done') history.record(outcome.inverse)
+    })
+  }
+
+  // Cmd+Z (`undo`) / Cmd+Shift+Z (`redo`) outside the textareas, queued
+  // behind any structural operation still saving. On success the opposite
+  // step goes onto the other stack; a failed commit puts the step back so it
+  // can be retried; a rejected one means the history no longer matches the
+  // deck, so it is dropped whole rather than left to misfire on the next
+  // press.
+  function replayHistory(direction: 'undo' | 'redo'): Promise<void> {
+    return serialized(() => replayHistoryNow(direction))
+  }
+  async function replayHistoryNow(direction: 'undo' | 'redo'): Promise<void> {
     const isUndo = direction === 'undo'
     const step = isUndo ? history.takeUndo() : history.takeRedo()
     if (step === null) return
