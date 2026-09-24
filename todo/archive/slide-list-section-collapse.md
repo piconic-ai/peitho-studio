@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: サムネイル一覧をセクション単位で折りたたみ、スライド枚数が多いデッキでも一覧を見渡しやすくする
 tags: [ui, slide-list, section]
 ---

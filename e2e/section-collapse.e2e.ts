@@ -1,4 +1,4 @@
-// Functional requirement (todo/slide-list-section-collapse.md): a section
+// Functional requirement (todo/archive/slide-list-section-collapse.md): a section
 // header in the slide list can fold away the thumbnails of every slide in
 // its section, so a long deck can be scanned section by section. Each test
 // below is one Given-When-Then example, driven through the real frontend
