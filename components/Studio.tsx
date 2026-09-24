@@ -26,6 +26,7 @@ import { startColumnResize } from '../dom/columnResize'
 import { blurEditorFieldOnRowPress, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
 import { createCodeEditor, resetCodeEditorText, setCodeEditorText } from '../dom/codeEditor'
 import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
+import { focusSettingsPanel, restoreFocusAfterSettingsPanel } from '../dom/settingsPanel'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, setManifestKeysSource } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
 import { createRenderStore } from '../state/renderStore'
@@ -1159,6 +1160,21 @@ export function Studio() {
     }
   }
 
+  // Focus moves onto the panel while it's open, so a slide editor behind
+  // it stops taking typing and Edit > Undo (see `dom/settingsPanel.ts`).
+  function openSettings(): void {
+    if (settings.panelOpen()) return
+    ui.closeContextMenu()
+    settings.openPanel()
+    focusSettingsPanel()
+  }
+
+  function closeSettings(): void {
+    if (!settings.panelOpen()) return
+    settings.closePanel()
+    restoreFocusAfterSettingsPanel()
+  }
+
   onMount(() => {
     void refreshRecentDecks()
     void loadSettings()
@@ -1199,10 +1215,7 @@ export function Studio() {
 
     // App menu "Settings…" (Cmd+,), sent to the focused window only; and
     // any window's saved change, sent to every window.
-    const unlistenMenuSettings = settingsIpc.onMenuSettings(() => {
-      ui.closeContextMenu()
-      settings.openPanel()
-    })
+    const unlistenMenuSettings = settingsIpc.onMenuSettings(openSettings)
     const unlistenSettingsChanged = settingsIpc.onSettingsChanged(settings.applyChanged)
 
     // Edit > Undo/Redo, by mouse or by Cmd+Z / Cmd+Shift+Z (see
@@ -1226,7 +1239,7 @@ export function Studio() {
       if (settings.panelOpen()) {
         if (event.key === 'Escape') {
           event.preventDefault()
-          settings.closePanel()
+          closeSettings()
         }
         return
       }
@@ -1528,7 +1541,7 @@ export function Studio() {
 
       <SettingsPanel
         isOpen={settings.panelOpen()}
-        onClose={settings.closePanel}
+        onClose={closeSettings}
       />
     </div>
   )

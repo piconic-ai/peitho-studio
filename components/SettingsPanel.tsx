@@ -39,6 +39,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
           <button
             type="button"
             aria-label="Close settings"
+            data-settings-panel-close
             onClick={() => props.onClose()}
             className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:bg-accent"
           >

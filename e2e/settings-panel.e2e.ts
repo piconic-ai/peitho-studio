@@ -5,6 +5,7 @@
 // by on-device verification.
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
+import { editorContent, editorText, moveToEditorEnd } from './helpers/codeEditor'
 
 const TWO_SLIDES = '<!-- {"key":"one"} -->\n# Slide One\n\n---\n\n<!-- {"key":"two"} -->\n# Slide Two\n'
 
@@ -118,6 +119,27 @@ test.describe('robustness', () => {
     await page.waitForTimeout(200)
 
     await expect(page.locator('[data-slide-row]')).toHaveCount(1)
+  })
+
+  test('Given the slide editor has focus, when Settings… opens, then typing and Edit > Undo no longer reach the editor, and closing gives focus back to it', async ({ page }) => {
+    await openDeck(page, { source: TWO_SLIDES })
+    await page.locator('[data-slide-row="0"]').click()
+    await moveToEditorEnd(page)
+    await page.keyboard.type('X')
+    await expect.poll(() => editorText(page)).toContain('# Slide OneX')
+
+    await chooseSettingsMenu(page)
+    await expect(page.getByRole('button', { name: 'Close settings' })).toBeFocused()
+    await page.keyboard.type('abc')
+    await page.keyboard.press('Backspace')
+    await emit(page, 'menu:undo', null, 'main')
+    await page.waitForTimeout(200)
+    expect(await editorText(page)).toContain('# Slide OneX')
+    expect(await editorText(page)).not.toContain('abc')
+
+    await page.keyboard.press('Escape')
+    await expect(settingsPanel(page)).toBeHidden()
+    await expect(editorContent(page)).toBeFocused()
   })
 
   test('Given a malformed saved-settings answer, when the window starts, then the deck opens normally with no error shown', async ({ page }) => {
