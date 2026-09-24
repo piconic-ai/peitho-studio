@@ -89,6 +89,9 @@ export interface Messages {
   settings: string
   closeSettings: string
   language: string
+  vimMode: string
+  vimModeDescription: string
+  vimModeSaveFailed: (error: string) => string
 
   // Status messages and prompts
   openedDeck: (deckPath: string) => string
@@ -175,6 +178,9 @@ const en: Messages = {
   settings: 'Settings',
   closeSettings: 'Close settings',
   language: 'Language',
+  vimMode: 'Vim mode',
+  vimModeDescription: 'Vim key bindings in the slide body and speaker notes. Yanks share the system clipboard.',
+  vimModeSaveFailed: error => `Could not save the vim mode setting: ${error}`,
 
   openedDeck: deckPath => `Opened ${deckPath}`,
   saved: 'Saved',
@@ -260,6 +266,9 @@ const ja: Messages = {
   settings: '設定',
   closeSettings: '設定を閉じる',
   language: '言語',
+  vimMode: 'Vim モード',
+  vimModeDescription: 'スライド本文と発表者ノートで Vim のキー操作を使えるようにします。ヤンクはシステムのクリップボードと共有します。',
+  vimModeSaveFailed: error => `Vim モードの設定を保存できませんでした: ${error}`,
 
   openedDeck: deckPath => `${deckPath} を開きました`,
   saved: '保存しました',

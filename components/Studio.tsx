@@ -5,6 +5,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
 import { createTauriSettingsIpc } from '../ipc/settingsIpc'
+import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
 import { clampMenuPosition, type Size } from '../domain/geometry'
 import { deviceForShape, effectiveCanvas } from '../domain/viewport'
@@ -23,10 +24,12 @@ import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOpti
 import { racePresentOutcome } from '../domain/eventRace'
 import { type Language } from '../domain/language'
 import { type StatusMessage, statusText } from '../domain/statusMessage'
+import { takesCommandKeys, type VimMode } from '../domain/vimMode'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
 import { blurEditorFieldOnRowPress, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
-import { createCodeEditor, resetCodeEditorText, setCodeEditorPlaceholder, setCodeEditorText } from '../dom/codeEditor'
+import { createCodeEditor, resetCodeEditorText, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, type CodeEditorOptions } from '../dom/codeEditor'
+import { createVimClipboardBridge, onClipboardMayHaveChanged } from '../dom/vimClipboard'
 import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
 import { focusSettingsPanel, restoreFocusAfterSettingsPanel } from '../dom/settingsPanel'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, setManifestKeysSource } from '../dom/slideCanvas'
@@ -179,6 +182,14 @@ export function Studio() {
   // it with the OS's answer, which the native menu bar also goes by.
   const settingsIpc = createTauriSettingsIpc()
   const settings = createSettingsStore(typeof navigator === 'undefined' ? [] : navigator.languages)
+  // Vim mode's ties to the OS: the input source goes to ASCII whenever
+  // vim takes command keys, and the unnamed register follows the system
+  // clipboard (`dom/vimClipboard.ts`).
+  const editorIpc = createTauriEditorIpc()
+  const vimClipboard = createVimClipboardBridge({
+    readText: () => editorIpc.readClipboardText(),
+    writeText: text => editorIpc.writeClipboardText(text),
+  })
   // Distinct from `isBusy` above (the deck-lifecycle one): this guards
   // `commitChange`'s own in-flight save, which used to share the same
   // `isBusy` signal with the welcome-screen open/create flow. The two
@@ -233,11 +244,37 @@ export function Studio() {
     if (noteEditor) write(noteEditor, editor.noteDraft())
   }
 
+  function selectAsciiInputFor(mode: VimMode): void {
+    // Best effort: failing leaves the input source as the user set it.
+    if (takesCommandKeys(mode)) editorIpc.selectAsciiInputSource().catch(() => {})
+  }
+
+  // Shared by both editors. Read once per editor; later changes of the
+  // setting go through `setCodeEditorVimMode` (the effect below).
+  function vimEditorOptions(): Pick<CodeEditorOptions, 'vimMode' | 'onVimModeChange' | 'onVimFocus' | 'onVimCommandDone'> {
+    return {
+      vimMode: untrack(() => settings.settings().vimMode),
+      onVimModeChange: selectAsciiInputFor,
+      onVimFocus: mode => {
+        vimClipboard.pullClipboard()
+        selectAsciiInputFor(mode)
+      },
+      onVimCommandDone: () => { vimClipboard.pushRegister() },
+    }
+  }
+
+  createEffect(() => {
+    const on = settings.settings().vimMode
+    if (bodyEditor) setCodeEditorVimMode(bodyEditor, on)
+    if (noteEditor) setCodeEditorVimMode(noteEditor, on)
+  })
+
   // A host remounts only with the whole editor pane (a deck-lifecycle
   // branch), so the previous editor, if any, is already detached.
   function onBodyEditorHost(el: HTMLElement): void {
     bodyEditor?.destroy()
     bodyEditor = createCodeEditor(el, editor.bodyDraft(), {
+      ...vimEditorOptions(),
       monospace: true,
       spellcheck: false,
       onChange: text => editor.setEditorSession(session => withDraftBody(session, text)),
@@ -247,6 +284,7 @@ export function Studio() {
   function onNoteEditorHost(el: HTMLElement): void {
     noteEditor?.destroy()
     noteEditor = createCodeEditor(el, editor.noteDraft(), {
+      ...vimEditorOptions(),
       placeholder: untrack(() => settings.messages().speakerNotesPlaceholder),
       onChange: text => editor.setEditorSession(session => withDraftNote(session, text)),
     })
@@ -1209,6 +1247,17 @@ export function Studio() {
     restoreFocusAfterSettingsPanel()
   }
 
+  // Every window, this one included, also hears the saved result through
+  // `settings:changed`; applying the answer here too keeps this window
+  // right even if that broadcast is missed.
+  async function changeVimMode(on: boolean): Promise<void> {
+    try {
+      settings.applyChanged(await settingsIpc.updateSettings({ vimMode: on }))
+    } catch (err) {
+      setErrorMessage(settings.messages().vimModeSaveFailed(String(err)))
+    }
+  }
+
   onMount(() => {
     void refreshRecentDecks()
     void loadSettings()
@@ -1252,6 +1301,11 @@ export function Studio() {
     // any window's saved change, sent to every window.
     const unlistenMenuSettings = settingsIpc.onMenuSettings(openSettings)
     const unlistenSettingsChanged = settingsIpc.onSettingsChanged(settings.applyChanged)
+    // Vim mode's `p` puts what another app copied: the clipboard is read
+    // into vim's register ahead of time (see `dom/vimClipboard.ts`).
+    const unlistenClipboard = onClipboardMayHaveChanged(() => {
+      if (settings.settings().vimMode) vimClipboard.pullClipboard()
+    })
 
     // Edit > Undo/Redo, by mouse or by Cmd+Z / Cmd+Shift+Z (see
     // `src-tauri/src/edit_menu.rs`): a focused text field gets its own text
@@ -1368,6 +1422,7 @@ export function Studio() {
       unlistenMenuNew()
       unlistenMenuSettings()
       unlistenSettingsChanged()
+      unlistenClipboard()
       unlistenMenuUndo()
       unlistenMenuRedo()
     })
@@ -1585,8 +1640,10 @@ export function Studio() {
       <SettingsPanel
         isOpen={settings.panelOpen()}
         language={settings.language()}
+        vimMode={settings.settings().vimMode}
         onClose={closeSettings}
         onChangeLanguage={language => void changeLanguage(language)}
+        onVimModeChange={on => { void changeVimMode(on) }}
       />
     </div>
   )

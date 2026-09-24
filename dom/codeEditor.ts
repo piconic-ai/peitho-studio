@@ -1,5 +1,6 @@
 // A CodeMirror 6 editor for the slide body and the speaker notes: creating
-// one, pushing a draft into it from outside, and its own undo/redo.
+// one, pushing a draft into it from outside, its own undo/redo, and vim
+// mode.
 //
 // The editor is uncontrolled: typing reaches the app only through
 // `onChange`, and the app writes back only after a *non-typing* change (a
@@ -7,9 +8,11 @@
 // `syncEditorFields` in `components/Studio.tsx`.
 
 import { Annotation, Compartment, EditorState, Transaction, type Extension } from '@codemirror/state'
-import { EditorView, keymap, placeholder as placeholderText } from '@codemirror/view'
+import { EditorView, ViewPlugin, drawSelection, keymap, placeholder as placeholderText } from '@codemirror/view'
 import { defaultKeymap, history, redo, redoDepth, undo, undoDepth } from '@codemirror/commands'
+import { getCM, vim } from '@replit/codemirror-vim'
 import { editorTextChange, normalizeLineBreaks } from '../domain/editorText'
+import { parseVimMode, type VimMode } from '../domain/vimMode'
 
 export interface CodeEditorOptions {
   /** Called with the full text after every change the user makes. */
@@ -20,15 +23,30 @@ export interface CodeEditorOptions {
   spellcheck?: boolean
   /** Monospace for the body, the page font for the notes. */
   monospace?: boolean
+  /** Starts with vim key bindings on (see `setCodeEditorVimMode`). */
+  vimMode?: boolean
+  /** Vim mode only: the editor entered `mode` (`<Esc>` back to normal,
+   * `i` into insert, ...). */
+  onVimModeChange?: (mode: VimMode) => void
+  /** Vim mode only: the editor took keyboard focus while in `mode`. */
+  onVimFocus?: (mode: VimMode) => void
+  /** Vim mode only: a vim command finished (a yank, a delete, a motion, or
+   * leaving insert mode). The unnamed register may have changed. */
+  onVimCommandDone?: () => void
 }
 
 // Marks a transaction `setCodeEditorText` sends, so `onChange` reports only
 // what the user typed, never the draft the app just pushed in.
 const fromApp = Annotation.define<boolean>()
 
-// The extensions a view was created with, so `resetCodeEditorText` can
-// build a fresh state from the same ones.
-const extensionsOf = new WeakMap<EditorView, Extension[]>()
+// Holds the vim extension, or nothing, so vim mode can be turned on and off
+// without re-creating the editor (and losing its text, cursor and history).
+const vimCompartment = new Compartment()
+
+// What a view was created with, so `resetCodeEditorText` can build a fresh
+// state from the same extensions, and whether vim mode is on in it now.
+const optionsOf = new WeakMap<EditorView, CodeEditorOptions>()
+const vimModeOf = new WeakMap<EditorView, boolean>()
 
 // The placeholder sits in its own compartment so a UI language change can
 // swap it (`setCodeEditorPlaceholder`); the text currently shown is kept
@@ -52,15 +70,69 @@ function editorTheme(monospace: boolean): Extension {
     '.cm-content': { padding: '0.75rem', caretColor: 'currentColor' },
     '.cm-line': { padding: '0' },
     '.cm-placeholder': { color: 'var(--color-muted-foreground, #888)' },
+    // The vim status line (`--NORMAL--`, the `/` and `:` prompts), in the
+    // app's colors rather than CodeMirror's fixed light-gray panel.
+    '.cm-panels': { backgroundColor: 'var(--muted, #f5f5f5)', color: 'var(--muted-foreground, #666)' },
+    '.cm-panels-bottom': { borderTop: '1px solid var(--border, #ddd)' },
+    '.cm-vim-panel': { fontSize: '0.75rem', lineHeight: '1.5rem' },
+    '.cm-vim-panel input': { color: 'var(--foreground, inherit)' },
   })
 }
 
-function editorExtensions(options: CodeEditorOptions): Extension[] {
+/** The vim mode `view` is in now. */
+function currentVimMode(view: EditorView): VimMode {
+  const state = getCM(view)?.state as { vim?: { insertMode?: boolean; visualMode?: boolean }; overwrite?: boolean } | undefined
+  if (state?.vim?.insertMode) return state.overwrite ? 'replace' : 'insert'
+  return state?.vim?.visualMode ? 'visual' : 'normal'
+}
+
+// Forwards the vim engine's own events to `options`. Listed after `vim()`,
+// so the vim plugin (which attaches the engine to the view) is created
+// first and `getCM` finds it.
+function vimEvents(options: CodeEditorOptions): Extension {
   return [
+    ViewPlugin.define(view => {
+      const cm = getCM(view)
+      if (cm === null) return {}
+      const onModeChange = (event: { mode?: unknown }) => {
+        const mode = parseVimMode(event.mode)
+        if (mode !== null) options.onVimModeChange?.(mode)
+      }
+      // The engine signals `vim-command-done` as it starts running an
+      // operator (clearing its pending keys), before the operator itself
+      // runs — a yank's text reaches the register only after the signal.
+      // So the hook waits for the rest of the keystroke's handling.
+      const onCommandDone = () => { queueMicrotask(() => { options.onVimCommandDone?.() }) }
+      cm.on('vim-mode-change', onModeChange)
+      cm.on('vim-command-done', onCommandDone)
+      return {
+        destroy() {
+          cm.off('vim-mode-change', onModeChange)
+          cm.off('vim-command-done', onCommandDone)
+        },
+      }
+    }),
+    EditorView.domEventHandlers({
+      focus: (_event, view) => { options.onVimFocus?.(currentVimMode(view)) },
+    }),
+  ]
+}
+
+function vimExtension(options: CodeEditorOptions, on: boolean): Extension {
+  // `status` shows the mode (`--INSERT--`) and hosts the `/` and `:`
+  // prompts; `drawSelection` draws visual mode's selection.
+  return on ? [vim({ status: true }), drawSelection(), vimEvents(options)] : []
+}
+
+function editorExtensions(options: CodeEditorOptions, vimOn: boolean): Extension[] {
+  return [
+    // First, so vim's keys win over every other keymap below.
+    vimCompartment.of(vimExtension(options, vimOn)),
     // No `historyKeymap`: Cmd+Z / Cmd+Shift+Z are the Edit menu's
     // accelerators (`src-tauri/src/edit_menu.rs`), which reach
     // `replayFocusedCodeEditorHistory` below. Binding them here too would
-    // undo twice for one press.
+    // undo twice for one press. Vim's own `u` / `Ctrl-R` use this same
+    // history.
     history(),
     keymap.of(defaultKeymap),
     EditorView.lineWrapping,
@@ -78,9 +150,10 @@ function editorExtensions(options: CodeEditorOptions): Extension[] {
 /** Creates an editor showing `text` inside `parent`. Call `view.destroy()`
  * when its element goes away. */
 export function createCodeEditor(parent: HTMLElement, text: string, options: CodeEditorOptions): EditorView {
-  const extensions = editorExtensions(options)
-  const view = new EditorView({ parent, state: EditorState.create({ doc: text, extensions }) })
-  extensionsOf.set(view, extensions)
+  const vimOn = options.vimMode ?? false
+  const view = new EditorView({ parent, state: EditorState.create({ doc: text, extensions: editorExtensions(options, vimOn) }) })
+  optionsOf.set(view, options)
+  vimModeOf.set(view, vimOn)
   placeholderOf.set(view, options.placeholder ?? '')
   return view
 }
@@ -91,6 +164,14 @@ export function setCodeEditorPlaceholder(view: EditorView, text: string): void {
   if (placeholderOf.get(view) === text) return
   placeholderOf.set(view, text)
   view.dispatch({ effects: placeholderSlot.reconfigure(placeholderExtension(text)) })
+}
+
+/** Turns vim key bindings on or off, keeping the text, cursor and undo
+ * history. Off, the editor behaves exactly as without vim mode. */
+export function setCodeEditorVimMode(view: EditorView, on: boolean): void {
+  if ((vimModeOf.get(view) ?? false) === on) return
+  vimModeOf.set(view, on)
+  view.dispatch({ effects: vimCompartment.reconfigure(vimExtension(optionsOf.get(view) ?? { onChange: () => {} }, on)) })
 }
 
 /** Replaces the editor's text with `text`, as an edit Undo skips, touching
@@ -111,7 +192,7 @@ export function setCodeEditorText(view: EditorView, text: string): void {
 
 /** Replaces the editor's text with `text` and forgets its undo history, so
  * Undo can't bring back another slide's text. For a slide switch or a deck
- * read fresh from disk.
+ * read fresh from disk. In vim mode, the editor is back in normal mode.
  *
  * Does nothing while an IME composition is in progress, like
  * `setCodeEditorText`. */
@@ -119,10 +200,11 @@ export function resetCodeEditorText(view: EditorView, text: string): void {
   if (view.composing) return
   const unchanged = view.state.doc.toString() === normalizeLineBreaks(text)
   if (unchanged && undoDepth(view.state) === 0 && redoDepth(view.state) === 0) return
-  const extensions = extensionsOf.get(view) ?? []
-  // `extensions` carry the creation-time placeholder; the fresh state gets
+  const options = optionsOf.get(view)
+  if (options === undefined) return
+  // `options` carry the creation-time placeholder; the fresh state gets
   // the current one before the view ever shows it.
-  const fresh = EditorState.create({ doc: text, extensions })
+  const fresh = EditorState.create({ doc: text, extensions: editorExtensions(options, vimModeOf.get(view) ?? false) })
   view.setState(fresh.update({ effects: placeholderSlot.reconfigure(placeholderExtension(placeholderOf.get(view) ?? '')) }).state)
 }
 

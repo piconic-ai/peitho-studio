@@ -12,14 +12,19 @@ import { LANGUAGE_NAMES, messagesFor } from '../domain/messages'
 // the settings items hold inputs whose state must survive the panel
 // closing and reopening. Escape is handled in `Studio.tsx`'s `onKeyDown`,
 // which also holds back every slide shortcut while this is open.
+//
+// Each item shows the setting as this window knows it and reports a change
+// through a callback; `Studio.tsx` saves it (see `domain/settings.ts`).
 export interface SettingsPanelProps {
   isOpen: boolean
   /** The UI language shown now — the saved choice, or the OS's while
    * nothing is chosen — which the language picker marks as chosen. */
   language: Language
+  vimMode: boolean
   onClose: () => void
   /** A language picked in the language picker, to be saved. */
   onChangeLanguage: (language: Language) => void
+  onVimModeChange: (on: boolean) => void
 }
 
 export function SettingsPanel(props: SettingsPanelProps) {
@@ -72,6 +77,23 @@ export function SettingsPanel(props: SettingsPanelProps) {
               </button>
             ))}
           </div>
+        </div>
+        <div className="px-4 pb-4">
+          <label className="flex items-start gap-3 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              data-setting="vim-mode"
+              checked={props.vimMode}
+              onChange={e => props.onVimModeChange((e.target as HTMLInputElement).checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="block font-medium">{messagesFor(props.language).vimMode}</span>
+              <span className="block text-xs text-muted-foreground">
+                {messagesFor(props.language).vimModeDescription}
+              </span>
+            </span>
+          </label>
         </div>
       </div>
       </div>
