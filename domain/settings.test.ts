@@ -9,6 +9,7 @@ import {
   parseSettings,
   type SettingsSchema,
 } from './settings'
+import { LANGUAGE_SETTINGS } from './language'
 
 // A stand-in with real fields — the app's own `Settings` has none yet — so
 // the per-field reading every future setting relies on is exercised now.
@@ -68,7 +69,7 @@ describe('parseSettings', () => {
   })
 
   test('spec: Given a saved UI language, when read with the app\'s own schema, then it is kept', () => {
-    for (const uiLanguage of ['system', 'en', 'ja']) {
+    for (const uiLanguage of LANGUAGE_SETTINGS) {
       expect(parseSettings(SETTINGS_SCHEMA, { uiLanguage })).toEqual({ uiLanguage })
     }
   })
