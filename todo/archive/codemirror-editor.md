@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: 本文とノートのtextareaをCodeMirror 6に置き換える(vim modeの土台)
 tags: [editor, codemirror, ime]
 ---
@@ -115,8 +115,11 @@ vim modeと同じ系統)を採用した。Neovim組み込みやMonacoは採ら�
 - [x] 本文とノートがCodeMirrorに置き換わっている
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機での日本語入力(変換・確定・変換中のスライド切り替え)
-- [ ] 実機でのEdit > Undo/Redo(本文・ノート・フォーカスが外)
+- [x] 実機での日本語入力(変換・確定・変換中のスライド切り替え)
+- [x] 実機でのEdit > Undo/Redo(本文・ノート・フォーカスが外)
+
+実機確認の結果(2026-09-24、ユーザー): 日本語入力(変換中のスライド
+切り替えを含む)とEdit > Undo/Redoは、いずれも問題なし。
 
 ## 先送り事項
 
