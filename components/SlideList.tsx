@@ -175,18 +175,25 @@ export function SlideList(props: SlideListProps) {
                 style={props.draggedIndex === entry.sourceIndex ? `transform: translateY(${String(props.dragDeltaY)}px) scale(0.95)` : ''}
               >
                 {props.sectionStartByIndex[entry.sourceIndex] ? (
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-2 pt-3 pb-1">
                     {/* Folds the section's slides away (or back) — separate
                         from the summary button beside it, which opens the
-                        header's name/time editor instead. */}
+                        header's name/time editor instead. One SVG chevron
+                        rotated for the collapsed state, not the ▾/▸ text
+                        glyphs: those two differ in size and baseline from
+                        font to font, so the icon visibly jumped on toggle.
+                        `w-4` matches the slide rows' number column so the
+                        chevron and the header text line up with it. */}
                     <button
                       type="button"
                       aria-label={props.rowVisibility[entry.sourceIndex] === 'header-only' ? 'Expand section' : 'Collapse section'}
                       aria-expanded={props.rowVisibility[entry.sourceIndex] === 'header-only' ? 'false' : 'true'}
                       onClick={() => props.onToggleSectionCollapse(entry.sourceIndex)}
-                      className="shrink-0 w-4 pt-3 pb-1 text-xs text-muted-foreground hover:text-foreground"
+                      className="shrink-0 w-4 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground"
                     >
-                      {props.rowVisibility[entry.sourceIndex] === 'header-only' ? '▸' : '▾'}
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" className={props.rowVisibility[entry.sourceIndex] === 'header-only' ? 'block w-3 h-3 -rotate-90' : 'block w-3 h-3'}>
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
                     </button>
                     <div className="min-w-0 flex-1">
                       {props.editingSectionIndex === entry.sourceIndex ? (
@@ -197,7 +204,7 @@ export function SlideList(props: SlideListProps) {
                         // back to its plain summary below — once focus leaves
                         // it, not on each input's own blur (see
                         // `isFocusMovingWithinSectionHeader`).
-                        <div data-section-header="" className="flex items-center gap-1 pt-3 pb-1">
+                        <div data-section-header="" className="flex items-center gap-1">
                           <input
                             aria-label="Section name"
                             // Mounts focused: entering edit mode is a deliberate
@@ -250,7 +257,7 @@ export function SlideList(props: SlideListProps) {
                           type="button"
                           aria-label="Edit section name and time"
                           onClick={() => props.onEditSection(entry.sourceIndex)}
-                          className="w-full flex items-center gap-1 pt-3 pb-1 text-left"
+                          className="w-full flex items-center gap-1 text-left"
                         >
                           <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground/80">
                             {props.sectionDraftOf(entry.sourceIndex).name}
