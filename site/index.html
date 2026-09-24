@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Peitho Studio — a desktop editor for Peitho decks</title>
+  <meta name="description" content="Peitho Studio puts a slide list, an editor and a live preview around a Peitho Markdown deck, and leaves the file plain Markdown. Free and open source, built with Tauri.">
+  <meta property="og:title" content="Peitho Studio">
+  <meta property="og:description" content="A desktop editor for Peitho decks. The deck stays plain Markdown.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="/icon.png">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">
+      <img src="/favicon.svg" alt="" width="28" height="28">
+      <span>Peitho Studio</span>
+    </a>
+    <nav>
+      <a href="#tour">Tour</a>
+      <a href="#features">Features</a>
+      <a href="#download">Download</a>
+      <a href="https://github.com/piconic-ai/peitho-studio">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">Free · Open source · Desktop</p>
+      <h1>A desktop editor for <a href="https://github.com/mizzy/peitho">Peitho</a> decks.</h1>
+      <p class="lede">
+        Peitho decks are plain Markdown. Peitho Studio puts a slide list, an editor and a
+        live preview around that file — and leaves the file exactly as it was: Markdown,
+        editable by any other tool at the same time.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary btn-lg" href="#download">Download</a>
+        <a class="btn btn-outline btn-lg" href="https://github.com/piconic-ai/peitho-studio">View on GitHub</a>
+      </div>
+      <p class="hero-note">Built with Tauri v2 and BarefootJS. Developed on macOS; Tauri also builds for Windows and Linux. MIT licensed.</p>
+    </section>
+
+    <section id="tour" class="section">
+      <h2>What it looks like</h2>
+      <p class="section-lede">Pick a step. The schematic lights up the part of the window it talks about — and the viewport and section toggles in it really work.</p>
+      <div id="tour-root" class="island">
+        <noscript><p class="dl-note">The interactive tour needs JavaScript. The features are listed below.</p></noscript>
+      </div>
+    </section>
+
+    <section id="features" class="section">
+      <h2>Features</h2>
+      <div class="grid">
+        <article class="card">
+          <h3>The file stays the source of truth</h3>
+          <p>A deck is one Peitho Markdown file in a folder. Studio watches it on disk: save from another editor, or let an agent rewrite it, and the change is merged into the open deck or the deck reloads. No project file, no export step.</p>
+        </article>
+        <article class="card">
+          <h3>Live preview by the real engine</h3>
+          <p><code>peitho-core</code>, the renderer behind the <code>peitho</code> CLI, is embedded in the app. Thumbnails and the preview are what <code>peitho present</code> will show. Switch the preview between a PC and a phone canvas.</p>
+        </article>
+        <article class="card">
+          <h3>Slides as things you can grab</h3>
+          <p>Drag to reorder. Cut, copy, paste, delete, move up or down from a context menu. Change a slide's layout, with a structure check that reports a mismatch as an error instead of a broken slide. Flag a slide as Draft or Skip.</p>
+        </article>
+        <article class="card">
+          <h3>Sections with a time budget</h3>
+          <p>Mark a slide as a section start, name the section and give it minutes and seconds. Collapse a section in the slide list. Rehearsal mode times each section as you present and saves it for comparison against the plan.</p>
+        </article>
+        <article class="card">
+          <h3>An editor that fits your hands</h3>
+          <p>CodeMirror 6 for the slide body and the speaker notes, with an optional vim mode. Undo and redo are unified across text edits and slide operations and sit in the Edit menu, where a native app keeps them.</p>
+        </article>
+        <article class="card">
+          <h3>Variants, languages, windows</h3>
+          <p>Switch between language variants of the same deck kept in one folder. Open several decks in several windows. The UI is available in English and Japanese, following the OS or a setting.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="download" class="section">
+      <h2>Download</h2>
+      <p class="section-lede">Builds are published as GitHub Releases. This picks the one for your platform.</p>
+      <div id="download-root" class="island">
+        <!-- Replaced by the DownloadPanel island; kept as the no-JS fallback. -->
+        <div class="dl-primary">
+          <a class="btn btn-primary btn-lg" href="https://github.com/piconic-ai/peitho-studio/releases/latest">
+            <span>Latest release on GitHub</span>
+            <small>github.com/piconic-ai/peitho-studio</small>
+          </a>
+        </div>
+      </div>
+      <p class="dl-note">Presenting from Studio launches the <a href="https://github.com/mizzy/peitho"><code>peitho</code> CLI</a>, so install that too if you want the Present button. Editing and preview work without it.</p>
+    </section>
+
+    <section id="build" class="section">
+      <h2>Build from source</h2>
+      <p class="section-lede">Needs <a href="https://bun.sh">Bun</a>, a Rust toolchain, and the <a href="https://tauri.app/start/prerequisites/">Tauri v2 prerequisites</a> for your OS. <code>peitho-core</code> is pulled from the Peitho repository as a Cargo git dependency.</p>
+<pre><code>git clone https://github.com/piconic-ai/peitho-studio
+cd peitho-studio
+bun install
+bunx tauri build      # installers land in src-tauri/target/release/bundle/
+bunx tauri dev        # or run it from source</code></pre>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>Peitho Studio is <a href="https://github.com/piconic-ai/peitho-studio/blob/main/LICENSE">MIT licensed</a>. The name and app icon are reserved as this project's branding. Peitho is by <a href="https://github.com/mizzy/peitho">mizzy</a>.</p>
+    <p><a href="https://github.com/piconic-ai/peitho-studio/issues">Issues</a> · <a href="https://github.com/piconic-ai/peitho-studio/releases">Releases</a> · <a href="https://barefootjs.dev">BarefootJS</a> · <a href="https://tauri.app">Tauri</a></p>
+  </footer>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
