@@ -219,8 +219,9 @@ export function setCodeEditorText(view: EditorView, text: string): void {
 }
 
 /** Replaces the editor's text with `text` and forgets its undo history, so
- * Undo can't bring back another slide's text. For a slide switch or a deck
- * read fresh from disk. In vim mode, the editor is back in normal mode.
+ * Undo can't bring back another slide's text. For a switch to a slide with
+ * no kept state (`restoreCodeEditor`) or a deck read fresh from disk. In
+ * vim mode, the editor is back in normal mode.
  *
  * Does nothing while an IME composition is in progress, like
  * `setCodeEditorText`. */
