@@ -22,7 +22,7 @@ import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOpti
 import { racePresentOutcome } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
-import { blurEditorFieldOnRowPress } from '../dom/fieldFocus'
+import { blurEditorFieldOnRowPress, replayFocusedFieldHistory } from '../dom/fieldFocus'
 import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, setManifestKeysSource } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
@@ -805,7 +805,7 @@ export function Studio() {
     })
   }
 
-  // Cmd+Z (`undo`) / Cmd+Shift+Z (`redo`) outside the textareas, queued
+  // Edit > Undo (`undo`) / Redo (`redo`) outside the text fields, queued
   // behind any structural operation still saving. On success the opposite
   // step goes onto the other stack; a failed commit puts the step back so it
   // can be retried; a rejected one means the history no longer matches the
@@ -1176,6 +1176,20 @@ export function Studio() {
     // needs anything this webview can do.
     const unlistenMenuNew = deckIpc.onMenuNewDeck(() => { void handleNewDeck() })
 
+    // Edit > Undo/Redo, by mouse or by Cmd+Z / Cmd+Shift+Z (see
+    // `src-tauri/src/edit_menu.rs`): a focused text field gets its own text
+    // undo, anything else undoes a slide operation. Only the slide operation
+    // waits while the phone shape menu is open, like every other shortcut in
+    // `onKeyDown`: WebKit keeps focus in the body through the clicks that
+    // open that menu, and its text undo must still run.
+    const onMenuHistory = (direction: 'undo' | 'redo') => {
+      if (replayFocusedFieldHistory(direction)) return
+      if (ui.phoneShapeMenuOpen()) return
+      void replayHistory(direction)
+    }
+    const unlistenMenuUndo = deckIpc.onMenuUndo(() => { onMenuHistory('undo') })
+    const unlistenMenuRedo = deckIpc.onMenuRedo(() => { onMenuHistory('redo') })
+
     const onKeyDown = (event: KeyboardEvent) => {
       // While the phone shape menu is open, Escape closes it and every other
       // shortcut waits: arrows would move the selection, and Delete or Cmd+X
@@ -1194,18 +1208,10 @@ export function Studio() {
       }
       const tag = document.activeElement?.tagName.toLowerCase()
       if (tag === 'input' || tag === 'textarea') return
-      // Cmd+Z / Cmd+Shift+Z: inside a textarea/input (returned above) the
-      // native Edit-menu undo/redo still handles the field's text; anywhere
-      // else they undo/redo structural operations. Always `preventDefault`
-      // here, even with nothing to undo, so WebKit's own document-wide undo
-      // never runs outside a focused field and edits a textarea from
-      // behind.
+      // Cmd+Z / Cmd+Shift+Z aren't handled here: left alone, they reach the
+      // Edit menu's Undo/Redo accelerators, the one path for both keyboard
+      // and mouse (see `onMenuHistory` above).
       const key = event.key.toLowerCase()
-      if (event.metaKey && key === 'z') {
-        event.preventDefault()
-        void replayHistory(event.shiftKey ? 'redo' : 'undo')
-        return
-      }
       // `slideEntries().length`, not `manifest.slideCount`/`manifest.slides.length`
       // — the latter excludes drafts, which would leave ArrowUp/ArrowDown
       // permanently unable to reach a draft placeholder (or anything past
@@ -1274,6 +1280,8 @@ export function Studio() {
       window.removeEventListener('mousedown', closeSectionEditorOnOutsidePress, true)
       unlistenFileChanged()
       unlistenMenuNew()
+      unlistenMenuUndo()
+      unlistenMenuRedo()
     })
   })
 

@@ -3,8 +3,8 @@
 // cares about via `overrides`; every call still lands in `calls` so a
 // test can assert on what was invoked and with what arguments, without a
 // real Tauri window. `emitDeckFileChanged`/`emitMenuNewDeck`/
-// `emitPresentReady`/`emitPresentFailed` let a test simulate the Rust side
-// pushing an event.
+// `emitMenuUndo`/`emitMenuRedo`/`emitPresentReady`/`emitPresentFailed`
+// let a test simulate the Rust side pushing an event.
 import type { DeckIpc, DeckSessionInfo, LayoutPreviewsPayload, RenderPayload } from './deckIpc'
 
 export interface RecordedCall {
@@ -16,6 +16,8 @@ export interface FakeDeckIpc extends DeckIpc {
   calls: RecordedCall[]
   emitDeckFileChanged(): void
   emitMenuNewDeck(): void
+  emitMenuUndo(): void
+  emitMenuRedo(): void
   emitPresentReady(): void
   emitPresentFailed(message: string): void
 }
@@ -31,6 +33,8 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
   const calls: RecordedCall[] = []
   const deckFileChangedListeners = new Set<() => void>()
   const menuNewDeckListeners = new Set<() => void>()
+  const menuUndoListeners = new Set<() => void>()
+  const menuRedoListeners = new Set<() => void>()
   const presentReadyListeners = new Set<() => void>()
   const presentFailedListeners = new Set<(message: string) => void>()
 
@@ -68,6 +72,14 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
       menuNewDeckListeners.add(callback)
       return () => { menuNewDeckListeners.delete(callback) }
     },
+    onMenuUndo: callback => {
+      menuUndoListeners.add(callback)
+      return () => { menuUndoListeners.delete(callback) }
+    },
+    onMenuRedo: callback => {
+      menuRedoListeners.add(callback)
+      return () => { menuRedoListeners.delete(callback) }
+    },
     onPresentReady: callback => {
       presentReadyListeners.add(callback)
       return () => { presentReadyListeners.delete(callback) }
@@ -84,6 +96,8 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
     calls,
     emitDeckFileChanged: () => { for (const cb of deckFileChangedListeners) cb() },
     emitMenuNewDeck: () => { for (const cb of menuNewDeckListeners) cb() },
+    emitMenuUndo: () => { for (const cb of menuUndoListeners) cb() },
+    emitMenuRedo: () => { for (const cb of menuRedoListeners) cb() },
     emitPresentReady: () => { for (const cb of presentReadyListeners) cb() },
     emitPresentFailed: message => { for (const cb of presentFailedListeners) cb(message) },
   }

@@ -171,6 +171,11 @@ don't bundle everything into one giant commit.
   its subprocess) must be kept in a map keyed by `window.label()` rather
   than a single global — otherwise a second window silently overwrites
   the first window's state.
+- `emit_to` a window label doesn't make an event private to that window: a
+  plain `listen()` from `@tauri-apps/api/event` (target `Any`) in *every*
+  window still hears it. For an event meant for one window (e.g. the Edit
+  menu's `menu:undo`), listen with `getCurrentWebviewWindow().listen()`
+  (see `subscribeToThisWindow` in `ipc/deckIpc.ts`).
 - To hand a freshly created window "which resource to open," registering
   it in a `Mutex<HashMap<label, T>>` "pending" registry **before** the
   window is created — which the window then pulls out exactly once at

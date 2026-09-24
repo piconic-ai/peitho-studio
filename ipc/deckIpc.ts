@@ -1,7 +1,7 @@
 // Typed boundary around every Tauri command/event Studio.tsx talks to (see
 // src-tauri/src/peitho.rs for the Rust side — 12 #[tauri::command]s + the
-// `deck-file-changed`/`menu:new-deck`/`present-ready` events emitted from
-// lib.rs/peitho.rs). Per
+// `deck-file-changed`/`menu:new-deck`/`menu:undo`/`menu:redo`/`present-ready`
+// events emitted from lib.rs/edit_menu.rs/peitho.rs). Per
 // docs/architecture.md's layering: this is the sanctioned door for
 // `@tauri-apps/api/core`(`invoke`)/`.../event`(`listen`) — enforced by
 // `scripts/arch-check.test.ts`'s `components/` rule — so components/state
@@ -12,6 +12,7 @@
 // welcome-screen/window flows this module doesn't touch yet.
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import type { DeckVariant } from '../domain/deckVariants'
 import type { RenderPayload } from '../domain/render'
 import type { LayoutVerdict } from '../domain/layoutFit'
@@ -64,6 +65,12 @@ export interface DeckIpc {
   presentDeck(rehearsal: boolean): Promise<void>
   onDeckFileChanged(callback: () => void): Unsubscribe
   onMenuNewDeck(callback: () => void): Unsubscribe
+  /** Edit > Undo (or its Cmd+Z accelerator), sent only to the focused
+   * window — see `src-tauri/src/edit_menu.rs`. The menu item replaced the
+   * native one, so the text fields' own undo also arrives here. */
+  onMenuUndo(callback: () => void): Unsubscribe
+  /** Edit > Redo (or Cmd+Shift+Z); see `onMenuUndo`. */
+  onMenuRedo(callback: () => void): Unsubscribe
   /** Fires once the `peitho present` subprocess `presentDeck` launched has
    * actually rendered the deck and started serving it — see
    * `watch_present_readiness` in peitho.rs. Much closer to "the
@@ -79,6 +86,13 @@ export interface DeckIpc {
 
 function subscribe(event: string, callback: () => void): Unsubscribe {
   const unlisten = listen(event, () => { callback() })
+  return () => { void unlisten.then(stop => { stop() }) }
+}
+
+/** Like `subscribe`, but only for events sent to this window. A plain
+ * `listen()` also hears events `emit_to` sends to *another* window. */
+function subscribeToThisWindow(event: string, callback: () => void): Unsubscribe {
+  const unlisten = getCurrentWebviewWindow().listen(event, () => { callback() })
   return () => { void unlisten.then(stop => { stop() }) }
 }
 
@@ -104,6 +118,8 @@ export function createTauriDeckIpc(): DeckIpc {
     presentDeck: rehearsal => invoke('present_deck', { rehearsal }),
     onDeckFileChanged: callback => subscribe('deck-file-changed', callback),
     onMenuNewDeck: callback => subscribe('menu:new-deck', callback),
+    onMenuUndo: callback => subscribeToThisWindow('menu:undo', callback),
+    onMenuRedo: callback => subscribeToThisWindow('menu:redo', callback),
     onPresentReady: callback => subscribe('present-ready', callback),
     onPresentFailed: callback => subscribeWithPayload('present-failed', callback),
   }

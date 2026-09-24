@@ -243,13 +243,22 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       __TAURI_INTERNALS__: Record<string, unknown>
       __TAURI_EVENT_PLUGIN_INTERNALS__: Record<string, unknown>
       __mockInvoke: (cmd: string, args: unknown) => Promise<unknown>
-      __mockEmitTauriEvent?: (event: string, payload: unknown) => void
+      __mockEmitTauriEvent?: (event: string, payload: unknown, toWindow?: string) => void
     }
     const callbacks = w as unknown as Record<string, ((payload: unknown) => void) | undefined>
     w.__TAURI_INTERNALS__ = w.__TAURI_INTERNALS__ ?? {}
     w.__TAURI_EVENT_PLUGIN_INTERNALS__ = w.__TAURI_EVENT_PLUGIN_INTERNALS__ ?? {}
+    // This page plays the one webview window labeled `main`, the label
+    // `getCurrentWebviewWindow()` (per-window listens) reads from here.
+    w.__TAURI_INTERNALS__.metadata = {
+      currentWindow: { label: 'main' },
+      currentWebview: { windowLabel: 'main', label: 'main' },
+    }
 
     const listenerIdsByEvent = new Map<string, Set<number>>()
+    // The label a listener was registered for (`getCurrentWebviewWindow()
+    // .listen`), or `null` for a plain `listen()`, which hears every event.
+    const listenerLabels = new Map<number, string | null>()
     let nextCallbackId = 1
 
     // Mirrors real Tauri: registers `callback` under a numeric id and
@@ -273,8 +282,13 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       listenerIdsByEvent.get(event)?.delete(eventId)
     }
 
-    w.__mockEmitTauriEvent = (event: string, payload: unknown) => {
+    // `toWindow` mirrors Rust's `emit_to` a window label: like Tauri, a
+    // plain `listen()` still hears it, a per-window listener only when the
+    // label is its own. Omitted, it's a broadcast `emit`.
+    w.__mockEmitTauriEvent = (event: string, payload: unknown, toWindow?: string) => {
       for (const id of listenerIdsByEvent.get(event) ?? []) {
+        const label = listenerLabels.get(id) ?? null
+        if (toWindow !== undefined && label !== null && label !== toWindow) continue
         callbacks[`_${id}`]?.({ event, id, payload })
       }
     }
@@ -285,6 +299,8 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         const handlerId = args.handler as number
         if (!listenerIdsByEvent.has(event)) listenerIdsByEvent.set(event, new Set())
         listenerIdsByEvent.get(event)?.add(handlerId)
+        const target = args.target as { kind: string; label?: string } | undefined
+        listenerLabels.set(handlerId, target && target.kind !== 'Any' ? target.label ?? null : null)
         return handlerId
       }
       if (cmd.startsWith('plugin:event|')) return null

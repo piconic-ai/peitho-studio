@@ -1,4 +1,5 @@
 mod deck_variants;
+mod edit_menu;
 mod engine;
 mod peitho;
 
@@ -14,7 +15,8 @@ const WARM_UP_RECENT_DECKS: usize = 3;
 /// `Menu::default()` produces (App/Edit/View/Window/Help, with all the
 /// platform-standard items — Quit, Cut/Copy/Paste, About, etc. — wired
 /// automatically) and adds "New Deck…"/"Open Deck…"/"Open Recent" at the
-/// top of File. Kept as an explicit rebuild rather than mutating
+/// top of File, with Edit's Undo/Redo swapped for `edit_menu`'s own items.
+/// Kept as an explicit rebuild rather than mutating
 /// `Menu::default()`'s output, since that method doesn't hand back the
 /// File submenu separately to prepend into.
 ///
@@ -70,8 +72,11 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>) -> taur
         "Edit",
         true,
         &[
-            &PredefinedMenuItem::undo(app, None)?,
-            &PredefinedMenuItem::redo(app, None)?,
+            // Not `PredefinedMenuItem::undo`/`redo`: those run only the
+            // webview's text undo, never the slide operations' (see
+            // `edit_menu`).
+            &edit_menu::undo_item(app)?,
+            &edit_menu::redo_item(app)?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::cut(app, None)?,
             &PredefinedMenuItem::copy(app, None)?,
@@ -173,7 +178,9 @@ pub fn run() {
         .menu(|app| build_menu_with_recents(app, Vec::new()))
         .on_menu_event(|app_handle, event| {
             let id = event.id().as_ref();
-            if id == "new_deck" {
+            if edit_menu::forward(app_handle, id) {
+                // Undo/Redo: handled by the focused window's frontend.
+            } else if id == "new_deck" {
                 // Needs the in-app name-entry modal, so it's routed back
                 // through the frontend rather than handled here.
                 let _ = app_handle.emit("menu:new-deck", ());
