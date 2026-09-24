@@ -1,49 +1,187 @@
 ---
-status: inbox
-description: テキスト編集のUndo/Redoを構造操作と同じ履歴にまとめる(統一Undo/Redoの第2段階)
-tags: [undo-redo, editor]
+status: todo
+description: Cmd+Zをテキスト編集とスライド操作をまたぐ1本の時系列にする(統一Undo/Redoの第2段階)
+tags: [undo-redo, editor, codemirror]
 ---
 
-# 統一Undo/Redo 第2段階 — テキスト編集のグルーピング
+# 統一Undo/Redo 第2段階 — テキストとスライド操作を1本の時系列に
 
 進捗管理用の作業台帳 — **完了したら削除ないし`todo/archive/`へ移動する**。
 
 発端: `todo/archive/unified-undo-redo.md`(第1段階、PR #76/#77)の
-先送り事項から切り出したもの。元の要望は「テキスト編集も含めた統一の
-Undo/Redoスタックをアプリ側に持つ」。第1段階では構造操作だけを
-アプリの履歴に載せ、テキストはwebview自身のテキスト履歴に任せた。
+先送り事項。元の要望は「テキスト編集も含めた統一のUndo/Redoスタックを
+アプリ側に持つ」。本文とノートはCodeMirror 6に移行済み
+(`todo/archive/codemirror-editor.md`)で、vim modeも入った
+(`todo/vim-mode.md`)。
 
-**着手条件**: `todo/codemirror-editor.md`の完了後。vim modeの設計相談
-(2026-09-24)で、本文とノートをCodeMirror 6へ移行することが決まった。
-このtodoは、CodeMirror自身の履歴(`@codemirror/commands`の`history`)と
-構造操作の履歴(`domain/editorHistory.ts`)をどう統合するか、という
-設計になる。着手時に`status: todo`へリファインメントする。
+期待する挙動をユーザーと確認した(2026-09-25):
 
-## 現状(第1段階の完了時点で分かっていること)
+1. **Cmd+Z / Edit > Undoは1本の時系列**。「本文を打つ → レイアウトを
+   変える → 本文にフォーカスを戻してCmd+Z」では、フォーカスに関係なく
+   直前のレイアウト変更が戻る(Keynote/Googleスライドと同じ)。
+2. **スライドをまたぐ**。「スライドAで打つ → Bに移る → Cmd+Z」では、
+   スライドAを開き直して、Aで打った文字を戻す。
+3. **vimの`u`/`Ctrl-R`は、そのエディタの文字だけ**を戻す(Vimのバッファと
+   同じ)。スライド操作は戻さない。
 
-- 構造操作の履歴: `domain/editorHistory.ts`(`HistoryStep`は`slides`と
-  `config`の2種)と`state/historyStore.ts`。ウィンドウごとに1つ、
-  永続化なし。
-- Edit > Undo/Redo(Cmd+Z / Cmd+Shift+Zもこのメニューのアクセラレータ
-  経由): `src-tauri/src/edit_menu.rs`が、フォーカス中のウィンドウにだけ
-  `menu:undo`/`menu:redo`を送る。フロントの`Studio.tsx`
-  (`onMenuHistory`)が、テキスト入力欄にフォーカスがあれば
-  `dom/fieldFocus.ts`の`replayFocusedFieldHistory`
-  (`document.execCommand`)でテキストのundo、それ以外は構造操作の
-  `replayHistory`に振り分ける。WKWebViewの実機で動作確認済み
-  (2026-09-24)。
-- そのため今は、テキストの履歴と構造操作の履歴が別々にある。
-  「本文を打つ → レイアウト変更 → 本文にフォーカスしてCmd+Z」は
-  テキストだけが戻り、フォーカスを外してのCmd+Zはレイアウト変更だけが
-  戻る。時系列をまたいだ一本のundoにはなっていない。
+## スコープ
 
-## 要調査(未整理)
+- **目的**: 上の1〜3を満たす。
+- **やらないこと**:
+  - 複数ウィンドウ間での履歴の共有、アプリ終了後の履歴の保存
+  - メニュー項目のグレーアウトや操作名つきラベル(別の先送り事項)
+  - テキストの取り消し単位を自前で決めること。CodeMirrorの`history`の
+    グルーピング(`newGroupDelay`など)をそのまま使う
+- **受け入れ条件**:
+  - 1〜3の場面がそのとおりに動く。Redoも同じ時系列を逆にたどる。
+  - vimの`u`で戻したテキストの変更を、そのあとのCmd+Zがもう一度戻そう
+    としない(同じ変更を二重に戻さない)。
+  - 本文の保存でスライドの数が変わったとき(`---`の入力など)、外部変更で
+    読み直したときなど、今の履歴の破棄の規則は保たれる。
 
-- テキスト編集の取り消し単位のまとめ方(スペース区切り、一定時間の
-  無入力、IME確定単位など)。
-- CodeMirrorでは、テキストの取り消し単位のまとめ方(`history`の
-  `newGroupDelay`など)がすでにある。それをそのまま使えるか。
-- Vimの`u`/`Ctrl-R`(`todo/vim-mode.md`)と、統一した履歴の関係。
-- 構造操作の履歴はスライドを位置(index)で指している。テキスト保存で
-  スライド数が変わると履歴を捨てている(`---`の入力など)。統一する場合、
-  この制約をどう扱うか。
+## 背景・要調査
+
+実際に読んで分かったこと:
+
+- スライド操作の履歴: `domain/editorHistory.ts`(`HistoryStep`は
+  `slides`と`config`)と`state/historyStore.ts`。スライドを位置(index)で
+  指す。本文の保存でスライド数が変わると`history.clear()`する
+  (`components/Studio.tsx`)。
+- テキストの履歴: `dom/codeEditor.ts`のCodeMirror `history()`。
+  エディタは本文とノートの2つだけで、スライドを切り替えると
+  `resetCodeEditorText`が状態を作り直し、履歴を捨てる。
+- Cmd+Zの振り分け: `Studio.tsx`の`onMenuHistory`がフォーカスで決める
+  (エディタ内ならCodeMirrorの履歴、外ならスライド操作)。vimの`u`は
+  CodeMirrorの履歴を使う。
+- スライドの`key`は、明示されていなければ見出しから作られる
+  (`domain/slides.ts`)。見出しを編集すると変わるので、テキストの履歴の
+  持ち主を`key`で識別するのは危険。位置(index)は並べ替えでずれる。
+
+**着手条件**: `todo/editor-slide-state-cache.md`(スライドごとの
+エディタ状態の保持)が完了していること。
+
+設計(Fable(`claude-fable-5-1`)のレビュー、2026-09-25で決定):
+
+- **テキストの履歴の正はCodeMirror**。アプリの時系列は「順番」だけを
+  持つ。Cmd+Zで時系列のテキストの目印に当たったら、そのスライドを開き、
+  そのエディタでCodeMirrorの`undo`を1回呼ぶ。これでvimの`u`/`Ctrl-R`と
+  Cmd+Zが、同じ1つの履歴を操作することになり、食い違わない。
+- **目印の形**: `{ kind: 'text'; index: number; field: 'body' | 'note';
+  seq: number }`を`HistoryStep`に足す。自分自身が逆操作(`inverseStep`は
+  そのまま返す)で、redo用の目印も同じ`seq`を持つ。
+- **目印の持ち主は、記録したときの位置(index)をそのまま使う**。変換も
+  内部IDも要らない。時系列は新しい順にしか戻らないので、ある目印に
+  たどり着いた時点では、それより後の操作はすべて戻っており、スライドの
+  並びは記録したときと同じになっている(スライド操作の`HistoryStep`が
+  すでに位置で持てているのと同じ理由)。並びが外部要因で変わる場面では
+  すでに履歴を捨てている。
+- **「新しい履歴グループができた」ことの検出**: `undoDepth`をそのまま
+  目印に使うのは不可。CodeMirrorは履歴が`minDepth + 20`を超えると
+  古いものを切り詰めるので、深さがずれて古い目印が全部飛ばされる。
+  代わりに、エディタごとに通し番号の写し(`TextHistoryMirror = { live:
+  number[]; undone: number[] }`)を純粋な関数で更新する
+  (`domain/textHistory.ts`、新規)。
+  - `updateListener`で各トランザクションを`undo`/`redo`/`change`/`other`に
+    分類し、変更前後の`undoDepth`と変更後の`redoDepth`を渡す。
+  - `change`で深さが1増えた → 新しい番号を`live`に積み、`undone`を空に
+    して、新しいグループとして通知する。深さが変わらない → 直前の
+    グループに合流(入力の続き、IMEの変換)。通知しないが`undone`は空に
+    する。深さが減った → CodeMirrorの切り詰めに合わせて`live`の古い側を
+    削る。
+  - `undo` → `live`の末尾を`undone`へ。`redo` → その逆。
+  - `other`(選択だけ、`addToHistory: false`、設定の組み替え) → 何もしない。
+  - 有効かどうか: `live`の末尾がその番号ならundoできる。`undone`の末尾が
+    その番号ならredoできる。
+  - 番号はウィンドウで1つの通し番号にする(エディタやスライドごとに
+    しない)。
+- **vimの`u`で先に戻された目印は、Cmd+Zで飛ばす**(有効でない目印は
+  捨てて、次の目印へ進む。redo側にも積まない)。vimの`Ctrl-R`で戻すと
+  再び有効になる。
+- **スライド操作をまたいだ入力の合流を防ぐ**: CodeMirrorは500ms以内の
+  隣接した入力を1つのグループにまとめるので、スライド操作の直前と直後の
+  入力が1つのグループになり、目印がスライド操作より下に来てしまう。
+  スライド操作を記録または再生するたびに、両方のエディタへ
+  `isolateHistory: 'full'`の空のトランザクションを送って区切る。
+- **履歴の上限**: `MAX_HISTORY_DEPTH = 100`(`domain/editorHistory.ts`)は
+  入力の塊100個ぶんにしかならないので、1000程度に上げる。CodeMirrorも
+  `history({ minDepth: 1000 })`にして、時系列が参照しているグループを
+  切り詰めないようにする。
+- **自動保存**: テキストのundoは`undo(view)` → `onChange` → 下書き →
+  自動保存という、今のエディタ内undoと同じ経路を通る。別のスライドの
+  undoは`selectSlide`を呼ぶので、開いているスライドの未保存の下書きは
+  先に保存される。テキストの目印の再生も`serialized`の順番待ちに入れる。
+  - その保存でスライド数が変わって履歴が捨てられた場合は、取り出した
+    目印も捨てる(`handleSave`が「スライド数が変わったか」を返すように
+    する)。
+- **`setCodeEditorText`**(保存応答で差分だけ書き戻す、履歴に積まない)は
+  そのままでよい。CodeMirrorは、履歴に積まない変更も履歴の位置合わせに
+  反映する。
+- **設定の変更(レイアウトなど)と本文のエディタ**: 本文のエディタには
+  PageCommentが入っていない(`extractPageComment`)ので、`config`の
+  ステップはエディタの履歴と重ならない。
+- **`onMenuHistory`**: フォーカスでの振り分けをやめ、時系列をたどる。
+  `execCommand`によるネイティブのundoは、セクション見出しのような普通の
+  `<input>`だけに残す。`replayFocusedCodeEditorHistory`は削除する。
+  設定画面を開いている間は今までどおり何もしない。
+- **別のスライドのundoで、キーボードのフォーカスはエディタへ移さない**。
+  CodeMirrorのundoがスクロールして見せる。
+- **既存のe2eのうち2つは、新しい挙動と逆のことを確かめているので
+  書き換える**:
+  - `e2e/structural-undo-redo.e2e.ts`の「本文にフォーカスがあるとき、
+    Edit > Undoでスライド操作は戻らない」
+  - `e2e/code-editor.e2e.ts`の「スライドAで1文字消してBに切り替え、
+    Edit > UndoしてもBに戻らない」(Aに戻って文字が戻るのが新しい挙動)
+- **既知の並びの癖**(許容): 「g1を打つ → `u` → Sの操作 → `Ctrl-R` →
+  Cmd+Z」では、g1より先にSが戻る。`Ctrl-R`で時系列に積み直すのは
+  後回し(先送り事項)。
+
+## レイヤー配置
+
+- `domain/editorHistory.ts`: `text`の目印、`inverseStep`、上限の引き上げ。
+- `domain/textHistory.ts`(新規、純粋): 通し番号の写しと、その更新・
+  有効判定。
+- `dom/codeEditor.ts`: `history({ minDepth })`、`updateListener`から写しの
+  更新と新しいグループの通知(`options.onHistoryGroup(seq)`)、区切りの
+  トランザクション、指定したエディタでの番号つきundo/redo。
+- `dom/fieldFocus.ts`: 普通の入力欄のネイティブundoだけを残す。
+- `components/Studio.tsx`: 目印の記録、区切り、`replayHistoryNow`での
+  テキストの目印の再生(飛ばす処理を含む)、`onMenuHistory`の書き換え。
+- 写しは`dom/`側で保持し、signalには入れない。
+
+## テスト
+
+- `domain/textHistory.ts`のspecとadversarial: 新しいグループ、合流、
+  undo、redo、undo後の入力で`undone`が空になる、切り詰め、履歴に積まない
+  変更、`3u`、有効判定(末尾/末尾でない/空)。
+- 飛ばす処理: 無効なテキストの目印を飛ばす、スライド操作で止まる、
+  すべて無効なら何もしない。
+- `inverseStep`の`text`。
+- e2e: 受け入れ条件1(打つ → メニューでレイアウト変更 → 本文にフォーカス
+  → undoでレイアウトが戻り、もう一度で文字が戻る)、2(Aで打つ → Bを
+  クリック → undoでAが開き文字が戻り、`deck.source`も戻る。redoで
+  やり直し)、本文とノートの順番、vimの`dd` → メニューのundoで戻る、`u`の
+  あとのメニューのundoで二重に戻らない、`u` → `Ctrl-R` → メニューのundo
+  で1回だけ戻る、スライド操作で区切られた入力が別々に戻る、`---`の入力で
+  履歴が捨てられる、開いているスライドの設定変更で目印が増えない、保存が
+  遅いときに素早く2回undo(1回目が別のスライド)。上の2つの既存テストの
+  書き換え。
+
+## 完了条件
+
+自動で確認できる項目(ループが自分で判定してよい):
+- [x] 要調査1〜4をFableのレビューを踏まえて決め、このファイルに記録
+- [ ] 実装とテスト
+- [ ] `bun test` / `bun run typecheck` / `bun run test:e2e` グリーン
+
+人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
+- [ ] 実機確認: 受け入れ条件の1〜3と、vimの`u`との組み合わせ
+
+## 先送り事項
+
+- vimの`Ctrl-R`でやり直した変更を、時系列に積み直すこと(上の「既知の
+  並びの癖」を解消する)。
+- 削除したスライドを元に戻したとき、そのテキストの履歴まで復元する
+  こと(削除の逆操作に状態を持たせる必要がある)。
+- 既存の問題(Fableのレビューで発見): 挿入・削除の保存中に入力すると、
+  `reconcileAfterCommit`(`domain/editorSession.ts`)がその下書きを新しい
+  スライドの位置と組み合わせてしまう。数十ミリ秒の間だけ起きる。
