@@ -9,7 +9,7 @@
 
 import { Annotation, Compartment, EditorState, Transaction, type Extension } from '@codemirror/state'
 import { EditorView, ViewPlugin, drawSelection, keymap, placeholder as placeholderText } from '@codemirror/view'
-import { defaultKeymap, history, redo, redoDepth, undo, undoDepth } from '@codemirror/commands'
+import { defaultKeymap, history, insertTab, redo, redoDepth, undo, undoDepth } from '@codemirror/commands'
 import { getCM, vim } from '@replit/codemirror-vim'
 import { editorTextChange, normalizeLineBreaks } from '../domain/editorText'
 import { parseVimMode, type VimMode } from '../domain/vimMode'
@@ -132,10 +132,23 @@ function vimEvents(options: CodeEditorOptions): Extension {
   ]
 }
 
+// Tab under vim, as in Vim itself: a tab character in insert (and
+// replace) mode, nothing in the other modes. CodeMirror leaves Tab unbound
+// by default, so it would move focus out of the editor (to the notes)
+// instead. With vim mode off, Tab still moves focus, as the old textarea
+// did.
+const vimTab = keymap.of([{
+  key: 'Tab',
+  run: view => {
+    const mode = currentVimMode(view)
+    return mode === 'insert' || mode === 'replace' ? insertTab(view) : true
+  },
+}])
+
 function vimExtension(options: CodeEditorOptions, on: boolean): Extension {
   // `status` shows the mode (`--INSERT--`) and hosts the `/` and `:`
   // prompts; `drawSelection` draws visual mode's selection.
-  return on ? [vim({ status: true }), drawSelection(), vimEvents(options)] : []
+  return on ? [vim({ status: true }), drawSelection(), vimEvents(options), vimTab] : []
 }
 
 function editorExtensions(options: CodeEditorOptions, vimOn: boolean): Extension[] {
