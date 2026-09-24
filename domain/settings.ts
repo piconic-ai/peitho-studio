@@ -3,6 +3,7 @@
 // both read field by field, so a missing, broken or unknown value never
 // keeps the app from starting — it just falls back to that field's
 // default.
+import { LANGUAGE_SETTINGS, type LanguageSetting } from './language'
 
 /** How one setting is read: its default, and which values are valid. */
 export interface FieldSpec<T> {
@@ -13,16 +14,20 @@ export interface FieldSpec<T> {
 /** One `FieldSpec` per setting in `S`. */
 export type SettingsSchema<S> = { readonly [K in keyof S]: FieldSpec<S[K]> }
 
-/** Every setting the app has. Empty for now: this is the foundation the
- * first items (the app icon, the UI language, vim mode — see `todo/`) are
- * added to. Adding one is a field here, its spec in `SETTINGS_SCHEMA`, and
- * the matching field in `settings.rs`. */
-export type Settings = Record<never, never>
-
-export const SETTINGS_SCHEMA: SettingsSchema<Settings> = {}
+/** Every setting the app has. Adding one is a field here, its spec in
+ * `SETTINGS_SCHEMA`, and the matching field in `settings.rs`. */
+export interface Settings {
+  /** The UI's language — `system` (the default) follows the OS's
+   * preferred language (see `domain/language.ts`). */
+  uiLanguage: LanguageSetting
+}
 
 /** Some settings to change, the rest left as they are. */
 export type SettingsPatch = Partial<Settings>
+
+export const SETTINGS_SCHEMA: SettingsSchema<Settings> = {
+  uiLanguage: oneOfField(LANGUAGE_SETTINGS, 'system'),
+}
 
 export function booleanField(fallback: boolean): FieldSpec<boolean> {
   return { default: fallback, accepts: (value): value is boolean => typeof value === 'boolean' }

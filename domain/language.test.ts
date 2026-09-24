@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import fc from 'fast-check'
-import { LANGUAGES, isJapaneseLocale, resolveLanguage, systemLanguage } from './language'
+import { LANGUAGES, isJapaneseLocale, parseLocales, resolveLanguage, systemLanguage } from './language'
 
 describe('isJapaneseLocale', () => {
   test('spec: Given the ways an OS spells Japanese, when checked, then each one is Japanese', () => {
@@ -59,5 +59,24 @@ describe('resolveLanguage', () => {
   test('adversarial: Given a chosen language and no OS languages, when resolved, then the chosen one is used', () => {
     expect(resolveLanguage('ja', [])).toBe('ja')
     expect(resolveLanguage('system', [])).toBe('en')
+  })
+})
+
+describe('parseLocales', () => {
+  test('spec: Given the OS\'s locale list, when read, then it is kept as is, in order', () => {
+    expect(parseLocales(['ja-JP', 'en-US'])).toEqual(['ja-JP', 'en-US'])
+    expect(parseLocales([])).toEqual([])
+  })
+
+  test('adversarial: Given a malformed answer, when read, then only the strings survive, and anything but a list reads as none', () => {
+    expect(parseLocales(['ja', 1, null, { tag: 'en' }, 'en'])).toEqual(['ja', 'en'])
+    for (const raw of [null, undefined, 'ja-JP', 42, { 0: 'ja' }, true]) expect(parseLocales(raw)).toEqual([])
+  })
+
+  test('property: whatever arrives, the result is a list of strings', () => {
+    fc.assert(fc.property(fc.anything(), raw => {
+      const parsed = parseLocales(raw)
+      expect(Array.isArray(parsed) && parsed.every(tag => typeof tag === 'string')).toBe(true)
+    }))
   })
 })

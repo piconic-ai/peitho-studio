@@ -36,3 +36,10 @@ export function systemLanguage(locales: readonly string[]): Language {
 export function resolveLanguage(setting: LanguageSetting, systemLocales: readonly string[]): Language {
   return setting === 'system' ? systemLanguage(systemLocales) : setting
 }
+
+/** The OS locales as `get_system_locales` handed them over: the strings in
+ * order, anything else dropped — a malformed answer reads as "no locales"
+ * (English) rather than breaking the UI. */
+export function parseLocales(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.filter((tag): tag is string => typeof tag === 'string') : []
+}

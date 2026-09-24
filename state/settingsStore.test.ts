@@ -3,17 +3,17 @@ import { createRoot } from '@barefootjs/client'
 import { createSettingsStore } from './settingsStore'
 import type { Settings } from '../domain/settings'
 
-// `Settings` has no fields yet, so each test tells settings apart by
-// object identity: a distinct object stands for each saved version.
-function version(): Settings {
-  return {}
+// Each test tells settings apart by object identity: a distinct object
+// stands for each saved version.
+function version(uiLanguage: Settings['uiLanguage'] = 'system'): Settings {
+  return { uiLanguage }
 }
 
 describe('settings store', () => {
   test('spec: Given a new window, when nothing has loaded yet, then the settings are the defaults and the panel is closed', () => {
     createRoot(() => {
       const store = createSettingsStore()
-      expect(store.settings()).toEqual({})
+      expect(store.settings()).toEqual({ uiLanguage: 'system' })
       expect(store.panelOpen()).toBe(false)
     })
   })
@@ -63,6 +63,57 @@ describe('settings store', () => {
       store.openPanel()
       store.applyChanged(version())
       expect(store.panelOpen()).toBe(true)
+    })
+  })
+
+  test('spec: Given a Japanese OS and nothing chosen yet, when the window starts, then the UI is Japanese', () => {
+    createRoot(() => {
+      const store = createSettingsStore(['ja-JP', 'en-US'])
+      expect(store.language()).toBe('ja')
+      expect(store.messages().settings).toBe('設定')
+    })
+  })
+
+  test('spec: Given an English OS, when Japanese is chosen in any window, then this window switches to Japanese without a restart', () => {
+    createRoot(() => {
+      const store = createSettingsStore(['en-US'])
+      expect(store.language()).toBe('en')
+      store.applyChanged(version('ja'))
+      expect(store.language()).toBe('ja')
+      expect(store.messages().openDeck).toBe('デッキを開く…')
+    })
+  })
+
+  test('spec: Given a saved choice, when the window starts on an OS in the other language, then the saved choice wins', () => {
+    createRoot(() => {
+      const store = createSettingsStore(['ja-JP'])
+      store.applyLoaded(version('en'))
+      expect(store.language()).toBe('en')
+    })
+  })
+
+  test('spec: Given the webview\'s guess of the OS language, when the OS\'s own answer arrives, then the UI follows the OS\'s answer', () => {
+    createRoot(() => {
+      const store = createSettingsStore(['en-US'])
+      store.applySystemLocales(['ja-JP'])
+      expect(store.language()).toBe('ja')
+    })
+  })
+
+  test('adversarial: Given a chosen language, when the OS\'s answer arrives, then it doesn\'t override the choice', () => {
+    createRoot(() => {
+      const store = createSettingsStore(['en-US'])
+      store.applyLoaded(version('en'))
+      store.applySystemLocales(['ja-JP'])
+      expect(store.language()).toBe('en')
+    })
+  })
+
+  test('adversarial: Given no OS languages at all, when the window starts, then the UI is English', () => {
+    createRoot(() => {
+      expect(createSettingsStore().language()).toBe('en')
+      expect(createSettingsStore([]).language()).toBe('en')
+      expect(createSettingsStore(['']).language()).toBe('en')
     })
   })
 })
