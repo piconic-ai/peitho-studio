@@ -120,10 +120,10 @@ export function resetCodeEditorText(view: EditorView, text: string): void {
   const unchanged = view.state.doc.toString() === normalizeLineBreaks(text)
   if (unchanged && undoDepth(view.state) === 0 && redoDepth(view.state) === 0) return
   const extensions = extensionsOf.get(view) ?? []
-  view.setState(EditorState.create({ doc: text, extensions }))
-  // The fresh state starts from the creation-time placeholder; restore the
-  // current one.
-  view.dispatch({ effects: placeholderSlot.reconfigure(placeholderExtension(placeholderOf.get(view) ?? '')) })
+  // `extensions` carry the creation-time placeholder; the fresh state gets
+  // the current one before the view ever shows it.
+  const fresh = EditorState.create({ doc: text, extensions })
+  view.setState(fresh.update({ effects: placeholderSlot.reconfigure(placeholderExtension(placeholderOf.get(view) ?? '')) }).state)
 }
 
 /** The editor that has keyboard focus, or `null`. */
