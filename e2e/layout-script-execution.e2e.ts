@@ -8,6 +8,7 @@
 // fix ported into `peitho`/`peitho-present`'s own viewers.
 import { test, expect } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
+import { fillEditor } from './helpers/codeEditor'
 
 function fragmentWithCountingScript(title: string): string {
   return `<section class="peitho-slide"><h1>${title}</h1>`
@@ -42,13 +43,12 @@ test('Given a slide whose script declares a top-level `let`, when the slide is e
   // rendered fragment string and so reaches patchSlideCanvas — editing only
   // the body (an unrelated change) would look like a no-op fragment to it.
   await page.locator('[data-slide-row="0"]').click()
-  const body = page.locator('textarea').first()
-  await body.fill('# Scripted Slide Edited Once\n')
+  await fillEditor(page, '# Scripted Slide Edited Once\n')
   await expect.poll(() => page.evaluate(() => (window as unknown as { __scriptRunCount?: number }).__scriptRunCount))
     .toBeGreaterThan(afterMount!)
   const afterFirstEdit = await page.evaluate(() => (window as unknown as { __scriptRunCount?: number }).__scriptRunCount)
 
-  await body.fill('# Scripted Slide Edited Twice\n')
+  await fillEditor(page, '# Scripted Slide Edited Twice\n')
   await expect.poll(() => page.evaluate(() => (window as unknown as { __scriptRunCount?: number }).__scriptRunCount))
     .toBeGreaterThan(afterFirstEdit!)
 

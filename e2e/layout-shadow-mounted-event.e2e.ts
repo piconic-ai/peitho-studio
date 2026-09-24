@@ -9,6 +9,7 @@
 // the canvas.
 import { test, expect } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
+import { fillEditor } from './helpers/codeEditor'
 
 function fragmentWithMountPoint(title: string): string {
   return `<section class="peitho-slide" data-slide-key="marked"><h1>${title}</h1><div data-bf="Thing"></div></section>`
@@ -43,7 +44,7 @@ test('Given canvases have mounted, when a script loads later, then the backlog h
   await page.goto('/')
   await expect(page.locator('[data-slide-row]')).toHaveCount(1, { timeout: 10_000 })
   await page.locator('[data-slide-row="0"]').click()
-  await page.locator('textarea').first().fill('# Marked Slide Edited\n')
+  await fillEditor(page, '# Marked Slide Edited\n')
 
   await expect.poll(() => page.evaluate(() => {
     const backlog = (window as unknown as { __peithoShadowRoots?: Detail[] }).__peithoShadowRoots ?? []
@@ -76,7 +77,7 @@ test('Given that same listener, when the slide is edited (re-patching its canvas
   // A title-only edit is what actually changes the mock's fragment string
   // (see e2e/layout-script-execution.e2e.ts's own note on fragmentFor).
   await page.locator('[data-slide-row="0"]').click()
-  await page.locator('textarea').first().fill('# Marked Slide Edited\n')
+  await fillEditor(page, '# Marked Slide Edited\n')
 
   await expect.poll(() => page.evaluate(() => (window as unknown as { __shadowMountedCount: number }).__shadowMountedCount))
     .toBeGreaterThan(afterMount)

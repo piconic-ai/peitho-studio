@@ -8,6 +8,7 @@
 // WKWebView, are covered only by on-device verification.
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
+import { editorContent, editorText, fillEditor, moveToEditorEnd } from './helpers/codeEditor'
 
 const TWO_SLIDES = '<!-- {"key":"one"} -->\n# Slide One\n\n---\n\n<!-- {"key":"two"} -->\n# Slide Two\n'
 
@@ -88,14 +89,14 @@ test('Given two operations, when Edit > Undo is chosen twice, then they are undo
   expect(deck.source).toBe(TWO_SLIDES)
 })
 
-test('Given focus in the slide body textarea, when Edit > Undo is chosen, then no structural operation is undone', async ({ page }) => {
+test('Given focus in the slide body editor, when Edit > Undo is chosen, then no structural operation is undone', async ({ page }) => {
   const deck: MockDeck = { source: TWO_SLIDES }
   await openDeck(page, deck)
 
   await rightClickMenu(page, 1, 'New Slide')
   await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 5_000 })
 
-  await page.locator('textarea').first().click()
+  await editorContent(page).click()
   await menu(page, 'undo')
 
   // Give a wrongly routed undo time to land before asserting it didn't.
@@ -147,7 +148,7 @@ test('Given typed text that splits a slide in two, when Edit > Undo is chosen, t
   await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 5_000 })
   // A `---` typed into the first slide turns it into two slides.
   await page.locator('[data-slide-row="0"]').click()
-  await page.locator('textarea').first().fill('# Slide One\n\n---\n\n# Split Off\n')
+  await fillEditor(page, '# Slide One\n\n---\n\n# Split Off\n')
   await expect(page.locator('[data-slide-row]')).toHaveCount(4, { timeout: 5_000 })
   // The row count follows the in-memory preview render; wait for the
   // autosave that actually re-splits the deck on disk.
@@ -196,13 +197,13 @@ test('Given slides reordered with Cmd+Shift+ArrowDown, when Edit > Undo is chose
   await expect.poll(() => titleOrder(deck)).toEqual(['Slide Two', 'Slide One'])
 })
 
-test('Given focus in the slide body textarea, when a slide is dragged to a new position and Edit > Undo is chosen, then the old order comes back', async ({ page }) => {
+test('Given focus in the slide body editor, when a slide is dragged to a new position and Edit > Undo is chosen, then the old order comes back', async ({ page }) => {
   const deck: MockDeck = { source: TWO_SLIDES }
   await openDeck(page, deck)
   // Typing in the body is the usual state right before a drag. The row's
   // mousedown `preventDefault()`s (for the hand-rolled drag), which also
   // cancels the focus change a press would otherwise make.
-  await page.locator('textarea').first().click()
+  await editorContent(page).click()
 
   await dragRowAbove(page, 1, 0)
   await expect.poll(() => titleOrder(deck)).toEqual(['Slide Two', 'Slide One'])
@@ -216,17 +217,15 @@ test('Given text typed into the slide body, when Edit > Undo and Redo are chosen
   await openDeck(page, deck)
   await rightClickMenu(page, 1, 'New Slide')
   await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 5_000 })
-  const body = page.locator('textarea').first()
-  await body.click()
-  await body.press('End')
+  await moveToEditorEnd(page)
   await page.keyboard.type(' typed')
-  await expect(body).toHaveValue(/ typed$/)
+  await expect.poll(() => editorText(page)).toMatch(/ typed$/)
 
   await menu(page, 'undo')
-  await expect(body).not.toHaveValue(/typed/)
+  await expect.poll(() => editorText(page)).not.toMatch(/typed/)
 
   await menu(page, 'redo')
-  await expect(body).toHaveValue(/ typed$/)
+  await expect.poll(() => editorText(page)).toMatch(/ typed$/)
   await expect(page.locator('[data-slide-row]')).toHaveCount(3)
 })
 
@@ -263,19 +262,17 @@ test('Given a new slide, when Edit > Undo is sent to another window, then this w
 test('Given text typed into the slide body and the phone shape menu open, when Edit > Undo is chosen with the body still focused, then the typing is undone', async ({ page }) => {
   const deck: MockDeck = { source: TWO_SLIDES }
   await openDeck(page, deck)
-  const body = page.locator('textarea').first()
-  await body.click()
-  await body.press('End')
+  await moveToEditorEnd(page)
   await page.keyboard.type(' typed')
-  await expect(body).toHaveValue(/ typed$/)
+  await expect.poll(() => editorText(page)).toMatch(/ typed$/)
 
   await page.locator('[data-viewport-toggle]').click()
   await page.locator('[data-phone-shape-menu-button]').click()
   await expect(page.locator('[data-phone-shape-menu]')).toBeVisible()
   // WebKit never moves focus onto a clicked <button>, so on the real app the
   // body keeps focus through those clicks; Chromium moves it, so put it back.
-  await body.evaluate(el => { (el as HTMLTextAreaElement).focus() })
+  await editorContent(page).evaluate(el => { (el as HTMLElement).focus() })
 
   await menu(page, 'undo')
-  await expect(body).not.toHaveValue(/typed/)
+  await expect.poll(() => editorText(page)).not.toMatch(/typed/)
 })
