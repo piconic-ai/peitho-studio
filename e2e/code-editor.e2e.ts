@@ -21,11 +21,11 @@ async function openDeck(page: Page, deck: MockDeck, slides = 2): Promise<void> {
   await expect.poll(() => editorText(page)).toBe('# Slide One')
 }
 
-async function emit(page: Page, event: string, payload: unknown): Promise<void> {
-  await page.evaluate(({ event, payload }) => {
-    (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown) => void })
-      .__mockEmitTauriEvent(event, payload)
-  }, { event, payload })
+async function emit(page: Page, event: string, payload: unknown, toWindow?: string): Promise<void> {
+  await page.evaluate(({ event, payload, toWindow }) => {
+    (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, toWindow?: string) => void })
+      .__mockEmitTauriEvent(event, payload, toWindow)
+  }, { event, payload, toWindow })
 }
 
 /** Opens the slide on `row` and waits for the body to show `heading`. */
@@ -48,10 +48,7 @@ function vimStatus(page: Page) {
 const JA_NOTES_PLACEHOLDER = '発表者用のメモ — 聴衆には表示されません。'
 
 async function menu(page: Page, item: 'undo' | 'redo'): Promise<void> {
-  await page.evaluate(event => {
-    (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, toWindow?: string) => void })
-      .__mockEmitTauriEvent(event, null, 'main')
-  }, `menu:${item}`)
+  await emit(page, `menu:${item}`, null, 'main')
 }
 
 test.describe('functional', () => {
