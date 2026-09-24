@@ -42,6 +42,15 @@ export function sectionSpans(starts: readonly number[], rowCount: number): Secti
   return sorted.map((start, i) => ({ start, end: i + 1 < sorted.length ? sorted[i + 1] - 1 : rowCount - 1 }))
 }
 
+/** The key that remembers whether the section whose header sits on row
+ * `sourceIndex` is collapsed: that row's rendered slide key, or `null` when
+ * the row isn't a rendered slide (a placeholder, or out of range) — such a
+ * row never carries a section header. */
+export function collapseKeyAt(entries: readonly SlideListEntry[], sourceIndex: number): string | null {
+  const entry = entries[sourceIndex]
+  return entry?.kind === 'rendered' ? entry.slide.key : null
+}
+
 /** The header rows (by `sourceIndex`) of the sections `collapsedKeys`
  * folds: a section is folded when the rendered slide its header sits on
  * has a key in `collapsedKeys`. Returned in ascending order. */
@@ -53,32 +62,44 @@ export function collapsedSectionStarts(
   return Object.keys(sectionStartByIndex)
     .map(Number)
     .filter(index => {
-      const entry = entries[index]
-      return entry?.kind === 'rendered' && collapsedKeys.includes(entry.slide.key)
+      const key = collapseKeyAt(entries, index)
+      return key !== null && collapsedKeys.includes(key)
     })
     .sort((a, b) => a - b)
 }
 
 /** Every row's visibility. A collapsed section's header row becomes
  * `header-only` and the rest of its rows `hidden`; everything else is
- * `full`. The selected row always stays `full`, so a slide that becomes
- * selected inside a collapsed section (New Slide from its header, say) is
- * never selected out of sight. A collapsed start that isn't among `spans`'
- * starts is ignored. */
+ * `full`. A collapsed start that isn't among `spans`' starts is ignored. */
 export function rowVisibilities(
   spans: readonly SectionSpan[],
   collapsedStarts: readonly number[],
   rowCount: number,
-  selectedIndex: number | null,
 ): RowVisibility[] {
   const visibility: RowVisibility[] = Array.from({ length: Math.max(0, rowCount) }, () => 'full')
   for (const span of spans) {
     if (!collapsedStarts.includes(span.start)) continue
     for (let row = span.start; row <= span.end && row < visibility.length; row++) {
-      if (row !== selectedIndex) visibility[row] = row === span.start ? 'header-only' : 'hidden'
+      visibility[row] = row === span.start ? 'header-only' : 'hidden'
     }
   }
   return visibility
+}
+
+/** The header row of the collapsed section that hides row `row`'s
+ * thumbnail, or `null` when that thumbnail isn't hidden (not in any
+ * section, in an expanded one, or `row` is `null`/out of range). When a
+ * slide becomes selected inside a collapsed section — New Slide from the
+ * section's header, say — Studio expands this section so the selection
+ * never lands out of sight. */
+export function collapsedSectionContaining(
+  spans: readonly SectionSpan[],
+  collapsedStarts: readonly number[],
+  row: number | null,
+): number | null {
+  if (row === null) return null
+  const span = spans.find(s => s.start <= row && row <= s.end)
+  return span !== undefined && collapsedStarts.includes(span.start) ? span.start : null
 }
 
 /** The last row that shows anything at all, or `null` when none do. The

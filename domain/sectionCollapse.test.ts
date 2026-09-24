@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { ManifestSection, ManifestSlide } from './render'
 import { type SlideListEntry } from './slideList'
-import { collapsedSectionStarts, lastVisibleRow, rowVisibilities, sectionSpans, toggleCollapsedKey } from './sectionCollapse'
+import { collapseKeyAt, collapsedSectionContaining, collapsedSectionStarts, lastVisibleRow, rowVisibilities, sectionSpans, toggleCollapsedKey } from './sectionCollapse'
 
 function rendered(sourceIndex: number, manifestIndex: number, key: string): SlideListEntry {
   const slide: ManifestSlide = { index: manifestIndex, key, src: '', hasNotes: false, skip: false, revealSteps: 1, text: { title: key, body: '', code: '' } }
@@ -64,6 +64,21 @@ describe('sectionSpans', () => {
   })
 })
 
+describe('collapseKeyAt', () => {
+  const entries = [rendered(0, 0, 'intro'), placeholder(1)]
+
+  test('spec: Given a header on a rendered slide, then its key is that slide\'s key', () => {
+    expect(collapseKeyAt(entries, 0)).toBe('intro')
+  })
+
+  test('adversarial: a placeholder row, a negative row or a row past the end has no key', () => {
+    expect(collapseKeyAt(entries, 1)).toBeNull()
+    expect(collapseKeyAt(entries, -1)).toBeNull()
+    expect(collapseKeyAt(entries, 2)).toBeNull()
+    expect(collapseKeyAt([], 0)).toBeNull()
+  })
+})
+
 describe('collapsedSectionStarts', () => {
   const entries = [rendered(0, 0, 'intro'), rendered(1, 1, 'more'), placeholder(2), rendered(3, 2, 'demo')]
   const starts = { 0: section('Intro', 0, 1), 3: section('Demo', 2, 2) }
@@ -98,33 +113,55 @@ describe('rowVisibilities', () => {
   const spans = [{ start: 0, end: 2 }, { start: 3, end: 4 }]
 
   test('spec: Given nothing collapsed, then every row shows in full', () => {
-    expect(rowVisibilities(spans, [], 5, null)).toEqual(['full', 'full', 'full', 'full', 'full'])
+    expect(rowVisibilities(spans, [], 5)).toEqual(['full', 'full', 'full', 'full', 'full'])
   })
 
   test('spec: Given the first section collapsed, then its header row keeps only the header, its other rows hide, and the next section is untouched', () => {
-    expect(rowVisibilities(spans, [0], 5, null)).toEqual(['header-only', 'hidden', 'hidden', 'full', 'full'])
+    expect(rowVisibilities(spans, [0], 5)).toEqual(['header-only', 'hidden', 'hidden', 'full', 'full'])
   })
 
-  test('spec: Given a collapsed section containing the selected slide, then that one slide stays shown in full', () => {
-    expect(rowVisibilities(spans, [0], 5, 1)).toEqual(['header-only', 'full', 'hidden', 'full', 'full'])
-    expect(rowVisibilities(spans, [0], 5, 0)).toEqual(['full', 'hidden', 'hidden', 'full', 'full'])
+  test('spec: Given both sections collapsed, then only the two header rows show', () => {
+    expect(rowVisibilities(spans, [0, 3], 5)).toEqual(['header-only', 'hidden', 'hidden', 'header-only', 'hidden'])
   })
 
   test('adversarial: a collapsed start that is not a section start is ignored', () => {
-    expect(rowVisibilities(spans, [1, 7], 5, null)).toEqual(['full', 'full', 'full', 'full', 'full'])
-  })
-
-  test('adversarial: a selection outside the list changes nothing', () => {
-    expect(rowVisibilities(spans, [3], 5, 99)).toEqual(['full', 'full', 'full', 'header-only', 'hidden'])
+    expect(rowVisibilities(spans, [1, 7], 5)).toEqual(['full', 'full', 'full', 'full', 'full'])
   })
 
   test('adversarial: spans reaching past rowCount never grow the result', () => {
-    expect(rowVisibilities([{ start: 0, end: 10 }], [0], 2, null)).toEqual(['header-only', 'hidden'])
+    expect(rowVisibilities([{ start: 0, end: 10 }], [0], 2)).toEqual(['header-only', 'hidden'])
   })
 
   test('adversarial: zero or negative rowCount gives no rows', () => {
-    expect(rowVisibilities(spans, [0], 0, null)).toEqual([])
-    expect(rowVisibilities(spans, [0], -1, null)).toEqual([])
+    expect(rowVisibilities(spans, [0], 0)).toEqual([])
+    expect(rowVisibilities(spans, [0], -1)).toEqual([])
+  })
+})
+
+describe('collapsedSectionContaining', () => {
+  const spans = [{ start: 1, end: 2 }, { start: 3, end: 4 }]
+
+  test('spec: Given the first section collapsed, when a slide inside it is selected, then that section is the one to expand', () => {
+    expect(collapsedSectionContaining(spans, [1], 2)).toBe(1)
+  })
+
+  test('spec: the header row\'s own slide counts too, since its thumbnail is hidden', () => {
+    expect(collapsedSectionContaining(spans, [1], 1)).toBe(1)
+  })
+
+  test('spec: Given a slide selected in an expanded section, then there is nothing to expand', () => {
+    expect(collapsedSectionContaining(spans, [1], 3)).toBeNull()
+  })
+
+  test('adversarial: rows before the first section, past the end, negative or null have nothing to expand', () => {
+    expect(collapsedSectionContaining(spans, [1, 3], 0)).toBeNull()
+    expect(collapsedSectionContaining(spans, [1, 3], 5)).toBeNull()
+    expect(collapsedSectionContaining(spans, [1, 3], -1)).toBeNull()
+    expect(collapsedSectionContaining(spans, [1, 3], null)).toBeNull()
+  })
+
+  test('adversarial: no sections at all has nothing to expand', () => {
+    expect(collapsedSectionContaining([], [0], 0)).toBeNull()
   })
 })
 
@@ -149,7 +186,7 @@ describe('non-functional: a large deck', () => {
     const starts = Array.from({ length: 200 }, (_, i) => i * 10)
     const t0 = performance.now()
     const spans = sectionSpans(starts, rowCount)
-    const visibility = rowVisibilities(spans, starts, rowCount, null)
+    const visibility = rowVisibilities(spans, starts, rowCount)
     const elapsed = performance.now() - t0
     expect(visibility.filter(v => v === 'header-only')).toHaveLength(200)
     expect(visibility.filter(v => v === 'hidden')).toHaveLength(1800)
