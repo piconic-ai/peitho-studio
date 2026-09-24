@@ -259,3 +259,23 @@ test('Given a new slide, when Edit > Undo is sent to another window, then this w
   await expect(page.locator('[data-slide-row]')).toHaveCount(3)
   expect(deck.source).toContain('# New Slide')
 })
+
+test('Given text typed into the slide body and the phone shape menu open, when Edit > Undo is chosen with the body still focused, then the typing is undone', async ({ page }) => {
+  const deck: MockDeck = { source: TWO_SLIDES }
+  await openDeck(page, deck)
+  const body = page.locator('textarea').first()
+  await body.click()
+  await body.press('End')
+  await page.keyboard.type(' typed')
+  await expect(body).toHaveValue(/ typed$/)
+
+  await page.locator('[data-viewport-toggle]').click()
+  await page.locator('[data-phone-shape-menu-button]').click()
+  await expect(page.locator('[data-phone-shape-menu]')).toBeVisible()
+  // WebKit never moves focus onto a clicked <button>, so on the real app the
+  // body keeps focus through those clicks; Chromium moves it, so put it back.
+  await body.evaluate(el => { (el as HTMLTextAreaElement).focus() })
+
+  await menu(page, 'undo')
+  await expect(body).not.toHaveValue(/typed/)
+})

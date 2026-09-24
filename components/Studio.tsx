@@ -1178,11 +1178,13 @@ export function Studio() {
 
     // Edit > Undo/Redo, by mouse or by Cmd+Z / Cmd+Shift+Z (see
     // `src-tauri/src/edit_menu.rs`): a focused text field gets its own text
-    // undo, anything else undoes a slide operation. Waits while the phone
-    // shape menu is open, like every other shortcut in `onKeyDown`.
+    // undo, anything else undoes a slide operation. Only the slide operation
+    // waits while the phone shape menu is open, like every other shortcut in
+    // `onKeyDown`: WebKit keeps focus in the body through the clicks that
+    // open that menu, and its text undo must still run.
     const onMenuHistory = (direction: 'undo' | 'redo') => {
-      if (ui.phoneShapeMenuOpen()) return
       if (replayFocusedFieldHistory(direction)) return
+      if (ui.phoneShapeMenuOpen()) return
       void replayHistory(direction)
     }
     const unlistenMenuUndo = deckIpc.onMenuUndo(() => { onMenuHistory('undo') })
