@@ -1,10 +1,11 @@
-// Cmd+Z / Cmd+Shift+Z undo and redo structural slide operations (New
-// Slide, Delete, Skip, ...) when focus is outside the editor's textareas,
-// and leave the keys to the textarea's native undo when it has focus (see
-// the `onKeyDown` handler in `components/Studio.tsx`). Drives the real
-// keydown path against the mock IPC; the native Edit menu itself isn't
-// reachable here, so a mouse click on Edit > Undo is covered only by
-// on-device verification.
+// Edit > Undo / Redo undo and redo structural slide operations (New Slide,
+// Delete, Skip, ...) when focus is outside the editor's text fields, and
+// run the field's own text undo when one has focus (see `onMenuHistory` in
+// `components/Studio.tsx`). Cmd+Z / Cmd+Shift+Z reach the same handler
+// through the menu items' accelerators (`src-tauri/src/edit_menu.rs`), so
+// these tests send the menu event the Rust side emits; the native menu
+// itself, and which of the menu and the page's keydown sees Cmd+Z first on
+// WKWebView, are covered only by on-device verification.
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 
@@ -21,13 +22,23 @@ async function rightClickMenu(page: Page, row: number, item: string): Promise<vo
   await page.getByText(item, { exact: true }).click()
 }
 
+/** Sends Edit > Undo / Redo the way the Rust side does: `emit_to` the
+ * focused window, which is this page's `main` unless `toWindow` says
+ * otherwise. */
+async function menu(page: Page, item: 'undo' | 'redo', toWindow = 'main'): Promise<void> {
+  await page.evaluate(({ event, label }) => {
+    (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, toWindow?: string) => void })
+      .__mockEmitTauriEvent(event, null, label)
+  }, { event: `menu:${item}`, label: toWindow })
+}
+
 /** Moves focus off any field. Pressing a slide-list row does the same
  * (`dom/fieldFocus.ts`); the drag test below covers that path itself. */
 async function blurFields(page: Page): Promise<void> {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
 }
 
-test('Given a new slide, when Cmd+Z is pressed outside the editor, then the slide is removed, and Cmd+Shift+Z brings it back', async ({ page }) => {
+test('Given a new slide, when Edit > Undo is chosen outside the editor, then the slide is removed, and Edit > Redo brings it back', async ({ page }) => {
   const deck: MockDeck = { source: TWO_SLIDES }
   await openDeck(page, deck)
 
@@ -35,16 +46,16 @@ test('Given a new slide, when Cmd+Z is pressed outside the editor, then the slid
   await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 5_000 })
   await blurFields(page)
 
-  await page.keyboard.press('Meta+z')
+  await menu(page, 'undo')
   await expect(page.locator('[data-slide-row]')).toHaveCount(2, { timeout: 5_000 })
   expect(deck.source).not.toContain('# New Slide')
 
-  await page.keyboard.press('Meta+Shift+z')
+  await menu(page, 'redo')
   await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 5_000 })
   expect(deck.source).toContain('# New Slide')
 })
 
-test('Given a deleted slide, when Cmd+Z is pressed, then the slide comes back in its old position', async ({ page }) => {
+test('Given a deleted slide, when Edit > Undo is chosen, then the slide comes back in its old position', async ({ page }) => {
   const deck: MockDeck = { source: TWO_SLIDES }
   await openDeck(page, deck)
 
@@ -52,13 +63,13 @@ test('Given a deleted slide, when Cmd+Z is pressed, then the slide comes back in
   await expect(page.locator('[data-slide-row]')).toHaveCount(1, { timeout: 5_000 })
   await blurFields(page)
 
-  await page.keyboard.press('Meta+z')
+  await menu(page, 'undo')
 
   await expect(page.locator('[data-slide-row]')).toHaveCount(2, { timeout: 5_000 })
   expect(deck.source.indexOf('# Slide One')).toBeLessThan(deck.source.indexOf('# Slide Two'))
 })
 
-test('Given two operations, when Cmd+Z is pressed twice, then they are undone newest first', async ({ page }) => {
+test('Given two operations, when Edit > Undo is chosen twice, then they are undone newest first', async ({ page }) => {
   const deck: MockDeck = { source: TWO_SLIDES }
   await openDeck(page, deck)
 
@@ -68,16 +79,16 @@ test('Given two operations, when Cmd+Z is pressed twice, then they are undone ne
   await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 5_000 })
   await blurFields(page)
 
-  await page.keyboard.press('Meta+z')
+  await menu(page, 'undo')
   await expect(page.locator('[data-slide-row]')).toHaveCount(2, { timeout: 5_000 })
   expect(deck.source).toContain('"skip":true')
 
-  await page.keyboard.press('Meta+z')
+  await menu(page, 'undo')
   await expect.poll(() => deck.source).not.toContain('"skip"')
   expect(deck.source).toBe(TWO_SLIDES)
 })
 
-test('Given focus in the slide body textarea, when Cmd+Z is pressed, then no structural operation is undone', async ({ page }) => {
+test('Given focus in the slide body textarea, when Edit > Undo is chosen, then no structural operation is undone', async ({ page }) => {
   const deck: MockDeck = { source: TWO_SLIDES }
   await openDeck(page, deck)
 
@@ -85,7 +96,7 @@ test('Given focus in the slide body textarea, when Cmd+Z is pressed, then no str
   await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 5_000 })
 
   await page.locator('textarea').first().click()
-  await page.keyboard.press('Meta+z')
+  await menu(page, 'undo')
 
   // Give a wrongly routed undo time to land before asserting it didn't.
   await page.waitForTimeout(500)
@@ -93,22 +104,22 @@ test('Given focus in the slide body textarea, when Cmd+Z is pressed, then no str
   expect(deck.source).toContain('# New Slide')
 })
 
-test('Given nothing has been done yet, when Cmd+Z is pressed, then the deck is left as it is', async ({ page }) => {
+test('Given nothing has been done yet, when Edit > Undo is chosen, then the deck is left as it is', async ({ page }) => {
   const invoked: string[] = []
   const deck: MockDeck = { source: TWO_SLIDES, onInvoke: cmd => { invoked.push(cmd) } }
   await openDeck(page, deck)
   await blurFields(page)
   invoked.length = 0
 
-  await page.keyboard.press('Meta+z')
-  await page.keyboard.press('Meta+Shift+z')
+  await menu(page, 'undo')
+  await menu(page, 'redo')
 
   await page.waitForTimeout(500)
   expect(invoked).not.toContain('save_deck_source')
   expect(deck.source).toBe(TWO_SLIDES)
 })
 
-test('Given two operations, when Cmd+Z is pressed twice without waiting, then both are undone', async ({ page }) => {
+test('Given two operations, when Edit > Undo is chosen twice without waiting, then both are undone', async ({ page }) => {
   // Every render waits a little, so the second press lands while the first
   // undo is still saving — it must queue behind it, not be dropped or
   // computed from the slides the first undo is about to change.
@@ -121,14 +132,14 @@ test('Given two operations, when Cmd+Z is pressed twice without waiting, then bo
   await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 5_000 })
   await blurFields(page)
 
-  await page.keyboard.press('Meta+z')
-  await page.keyboard.press('Meta+z')
+  await menu(page, 'undo')
+  await menu(page, 'undo')
 
   await expect.poll(() => deck.source, { timeout: 5_000 }).toBe(TWO_SLIDES)
   await expect(page.locator('[data-slide-row]')).toHaveCount(2)
 })
 
-test('Given typed text that splits a slide in two, when Cmd+Z is pressed, then an earlier operation is not undone against the shifted slides', async ({ page }) => {
+test('Given typed text that splits a slide in two, when Edit > Undo is chosen, then an earlier operation is not undone against the shifted slides', async ({ page }) => {
   const deck: MockDeck = { source: TWO_SLIDES }
   await openDeck(page, deck)
 
@@ -143,7 +154,7 @@ test('Given typed text that splits a slide in two, when Cmd+Z is pressed, then a
   await expect.poll(() => deck.source, { timeout: 5_000 }).toContain('# Split Off')
   await blurFields(page)
 
-  await page.keyboard.press('Meta+z')
+  await menu(page, 'undo')
 
   // Without clearing the history, this would delete whatever slide now sits
   // where the new slide used to be (`# Slide Two`).
@@ -169,7 +180,7 @@ async function dragRowAbove(page: Page, from: number, onto: number): Promise<voi
   await page.mouse.up()
 }
 
-test('Given slides reordered with Cmd+Shift+ArrowDown, when Cmd+Z is pressed, then the old order comes back, and Cmd+Shift+Z reorders them again', async ({ page }) => {
+test('Given slides reordered with Cmd+Shift+ArrowDown, when Edit > Undo is chosen, then the old order comes back, and Edit > Redo reorders them again', async ({ page }) => {
   const deck: MockDeck = { source: TWO_SLIDES }
   await openDeck(page, deck)
   await page.locator('[data-slide-row="0"] button[title]').first().click()
@@ -178,14 +189,14 @@ test('Given slides reordered with Cmd+Shift+ArrowDown, when Cmd+Z is pressed, th
   await page.keyboard.press('Meta+Shift+ArrowDown')
   await expect.poll(() => titleOrder(deck)).toEqual(['Slide Two', 'Slide One'])
 
-  await page.keyboard.press('Meta+z')
+  await menu(page, 'undo')
   await expect.poll(() => titleOrder(deck)).toEqual(['Slide One', 'Slide Two'])
 
-  await page.keyboard.press('Meta+Shift+z')
+  await menu(page, 'redo')
   await expect.poll(() => titleOrder(deck)).toEqual(['Slide Two', 'Slide One'])
 })
 
-test('Given focus in the slide body textarea, when a slide is dragged to a new position and Cmd+Z is pressed, then the old order comes back', async ({ page }) => {
+test('Given focus in the slide body textarea, when a slide is dragged to a new position and Edit > Undo is chosen, then the old order comes back', async ({ page }) => {
   const deck: MockDeck = { source: TWO_SLIDES }
   await openDeck(page, deck)
   // Typing in the body is the usual state right before a drag. The row's
@@ -196,6 +207,55 @@ test('Given focus in the slide body textarea, when a slide is dragged to a new p
   await dragRowAbove(page, 1, 0)
   await expect.poll(() => titleOrder(deck)).toEqual(['Slide Two', 'Slide One'])
 
-  await page.keyboard.press('Meta+z')
+  await menu(page, 'undo')
   await expect.poll(() => titleOrder(deck)).toEqual(['Slide One', 'Slide Two'])
+})
+
+test('Given text typed into the slide body, when Edit > Undo and Redo are chosen with the body focused, then the typing is undone and redone and the slides stay as they are', async ({ page }) => {
+  const deck: MockDeck = { source: TWO_SLIDES }
+  await openDeck(page, deck)
+  await rightClickMenu(page, 1, 'New Slide')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 5_000 })
+  const body = page.locator('textarea').first()
+  await body.click()
+  await body.press('End')
+  await page.keyboard.type(' typed')
+  await expect(body).toHaveValue(/ typed$/)
+
+  await menu(page, 'undo')
+  await expect(body).not.toHaveValue(/typed/)
+
+  await menu(page, 'redo')
+  await expect(body).toHaveValue(/ typed$/)
+  await expect(page.locator('[data-slide-row]')).toHaveCount(3)
+})
+
+test('Given a new slide, when a Cmd+Z keydown reaches the page but not the menu, then nothing is undone', async ({ page }) => {
+  // Cmd+Z is left to the Edit menu's accelerator; handling the keydown too
+  // would undo twice for one press.
+  const deck: MockDeck = { source: TWO_SLIDES }
+  await openDeck(page, deck)
+  await rightClickMenu(page, 1, 'New Slide')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 5_000 })
+  await blurFields(page)
+
+  await page.keyboard.press('Meta+z')
+
+  await page.waitForTimeout(500)
+  await expect(page.locator('[data-slide-row]')).toHaveCount(3)
+  expect(deck.source).toContain('# New Slide')
+})
+
+test('Given a new slide, when Edit > Undo is sent to another window, then this window undoes nothing', async ({ page }) => {
+  const deck: MockDeck = { source: TWO_SLIDES }
+  await openDeck(page, deck)
+  await rightClickMenu(page, 1, 'New Slide')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 5_000 })
+  await blurFields(page)
+
+  await menu(page, 'undo', 'deck-2')
+
+  await page.waitForTimeout(500)
+  await expect(page.locator('[data-slide-row]')).toHaveCount(3)
+  expect(deck.source).toContain('# New Slide')
 })
