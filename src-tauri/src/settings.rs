@@ -45,6 +45,9 @@ const FILE_NAME: &str = "settings.json";
 pub struct Settings {
     /// The UI's language; `System` (the default) follows the OS.
     pub ui_language: LanguageSetting,
+    /// Vim key bindings in the slide body and notes editors. Off by
+    /// default.
+    pub vim_mode: bool,
 }
 
 /// `base` with each of its fields replaced by `input`'s value for that
@@ -157,8 +160,8 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    // A stand-in with real fields — `Settings` itself has none yet — so the
-    // per-field reading every future field relies on is exercised now.
+    // A stand-in with more fields than `Settings` itself, so the per-field
+    // reading every future field relies on is exercised now.
     #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
     #[serde(rename_all = "camelCase")]
     struct Sample {
@@ -248,10 +251,9 @@ mod tests {
     #[test]
     fn given_no_saved_language_when_the_real_settings_are_read_then_the_ui_follows_the_os() {
         for json in ["", "{}", r#"{"vimMode":true}"#, "[]", r#"{"uiLanguage":"fr"}"#, r#"{"uiLanguage":null}"#] {
-            assert_eq!(settings_from_json::<Settings>(json), Settings::default(), "{json:?}");
+            assert_eq!(settings_from_json::<Settings>(json).ui_language, LanguageSetting::System, "{json:?}");
         }
         assert_eq!(Settings::default().ui_language, LanguageSetting::System);
-        assert_eq!(serde_json::to_string(&Settings::default()).unwrap(), r#"{"uiLanguage":"system"}"#);
     }
 
     #[test]
@@ -266,6 +268,30 @@ mod tests {
         assert_eq!(next.ui_language, LanguageSetting::En);
         let kept = apply_patch(&next, &patch(json!({ "uiLanguage": "english" })));
         assert_eq!(kept.ui_language, LanguageSetting::En);
+    }
+
+    #[test]
+    fn given_the_real_settings_with_vim_mode_on_when_read_then_vim_mode_is_on() {
+        let read: Settings = settings_from_json(r#"{"vimMode":true}"#);
+        assert_eq!(read, Settings { vim_mode: true, ..Settings::default() });
+    }
+
+    #[test]
+    fn given_the_real_settings_without_a_valid_vim_mode_when_read_then_vim_mode_is_off() {
+        for json in ["", "{}", "[]", r#"{"vimMode":"true"}"#, r#"{"vimMode":1}"#, r#"{"vimMode":null}"#] {
+            assert_eq!(settings_from_json::<Settings>(json), Settings::default(), "{json:?}");
+        }
+        assert!(!Settings::default().vim_mode);
+    }
+
+    #[test]
+    fn given_the_real_settings_when_serialized_then_the_frontend_field_names_are_used() {
+        // `domain/settings.ts` reads `uiLanguage` and `vimMode`; a rename
+        // here would silently turn every saved choice back into the default.
+        assert_eq!(
+            serde_json::to_string(&Settings::default()).unwrap(),
+            r#"{"uiLanguage":"system","vimMode":false}"#
+        );
     }
 
     #[test]

@@ -20,17 +20,21 @@ export interface Settings {
   /** The UI's language — `system` (the default) follows the OS's
    * preferred language (see `domain/language.ts`). */
   uiLanguage: LanguageSetting
+  /** Vim key bindings in the slide body and notes editors
+   * (`dom/codeEditor.ts`). Off by default. */
+  vimMode: boolean
 }
 
 /** Some settings to change, the rest left as they are. */
 export type SettingsPatch = Partial<Settings>
 
-export const SETTINGS_SCHEMA: SettingsSchema<Settings> = {
-  uiLanguage: oneOfField(LANGUAGE_SETTINGS, 'system'),
-}
-
 export function booleanField(fallback: boolean): FieldSpec<boolean> {
   return { default: fallback, accepts: (value): value is boolean => typeof value === 'boolean' }
+}
+
+export const SETTINGS_SCHEMA: SettingsSchema<Settings> = {
+  uiLanguage: oneOfField(LANGUAGE_SETTINGS, 'system'),
+  vimMode: booleanField(false),
 }
 
 /** A setting that is one of `values` (e.g. `['en', 'ja']`). */

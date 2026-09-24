@@ -2,6 +2,7 @@ mod deck_variants;
 mod edit_menu;
 mod engine;
 mod i18n;
+mod input_source;
 mod peitho;
 mod settings;
 
@@ -175,7 +176,13 @@ fn build_recent_menu(app: &tauri::AppHandle, recents: &[String], labels: &MenuLa
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        // Vim mode's yank/put share the OS clipboard through it
+        // (`ipc/editorIpc.ts`). Read from Rust rather than with
+        // `navigator.clipboard.readText()`, which WKWebView answers only
+        // after the user clicks a "Paste" callout.
+        .plugin(tauri_plugin_clipboard_manager::init());
     // Only in an `--features e2e-testing` build (see
     // docs/tauri-playwright-spike.md): embeds a control server Playwright's
     // "tauri" mode connects to over a Unix socket to drive this real
@@ -278,6 +285,7 @@ pub fn run() {
             settings::get_settings,
             settings::update_settings,
             settings::get_system_locales,
+            input_source::select_ascii_input_source,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
