@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: 設定画面と設定の永続化の仕組みを新設し、アプリアイコンを変更できるようにする
 tags: [settings, icon]
 ---
@@ -115,10 +115,16 @@ tags: [settings, icon]
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] 要調査1(保存の方式)を決めて、設定の読み書きを実装
-- [ ] アプリメニューの「Settings…」から設定画面が開く
-- [ ] `bun test` / `bun run typecheck` / `bun run test:e2e` グリーン
-- [ ] (Rust変更があれば) `cargo test` グリーン
+- [x] 要調査1(保存の方式)を決めて、設定の読み書きを実装
+      — `app_config_dir()/settings.json`を自前で読み書き(プラグインなし、
+      `Mutex`なし、ファイルだけが状態)。項目ごとに読み、壊れた値はその
+      項目だけ既定値。保存はパッチ(`update_settings`)で、一時ファイル+
+      renameで書く。PR #80。
+- [x] アプリメニューの「Settings…」から設定画面が開く
+      (モックIPCのe2e `e2e/settings-panel.e2e.ts`で確認。設定画面は
+      各ウィンドウ内のモーダル)
+- [x] `bun test` / `bun run typecheck` / `bun run test:e2e` グリーン
+- [x] (Rust変更があれば) `cargo test` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 要調査2(アイコンを実行中に変えられるか)の結果を記録し、
@@ -129,4 +135,10 @@ tags: [settings, icon]
 
 ## 先送り事項
 
-(実装時に見つかった、本筋と無関係な改善点があればここに書き出す)
+- `Settings`はまだ項目が0個。アプリアイコンの項目は要調査2・3の結果待ち
+  で未実装(PR #80は土台のみ)。項目を足すときは`settings.rs`の
+  `Settings`と`domain/settings.ts`の`Settings`/`SETTINGS_SCHEMA`に
+  同じフィールドを足し、`SettingsPanel.tsx`に入力を1つ置く。
+- ウィンドウが1つも開いていない(フォーカス中のウィンドウがない)ときの
+  「Settings…」は何もしない。macOSで全ウィンドウを閉じた状態から設定を
+  開きたくなったら、新しいウィンドウを開いてから送る必要がある。
