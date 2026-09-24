@@ -4,6 +4,7 @@ import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withL
 import { type LayoutVerdict } from '../domain/layoutFit'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { type PhoneShape, type ViewportMode, toggledViewportMode } from '../domain/viewport'
+import { toggleCollapsedKey } from '../domain/sectionCollapse'
 
 const SLIDE_LIST_WIDTH = 176
 const EDITOR_WIDTH = 420
@@ -130,6 +131,19 @@ export function createUiStore() {
   // can be active").
   const [editingSectionIndex, setEditingSectionIndex] = createSignal<number | null>(null)
 
+  // Which sections have their slide rows folded away in the slide list, by
+  // the manifest key of each section's first slide (see
+  // `domain/sectionCollapse.ts` for why a key, not a row index). Separate
+  // from `editingSectionIndex`: that one switches a header between its
+  // summary and its editor; this one hides the slides under it. One array
+  // read by every row is fine here — it changes only on a click, unlike
+  // the per-keystroke fragments `renderStore`'s per-key signals exist for.
+  // Session-only, like the column widths; the setter stays private.
+  const [collapsedSectionKeys, setCollapsedSectionKeys] = createSignal<readonly string[]>([])
+  function toggleSectionCollapsed(key: string): void {
+    setCollapsedSectionKeys(keys => toggleCollapsedKey(keys, key))
+  }
+
   // Whether the preview pane shows the deck's own canvas or a phone-shaped
   // one. Session-only, like the two column widths above. The setter stays
   // private: callers can only flip the mode, not assign one.
@@ -177,6 +191,7 @@ export function createUiStore() {
     variantMenuOpen, setVariantMenuOpen,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth,
     editingSectionIndex, setEditingSectionIndex,
+    collapsedSectionKeys, toggleSectionCollapsed,
     viewportMode, toggleViewportMode, phoneShape, selectPhoneShape,
     phoneShapeMenuOpen, togglePhoneShapeMenu, closePhoneShapeMenu,
   }

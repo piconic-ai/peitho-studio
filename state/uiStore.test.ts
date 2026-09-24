@@ -391,3 +391,35 @@ describe('preview phone shape menu', () => {
     })
   })
 })
+
+describe('section collapse in the slide list', () => {
+  test('spec: Given no section collapsed, when a section is toggled twice, then it is collapsed and then expanded again', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      expect(store.collapsedSectionKeys()).toEqual([])
+      store.toggleSectionCollapsed('intro')
+      expect(store.collapsedSectionKeys()).toEqual(['intro'])
+      store.toggleSectionCollapsed('intro')
+      expect(store.collapsedSectionKeys()).toEqual([])
+    })
+  })
+
+  test('adversarial: collapsing a section leaves the header editor state alone', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.setEditingSectionIndex(0)
+      store.toggleSectionCollapsed('intro')
+      expect(store.editingSectionIndex()).toBe(0)
+    })
+  })
+
+  test('adversarial: each store instance keeps its own collapsed sections, and the setter is not exposed', () => {
+    createRoot(() => {
+      const first = createUiStore()
+      const second = createUiStore()
+      first.toggleSectionCollapsed('intro')
+      expect(second.collapsedSectionKeys()).toEqual([])
+      expect('setCollapsedSectionKeys' in first).toBe(false)
+    })
+  })
+})
