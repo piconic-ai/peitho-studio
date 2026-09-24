@@ -9,7 +9,7 @@
 import { Annotation, EditorState, Transaction, type Extension } from '@codemirror/state'
 import { EditorView, keymap, placeholder as placeholderText } from '@codemirror/view'
 import { defaultKeymap, history, redo, redoDepth, undo, undoDepth } from '@codemirror/commands'
-import { editorTextChange } from '../domain/editorText'
+import { editorTextChange, normalizeLineBreaks } from '../domain/editorText'
 
 export interface CodeEditorOptions {
   /** Called with the full text after every change the user makes. */
@@ -97,14 +97,14 @@ export function setCodeEditorText(view: EditorView, text: string): void {
  * `setCodeEditorText`. */
 export function resetCodeEditorText(view: EditorView, text: string): void {
   if (view.composing) return
-  const unchanged = editorTextChange(view.state.doc.toString(), text) === null
+  const unchanged = view.state.doc.toString() === normalizeLineBreaks(text)
   if (unchanged && undoDepth(view.state) === 0 && redoDepth(view.state) === 0) return
   const extensions = extensionsOf.get(view) ?? []
   view.setState(EditorState.create({ doc: text, extensions }))
 }
 
 /** The editor that has keyboard focus, or `null`. */
-export function focusedCodeEditor(): EditorView | null {
+function focusedCodeEditor(): EditorView | null {
   const active = document.activeElement
   const host = active instanceof HTMLElement ? active.closest<HTMLElement>('.cm-editor') : null
   return host ? EditorView.findFromDOM(host) : null
