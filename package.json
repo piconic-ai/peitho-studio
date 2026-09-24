@@ -16,6 +16,9 @@
     "@barefootjs/client": "^0.35.7",
     "@barefootjs/jsx": "^0.35.7",
     "@barefootjs/shared": "^0.35.7",
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.13",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.3"
   },
