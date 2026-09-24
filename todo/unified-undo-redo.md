@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: Editメニューの取り消す/やり直すから構造操作のUndo/Redoも実行できるようにする
 tags: [undo-redo, editor, menu]
 ---
@@ -150,16 +150,41 @@ PR #76でマージ済み。その後の壁打ち(2026-09-24)で、残ってい�
   あること。案Aでkeydown経路を外す場合、既存テストの`Meta+z`は
   モックのメニューイベントに置き換える必要がある。
 
+## 実装メモ(案Aで実装 — 実機確認待ち)
+
+- **案Aを仮採用**: メニューを唯一の入口にした。`Studio.tsx`の`onKeyDown`
+  からCmd+Zの分岐を外したので、Cmd+Z/Cmd+Shift+Zはメニュー項目の
+  アクセラレータ経由でだけ届く。要調査1の結果(keydownとメニューの
+  どちらが先か)に関係なく、1回の押下で1回だけ動く。要調査2
+  (`execCommand`)が実機で駄目なら、案Cへ切り替える(ユーザー確認が必要)。
+- **`execCommand`の根拠**: WebKitの`EditorCommand.cpp`では、`Undo`/`Redo`
+  の可否判定は`supported`(スクリプトからも実行できる)で、
+  `supportedFromMenuOrKeyBinding`ではない。WKWebViewで実際にテキスト
+  履歴に届くかは未確認。
+- **Rust**: `src-tauri/src/edit_menu.rs`。項目id(`edit_undo`/`edit_redo`)
+  からイベント名への対応と、フォーカス中のウィンドウの選び方を純粋関数に
+  して`#[cfg(test)]`でテストした。送信は
+  `emit_to(EventTarget::webview_window(label))`。
+- **フロントの購読はウィンドウ単位**: `ipc/deckIpc.ts`の`onMenuUndo`/
+  `onMenuRedo`は`getCurrentWebviewWindow().listen`。素の`listen()`
+  (target: Any)は、`emit_to`が別ウィンドウ宛てに送ったイベントも受け取る
+  (Tauriの`match_any_or_filter`)。`e2e/helpers/mockTauri.ts`もこの
+  振る舞いを再現し、e2eで確かめている。
+- **振り分け**: `dom/fieldFocus.ts`の`replayFocusedFieldHistory`。
+  input/textareaにフォーカスがあれば`execCommand`、なければ
+  `replayHistory`。プレビューの端末形状メニュー(`phoneShapeMenuOpen`)が開いている間は、ほかの
+  ショートカットと同じく何もしない。
+
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
 - [x] 第1段階: `domain/editorHistory.ts` + 逆操作関数 + テスト(PR #76)
 - [x] 第1段階: `Studio.tsx`への配線(PR #76)
 - [x] 第1段階: ドラッグ並べ替え後のCmd+Z(`dom/fieldFocus.ts`、PR #76)
-- [ ] メニュー項目の置き換えと、フォーカス中のウィンドウへのイベント送信
-- [ ] フロントでの購読と、フォーカス位置による振り分け
-- [ ] `bun test` / `bun run typecheck` / `bun run test:e2e` グリーン
-- [ ] `cargo test` グリーン
+- [x] メニュー項目の置き換えと、フォーカス中のウィンドウへのイベント送信
+- [x] フロントでの購読と、フォーカス位置による振り分け
+- [x] `bun test` / `bun run typecheck` / `bun run test:e2e` グリーン
+- [x] `cargo test` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [x] ネイティブEditメニューとの共存方式を決定
