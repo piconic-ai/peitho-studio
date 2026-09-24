@@ -22,7 +22,7 @@ export type Settings = Record<never, never>
 export const SETTINGS_SCHEMA: SettingsSchema<Settings> = {}
 
 /** Some settings to change, the rest left as they are. */
-export type SettingsPatch<S = Settings> = Partial<S>
+export type SettingsPatch = Partial<Settings>
 
 export function booleanField(fallback: boolean): FieldSpec<boolean> {
   return { default: fallback, accepts: (value): value is boolean => typeof value === 'boolean' }
