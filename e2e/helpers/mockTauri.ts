@@ -115,6 +115,9 @@ export interface MockDeck {
    * empty one (the picker then draws name-only cards and mounts no canvas).
    * Set it to give the picker real slide canvases to inspect. */
   layoutFragment?: string
+  /** What `get_settings` answers — defaults to `{}` (nothing saved yet).
+   * Passed as is, so a test can hand over a malformed value too. */
+  settings?: unknown
 }
 
 function sleep(ms: number): Promise<void> {
@@ -225,6 +228,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         return null
       case 'create_deck': return '/fake/new-deck/deck.md'
       case 'plugin:dialog|open': return deck.dialogPath ?? null
+      case 'get_settings': return deck.settings ?? {}
       default: return null
     }
   })

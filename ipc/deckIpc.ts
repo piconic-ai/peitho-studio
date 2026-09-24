@@ -84,19 +84,19 @@ export interface DeckIpc {
   onPresentFailed(callback: (message: string) => void): Unsubscribe
 }
 
-function subscribe(event: string, callback: () => void): Unsubscribe {
+export function subscribe(event: string, callback: () => void): Unsubscribe {
   const unlisten = listen(event, () => { callback() })
   return () => { void unlisten.then(stop => { stop() }) }
 }
 
 /** Like `subscribe`, but only for events sent to this window. A plain
  * `listen()` also hears events `emit_to` sends to *another* window. */
-function subscribeToThisWindow(event: string, callback: () => void): Unsubscribe {
+export function subscribeToThisWindow(event: string, callback: () => void): Unsubscribe {
   const unlisten = getCurrentWebviewWindow().listen(event, () => { callback() })
   return () => { void unlisten.then(stop => { stop() }) }
 }
 
-function subscribeWithPayload<T>(event: string, callback: (payload: T) => void): Unsubscribe {
+export function subscribeWithPayload<T>(event: string, callback: (payload: T) => void): Unsubscribe {
   const unlisten = listen<T>(event, e => { callback(e.payload) })
   return () => { void unlisten.then(stop => { stop() }) }
 }
