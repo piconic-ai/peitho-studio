@@ -62,6 +62,27 @@ describe('createFakeDeckIpc', () => {
     expect(count).toBe(1)
   })
 
+  test('spec: menu Undo and Redo reach only their own subscribers', () => {
+    const ipc = createFakeDeckIpc()
+    const heard: string[] = []
+    ipc.onMenuUndo(() => { heard.push('undo') })
+    ipc.onMenuRedo(() => { heard.push('redo') })
+    ipc.emitMenuUndo()
+    ipc.emitMenuRedo()
+    ipc.emitMenuUndo()
+    expect(heard).toEqual(['undo', 'redo', 'undo'])
+  })
+
+  test('adversarial: menu Undo after unsubscribing, or with no subscriber, does nothing', () => {
+    const ipc = createFakeDeckIpc()
+    expect(() => { ipc.emitMenuUndo() }).not.toThrow()
+    let count = 0
+    const unsubscribe = ipc.onMenuRedo(() => { count++ })
+    unsubscribe()
+    ipc.emitMenuRedo()
+    expect(count).toBe(0)
+  })
+
   test('spec: onPresentReady subscribes, emitPresentReady fires every subscriber', () => {
     const ipc = createFakeDeckIpc()
     let a = 0
