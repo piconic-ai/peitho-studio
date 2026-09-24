@@ -177,8 +177,10 @@ function editorExtensions(options: CodeEditorOptions, vimOn: boolean): Extension
     editorTheme(options.monospace ?? false),
     placeholderSlot.of(placeholderExtension(options.placeholder ?? '')),
     EditorView.updateListener.of(update => {
-      const groups = update.transactions.map(trackTextHistory)
-      for (const seq of groups) if (seq !== null) options.onHistoryGroup?.(seq)
+      for (const tr of update.transactions) {
+        const seq = trackTextHistory(tr)
+        if (seq !== null) options.onHistoryGroup?.(seq)
+      }
       if (!update.docChanged) return
       if (update.transactions.every(tr => tr.annotation(fromApp))) return
       options.onChange(update.state.doc.toString())
