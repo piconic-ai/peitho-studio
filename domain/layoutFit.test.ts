@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { availabilityOf, entryTitle, isSelectable, mismatchNotice, settledFitCheck, type LayoutFitCheck, type LayoutVerdict } from './layoutFit'
+import { availabilityOf, entryTitle, isSelectable, layoutNoticeText, settledFitCheck, type LayoutFitCheck, type LayoutVerdict } from './layoutFit'
+import { messagesFor } from './messages'
+
+const en = messagesFor('en')
+const ja = messagesFor('ja')
 
 const verdicts: LayoutVerdict[] = [
   { layout: 'cover', fit: { kind: 'mismatch', reason: "unassigned content remains for missing 'body' slot" } },
@@ -85,25 +89,37 @@ describe('isSelectable', () => {
 describe('entryTitle', () => {
   test('spec: a mismatched layout explains why; a fitting one is just its name', () => {
     const checked: LayoutFitCheck = { kind: 'checked', verdicts }
-    expect(entryTitle(checked, 'cover')).toBe("\"cover\" doesn't fit this slide: unassigned content remains for missing 'body' slot")
-    expect(entryTitle(checked, 'statement')).toBe('statement')
+    expect(entryTitle(checked, 'cover', en)).toBe("\"cover\" doesn't fit this slide: unassigned content remains for missing 'body' slot")
+    expect(entryTitle(checked, 'statement', en)).toBe('statement')
+  })
+
+  test('spec: Given the Japanese UI, when a mismatched layout is hovered, then the explanation is Japanese and peitho-core\'s reason is kept as is', () => {
+    const checked: LayoutFitCheck = { kind: 'checked', verdicts }
+    expect(entryTitle(checked, 'cover', ja)).toBe("「cover」はこのスライドに合いません: unassigned content remains for missing 'body' slot")
+    expect(entryTitle(checked, 'statement', ja)).toBe('statement')
   })
 
   test('adversarial: mid-check, unavailable, and empty names fall back to the name itself', () => {
-    expect(entryTitle({ kind: 'checking', requestId: 1 }, 'cover')).toBe('cover')
-    expect(entryTitle({ kind: 'unavailable' }, 'cover')).toBe('cover')
-    expect(entryTitle({ kind: 'unavailable' }, '')).toBe('')
+    expect(entryTitle({ kind: 'checking', requestId: 1 }, 'cover', en)).toBe('cover')
+    expect(entryTitle({ kind: 'unavailable' }, 'cover', en)).toBe('cover')
+    expect(entryTitle({ kind: 'unavailable' }, '', en)).toBe('')
   })
 })
 
-describe('mismatchNotice', () => {
-  test('spec: names the layout and gives the reason', () => {
-    expect(mismatchNotice('cover', "unassigned content remains for missing 'body' slot"))
+describe('layoutNoticeText', () => {
+  test('spec: a mismatch names the layout and gives the reason', () => {
+    expect(layoutNoticeText(en, { kind: 'mismatch', layout: 'cover', reason: "unassigned content remains for missing 'body' slot" }))
       .toBe("\"cover\" doesn't fit this slide: unassigned content remains for missing 'body' slot")
   })
 
+  test('spec: Given a choice made before the check answered, when worded in each language, then it says the check is still running', () => {
+    expect(layoutNoticeText(en, { kind: 'checking' })).toBe('Still checking which layouts fit this slide — try again in a moment.')
+    expect(layoutNoticeText(ja, { kind: 'checking' })).toBe(ja.layoutChecking)
+  })
+
   test('adversarial: empty strings and markup-like text pass through verbatim (rendered as text, never HTML)', () => {
-    expect(mismatchNotice('', '')).toBe("\"\" doesn't fit this slide: ")
-    expect(mismatchNotice('<b>x</b>', "slot 'a' got 2 item(s)\nsecond line")).toBe("\"<b>x</b>\" doesn't fit this slide: slot 'a' got 2 item(s)\nsecond line")
+    expect(layoutNoticeText(en, { kind: 'mismatch', layout: '', reason: '' })).toBe("\"\" doesn't fit this slide: ")
+    expect(layoutNoticeText(en, { kind: 'mismatch', layout: '<b>x</b>', reason: "slot 'a' got 2 item(s)\nsecond line" }))
+      .toBe("\"<b>x</b>\" doesn't fit this slide: slot 'a' got 2 item(s)\nsecond line")
   })
 })

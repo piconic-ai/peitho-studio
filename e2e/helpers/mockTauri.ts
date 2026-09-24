@@ -118,6 +118,9 @@ export interface MockDeck {
   /** What `get_settings` answers — defaults to `{}` (nothing saved yet).
    * Passed as is, so a test can hand over a malformed value too. */
   settings?: unknown
+  /** What `get_system_locales` answers (the OS's preferred languages) —
+   * defaults to `['en-US']`. */
+  systemLocales?: unknown
 }
 
 function sleep(ms: number): Promise<void> {
@@ -229,6 +232,19 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'create_deck': return '/fake/new-deck/deck.md'
       case 'plugin:dialog|open': return deck.dialogPath ?? null
       case 'get_settings': return deck.settings ?? {}
+      case 'get_system_locales': return deck.systemLocales ?? ['en-US']
+      case 'update_settings': {
+        // Mirrors `settings::update_settings`: merges the patch over what is
+        // saved, keeps it in `deck.settings` (so a reload reads it back, as
+        // a restart would), and broadcasts the result to every window.
+        const saved = typeof deck.settings === 'object' && deck.settings !== null ? deck.settings : {}
+        deck.settings = { ...saved, ...(args.patch as Record<string, unknown>) }
+        const payload = deck.settings
+        void page.evaluate(settings => {
+          (window as unknown as { __mockEmitTauriEvent?: (event: string, payload: unknown) => void }).__mockEmitTauriEvent?.('settings:changed', settings)
+        }, payload)
+        return payload
+      }
       default: return null
     }
   })

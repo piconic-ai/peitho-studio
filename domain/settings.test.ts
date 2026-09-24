@@ -9,6 +9,7 @@ import {
   parseSettings,
   type SettingsSchema,
 } from './settings'
+import { LANGUAGE_SETTINGS } from './language'
 
 // A stand-in with real fields — the app's own `Settings` has none yet — so
 // the per-field reading every future setting relies on is exercised now.
@@ -29,8 +30,8 @@ describe('defaultsOf', () => {
     expect(defaultsOf(SAMPLE)).toEqual(DEFAULTS)
   })
 
-  test('spec: Given the app\'s own schema, when read, then there are no settings yet', () => {
-    expect(defaultsOf(SETTINGS_SCHEMA)).toEqual({})
+  test('spec: Given the app\'s own schema, when nothing is saved yet, then the UI language follows the OS', () => {
+    expect(defaultsOf(SETTINGS_SCHEMA)).toEqual({ uiLanguage: 'system' })
   })
 })
 
@@ -67,8 +68,16 @@ describe('parseSettings', () => {
     expect(parseSettings(SAMPLE, JSON.parse('{"__proto__":{"vimMode":true}}'))).toEqual(DEFAULTS)
   })
 
-  test('adversarial: Given the app\'s own schema, when anything is read, then the result is empty', () => {
-    for (const raw of [null, {}, { vimMode: true }, 'x']) expect(parseSettings(SETTINGS_SCHEMA, raw)).toEqual({})
+  test('spec: Given a saved UI language, when read with the app\'s own schema, then it is kept', () => {
+    for (const uiLanguage of LANGUAGE_SETTINGS) {
+      expect(parseSettings(SETTINGS_SCHEMA, { uiLanguage })).toEqual({ uiLanguage })
+    }
+  })
+
+  test('adversarial: Given a missing or unsupported UI language, when read with the app\'s own schema, then it follows the OS', () => {
+    for (const raw of [null, {}, { vimMode: true }, 'x', { uiLanguage: 'fr' }, { uiLanguage: 'JA' }, { uiLanguage: '' }, { uiLanguage: null }, { uiLanguage: ['ja'] }]) {
+      expect(parseSettings(SETTINGS_SCHEMA, raw)).toEqual({ uiLanguage: 'system' })
+    }
   })
 
   test('property: whatever arrives, every setting read is one its field accepts', () => {

@@ -4,6 +4,8 @@ import { type Manifest, type ManifestSection, type SectionDraft } from '../domai
 import { type DurationPart, formatDurationMs, msToMinutesSeconds } from '../domain/slides'
 import { type SlideListEntry } from '../domain/slideList'
 import { type RowVisibility } from '../domain/sectionCollapse'
+import { type Language } from '../domain/language'
+import { messagesFor } from '../domain/messages'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 import { isFocusMovingWithinSectionHeader, showCanonicalValue } from '../dom/sectionHeader'
 
@@ -20,6 +22,8 @@ import { isFocusMovingWithinSectionHeader, showCanonicalValue } from '../dom/sec
 // component split was deliberately avoided without a spike to validate it
 // first.
 export interface SlideListProps {
+  /** The UI language every label here is shown in. */
+  language: Language
   manifest: Manifest | null
   /** One row per slide in the deck's own source — drafts included, unlike
    * `manifest.slides` (see `domain/slideList.ts`'s `buildSlideList`). Every
@@ -131,7 +135,7 @@ export function SlideList(props: SlideListProps) {
         }}
       >
         {props.manifest === null ? (
-          <p className="text-sm text-muted-foreground">Open a deck to see its slides.</p>
+          <p className="text-sm text-muted-foreground">{messagesFor(props.language).openDeckToSeeSlides}</p>
         ) : (
           // The `.map()` callback below must stay an expression body (a
           // block body is a compile error, BF021 — see CLAUDE.md's
@@ -186,7 +190,7 @@ export function SlideList(props: SlideListProps) {
                         chevron and the header text line up with it. */}
                     <button
                       type="button"
-                      aria-label={props.rowVisibility[entry.sourceIndex] === 'header-only' ? 'Expand section' : 'Collapse section'}
+                      aria-label={props.rowVisibility[entry.sourceIndex] === 'header-only' ? messagesFor(props.language).expandSection : messagesFor(props.language).collapseSection}
                       aria-expanded={props.rowVisibility[entry.sourceIndex] === 'header-only' ? 'false' : 'true'}
                       onClick={() => props.onToggleSectionCollapse(entry.sourceIndex)}
                       className="shrink-0 w-4 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground"
@@ -206,7 +210,7 @@ export function SlideList(props: SlideListProps) {
                         // `isFocusMovingWithinSectionHeader`).
                         <div data-section-header="" className="flex items-center gap-1">
                           <input
-                            aria-label="Section name"
+                            aria-label={messagesFor(props.language).sectionName}
                             // Focused on opening by Studio.tsx (`focusSectionNameInput`),
                             // not by a `ref` here: a `ref` in this branch runs only
                             // when the row first mounts.
@@ -220,7 +224,7 @@ export function SlideList(props: SlideListProps) {
                             type="number"
                             min="0"
                             step="1"
-                            aria-label="Section minutes"
+                            aria-label={messagesFor(props.language).sectionMinutes}
                             value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes)}
                             onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'minutes', e.target.valueAsNumber)}
                             onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes))}
@@ -228,14 +232,14 @@ export function SlideList(props: SlideListProps) {
                             onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                             className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
                           />
-                          <span className="shrink-0 text-xs text-muted-foreground">m</span>
+                          <span className="shrink-0 text-xs text-muted-foreground">{messagesFor(props.language).minutesUnit}</span>
                           {/* No `min`/`max` on the seconds spinner, so its arrows
                               step past 59 and below 0 and carry into or borrow
                               from the minutes. */}
                           <input
                             type="number"
                             step="1"
-                            aria-label="Section seconds"
+                            aria-label={messagesFor(props.language).sectionSeconds}
                             value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds)}
                             onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'seconds', e.target.valueAsNumber)}
                             onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds))}
@@ -243,7 +247,7 @@ export function SlideList(props: SlideListProps) {
                             onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
                             className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
                           />
-                          <span className="shrink-0 text-xs text-muted-foreground">s</span>
+                          <span className="shrink-0 text-xs text-muted-foreground">{messagesFor(props.language).secondsUnit}</span>
                         </div>
                       ) : (
                         // Collapsed by default: the native spinner arrows
@@ -252,7 +256,7 @@ export function SlideList(props: SlideListProps) {
                         // appear once someone actually asks to edit this header.
                         <button
                           type="button"
-                          aria-label="Edit section name and time"
+                          aria-label={messagesFor(props.language).editSection}
                           onClick={() => props.onEditSection(entry.sourceIndex)}
                           className="w-full flex items-center gap-1 text-left"
                         >
@@ -269,7 +273,7 @@ export function SlideList(props: SlideListProps) {
                 ) : null}
                 <button
                   type="button"
-                  title={(entry.kind === 'rendered' ? entry.slide.text.title : entry.title) || `Slide ${String(entry.sourceIndex + 1)}`}
+                  title={(entry.kind === 'rendered' ? entry.slide.text.title : entry.title) || messagesFor(props.language).slideFallbackTitle(entry.sourceIndex + 1)}
                   onClick={() => props.onSelectSlide(entry.sourceIndex)}
                   // `hidden` replaces the layout classes rather than joining
                   // them: `hidden` and `flex` both set `display`, and which
@@ -331,7 +335,7 @@ export function SlideList(props: SlideListProps) {
                         // required) stands in for a thumbnail instead of
                         // leaving the row blank.
                         <div className="absolute top-0 right-0 bottom-0 left-0 flex items-center justify-center p-2 bg-muted">
-                          <span className="text-xs text-muted-foreground text-center line-clamp-3">{entry.kind === 'placeholder' ? (entry.title || `Slide ${String(entry.sourceIndex + 1)}`) : ''}</span>
+                          <span className="text-xs text-muted-foreground text-center line-clamp-3">{entry.kind === 'placeholder' ? (entry.title || messagesFor(props.language).slideFallbackTitle(entry.sourceIndex + 1)) : ''}</span>
                         </div>
                       )}
                       {/* Laid over the thumbnail (canvas or placeholder)
@@ -348,7 +352,7 @@ export function SlideList(props: SlideListProps) {
                               an ordinary editorial state, easily the most
                               eye-catching thing on the whole slide list. */}
                           <span className="rounded-sm px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide bg-muted text-foreground">
-                            {badgeFor(entry)}
+                            {badgeFor(entry) === 'draft' ? messagesFor(props.language).draftBadge : messagesFor(props.language).skipBadge}
                           </span>
                         </span>
                       ) : null}

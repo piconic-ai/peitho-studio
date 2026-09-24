@@ -1,5 +1,5 @@
 import { type PageConfig } from './pageConfig'
-import { type LayoutFitCheck, type LayoutVerdict, availabilityOf, mismatchNotice, settledFitCheck } from './layoutFit'
+import { type LayoutFitCheck, type LayoutNotice, type LayoutVerdict, availabilityOf, settledFitCheck } from './layoutFit'
 
 /** The thumbnail context menu's own state. `layoutPickerOpen` only exists
  * on `on-slide` — right-clicking empty space can't expand a layout picker
@@ -19,7 +19,7 @@ export type ContextMenu =
     y: number
     layoutPickerOpen: boolean
     layoutFit: LayoutFitCheck
-    layoutNotice: string | null
+    layoutNotice: LayoutNotice | null
   }
 
 export type MenuAction =
@@ -108,7 +108,7 @@ export function openOnSlide(index: number, x: number, y: number, requestId: numb
 export function withLayoutFitResult(menu: ContextMenu, requestId: number, verdicts: readonly LayoutVerdict[] | null): ContextMenu {
   if (menu.kind !== 'on-slide' || menu.layoutFit.kind !== 'checking' || menu.layoutFit.requestId !== requestId) return menu
   // Clears the notice too: while the check was in flight the only notice
-  // it could carry is `CHECKING_NOTICE`, which the answer makes stale.
+  // it could carry is the `checking` one, which the answer makes stale.
   return { ...menu, layoutFit: settledFitCheck(verdicts), layoutNotice: null }
 }
 
@@ -119,22 +119,19 @@ export function layoutFitOf(menu: ContextMenu): LayoutFitCheck {
 }
 
 /** Why the last layout chosen from the picker was refused, if one was. */
-export function layoutNoticeOf(menu: ContextMenu): string | null {
+export function layoutNoticeOf(menu: ContextMenu): LayoutNotice | null {
   return menu.kind === 'on-slide' ? menu.layoutNotice : null
 }
 
-/** Shown when a layout is chosen before the fit check has answered, so the
- * click visibly did something instead of silently doing nothing. */
-export const CHECKING_NOTICE = 'Still checking which layouts fit this slide — try again in a moment.'
-
 /** What choosing a layout from the picker should do: pin it on slide
  * `index`, refuse it with `notice` (the slide doesn't fit it), hold off
- * with `notice` (the fit check hasn't answered yet), or nothing (no slide
- * targeted). */
+ * with `notice` (the fit check hasn't answered yet — shown so the click
+ * visibly did something instead of silently doing nothing), or nothing
+ * (no slide targeted). */
 export type LayoutChoice =
   | { kind: 'apply'; index: number }
-  | { kind: 'reject'; notice: string }
-  | { kind: 'wait'; notice: string }
+  | { kind: 'reject'; notice: LayoutNotice }
+  | { kind: 'wait'; notice: LayoutNotice }
   | { kind: 'ignore' }
 
 export function chooseLayout(menu: ContextMenu, layout: string): LayoutChoice {
@@ -144,9 +141,9 @@ export function chooseLayout(menu: ContextMenu, layout: string): LayoutChoice {
     case 'selectable':
       return { kind: 'apply', index: menu.index }
     case 'checking':
-      return { kind: 'wait', notice: CHECKING_NOTICE }
+      return { kind: 'wait', notice: { kind: 'checking' } }
     case 'mismatch':
-      return { kind: 'reject', notice: mismatchNotice(layout, availability.reason) }
+      return { kind: 'reject', notice: { kind: 'mismatch', layout, reason: availability.reason } }
     default: {
       const _exhaustive: never = availability
       return _exhaustive
@@ -155,7 +152,7 @@ export function chooseLayout(menu: ContextMenu, layout: string): LayoutChoice {
 }
 
 /** `menu` showing `notice` in its picker — a no-op outside `on-slide`. */
-export function withLayoutNotice(menu: ContextMenu, notice: string): ContextMenu {
+export function withLayoutNotice(menu: ContextMenu, notice: LayoutNotice): ContextMenu {
   return menu.kind === 'on-slide' ? { ...menu, layoutNotice: notice } : menu
 }
 

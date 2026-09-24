@@ -1,5 +1,7 @@
 'use client'
 
+import { type Language } from '../domain/language'
+import { messagesFor } from '../domain/messages'
 // Props here are values (`isBusy={isBusy()}`), not signal getters — see
 // `components/WelcomeScreen.tsx` for why (BF044). `isOpen` gates rendering
 // inside this component (a single sibling condition, not a nested
@@ -7,6 +9,8 @@
 // call site, so callers don't have to duplicate the `? <NewDeckModal .../> :
 // null` wrapper.
 export interface NewDeckModalProps {
+  /** The UI language every label here is shown in. */
+  language: Language
   isOpen: boolean
   name: string
   parentDir: string | null
@@ -33,12 +37,12 @@ export function NewDeckModal(props: NewDeckModalProps) {
       />
       <div className="fixed top-0 right-0 bottom-0 left-0 z-50 flex items-center justify-center">
         <div className="w-full max-w-sm rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-4">
-          <div className="text-sm font-medium mb-3">New Deck</div>
+          <div className="text-sm font-medium mb-3">{messagesFor(props.language).newDeckTitle}</div>
           <input
             type="text"
             value={props.name}
             onInput={e => props.onNameChange(e.target.value)}
-            placeholder="Deck name"
+            placeholder={messagesFor(props.language).deckNamePlaceholder}
             autofocus
             disabled={props.isBusy}
             className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm outline-none mb-1 disabled:opacity-50"
@@ -63,7 +67,7 @@ export function NewDeckModal(props: NewDeckModalProps) {
               onClick={() => props.onCancel()}
               className="px-3 py-1.5 rounded-md border border-border text-sm disabled:opacity-50"
             >
-              Cancel
+              {messagesFor(props.language).cancel}
             </button>
             <button
               type="button"
@@ -71,7 +75,7 @@ export function NewDeckModal(props: NewDeckModalProps) {
               onClick={() => props.onConfirm()}
               className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
             >
-              {props.isBusy ? 'Creating…' : 'Create'}
+              {props.isBusy ? messagesFor(props.language).creating : messagesFor(props.language).create}
             </button>
           </div>
         </div>

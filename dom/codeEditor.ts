@@ -6,7 +6,7 @@
 // slide switch, a save response, an external-file merge) — see
 // `syncEditorFields` in `components/Studio.tsx`.
 
-import { Annotation, EditorState, Transaction, type Extension } from '@codemirror/state'
+import { Annotation, Compartment, EditorState, Transaction, type Extension } from '@codemirror/state'
 import { EditorView, keymap, placeholder as placeholderText } from '@codemirror/view'
 import { defaultKeymap, history, redo, redoDepth, undo, undoDepth } from '@codemirror/commands'
 import { editorTextChange, normalizeLineBreaks } from '../domain/editorText'
@@ -29,6 +29,17 @@ const fromApp = Annotation.define<boolean>()
 // The extensions a view was created with, so `resetCodeEditorText` can
 // build a fresh state from the same ones.
 const extensionsOf = new WeakMap<EditorView, Extension[]>()
+
+// The placeholder sits in its own compartment so a UI language change can
+// swap it (`setCodeEditorPlaceholder`); the text currently shown is kept
+// per view so `resetCodeEditorText`'s fresh state starts from it too,
+// rather than from the one the view was created with.
+const placeholderSlot = new Compartment()
+const placeholderOf = new WeakMap<EditorView, string>()
+
+function placeholderExtension(text: string): Extension {
+  return text === '' ? [] : placeholderText(text)
+}
 
 function editorTheme(monospace: boolean): Extension {
   return EditorView.theme({
@@ -55,7 +66,7 @@ function editorExtensions(options: CodeEditorOptions): Extension[] {
     EditorView.lineWrapping,
     EditorView.contentAttributes.of({ spellcheck: options.spellcheck === false ? 'false' : 'true' }),
     editorTheme(options.monospace ?? false),
-    ...(options.placeholder ? [placeholderText(options.placeholder)] : []),
+    placeholderSlot.of(placeholderExtension(options.placeholder ?? '')),
     EditorView.updateListener.of(update => {
       if (!update.docChanged) return
       if (update.transactions.every(tr => tr.annotation(fromApp))) return
@@ -70,7 +81,16 @@ export function createCodeEditor(parent: HTMLElement, text: string, options: Cod
   const extensions = editorExtensions(options)
   const view = new EditorView({ parent, state: EditorState.create({ doc: text, extensions }) })
   extensionsOf.set(view, extensions)
+  placeholderOf.set(view, options.placeholder ?? '')
   return view
+}
+
+/** Shows `text` while the editor is empty (none for `''`), in place of the
+ * placeholder it had. Leaves the text, cursor and undo history alone. */
+export function setCodeEditorPlaceholder(view: EditorView, text: string): void {
+  if (placeholderOf.get(view) === text) return
+  placeholderOf.set(view, text)
+  view.dispatch({ effects: placeholderSlot.reconfigure(placeholderExtension(text)) })
 }
 
 /** Replaces the editor's text with `text`, as an edit Undo skips, touching
@@ -100,7 +120,10 @@ export function resetCodeEditorText(view: EditorView, text: string): void {
   const unchanged = view.state.doc.toString() === normalizeLineBreaks(text)
   if (unchanged && undoDepth(view.state) === 0 && redoDepth(view.state) === 0) return
   const extensions = extensionsOf.get(view) ?? []
-  view.setState(EditorState.create({ doc: text, extensions }))
+  // `extensions` carry the creation-time placeholder; the fresh state gets
+  // the current one before the view ever shows it.
+  const fresh = EditorState.create({ doc: text, extensions })
+  view.setState(fresh.update({ effects: placeholderSlot.reconfigure(placeholderExtension(placeholderOf.get(view) ?? '')) }).state)
 }
 
 /** The editor that has keyboard focus, or `null`. */

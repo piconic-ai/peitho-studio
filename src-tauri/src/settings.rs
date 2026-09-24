@@ -22,6 +22,8 @@ use serde_json::{Map, Value};
 use tauri::menu::MenuItem;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+use crate::i18n::{self, Language, LanguageSetting};
+
 /// Broadcast to every window after a change is saved, carrying the new
 /// `Settings`, so a change made in one window shows up in all of them.
 pub(crate) const SETTINGS_CHANGED_EVENT: &str = "settings:changed";
@@ -36,13 +38,14 @@ pub(crate) const MENU_EVENT: &str = "menu:settings";
 
 const FILE_NAME: &str = "settings.json";
 
-/// Every setting the app has. Empty for now — this module is the
-/// foundation the first items (the app icon, the UI language, vim mode —
-/// see `todo/`) are added to. Adding one is a field here with a
+/// Every setting the app has. Adding one is a field here with a
 /// `Default`, plus the matching field in `domain/settings.ts`.
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct Settings {}
+pub struct Settings {
+    /// The UI's language; `System` (the default) follows the OS.
+    pub ui_language: LanguageSetting,
+}
 
 /// `base` with each of its fields replaced by `input`'s value for that
 /// field, when that value deserializes; fields whose value doesn't keep
@@ -104,13 +107,33 @@ pub(crate) fn read_settings(app: &AppHandle) -> Settings {
     settings_path(app).map(|path| read_settings_file(&path)).unwrap_or_default()
 }
 
-pub(crate) fn menu_item<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<MenuItem<R>> {
-    MenuItem::with_id(app, MENU_ID, "Settings…", true, Some("CmdOrCtrl+,"))
+/// The OS's preferred locales, most preferred first.
+pub(crate) fn system_locales() -> Vec<String> {
+    sys_locale::get_locales().collect()
+}
+
+/// The language the UI is shown in right now: the saved choice, or the
+/// OS's. What the native menu bar is built in.
+pub(crate) fn ui_language(app: &AppHandle) -> Language {
+    i18n::resolve_language(read_settings(app).ui_language, &system_locales())
+}
+
+pub(crate) fn menu_item<R: Runtime>(app: &AppHandle<R>, label: &str) -> tauri::Result<MenuItem<R>> {
+    MenuItem::with_id(app, MENU_ID, label, true, Some("CmdOrCtrl+,"))
 }
 
 #[tauri::command]
 pub fn get_settings(app: AppHandle) -> Settings {
     read_settings(&app)
+}
+
+/// The OS's preferred locales, for the page to pick the same language as
+/// the menu bar while nothing is chosen (`domain/language.ts`). Read here
+/// rather than from the webview's `navigator.languages`, which WKWebView
+/// may not report the same way.
+#[tauri::command]
+pub fn get_system_locales() -> Vec<String> {
+    system_locales()
 }
 
 /// Saves `patch` over the stored settings and tells every window. Resolves
@@ -120,6 +143,11 @@ pub fn update_settings(app: AppHandle, patch: Map<String, Value>) -> Result<Sett
     let path = settings_path(&app)?;
     let next: Settings = apply_patch(&read_settings_file::<Settings>(&path), &patch);
     write_settings_file(&path, &next)?;
+    // The menu bar's labels follow the UI language; rebuilt whole, as after
+    // a Recent-list change (see `build_menu` in lib.rs).
+    if let Ok(menu) = crate::build_menu(&app) {
+        let _ = app.set_menu(menu);
+    }
     let _ = app.emit(SETTINGS_CHANGED_EVENT, &next);
     Ok(next)
 }
@@ -218,13 +246,26 @@ mod tests {
     }
 
     #[test]
-    fn given_the_real_settings_when_read_from_anything_then_it_is_the_default() {
-        // `Settings` has no fields yet, so every input reads as the default
-        // and serializes as an empty object.
-        for json in ["", "{}", r#"{"vimMode":true}"#, "[]"] {
+    fn given_no_saved_language_when_the_real_settings_are_read_then_the_ui_follows_the_os() {
+        for json in ["", "{}", r#"{"vimMode":true}"#, "[]", r#"{"uiLanguage":"fr"}"#, r#"{"uiLanguage":null}"#] {
             assert_eq!(settings_from_json::<Settings>(json), Settings::default(), "{json:?}");
         }
-        assert_eq!(serde_json::to_string(&Settings::default()).unwrap(), "{}");
+        assert_eq!(Settings::default().ui_language, LanguageSetting::System);
+        assert_eq!(serde_json::to_string(&Settings::default()).unwrap(), r#"{"uiLanguage":"system"}"#);
+    }
+
+    #[test]
+    fn given_a_saved_language_when_the_real_settings_are_read_then_it_is_kept() {
+        let read: Settings = settings_from_json(r#"{"uiLanguage":"ja"}"#);
+        assert_eq!(read.ui_language, LanguageSetting::Ja);
+    }
+
+    #[test]
+    fn given_a_language_patch_when_applied_to_the_real_settings_then_only_a_valid_one_lands() {
+        let next = apply_patch(&Settings::default(), &patch(json!({ "uiLanguage": "en" })));
+        assert_eq!(next.ui_language, LanguageSetting::En);
+        let kept = apply_patch(&next, &patch(json!({ "uiLanguage": "english" })));
+        assert_eq!(kept.ui_language, LanguageSetting::En);
     }
 
     #[test]

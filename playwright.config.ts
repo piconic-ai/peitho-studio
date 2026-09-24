@@ -23,6 +23,11 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${E2E_PORT}`,
     channel: 'chrome',
+    // The UI picks its language from the OS until the mock answers (see
+    // `createSettingsStore`'s first guess in Studio.tsx), so pin the
+    // browser's own to keep a Japanese dev machine from changing the
+    // outcome of tests that expect English.
+    locale: 'en-US',
   },
   webServer: {
     // `start` alone only serves whatever's already in dist/ — build first

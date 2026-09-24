@@ -1,7 +1,7 @@
 import { createSignal, createMemo } from '@barefootjs/client'
 import { type DragState } from '../domain/drag'
 import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withLayoutFitResult, withLayoutNotice } from '../domain/contextMenu'
-import { type LayoutVerdict } from '../domain/layoutFit'
+import { type LayoutNotice, type LayoutVerdict } from '../domain/layoutFit'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { type PhoneShape, type ViewportMode, toggledViewportMode } from '../domain/viewport'
 import { toggleCollapsedKey } from '../domain/sectionCollapse'
@@ -75,7 +75,7 @@ export function createUiStore() {
   function settleLayoutFit(requestId: number, verdicts: readonly LayoutVerdict[] | null): void {
     setContextMenu(menu => withLayoutFitResult(menu, requestId, verdicts))
   }
-  function showLayoutNotice(notice: string): void {
+  function showLayoutNotice(notice: LayoutNotice): void {
     setContextMenu(menu => withLayoutNotice(menu, notice))
   }
   /** The index a slide-appending action (New Slide, Paste) should insert

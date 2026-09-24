@@ -2,9 +2,13 @@
 
 import { createEffect, untrack } from '@barefootjs/client'
 import type { PhoneShape, ViewportMode } from '../domain/viewport'
+import { type Language } from '../domain/language'
+import { messagesFor } from '../domain/messages'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 
 export interface SlidePreviewProps {
+  /** The UI language every label here is shown in. */
+  language: Language
   selectedSlideKey: string | null
   hasDeck: boolean
   /** Which toggle segment is lit; the canvas size for it arrives as
@@ -42,19 +46,19 @@ export function SlidePreview(props: SlidePreviewProps) {
               type="button"
               role="switch"
               data-viewport-toggle
-              aria-label="Preview as phone"
+              aria-label={messagesFor(props.language).previewAsPhone}
               aria-checked={props.viewportMode === 'mobile' ? 'true' : 'false'}
               onClick={() => props.onToggleViewportMode()}
               className="flex"
             >
-              <span title="PC" className={(props.viewportMode === 'desktop' ? 'bg-primary text-primary-foreground ' : 'text-muted-foreground ') + 'flex items-center px-2.5 py-1'}>
+              <span title={messagesFor(props.language).previewPc} className={(props.viewportMode === 'desktop' ? 'bg-primary text-primary-foreground ' : 'text-muted-foreground ') + 'flex items-center px-2.5 py-1'}>
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="block w-3.5 h-3.5">
                   <rect x="2" y="3" width="20" height="14" rx="2" />
                   <path d="M8 21h8" />
                   <path d="M12 17v4" />
                 </svg>
               </span>
-              <span title="Phone" className={(props.viewportMode === 'mobile' ? 'bg-primary text-primary-foreground ' : 'text-muted-foreground ') + 'flex items-center px-2.5 py-1'}>
+              <span title={messagesFor(props.language).previewPhone} className={(props.viewportMode === 'mobile' ? 'bg-primary text-primary-foreground ' : 'text-muted-foreground ') + 'flex items-center px-2.5 py-1'}>
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="block w-3.5 h-3.5">
                   <rect x="5" y="2" width="14" height="20" rx="2" />
                   <path d="M12 18h.01" />
@@ -69,8 +73,8 @@ export function SlidePreview(props: SlidePreviewProps) {
             <button
               type="button"
               data-phone-shape-menu-button
-              title="Phone canvas shape"
-              aria-label="Phone canvas shape"
+              title={messagesFor(props.language).phoneCanvasShape}
+              aria-label={messagesFor(props.language).phoneCanvasShape}
               aria-haspopup="menu"
               aria-expanded={props.phoneShapeMenuOpen ? 'true' : 'false'}
               onClick={() => props.onTogglePhoneShapeMenu()}
@@ -99,7 +103,7 @@ export function SlidePreview(props: SlidePreviewProps) {
           <div
             role="menu"
             data-phone-shape-menu
-            aria-label="Phone canvas shape"
+            aria-label={messagesFor(props.language).phoneCanvasShape}
             className={(props.phoneShapeMenuOpen ? '' : 'hidden ') + 'absolute right-0 top-full mt-2 w-96 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg py-1 z-20'}
           >
             <button
@@ -115,8 +119,8 @@ export function SlidePreview(props: SlidePreviewProps) {
                 <rect x="6" y="2" width="12" height="20" rx="2" />
               </svg>
               <span className="block">
-                <span className="block text-sm">Tall</span>
-                <span className="block text-xs text-muted-foreground">A tall canvas shaped like a portrait phone</span>
+                <span className="block text-sm">{messagesFor(props.language).phoneShapeTall}</span>
+                <span className="block text-xs text-muted-foreground">{messagesFor(props.language).phoneShapeTallDetail}</span>
               </span>
             </button>
             <button
@@ -132,8 +136,8 @@ export function SlidePreview(props: SlidePreviewProps) {
                 <rect x="2" y="6" width="20" height="12" rx="2" />
               </svg>
               <span className="block">
-                <span className="block text-sm">Same ratio as PC</span>
-                <span className="block text-xs text-muted-foreground">Keeps the deck's own ratio (16:9 / 4:3)</span>
+                <span className="block text-sm">{messagesFor(props.language).phoneShapeDeck}</span>
+                <span className="block text-xs text-muted-foreground">{messagesFor(props.language).phoneShapeDeckDetail}</span>
               </span>
             </button>
           </div>
@@ -170,7 +174,7 @@ export function SlidePreview(props: SlidePreviewProps) {
         className={(props.selectedSlideKey === null ? 'hidden ' : '') + 'flex-1 w-full'}
       />
       <div className={(props.selectedSlideKey === null ? '' : 'hidden ') + 'flex-1 flex items-center justify-center text-sm text-muted-foreground'}>
-        {props.hasDeck ? 'Select a slide to preview it.' : 'Open a deck to preview it.'}
+        {props.hasDeck ? messagesFor(props.language).selectSlideToPreview : messagesFor(props.language).openDeckToPreview}
       </div>
     </div>
   )

@@ -1,5 +1,7 @@
 'use client'
 
+import { type Language } from '../domain/language'
+import { messagesFor } from '../domain/messages'
 // Props here are values (`isBusy={isBusy()}`), not signal getters
 // (`isBusy={isBusy}`) — BarefootJS's compiler rejects the latter with
 // BF044 ("Signal/Memo getter passed without calling it"). Unlike a
@@ -11,6 +13,8 @@
 // `props.xxx` here (never destructured — that captures once and goes
 // stale, BF043) re-tracks the parent's signal on every access.
 export interface WelcomeScreenProps {
+  /** The UI language every label here is shown in. */
+  language: Language
   isBusy: boolean
   errorMessage: string | null
   recentDecks: string[]
@@ -31,7 +35,7 @@ export function WelcomeScreen(props: WelcomeScreenProps) {
             disabled={props.isBusy}
             className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50"
           >
-            {props.isBusy ? 'Opening…' : 'Open Deck…'}
+            {props.isBusy ? messagesFor(props.language).opening : messagesFor(props.language).openDeck}
           </button>
           <button
             type="button"
@@ -39,7 +43,7 @@ export function WelcomeScreen(props: WelcomeScreenProps) {
             disabled={props.isBusy}
             className="px-4 py-2 rounded-md border border-border text-sm disabled:opacity-50"
           >
-            New Deck…
+            {messagesFor(props.language).newDeck}
           </button>
         </div>
         {/* `disabled` on the buttons above (and on each Recent entry
@@ -51,7 +55,7 @@ export function WelcomeScreen(props: WelcomeScreenProps) {
             deliberately unconditional layout space (not conditionally
             rendered) so its appearance doesn't itself shift the
             surrounding buttons. */}
-        <div className="h-4 text-xs text-muted-foreground">{props.isBusy ? 'Opening…' : ''}</div>
+        <div className="h-4 text-xs text-muted-foreground">{props.isBusy ? messagesFor(props.language).opening : ''}</div>
         {/* Always mounted, visibility toggled by `hidden` rather than
             `{errorMessage ? <div/> : null}` — see CLAUDE.md's BarefootJS
             pitfalls (a failed open/create while this screen stays mounted
@@ -60,7 +64,7 @@ export function WelcomeScreen(props: WelcomeScreenProps) {
         <div hidden={props.errorMessage === null} className="text-xs text-destructive text-center">{props.errorMessage}</div>
         {props.recentDecks.length > 0 ? (
           <div className="w-full">
-            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Recent</div>
+            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">{messagesFor(props.language).recentDecks}</div>
             <div className="flex flex-col gap-1">
               {props.recentDecks.map(path => (
                 <button
