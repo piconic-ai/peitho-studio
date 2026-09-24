@@ -92,6 +92,27 @@ export function selectionAfter(plan: SelectionPlan, current: number | null, coun
   }
 }
 
+/** Whether the slide open in the editor after a change planned as `plan` is
+ * the same slide as before it. `keep` and `follow-move` never change which
+ * slide is open, only possibly its position, so its text undo history
+ * still applies. `select` and `clamp-after-delete` open another slide (the
+ * inserted/pasted one, or the neighbor of a deleted one), whose history
+ * must not include the previous slide's typing. */
+export function opensSameSlide(plan: SelectionPlan): boolean {
+  switch (plan.kind) {
+    case 'keep':
+    case 'follow-move':
+      return true
+    case 'select':
+    case 'clamp-after-delete':
+      return false
+    default: {
+      const _exhaustive: never = plan
+      throw new Error(`Unhandled SelectionPlan: ${JSON.stringify(_exhaustive)}`)
+    }
+  }
+}
+
 function firstOrNull(count: number): number | null {
   return count > 0 ? 0 : null
 }
