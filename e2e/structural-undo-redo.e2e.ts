@@ -21,7 +21,8 @@ async function rightClickMenu(page: Page, row: number, item: string): Promise<vo
   await page.getByText(item, { exact: true }).click()
 }
 
-/** Moves focus off any field, the way clicking a thumbnail does. */
+/** Moves focus off any field. Pressing a slide-list row does the same
+ * (`dom/fieldFocus.ts`); the drag test below covers that path itself. */
 async function blurFields(page: Page): Promise<void> {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
 }
@@ -150,4 +151,51 @@ test('Given typed text that splits a slide in two, when Cmd+Z is pressed, then a
   await expect(page.locator('[data-slide-row]')).toHaveCount(4)
   expect(deck.source).toContain('# New Slide')
   expect(deck.source).toContain('# Slide Two')
+})
+
+/** The deck's slide titles in file order. */
+function titleOrder(deck: MockDeck): string[] {
+  return [...deck.source.matchAll(/^# (.+)$/gm)].map(m => m[1] ?? '')
+}
+
+/** Drags row `from` by its thumbnail and drops it above row `onto`. */
+async function dragRowAbove(page: Page, from: number, onto: number): Promise<void> {
+  const source = await page.locator(`[data-slide-row="${from}"]`).boundingBox()
+  const target = await page.locator(`[data-slide-row="${onto}"]`).boundingBox()
+  if (!source || !target) throw new Error('rows have no layout')
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(target.x + target.width / 2, target.y + 5, { steps: 5 })
+  await page.mouse.up()
+}
+
+test('Given slides reordered with Cmd+Shift+ArrowDown, when Cmd+Z is pressed, then the old order comes back, and Cmd+Shift+Z reorders them again', async ({ page }) => {
+  const deck: MockDeck = { source: TWO_SLIDES }
+  await openDeck(page, deck)
+  await page.locator('[data-slide-row="0"] button[title]').first().click()
+  await blurFields(page)
+
+  await page.keyboard.press('Meta+Shift+ArrowDown')
+  await expect.poll(() => titleOrder(deck)).toEqual(['Slide Two', 'Slide One'])
+
+  await page.keyboard.press('Meta+z')
+  await expect.poll(() => titleOrder(deck)).toEqual(['Slide One', 'Slide Two'])
+
+  await page.keyboard.press('Meta+Shift+z')
+  await expect.poll(() => titleOrder(deck)).toEqual(['Slide Two', 'Slide One'])
+})
+
+test('Given focus in the slide body textarea, when a slide is dragged to a new position and Cmd+Z is pressed, then the old order comes back', async ({ page }) => {
+  const deck: MockDeck = { source: TWO_SLIDES }
+  await openDeck(page, deck)
+  // Typing in the body is the usual state right before a drag. The row's
+  // mousedown `preventDefault()`s (for the hand-rolled drag), which also
+  // cancels the focus change a press would otherwise make.
+  await page.locator('textarea').first().click()
+
+  await dragRowAbove(page, 1, 0)
+  await expect.poll(() => titleOrder(deck)).toEqual(['Slide Two', 'Slide One'])
+
+  await page.keyboard.press('Meta+z')
+  await expect.poll(() => titleOrder(deck)).toEqual(['Slide One', 'Slide Two'])
 })
