@@ -13,11 +13,11 @@ tags: [undo-redo, editor]
 Undo/Redoスタックをアプリ側に持つ」。第1段階では構造操作だけを
 アプリの履歴に載せ、テキストはwebview自身のテキスト履歴に任せた。
 
-**着手条件**: `todo/studio-settings-panel.md`のvim mode調査で、本文
-エディタをCodeMirrorへ移行するかどうかの結論が出てから。移行するなら
-CodeMirror自身の履歴(`@codemirror/commands`の`history`)と構造操作の
-履歴をどう統合するか、という設計になる。生`<textarea>`前提で先に作ると
-作り直しになる。
+**着手条件**: `todo/codemirror-editor.md`の完了後。vim modeの設計相談
+(2026-09-24)で、本文とノートをCodeMirror 6へ移行することが決まった。
+このtodoは、CodeMirror自身の履歴(`@codemirror/commands`の`history`)と
+構造操作の履歴(`domain/editorHistory.ts`)をどう統合するか、という
+設計になる。着手時に`status: todo`へリファインメントする。
 
 ## 現状(第1段階の完了時点で分かっていること)
 
@@ -41,9 +41,9 @@ CodeMirror自身の履歴(`@codemirror/commands`の`history`)と構造操作の
 
 - テキスト編集の取り消し単位のまとめ方(スペース区切り、一定時間の
   無入力、IME確定単位など)。
-- 本文はIME対策のため非制御の`<textarea>`で、`Studio.tsx`の
-  `syncEditorFields`がプログラムから値を書き換える。値の書き換えで
-  webviewのテキスト履歴がどうなるか。
+- CodeMirrorでは、テキストの取り消し単位のまとめ方(`history`の
+  `newGroupDelay`など)がすでにある。それをそのまま使えるか。
+- Vimの`u`/`Ctrl-R`(`todo/vim-mode.md`)と、統一した履歴の関係。
 - 構造操作の履歴はスライドを位置(index)で指している。テキスト保存で
   スライド数が変わると履歴を捨てている(`---`の入力など)。統一する場合、
   この制約をどう扱うか。
