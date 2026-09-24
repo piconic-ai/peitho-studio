@@ -1,0 +1,2 @@
+# wrangler's local state (`bun run preview` / `bun run deploy`)
+.wrangler/
