@@ -165,12 +165,9 @@ export function SlideList(props: SlideListProps) {
                     <div data-section-header="" className="flex items-center gap-1 pt-3 pb-1">
                       <input
                         aria-label="Section name"
-                        // Mounts focused: entering edit mode is a deliberate
-                        // click, so the name field is ready to type in
-                        // immediately rather than making that click's own
-                        // target (the collapsed summary button below) also
-                        // double as a focus target to aim for.
-                        ref={el => el.focus()}
+                        // Focused on opening by Studio.tsx (`focusSectionNameInput`),
+                        // not by a `ref` here: a `ref` in this branch runs only
+                        // when the row first mounts.
                         value={props.sectionDraftOf(entry.sourceIndex).name}
                         onInput={e => props.onSectionNameInput(entry.sourceIndex, e.target.value)}
                         onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}

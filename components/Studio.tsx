@@ -20,6 +20,7 @@ import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOpti
 import { racePresentOutcome } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
+import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, setManifestKeysSource } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
 import { createRenderStore } from '../state/renderStore'
@@ -663,6 +664,26 @@ export function Studio() {
     updateSectionDraft(manifestIndex, draft => ({ ...draft, timeMs: withDurationPart(draft.timeMs, part, value) }))
   }
 
+  function openSectionEditor(index: number): void {
+    ui.setEditingSectionIndex(index)
+    focusSectionNameInput(index)
+  }
+
+  /** Saves the header editing on row `index` and collapses it back to its
+   * plain summary — same trigger for both, so a spinner isn't left open
+   * just because the deck happens to be mid-save. */
+  function closeSectionEditor(index: number): void {
+    void commitSectionEdit(index)
+    if (ui.editingSectionIndex() === index) ui.setEditingSectionIndex(null)
+  }
+
+  function closeSectionEditorOnOutsidePress(event: MouseEvent): void {
+    const index = ui.editingSectionIndex()
+    if (index === null) return
+    // `blurred` closes it through the header inputs' own `onBlur`.
+    if (pressOutsideSectionHeader(event, sectionHeaderOfRow(index)) === 'unfocused') closeSectionEditor(index)
+  }
+
   async function commitSectionEdit(startIndex: number): Promise<void> {
     const manifestIndex = manifestIndexAt(slideEntries(), startIndex)
     if (manifestIndex === null) return
@@ -1142,9 +1163,11 @@ export function Studio() {
       }
     }
     window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('mousedown', closeSectionEditorOnOutsidePress, true)
 
     onCleanup(() => {
       window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('mousedown', closeSectionEditorOnOutsidePress, true)
       unlistenFileChanged()
       unlistenMenuNew()
     })
@@ -1248,7 +1271,7 @@ export function Studio() {
             return manifestIndex === null ? { name: '', timeMs: 0 } : render.sectionDraftOf(manifestIndex)
           }}
           editingSectionIndex={ui.editingSectionIndex()}
-          onEditSection={index => ui.setEditingSectionIndex(index)}
+          onEditSection={openSectionEditor}
           canvasWidth={render.canvasWidth()}
           canvasHeight={render.canvasHeight()}
           canvasFragmentOf={render.canvasFragmentOf}
@@ -1258,13 +1281,7 @@ export function Studio() {
           onSelectSlide={index => selectSlide(index)}
           onSectionNameInput={onSectionNameInput}
           onSectionTimeInput={onSectionTimeInput}
-          onCommitSectionEdit={index => {
-            void commitSectionEdit(index)
-            // The header collapses back to its plain summary once focus
-            // leaves it — same trigger as saving it, so a spinner isn't
-            // left open just because the deck happens to be mid-save.
-            if (ui.editingSectionIndex() === index) ui.setEditingSectionIndex(null)
-          }}
+          onCommitSectionEdit={closeSectionEditor}
         />
 
         <div

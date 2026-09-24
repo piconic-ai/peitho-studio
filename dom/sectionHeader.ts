@@ -31,3 +31,42 @@ export function isFocusMovingWithinSectionHeader(event: FocusEvent): boolean {
 export function showCanonicalValue(input: HTMLInputElement, text: string): void {
   if (input.value !== text) input.value = text
 }
+
+/** The editing header of the slide-list row at `rowIndex`, or null when
+ * that row isn't showing one. */
+export function sectionHeaderOfRow(rowIndex: number): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[data-slide-row="${String(rowIndex)}"] [data-section-header]`)
+}
+
+/** Focuses the name input of the header editing on row `rowIndex`.
+ *
+ * Not a `ref={el => el.focus()}` on the input: the input sits in a branch of
+ * a keyed `.map()` row, and that branch's `ref` runs only when the row
+ * first mounts, not each time the branch is entered, so the input was never
+ * focused on opening the editor. Call this after the editor is shown. */
+export function focusSectionNameInput(rowIndex: number): void {
+  sectionHeaderOfRow(rowIndex)?.querySelector<HTMLInputElement>('input')?.focus()
+}
+
+/** What a `mousedown` did to the editing section `header`:
+ *
+ * - `inside`: it landed in the header (the other spinner, its arrows), so
+ *   nothing happens.
+ * - `blurred`: focus was in the header, and this blurred it, so the
+ *   header's own `blur` handlers save and close it.
+ * - `unfocused`: focus wasn't in the header (or the header isn't there), so
+ *   the caller has to save and close it.
+ *
+ * Needed because a press doesn't always move focus: the slide list's rows
+ * and the column dividers `preventDefault()` their `mousedown` for their
+ * hand-rolled drags, which also cancels that focus change. Call it from a
+ * capture-phase listener so it runs before those handlers. */
+export function pressOutsideSectionHeader(event: MouseEvent, header: Element | null): 'inside' | 'blurred' | 'unfocused' {
+  if (header && event.target instanceof Node && header.contains(event.target)) return 'inside'
+  const active = document.activeElement
+  if (header && active instanceof HTMLElement && header.contains(active)) {
+    active.blur()
+    return 'blurred'
+  }
+  return 'unfocused'
+}
