@@ -3,8 +3,8 @@
 // cares about via `overrides`; every call still lands in `calls` so a
 // test can assert on what was invoked and with what arguments, without a
 // real Tauri window. `emitDeckFileChanged`/`emitMenuNewDeck`/
-// `emitMenuUndo`/`emitMenuRedo`/`emitPresentReady`/`emitPresentFailed` let a test simulate the Rust side
-// pushing an event.
+// `emitMenuUndo`/`emitMenuRedo`/`emitPresentReady`/`emitPresentFailed`
+// let a test simulate the Rust side pushing an event.
 import type { DeckIpc, DeckSessionInfo, LayoutPreviewsPayload, RenderPayload } from './deckIpc'
 
 export interface RecordedCall {
