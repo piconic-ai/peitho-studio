@@ -17,12 +17,12 @@ use tauri::{AppHandle, Emitter, EventTarget, Manager, Runtime};
 pub(crate) const UNDO_ID: &str = "edit_undo";
 pub(crate) const REDO_ID: &str = "edit_redo";
 
-pub(crate) fn undo_item<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<MenuItem<R>> {
-    MenuItem::with_id(app, UNDO_ID, "Undo", true, Some("CmdOrCtrl+Z"))
+pub(crate) fn undo_item<R: Runtime>(app: &AppHandle<R>, label: &str) -> tauri::Result<MenuItem<R>> {
+    MenuItem::with_id(app, UNDO_ID, label, true, Some("CmdOrCtrl+Z"))
 }
 
-pub(crate) fn redo_item<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<MenuItem<R>> {
-    MenuItem::with_id(app, REDO_ID, "Redo", true, Some("CmdOrCtrl+Shift+Z"))
+pub(crate) fn redo_item<R: Runtime>(app: &AppHandle<R>, label: &str) -> tauri::Result<MenuItem<R>> {
+    MenuItem::with_id(app, REDO_ID, label, true, Some("CmdOrCtrl+Shift+Z"))
 }
 
 /// The frontend event a menu item id is forwarded as, or `None` for an id
