@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: 本文とノートのtextareaをCodeMirror 6に置き換える(vim modeの土台)
 tags: [editor, codemirror, ime]
 ---
@@ -111,8 +111,8 @@ vim modeと同じ系統)を採用した。Neovim組み込みやMonacoは採ら�
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` / `bun run test:e2e` グリーン
-- [ ] 本文とノートがCodeMirrorに置き換わっている
+- [x] `bun test` / `bun run typecheck` / `bun run test:e2e` グリーン
+- [x] 本文とノートがCodeMirrorに置き換わっている
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機での日本語入力(変換・確定・変換中のスライド切り替え)
@@ -121,3 +121,11 @@ vim modeと同じ系統)を採用した。Neovim組み込みやMonacoは採ら�
 ## 先送り事項
 
 (実装時に見つかった、本筋と無関係な改善点があればここに書き出す)
+
+- 変換中のスライド切り替え: `setCodeEditorText`/`resetCodeEditorText`は
+  変換中なら何もしない(textarea時代と同じ規則)。スライド行の`mousedown`
+  で本文をblurするので、通常は切り替えの前に変換が確定するはずだが、
+  WKWebViewでblur時に`view.composing`が確実に落ちるかは実機でしか
+  分からない。落ちない場合、エディタに前のスライドの本文が残り、次の
+  入力でそれが新しいスライドの下書きになる。実機確認で再現したら、
+  変換終了時に保留中の同期をやり直す仕組みを足す。

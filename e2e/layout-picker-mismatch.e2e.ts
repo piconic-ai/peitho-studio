@@ -10,6 +10,7 @@
 // themselves match peitho-core is `engine::layout_fit`'s own Rust tests.
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
+import { fillEditor } from './helpers/codeEditor'
 import type { LayoutVerdict } from '../domain/layoutFit'
 
 const MISSING_BODY = "unassigned content remains for missing 'body' slot"
@@ -118,8 +119,7 @@ test('Given unsaved edits that give a title-only slide a body, when its layouts 
   await expect(page.locator('[data-slide-row]')).toHaveCount(2, { timeout: 10_000 })
 
   await page.locator('[data-slide-row="0"]').click()
-  const body = page.locator('textarea').first()
-  await body.fill('# Cover\n\nA brand-new paragraph.')
+  await fillEditor(page, '# Cover\n\nA brand-new paragraph.')
   // Let the slow save lane try (and fail) so the draft is still dirty.
   await expect(page.getByText('simulated save failure')).toBeVisible({ timeout: 5_000 })
 

@@ -10,6 +10,7 @@
 // applied to it (see todo/slide-status-badges.md).
 import { test, expect, type Locator, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
+import { editorText } from './helpers/codeEditor'
 
 const DECK_WITH_SKIPPED_SLIDE = '# Opening\n\n---\n\n<!-- {"skip":true} -->\n# Backup Slide\n'
 const DECK_WITH_DRAFT_THEN_SKIPPED = '# Opening\n\n---\n\n<!-- {"draft":true} -->\n# Hidden\n\n---\n\n<!-- {"skip":true} -->\n# Backup Slide\n'
@@ -158,7 +159,7 @@ test('Given a draft slide, when its thumbnail placeholder is clicked, then its o
 
   await page.locator('[data-slide-row="1"]').click()
 
-  await expect(page.locator('textarea').first()).toHaveValue(/# Hidden/, { timeout: 5_000 })
+  await expect.poll(() => editorText(page), { timeout: 5_000 }).toMatch(/# Hidden/)
 })
 
 test('Given a slide right after a draft slide, when "Skip in Present" is toggled from its context menu, then the draft slide is left alone and only the later slide is skipped', async ({ page }) => {
@@ -204,13 +205,13 @@ test('Given a deck with a draft slide, when ArrowDown is pressed twice from the 
 
   // Select the first slide to give the keyboard handler a starting point.
   await page.locator('[data-slide-row="0"]').click()
-  await expect(page.locator('textarea').first()).toHaveValue(/# Opening/, { timeout: 5_000 })
+  await expect.poll(() => editorText(page), { timeout: 5_000 }).toMatch(/# Opening/)
 
   await page.keyboard.press('ArrowDown')
-  await expect(page.locator('textarea').first()).toHaveValue(/# Hidden/, { timeout: 5_000 })
+  await expect.poll(() => editorText(page), { timeout: 5_000 }).toMatch(/# Hidden/)
 
   await page.keyboard.press('ArrowDown')
-  await expect(page.locator('textarea').first()).toHaveValue(/# Backup Slide/, { timeout: 5_000 })
+  await expect.poll(() => editorText(page), { timeout: 5_000 }).toMatch(/# Backup Slide/)
 })
 
 test('Given a draft slide, when it is right-clicked, then "Skip in Present" and "Section Start" are disabled (peitho-core rejects both combined with draft)', async ({ page }) => {
@@ -290,7 +291,7 @@ test.describe('non-functional: the badge overlay never gets in the way of intera
 
     await page.mouse.click(x, y)
 
-    await expect(page.locator('textarea').first()).toHaveValue(/# Backup Slide/, { timeout: 5_000 })
+    await expect.poll(() => editorText(page), { timeout: 5_000 }).toMatch(/# Backup Slide/)
   })
 
   test('Given a thumbnail wearing a SKIP badge, when the badge itself is right-clicked, then the context menu targets that slide', async ({ page }) => {

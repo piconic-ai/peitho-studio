@@ -7,6 +7,7 @@
 // frontend against the mocked IPC bridge.
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
+import { editorContent } from './helpers/codeEditor'
 
 function twoSectionDeck(): MockDeck {
   return {
@@ -95,7 +96,7 @@ test('Given the Intro header being edited, when the Markdown editor is clicked, 
   await openDeck(page, deck)
   await renameIntroWithoutCommitting(page)
 
-  await page.locator('textarea').first().click()
+  await editorContent(page).click()
 
   await expect(row(page, 0).getByLabel('Section name', { exact: true })).toHaveCount(0)
   await expect.poll(() => deck.source).toContain('"section":"Opening"')
@@ -113,7 +114,7 @@ test('Given the Intro header just opened, with nothing typed, when the Markdown 
   await openDeck(page, twoSectionDeck())
   await row(page, 0).getByLabel('Edit section name and time').click()
 
-  await page.locator('textarea').first().click()
+  await editorContent(page).click()
 
   await expect(row(page, 0).getByLabel('Section name', { exact: true })).toHaveCount(0)
 })

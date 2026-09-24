@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { selectionAfter, isDirty, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote, type SelectionPlan, type EditorSession, type SlideFields } from './editorSession'
+import { selectionAfter, opensSameSlide, isDirty, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote, type SelectionPlan, type EditorSession, type SlideFields } from './editorSession'
 import { type SlideRange } from './slides'
 
 const range = (text: string): SlideRange => ({ start: 0, end: text.length, text })
@@ -157,5 +157,31 @@ describe('reconcileAfterCommit', () => {
     const before: EditorSession = { kind: 'none' }
     const result = reconcileAfterCommit(before, before, [], { kind: 'select', index: 0 })
     expect(result).toEqual({ kind: 'none' })
+  })
+})
+
+describe('opensSameSlide', () => {
+  test('spec: given a save that keeps the selection, when it lands, then the same slide stays open', () => {
+    expect(opensSameSlide({ kind: 'keep' })).toBe(true)
+  })
+
+  test('spec: given a drag that moves slides, when it lands, then the same slide stays open', () => {
+    expect(opensSameSlide({ kind: 'follow-move', from: 3, to: 0 })).toBe(true)
+  })
+
+  test('spec: given a new or pasted slide, when it lands, then another slide is open', () => {
+    expect(opensSameSlide({ kind: 'select', index: 2 })).toBe(false)
+  })
+
+  test('spec: given a deleted slide, when it lands, then another slide is open', () => {
+    expect(opensSameSlide({ kind: 'clamp-after-delete', deleted: 1 })).toBe(false)
+  })
+
+  test('adversarial: given a move onto the same position, when it lands, then the same slide stays open', () => {
+    expect(opensSameSlide({ kind: 'follow-move', from: 0, to: 0 })).toBe(true)
+  })
+
+  test('adversarial: given an unknown plan kind, when checked, then it throws rather than guessing', () => {
+    expect(() => opensSameSlide({ kind: 'bogus' } as unknown as SelectionPlan)).toThrow()
   })
 })

@@ -1,45 +1,44 @@
 'use client'
 
-// No `bodyDraft`/`noteDraft` value props here on purpose. The two textareas
-// are deliberately uncontrolled (no reactive `value={...}` binding — see
-// `Studio.tsx`'s comment above `syncEditorFields` for why: reassigning
-// `.value` on every keystroke, even to the same value the input handler just
-// produced, can desync WebKit's in-progress IME composition buffer). Studio.tsx
-// still owns the plain (non-reactive) `bodyTextareaEl`/`noteTextareaEl`
-// handles and the composition-tracking flags `syncEditorFields` reads from
-// other call sites (slide switches, saves, external-file merges) — this
-// component only forwards the raw `ref` callbacks so that ownership stays in
-// one place, and reports input as it happens via the two callback props.
+// The slide body and speaker notes editors. Each is a CodeMirror 6 editor
+// (`dom/codeEditor.ts`) that `Studio.tsx` creates inside the host `<div>`
+// handed to it through `onBodyHost`/`onNoteHost`, and owns from then on:
+// the editor reports typing itself, and `Studio.tsx`'s `syncEditorFields`
+// pushes drafts back in only after a non-typing change (see there for why
+// the editors are uncontrolled).
+//
+// Both hosts stay mounted even with no slide selected — only a `hidden`
+// class toggles. A `ref` inside a conditional branch re-runs on every
+// re-entry while the branch's cleanup never runs (CLAUDE.md, BarefootJS
+// pitfalls), which would create a new editor per re-entry and leave the old
+// one alive.
 export interface SlideEditorProps {
   hasSelection: boolean
-  onBodyRef: (el: HTMLTextAreaElement) => void
-  onNoteRef: (el: HTMLTextAreaElement) => void
-  onBodyInput: (value: string) => void
-  onNoteInput: (value: string) => void
+  onBodyHost: (el: HTMLElement) => void
+  onNoteHost: (el: HTMLElement) => void
 }
 
 export function SlideEditor(props: SlideEditorProps) {
-  return props.hasSelection ? (
+  return (
     <div className="flex-1 flex flex-col min-h-0">
-      <textarea
-        ref={el => props.onBodyRef(el)}
-        onInput={e => props.onBodyInput(e.target.value)}
-        spellcheck={false}
-        className="flex-1 resize-none p-3 font-mono text-sm bg-background text-foreground outline-none border-b border-border"
-      />
-      <div className="shrink-0 h-40 flex flex-col">
-        <div className="h-6 shrink-0 flex items-center px-3 text-xs uppercase tracking-wide text-muted-foreground bg-muted/30">
-          Speaker Notes
-        </div>
-        <textarea
-          ref={el => props.onNoteRef(el)}
-          onInput={e => props.onNoteInput(e.target.value)}
-          placeholder="Notes for the presenter — not shown to the audience."
-          className="flex-1 resize-none p-3 text-sm bg-background text-foreground outline-none"
+      <div className={(props.hasSelection ? '' : 'hidden ') + 'flex-1 flex flex-col min-h-0'}>
+        <div
+          ref={el => props.onBodyHost(el)}
+          data-editor="body"
+          className="flex-1 min-h-0 bg-background text-foreground border-b border-border"
         />
+        <div className="shrink-0 h-40 flex flex-col">
+          <div className="h-6 shrink-0 flex items-center px-3 text-xs uppercase tracking-wide text-muted-foreground bg-muted/30">
+            Speaker Notes
+          </div>
+          <div
+            ref={el => props.onNoteHost(el)}
+            data-editor="note"
+            className="flex-1 min-h-0 bg-background text-foreground"
+          />
+        </div>
       </div>
+      <p className={(props.hasSelection ? 'hidden ' : '') + 'p-3 text-sm text-muted-foreground'}>Select a slide to edit it.</p>
     </div>
-  ) : (
-    <p className="p-3 text-sm text-muted-foreground">Select a slide to edit it.</p>
   )
 }

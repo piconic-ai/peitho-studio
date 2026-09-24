@@ -17,6 +17,7 @@
 // words in `aria-label`/`title`.
 import { test, expect, type Locator, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
+import { fillEditor } from './helpers/codeEditor'
 import { containScale } from '../domain/geometry'
 import type { PhoneShape } from '../domain/viewport'
 
@@ -310,7 +311,7 @@ test.describe('Given the phone toggle (non-functional behavior)', () => {
     await page.locator('[data-slide-row="0"]').click()
     const afterSelecting = await observeCalls()
     for (const title of ['Wide slide, edited', 'Wide slide, edited again', 'Wide slide, edited a third time']) {
-      await page.locator('textarea').first().fill(`# ${title}\n`)
+      await fillEditor(page, `# ${title}\n`)
       await expect.poll(() => previewHeading(page)).toBe(title)
     }
 
@@ -827,7 +828,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     const before = await observeCalls()
 
     for (const title of ['Wide slide, edited', 'Wide slide, edited again']) {
-      await page.locator('textarea').first().fill(`# ${title}\n`)
+      await fillEditor(page, `# ${title}\n`)
       await expect.poll(() => previewHeading(page)).toBe(title)
     }
     expect(await observeCalls()).toBe(before)
