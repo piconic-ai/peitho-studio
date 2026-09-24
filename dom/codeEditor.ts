@@ -7,7 +7,7 @@
 // slide switch, a save response, an external-file merge) — see
 // `syncEditorFields` in `components/Studio.tsx`.
 
-import { Annotation, Compartment, EditorState, Transaction, type Extension } from '@codemirror/state'
+import { Annotation, Compartment, EditorState, Transaction, type Extension, type StateEffect } from '@codemirror/state'
 import { EditorView, ViewPlugin, drawSelection, keymap, placeholder as placeholderText } from '@codemirror/view'
 import { defaultKeymap, history, insertTab, redo, redoDepth, undo, undoDepth } from '@codemirror/commands'
 import { getCM, vim } from '@replit/codemirror-vim'
@@ -234,6 +234,45 @@ export function resetCodeEditorText(view: EditorView, text: string): void {
   // the current one before the view ever shows it.
   const fresh = EditorState.create({ doc: text, extensions: editorExtensions(options, vimModeOf.get(view) ?? false) })
   view.setState(fresh.update({ effects: placeholderSlot.reconfigure(placeholderExtension(placeholderOf.get(view) ?? '')) }).state)
+}
+
+/** An editor's state as the user left it on one slide (text, cursor,
+ * undo history), with the settings it was built under, so
+ * `restoreCodeEditor` can put it back on the same editor later. */
+export interface CodeEditorSnapshot {
+  state: EditorState
+  vimOn: boolean
+  placeholder: string
+}
+
+/** The editor's state now, for `restoreCodeEditor`. */
+export function snapshotCodeEditor(view: EditorView): CodeEditorSnapshot {
+  return { state: view.state, vimOn: vimModeOf.get(view) ?? false, placeholder: placeholderOf.get(view) ?? '' }
+}
+
+/** Shows `text` by putting back `snapshot` — a state `snapshotCodeEditor`
+ * took from this same editor — so the slide's cursor and undo history
+ * come back with it. Vim mode and the placeholder follow the current
+ * settings, even when they changed since the snapshot. Without a
+ * snapshot, or with one whose text is no longer the slide's (the slide
+ * was edited elsewhere since), falls back to `resetCodeEditorText`.
+ *
+ * Does nothing while an IME composition is in progress, like
+ * `setCodeEditorText`. */
+export function restoreCodeEditor(view: EditorView, text: string, snapshot: CodeEditorSnapshot | undefined): void {
+  if (view.composing) return
+  const options = optionsOf.get(view)
+  if (snapshot === undefined || options === undefined || snapshot.state.doc.toString() !== normalizeLineBreaks(text)) {
+    resetCodeEditorText(view, text)
+    return
+  }
+  const vimOn = vimModeOf.get(view) ?? false
+  const placeholder = placeholderOf.get(view) ?? ''
+  const effects: StateEffect<unknown>[] = []
+  if (snapshot.vimOn !== vimOn) effects.push(vimCompartment.reconfigure(vimExtension(options, vimOn)))
+  if (snapshot.placeholder !== placeholder) effects.push(placeholderSlot.reconfigure(placeholderExtension(placeholder)))
+  // An effects-only transaction adds nothing to the undo history.
+  view.setState(effects.length === 0 ? snapshot.state : snapshot.state.update({ effects }).state)
 }
 
 /** The editor that has keyboard focus, or `null`. */
