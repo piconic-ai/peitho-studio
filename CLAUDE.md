@@ -344,6 +344,15 @@ don't bundle everything into one giant commit.
   (the already-exercised, correctly-working case) instead of an in-place
   branch swap.
 
+- **A `ref` on an element inside a conditional branch of a keyed `.map()`
+  row runs only when the row first mounts, not when the branch is entered
+  later** (related to #3009 above, but hit on the *first* entry too). A
+  `ref={el => el.focus()}` on the section header's name input never ran
+  when the header opened for editing, so the input was never focused.
+  Verified by reading `dist/assets/components/*.js`: the branch's `ref`
+  call sits in the row's mount path, not in the branch's `bindEvents`. Do
+  such work from the handler that flips the branch instead (see
+  `dom/sectionHeader.ts`'s `focusSectionNameInput`).
 - **An input's `value={expr}` binding writes to the DOM only when `expr`'s
   result changes.** Text the user typed that normalizes back to the value
   already shown (`000` or `-1` into a number input that shows `0`) stays on
