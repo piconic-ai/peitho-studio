@@ -1,8 +1,7 @@
 // Typed boundary around every Tauri command/event Studio.tsx talks to (see
 // src-tauri/src/peitho.rs for the Rust side — 12 #[tauri::command]s + the
 // `deck-file-changed`/`menu:new-deck`/`menu:undo`/`menu:redo`/`present-ready`
-// events emitted from
-// lib.rs/peitho.rs). Per
+// events emitted from lib.rs/edit_menu.rs/peitho.rs). Per
 // docs/architecture.md's layering: this is the sanctioned door for
 // `@tauri-apps/api/core`(`invoke`)/`.../event`(`listen`) — enforced by
 // `scripts/arch-check.test.ts`'s `components/` rule — so components/state

@@ -1208,7 +1208,7 @@ export function Studio() {
       if (tag === 'input' || tag === 'textarea') return
       // Cmd+Z / Cmd+Shift+Z aren't handled here: left alone, they reach the
       // Edit menu's Undo/Redo accelerators, the one path for both keyboard
-      // and mouse (see `onMenuHistory` below).
+      // and mouse (see `onMenuHistory` above).
       const key = event.key.toLowerCase()
       // `slideEntries().length`, not `manifest.slideCount`/`manifest.slides.length`
       // — the latter excludes drafts, which would leave ArrowUp/ArrowDown
