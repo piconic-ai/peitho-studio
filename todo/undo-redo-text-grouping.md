@@ -23,6 +23,17 @@ tags: [undo-redo, editor, codemirror]
    スライドAを開き直して、Aで打った文字を戻す。
 3. **vimの`u`/`Ctrl-R`は、そのエディタの文字だけ**を戻す(Vimのバッファと
    同じ)。スライド操作は戻さない。
+4. **undo/redoは、変更が起きたスライドを選択する**(2026-09-25、
+   ユーザーの提案)。スライドの選び直しそのものは履歴に残さない
+   (undoの1回ぶんに数えない)。操作ごとの選択:
+   - テキストの入力: 打ったスライド(2と同じ)
+   - レイアウト/Draft/Skip/セクションの変更(`config`): そのスライド。
+     今は選択が動かず(`selectionPlanFor`の`replace`が`keep`)、別の
+     スライドを見ていると何が戻ったか見えない
+   - 並べ替え(`move`): 動かしたスライド。今は開いていたスライドを
+     追いかける(`follow-move`)
+   - 挿入の取り消し(削除になる)と、削除の取り消し(挿入になる): 今の
+     まま(隣のスライド / 戻ったスライド)
 
 ## スコープ
 
@@ -33,7 +44,7 @@ tags: [undo-redo, editor, codemirror]
   - テキストの取り消し単位を自前で決めること。CodeMirrorの`history`の
     グルーピング(`newGroupDelay`など)をそのまま使う
 - **受け入れ条件**:
-  - 1〜3の場面がそのとおりに動く。Redoも同じ時系列を逆にたどる。
+  - 1〜4の場面がそのとおりに動く。Redoも同じ時系列を逆にたどる。
   - vimの`u`で戻したテキストの変更を、そのあとのCmd+Zがもう一度戻そう
     としない(同じ変更を二重に戻さない)。
   - 本文の保存でスライドの数が変わったとき(`---`の入力など)、外部変更で
@@ -123,6 +134,12 @@ tags: [undo-redo, editor, codemirror]
   `execCommand`によるネイティブのundoは、セクション見出しのような普通の
   `<input>`だけに残す。`replayFocusedCodeEditorHistory`は削除する。
   設定画面を開いている間は今までどおり何もしない。
+- **undo/redo時の選択(受け入れ条件4)**: 通常の操作の選択
+  (`selectionPlanFor`)とは別に、undo/redoの再生用の選択を決める純粋関数を
+  用意する(例: `domain/editorHistory.ts`の`selectionForReplay(step)`)。
+  `config`はそのスライドを`select`、`move`は動かしたスライドの移動先を
+  `select`、`insert`/`delete`は今の`selectionPlanFor`のまま。`runStep`は
+  再生のときだけこれを使う。
 - **別のスライドのundoで、キーボードのフォーカスはエディタへ移さない**。
   CodeMirrorのundoがスクロールして見せる。
 - **既存のe2eのうち2つは、新しい挙動と逆のことを確かめているので
@@ -174,7 +191,7 @@ tags: [undo-redo, editor, codemirror]
 - [ ] `bun test` / `bun run typecheck` / `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機確認: 受け入れ条件の1〜3と、vimの`u`との組み合わせ
+- [ ] 実機確認: 受け入れ条件の1〜4と、vimの`u`との組み合わせ
 
 ## 先送り事項
 
