@@ -31,3 +31,22 @@ export function isFocusMovingWithinSectionHeader(event: FocusEvent): boolean {
 export function showCanonicalValue(input: HTMLInputElement, text: string): void {
   if (input.value !== text) input.value = text
 }
+
+/** On a press outside the section header that holds focus, blurs the
+ * focused element, so the header's own `blur` handlers save and close it.
+ * Register it on `window` for `mousedown` in the capture phase.
+ *
+ * A press normally moves focus by itself, but the slide list's rows and the
+ * column dividers `preventDefault()` their `mousedown` for their
+ * hand-rolled drags, which also cancels that focus change. The header then
+ * stayed open after a click on a thumbnail. The capture phase runs this
+ * before any of those handlers. A press inside the header (the other
+ * spinner, its arrows) leaves focus alone. */
+export function blurSectionHeaderOnOutsidePress(event: MouseEvent): void {
+  const active = document.activeElement
+  if (!(active instanceof HTMLElement)) return
+  const header = active.closest('[data-section-header]')
+  if (!header) return
+  if (event.target instanceof Node && header.contains(event.target)) return
+  active.blur()
+}

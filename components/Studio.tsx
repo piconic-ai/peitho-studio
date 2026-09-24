@@ -20,6 +20,7 @@ import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOpti
 import { racePresentOutcome } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
+import { blurSectionHeaderOnOutsidePress } from '../dom/sectionHeader'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, setManifestKeysSource } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
 import { createRenderStore } from '../state/renderStore'
@@ -1142,9 +1143,11 @@ export function Studio() {
       }
     }
     window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('mousedown', blurSectionHeaderOnOutsidePress, true)
 
     onCleanup(() => {
       window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('mousedown', blurSectionHeaderOnOutsidePress, true)
       unlistenFileChanged()
       unlistenMenuNew()
     })
