@@ -19,6 +19,10 @@ bunx tauri dev
 bunx tauri build
 ```
 
+## Brand
+
+The logo, wordmark and the app icon's source live under [`brand/`](brand/README.md), together with the geometry they share and how `src-tauri/icons/` is regenerated from them (`bun run icons`).
+
 ## License
 
 The source code is licensed under the [MIT License](LICENSE) — fork it, build it, ship it. The "Peitho Studio" name and app icon are not covered by that grant and remain reserved as trademarks/branding of this project.
