@@ -255,6 +255,12 @@ export function Studio() {
   const sectionRowSpans = createMemo(() => sectionSpans(Object.keys(sectionStarts()).map(Number), slideEntries().length))
   const collapsedStarts = createMemo(() => collapsedSectionStarts(slideEntries(), sectionStarts(), ui.collapsedSectionKeys()))
   const rowVisibility = createMemo(() => rowVisibilities(sectionRowSpans(), collapsedStarts(), slideEntries().length))
+  /** Collapses, or expands again, the section whose header sits on row
+   * `index` (a no-op for a row that can't carry one). */
+  function toggleSectionAt(index: number): void {
+    const key = collapseKeyAt(slideEntries(), index)
+    if (key !== null) ui.toggleSectionCollapsed(key)
+  }
   // A slide that becomes selected inside a collapsed section (New Slide or
   // Paste from its header row, a delete that moves the selection there)
   // expands that section, so the selection never lands out of sight. Only
@@ -266,8 +272,7 @@ export function Studio() {
     const selected = editor.selectedIndex()
     untrack(() => {
       const start = collapsedSectionContaining(sectionRowSpans(), collapsedStarts(), selected)
-      const key = start === null ? null : collapseKeyAt(slideEntries(), start)
-      if (key !== null) ui.toggleSectionCollapsed(key)
+      if (start !== null) toggleSectionAt(start)
     })
   })
   const currentMenuItems = createMemo(() => computeMenuItems(ui.contextMenu(), {
@@ -1267,10 +1272,7 @@ export function Studio() {
           selectedIndex={editor.selectedIndex()}
           sectionStartByIndex={sectionStarts()}
           rowVisibility={rowVisibility()}
-          onToggleSectionCollapse={index => {
-            const key = collapseKeyAt(slideEntries(), index)
-            if (key !== null) ui.toggleSectionCollapsed(key)
-          }}
+          onToggleSectionCollapse={toggleSectionAt}
           sectionDraftOf={index => {
             const manifestIndex = manifestIndexAt(slideEntries(), index)
             return manifestIndex === null ? { name: '', timeMs: 0 } : render.sectionDraftOf(manifestIndex)
