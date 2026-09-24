@@ -1,7 +1,7 @@
 // Edit > Undo / Redo undo and redo structural slide operations (New Slide,
-// Delete, Skip, ...) when focus is outside the editor's text fields, and
-// run the field's own text undo when one has focus (see `onMenuHistory` in
-// `components/Studio.tsx`). Cmd+Z / Cmd+Shift+Z reach the same handler
+// Delete, Skip, ...) in one timeline with the editors' typing, whatever has
+// focus (see `onMenuHistory` in `components/Studio.tsx`, and
+// `undo-timeline.e2e.ts` for the typing side). Cmd+Z / Cmd+Shift+Z reach the same handler
 // through the menu items' accelerators (`src-tauri/src/edit_menu.rs`), so
 // these tests send the menu event the Rust side emits; the native menu
 // itself, and which of the menu and the page's keydown sees Cmd+Z first on
@@ -89,7 +89,7 @@ test('Given two operations, when Edit > Undo is chosen twice, then they are undo
   expect(deck.source).toBe(TWO_SLIDES)
 })
 
-test('Given focus in the slide body editor, when Edit > Undo is chosen, then no structural operation is undone', async ({ page }) => {
+test('Given a new slide and focus in the slide body editor with nothing typed, when Edit > Undo is chosen, then the new slide is removed', async ({ page }) => {
   const deck: MockDeck = { source: TWO_SLIDES }
   await openDeck(page, deck)
 
@@ -99,10 +99,8 @@ test('Given focus in the slide body editor, when Edit > Undo is chosen, then no 
   await editorContent(page).click()
   await menu(page, 'undo')
 
-  // Give a wrongly routed undo time to land before asserting it didn't.
-  await page.waitForTimeout(500)
-  await expect(page.locator('[data-slide-row]')).toHaveCount(3)
-  expect(deck.source).toContain('# New Slide')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(2, { timeout: 5_000 })
+  expect(deck.source).not.toContain('# New Slide')
 })
 
 test('Given nothing has been done yet, when Edit > Undo is chosen, then the deck is left as it is', async ({ page }) => {
