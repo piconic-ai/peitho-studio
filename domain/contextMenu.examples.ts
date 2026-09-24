@@ -37,7 +37,7 @@ export const layoutChoiceExamples = defineExamples<ContextMenu, { layout: string
       then: 'nothing is changed, and the picker explains that the slide does not fit "cover" and why',
       state: slideMenu({ kind: 'checked', verdicts: TITLE_AND_BODY_VERDICTS }),
       event: { layout: 'cover' },
-      expect: { kind: 'reject', notice: `"cover" doesn't fit this slide: ${MISSING_BODY}` },
+      expect: { kind: 'reject', notice: { kind: 'mismatch', layout: 'cover', reason: MISSING_BODY } },
       tags: ['bug-regression'],
     },
     {
@@ -47,7 +47,7 @@ export const layoutChoiceExamples = defineExamples<ContextMenu, { layout: string
       then: 'nothing is applied blind, and the picker says the check is still running',
       state: slideMenu({ kind: 'checking', requestId: 7 }),
       event: { layout: 'cover' },
-      expect: { kind: 'wait', notice: 'Still checking which layouts fit this slide — try again in a moment.' },
+      expect: { kind: 'wait', notice: { kind: 'checking' } },
       tags: ['boundary'],
     },
     {
@@ -86,7 +86,7 @@ export const layoutChoiceExamples = defineExamples<ContextMenu, { layout: string
       then: 'it is shown dimmed with the reason on hover, clicking it shows the reason in the picker, and deck.md is unchanged',
       state: slideMenu({ kind: 'checked', verdicts: TITLE_AND_BODY_VERDICTS }),
       event: { layout: 'cover' },
-      expect: { kind: 'reject', notice: `"cover" doesn't fit this slide: ${MISSING_BODY}` },
+      expect: { kind: 'reject', notice: { kind: 'mismatch', layout: 'cover', reason: MISSING_BODY } },
       manual: { reason: 'needs real peitho-core verdicts and WKWebView rendering (dimming, title tooltip) — see run-peitho-studio' },
     },
   ],
