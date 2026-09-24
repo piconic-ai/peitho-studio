@@ -27,6 +27,12 @@ export function WelcomeScreen(props: WelcomeScreenProps) {
   return (
     <div className="flex-1 flex items-center justify-center">
       <div className="w-full max-w-sm flex flex-col items-center gap-4 px-6">
+        {/* The brand mark (brand/logo-mark.svg, inlined so `currentColor`
+            keeps it on-theme). Decorative: the heading right after it
+            already names the app. */}
+        <svg aria-hidden="true" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round" className="block w-12 h-12 text-foreground">
+          <path d="M17 53V11h24a6 6 0 0 1 6 6v12a6 6 0 0 1-6 6H17" />
+        </svg>
         <h1 className="text-lg font-semibold">Peitho Studio</h1>
         <div className="flex items-center gap-2">
           <button
