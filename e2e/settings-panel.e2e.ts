@@ -39,7 +39,7 @@ test.describe('functional', () => {
 
     await chooseSettingsMenu(page)
     await expect(settingsPanel(page)).toBeVisible()
-    await expect(settingsPanel(page).getByText('There are no settings to change yet.')).toBeVisible()
+    await expect(settingsPanel(page).getByRole('radiogroup', { name: 'Language' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Close settings' }).click()
     await expect(settingsPanel(page)).toBeHidden()
