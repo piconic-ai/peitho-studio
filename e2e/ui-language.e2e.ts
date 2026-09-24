@@ -85,7 +85,7 @@ test.describe('functional', () => {
     await chooseLanguage(page, '日本語')
     await page.keyboard.press('Escape')
 
-    await expect(page.getByText('スピーカーノート')).toBeVisible()
+    await expect(page.getByText('スピーカーノート', { exact: true })).toBeVisible()
     await expect(page.locator('[data-editor="note"] .cm-placeholder')).toHaveText('発表者用のメモ — 聴衆には表示されません。')
     await expect(page.locator('footer')).toHaveText(/を開きました$/)
   })
@@ -113,9 +113,9 @@ test.describe('functional', () => {
 
     await emit(page, 'settings:changed', { uiLanguage: 'ja' })
 
-    await expect(page.getByText('スピーカーノート')).toBeVisible()
+    await expect(page.getByText('スピーカーノート', { exact: true })).toBeVisible()
     await emit(page, 'settings:changed', { uiLanguage: 'en' })
-    await expect(page.getByText('Speaker Notes')).toBeVisible()
+    await expect(page.getByText('Speaker Notes', { exact: true })).toBeVisible()
   })
 })
 
