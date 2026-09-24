@@ -106,3 +106,48 @@ test('Given nothing has been done yet, when Cmd+Z is pressed, then the deck is l
   expect(invoked).not.toContain('save_deck_source')
   expect(deck.source).toBe(TWO_SLIDES)
 })
+
+test('Given two operations, when Cmd+Z is pressed twice without waiting, then both are undone', async ({ page }) => {
+  // Every render waits a little, so the second press lands while the first
+  // undo is still saving — it must queue behind it, not be dropped or
+  // computed from the slides the first undo is about to change.
+  const deck: MockDeck = { source: TWO_SLIDES, renderDraftDelayMs: 300 }
+  await openDeck(page, deck)
+
+  await rightClickMenu(page, 1, 'Skip in Present')
+  await expect.poll(() => deck.source).toContain('"skip":true')
+  await rightClickMenu(page, 0, 'New Slide')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 5_000 })
+  await blurFields(page)
+
+  await page.keyboard.press('Meta+z')
+  await page.keyboard.press('Meta+z')
+
+  await expect.poll(() => deck.source, { timeout: 5_000 }).toBe(TWO_SLIDES)
+  await expect(page.locator('[data-slide-row]')).toHaveCount(2)
+})
+
+test('Given typed text that splits a slide in two, when Cmd+Z is pressed, then an earlier operation is not undone against the shifted slides', async ({ page }) => {
+  const deck: MockDeck = { source: TWO_SLIDES }
+  await openDeck(page, deck)
+
+  await rightClickMenu(page, 1, 'New Slide')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 5_000 })
+  // A `---` typed into the first slide turns it into two slides.
+  await page.locator('[data-slide-row="0"]').click()
+  await page.locator('textarea').first().fill('# Slide One\n\n---\n\n# Split Off\n')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(4, { timeout: 5_000 })
+  // The row count follows the in-memory preview render; wait for the
+  // autosave that actually re-splits the deck on disk.
+  await expect.poll(() => deck.source, { timeout: 5_000 }).toContain('# Split Off')
+  await blurFields(page)
+
+  await page.keyboard.press('Meta+z')
+
+  // Without clearing the history, this would delete whatever slide now sits
+  // where the new slide used to be (`# Slide Two`).
+  await page.waitForTimeout(500)
+  await expect(page.locator('[data-slide-row]')).toHaveCount(4)
+  expect(deck.source).toContain('# New Slide')
+  expect(deck.source).toContain('# Slide Two')
+})
