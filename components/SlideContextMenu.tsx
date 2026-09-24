@@ -1,10 +1,14 @@
 'use client'
 
+import { type Language } from '../domain/language'
+import { messagesFor } from '../domain/messages'
 import { menuItemEnabled, menuItemChecked, type MenuItem } from '../domain/contextMenu'
-import { entryTitle, isSelectable, type LayoutFitCheck } from '../domain/layoutFit'
+import { entryTitle, isSelectable, layoutNoticeText, type LayoutFitCheck, type LayoutNotice } from '../domain/layoutFit'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 
 export interface SlideContextMenuProps {
+  /** The UI language every label here is shown in. */
+  language: Language
   hidden: boolean
   position: { x: number; y: number }
   menuItems: MenuItem[]
@@ -16,7 +20,7 @@ export interface SlideContextMenuProps {
   layoutFit: LayoutFitCheck
   /** Why the last layout chosen from the picker was refused, shown under
    * the picker grid; `null` hides it. */
-  layoutNotice: string | null
+  layoutNotice: LayoutNotice | null
   layoutPreviewStylesheet: () => CSSStyleSheet
   canvasWidth: number
   canvasHeight: number
@@ -73,7 +77,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           onClick={() => props.onNewSlide()}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent"
         >
-          <span>New Slide</span><span className="text-xs text-muted-foreground">⌘⏎</span>
+          <span>{messagesFor(props.language).newSlide}</span><span className="text-xs text-muted-foreground">⌘⏎</span>
         </button>
         <div className="my-1 border-t border-border" />
         <button
@@ -82,7 +86,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           onClick={() => props.onCut()}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
-          <span>Cut</span><span className="text-xs text-muted-foreground">⌘X</span>
+          <span>{messagesFor(props.language).cut}</span><span className="text-xs text-muted-foreground">⌘X</span>
         </button>
         <button
           type="button"
@@ -90,7 +94,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           onClick={() => props.onCopy()}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
-          <span>Copy</span><span className="text-xs text-muted-foreground">⌘C</span>
+          <span>{messagesFor(props.language).copy}</span><span className="text-xs text-muted-foreground">⌘C</span>
         </button>
         <button
           type="button"
@@ -98,7 +102,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           onClick={() => props.onPaste()}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
-          <span>Paste</span><span className="text-xs text-muted-foreground">⌘V</span>
+          <span>{messagesFor(props.language).paste}</span><span className="text-xs text-muted-foreground">⌘V</span>
         </button>
         <div className="my-1 border-t border-border" />
         <button
@@ -107,7 +111,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           onClick={() => props.onDelete()}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent text-destructive"
         >
-          <span>Delete</span><span className="text-xs text-muted-foreground">⌦</span>
+          <span>{messagesFor(props.language).delete}</span><span className="text-xs text-muted-foreground">⌦</span>
         </button>
         <div className="my-1 border-t border-border" />
         <button
@@ -116,14 +120,14 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           onClick={() => props.onToggleLayoutPicker()}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
-          <span>Change Layout</span><span aria-hidden="true">{props.layoutPickerOpen ? '▾' : '▸'}</span>
+          <span>{messagesFor(props.language).changeLayout}</span><span aria-hidden="true">{props.layoutPickerOpen ? '▾' : '▸'}</span>
         </button>
         {props.layoutPickerOpen ? (
           <div className="pl-3 max-h-64 overflow-y-auto">
             {props.layoutPickerView === 'loading' ? (
-              <div className="px-3 py-1.5 text-xs text-muted-foreground">Loading…</div>
+              <div className="px-3 py-1.5 text-xs text-muted-foreground">{messagesFor(props.language).loading}</div>
             ) : props.layoutPickerView === 'empty' ? (
-              <div className="px-3 py-1.5 text-xs text-muted-foreground">No layouts found</div>
+              <div className="px-3 py-1.5 text-xs text-muted-foreground">{messagesFor(props.language).noLayouts}</div>
             ) : (
               <div className="grid grid-cols-2 gap-1.5 px-2 py-1.5">
                 {props.layoutPreviews!.map(preview => (
@@ -134,7 +138,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
                     // still receive the click, so `onChangeLayout` can explain
                     // why it was refused instead of the click doing nothing.
                     aria-disabled={isSelectable(props.layoutFit, preview.name) ? 'false' : 'true'}
-                    title={entryTitle(props.layoutFit, preview.name)}
+                    title={entryTitle(props.layoutFit, preview.name, messagesFor(props.language))}
                     onClick={() => props.onChangeLayout(preview.name)}
                     className={(isSelectable(props.layoutFit, preview.name) ? '' : 'opacity-40 ') + 'flex flex-col gap-1 text-left group'}
                   >
@@ -168,7 +172,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           hidden={props.layoutNotice === null || !props.layoutPickerOpen}
           className="mx-3 my-1.5 text-xs text-destructive break-words"
         >
-          {props.layoutNotice}
+          {props.layoutNotice === null ? '' : layoutNoticeText(messagesFor(props.language), props.layoutNotice)}
         </div>
         <button
           type="button"
@@ -176,7 +180,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           onClick={() => props.onToggleDraft()}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
-          <span>Mark as Draft</span>
+          <span>{messagesFor(props.language).markAsDraft}</span>
           {menuItemChecked(props.menuItems, 'toggle-draft') ? <span aria-hidden="true">✓</span> : null}
         </button>
         <button
@@ -185,7 +189,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           onClick={() => props.onToggleSkip()}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
-          <span>Skip in Present</span>
+          <span>{messagesFor(props.language).skipInPresent}</span>
           {menuItemChecked(props.menuItems, 'toggle-skip') ? <span aria-hidden="true">✓</span> : null}
         </button>
         <button
@@ -194,7 +198,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           onClick={() => props.onToggleSection()}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
-          <span>Section Start</span>
+          <span>{messagesFor(props.language).sectionStart}</span>
           {menuItemChecked(props.menuItems, 'toggle-section') ? <span aria-hidden="true">✓</span> : null}
         </button>
         <div className="my-1 border-t border-border" />
@@ -204,7 +208,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           onClick={() => props.onMoveUp()}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
-          <span>Move Slide Up</span><span className="text-xs text-muted-foreground">⌘⇧↑</span>
+          <span>{messagesFor(props.language).moveSlideUp}</span><span className="text-xs text-muted-foreground">⌘⇧↑</span>
         </button>
         <button
           type="button"
@@ -212,7 +216,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           onClick={() => props.onMoveDown()}
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
-          <span>Move Slide Down</span><span className="text-xs text-muted-foreground">⌘⇧↓</span>
+          <span>{messagesFor(props.language).moveSlideDown}</span><span className="text-xs text-muted-foreground">⌘⇧↓</span>
         </button>
       </div>
     </>

@@ -21,10 +21,12 @@ import { buildSlideList, manifestIndexAt, sectionStartBySourceIndex } from '../d
 import { collapseKeyAt, collapsedSectionContaining, collapsedSectionStarts, lastVisibleRow, rowVisibilities, sectionSpans } from '../domain/sectionCollapse'
 import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOptionsOf } from '../domain/deckVariants'
 import { racePresentOutcome } from '../domain/eventRace'
+import { type Language } from '../domain/language'
+import { type StatusMessage, statusText } from '../domain/statusMessage'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
 import { blurEditorFieldOnRowPress, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
-import { createCodeEditor, resetCodeEditorText, setCodeEditorText } from '../dom/codeEditor'
+import { createCodeEditor, resetCodeEditorText, setCodeEditorPlaceholder, setCodeEditorText } from '../dom/codeEditor'
 import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
 import { focusSettingsPanel, restoreFocusAfterSettingsPanel } from '../dom/settingsPanel'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, setManifestKeysSource } from '../dom/slideCanvas'
@@ -104,7 +106,7 @@ export function Studio() {
     try {
       const info = await deckIpc.openDeck(path)
       await refreshSource(false, info.render)
-      setStatusMessage(`Opened ${info.deckPath}`)
+      setStatusMessage({ kind: 'opened', deckPath: info.deckPath })
       await dispatch({ type: 'opened', deckPath: info.deckPath })
       // Only once `open`: a variant picked while still `opening` would be
       // rejected by `decide` as busy, silently doing nothing.
@@ -169,11 +171,14 @@ export function Studio() {
   // Structural undo/redo (Cmd+Z / Cmd+Shift+Z outside the text editors) — see
   // `state/historyStore.ts` and `replayHistory` below.
   const history = createHistoryStore()
-  // App-wide settings and whether this window's settings panel is open —
-  // see `state/settingsStore.ts`. Saved and shared Rust-side
-  // (`src-tauri/src/settings.rs`); nothing reads a setting yet.
+  // App-wide settings, whether this window's settings panel is open, and
+  // the UI language they come to — see `state/settingsStore.ts`. Saved and
+  // shared Rust-side (`src-tauri/src/settings.rs`). The webview's own idea
+  // of the OS languages is only a first guess, so the first paint is
+  // already in the right language where it agrees; `loadSettings` replaces
+  // it with the OS's answer, which the native menu bar also goes by.
   const settingsIpc = createTauriSettingsIpc()
-  const settings = createSettingsStore()
+  const settings = createSettingsStore(typeof navigator === 'undefined' ? [] : navigator.languages)
   // Distinct from `isBusy` above (the deck-lifecycle one): this guards
   // `commitChange`'s own in-flight save, which used to share the same
   // `isBusy` signal with the welcome-screen open/create flow. The two
@@ -183,7 +188,9 @@ export function Studio() {
   // "something is in flight" meanings was exactly the kind of implicit
   // coupling this refactor is trying to remove.
   const [isSavingSlide, setIsSavingSlide] = createSignal(false)
-  const [statusMessage, setStatusMessage] = createSignal('')
+  // What happened, not its text: `StatusBar` words it in the current UI
+  // language, so a language change rewords a message already shown.
+  const [statusMessage, setStatusMessage] = createSignal<StatusMessage>({ kind: 'none' })
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null)
   const [errorMessageCopied, setErrorMessageCopied] = createSignal(false)
   // Shown centered in place of the whole 3-pane layout until a deck is
@@ -240,10 +247,17 @@ export function Studio() {
   function onNoteEditorHost(el: HTMLElement): void {
     noteEditor?.destroy()
     noteEditor = createCodeEditor(el, editor.noteDraft(), {
-      placeholder: 'Notes for the presenter — not shown to the audience.',
+      placeholder: untrack(() => settings.messages().speakerNotesPlaceholder),
       onChange: text => editor.setEditorSession(session => withDraftNote(session, text)),
     })
   }
+
+  // The notes editor's placeholder follows the UI language; the editor
+  // itself is uncontrolled, so it is told rather than bound.
+  createEffect(() => {
+    const text = settings.messages().speakerNotesPlaceholder
+    if (noteEditor) setCodeEditorPlaceholder(noteEditor, text)
+  })
 
   const layoutPickerView = createMemo<'loading' | 'empty' | 'ready'>(() => {
     const previews = ui.layoutPreviews()
@@ -534,13 +548,13 @@ export function Studio() {
   }
 
   async function handleOpenFolder(): Promise<void> {
-    const picked = await openDialog({ directory: true, title: 'Open a Peitho deck folder' })
+    const picked = await openDialog({ directory: true, title: settings.messages().openDeckDialogTitle })
     if (!picked || typeof picked !== 'string') return
     await dispatch({ type: 'open-requested', path: picked })
   }
 
   async function handleNewDeck(): Promise<void> {
-    const parent = await openDialog({ directory: true, title: 'Choose a location for the new deck' })
+    const parent = await openDialog({ directory: true, title: settings.messages().newDeckLocationDialogTitle })
     if (!parent || typeof parent !== 'string') return
     setErrorMessage(null)
     await dispatch({ type: 'new-deck-requested', parentDir: parent })
@@ -615,7 +629,7 @@ export function Studio() {
       // `draft` synced to it, so re-sync (a no-op if `draft` itself didn't
       // actually change, e.g. the user kept typing through the gap).
       if (next !== now) syncEditorFields(opensSameSlide(plan) ? 'same-slide' : 'new-slide')
-      setStatusMessage('Saved')
+      setStatusMessage({ kind: 'saved' })
       return true
     } catch (err) {
       setErrorMessage(String(err))
@@ -832,13 +846,13 @@ export function Studio() {
     if (outcome.kind === 'done') {
       if (isUndo) history.pushRedo(outcome.inverse)
       else history.pushUndo(outcome.inverse)
-      setStatusMessage(isUndo ? 'Undone' : 'Redone')
+      setStatusMessage({ kind: isUndo ? 'undone' : 'redone' })
     } else if (outcome.kind === 'failed') {
       if (isUndo) history.pushUndo(step)
       else history.pushRedo(step)
     } else {
       history.clear()
-      setStatusMessage('Undo history cleared — the deck changed since.')
+      setStatusMessage({ kind: 'history-cleared' })
     }
   }
 
@@ -1125,9 +1139,7 @@ export function Studio() {
     const source = await deckIpc.readDeckSource()
     if (source === editor.fullSource()) return
     if (editor.isDirty()) {
-      const discard = window.confirm(
-        'This deck changed outside Peitho Studio (e.g. another editor). Reload it and discard your unsaved edits here?',
-      )
+      const discard = window.confirm(settings.messages().externalChangeConfirm)
       if (!discard) {
         const ranges = splitSlides(source)
         history.clear()
@@ -1140,13 +1152,13 @@ export function Studio() {
           editor.setEditorSession(session => withRefreshedSaved(session, { body: rest, note, config }))
         }
         await renderPreview(source)
-        setStatusMessage('Deck changed on disk elsewhere — merged around your unsaved edit.')
+        setStatusMessage({ kind: 'merged-external-change' })
         return
       }
     }
     await refreshSource(true)
     await renderPreview(editor.fullSource())
-    setStatusMessage('Reloaded — the deck changed on disk.')
+    setStatusMessage({ kind: 'reloaded-external-change' })
   }
 
   async function loadSettings(): Promise<void> {
@@ -1157,6 +1169,28 @@ export function Studio() {
       // `get_settings` itself never fails (a bad file reads as defaults),
       // so only a broken IPC bridge lands here, and an error banner would
       // be cleared by the deck opening at the same time anyway.
+    }
+  }
+
+  // Best-effort like `loadSettings`: on failure the webview's own guess
+  // stays in place.
+  async function loadSystemLocales(): Promise<void> {
+    try {
+      settings.applySystemLocales(await settingsIpc.getSystemLocales())
+    } catch {
+      // Keeps the guess.
+    }
+  }
+
+  // Saved like any setting: every window, this one included, switches on
+  // hearing `settings:changed`; applying the answer here too covers this
+  // window without waiting on the broadcast.
+  async function changeLanguage(language: Language): Promise<void> {
+    if (settings.settings().uiLanguage === language) return
+    try {
+      settings.applyChanged(await settingsIpc.updateSettings({ uiLanguage: language }))
+    } catch (err) {
+      setErrorMessage(String(err))
     }
   }
 
@@ -1178,6 +1212,7 @@ export function Studio() {
   onMount(() => {
     void refreshRecentDecks()
     void loadSettings()
+    void loadSystemLocales()
 
     // A window spawned by `open_deck_window` (native "Open Deck…"/"Open
     // Recent", or this app's own welcome-screen buttons) has a deck
@@ -1367,7 +1402,7 @@ export function Studio() {
         setErrorMessage(outcome.message)
         return
       }
-      setStatusMessage(rehearsal ? 'Presenting (rehearsal)…' : 'Presenting…')
+      setStatusMessage({ kind: 'presenting', rehearsal })
     } catch (err) {
       setErrorMessage(String(err))
     } finally {
@@ -1379,6 +1414,7 @@ export function Studio() {
     <div className="h-full w-full flex flex-col bg-background text-foreground">
       {!deck.showEditor() ? (
         <WelcomeScreen
+          language={settings.language()}
           isBusy={deck.isBusy()}
           errorMessage={errorMessage()}
           recentDecks={recentDecks()}
@@ -1389,6 +1425,7 @@ export function Studio() {
       ) : (
         <>
       <DeckHeader
+        language={settings.language()}
         deckPath={deck.deckPath()}
         variantSwitcherShown={variantSwitcher().kind === 'shown'}
         currentVariantLabel={currentVariantLabelOf(variantSwitcher())}
@@ -1418,11 +1455,12 @@ export function Studio() {
         // moving to show it hasn't stalled.
         <div role="status" className="flex-1 flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <span aria-hidden="true" className="w-4 h-4 rounded-full border-2 border-muted-foreground border-t-transparent animate-spin"></span>
-          Loading deck…
+          {settings.messages().loadingDeck}
         </div>
       ) : (
       <div className="flex-1 flex min-h-0">
         <SlideList
+          language={settings.language()}
           manifest={render.manifest()}
           entries={slideEntries()}
           slideListWidth={ui.slideListWidth()}
@@ -1462,6 +1500,7 @@ export function Studio() {
           style={`width: ${ui.editorWidth()}px`}
         >
           <SlideEditor
+            language={settings.language()}
             hasSelection={editor.selectedRange() !== null}
             onBodyHost={onBodyEditorHost}
             onNoteHost={onNoteEditorHost}
@@ -1474,6 +1513,7 @@ export function Studio() {
         />
 
         <SlidePreview
+          language={settings.language()}
           selectedSlideKey={selectedSlideKey()}
           hasDeck={Boolean(render.assetBaseUrl())}
           canvasFragmentOf={render.canvasFragmentOf}
@@ -1492,13 +1532,15 @@ export function Studio() {
       )}
 
       <StatusBar
+        language={settings.language()}
         errorMessage={errorMessage()}
         errorMessageCopied={errorMessageCopied()}
-        statusMessage={statusMessage()}
+        statusMessage={statusText(settings.messages(), statusMessage())}
         onCopyErrorMessage={() => void copyErrorMessage()}
       />
 
       <SlideContextMenu
+        language={settings.language()}
         hidden={ui.contextMenu().kind === 'closed'}
         position={contextMenuPositionOf(ui.contextMenu())}
         menuItems={currentMenuItems()}
@@ -1529,6 +1571,7 @@ export function Studio() {
       )}
 
       <NewDeckModal
+        language={settings.language()}
         isOpen={deck.newDeckModalOpen()}
         name={deck.newDeckName()}
         parentDir={deck.newDeckParentDir()}
@@ -1541,7 +1584,9 @@ export function Studio() {
 
       <SettingsPanel
         isOpen={settings.panelOpen()}
+        language={settings.language()}
         onClose={closeSettings}
+        onChangeLanguage={language => void changeLanguage(language)}
       />
     </div>
   )

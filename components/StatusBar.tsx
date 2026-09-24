@@ -1,8 +1,12 @@
 'use client'
 
+import { type Language } from '../domain/language'
+import { messagesFor } from '../domain/messages'
 // Props here are values, not signal getters — see `components/
 // WelcomeScreen.tsx` for why (BF044).
 export interface StatusBarProps {
+  /** The UI language every label here is shown in. */
+  language: Language
   errorMessage: string | null
   errorMessageCopied: boolean
   statusMessage: string
@@ -31,7 +35,7 @@ export function StatusBar(props: StatusBarProps) {
           onClick={() => props.onCopyErrorMessage()}
           className="shrink-0 px-1.5 py-0.5 rounded border border-destructive/30 hover:bg-destructive/20"
         >
-          {props.errorMessageCopied ? 'Copied' : 'Copy'}
+          {props.errorMessageCopied ? messagesFor(props.language).errorCopied : messagesFor(props.language).copyError}
         </button>
       </div>
       <footer className="h-6 shrink-0 flex items-center px-3 text-xs text-muted-foreground border-t border-border">

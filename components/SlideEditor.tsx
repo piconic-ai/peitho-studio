@@ -1,5 +1,7 @@
 'use client'
 
+import { type Language } from '../domain/language'
+import { messagesFor } from '../domain/messages'
 // The slide body and speaker notes editors. Each is a CodeMirror 6 editor
 // (`dom/codeEditor.ts`) that `Studio.tsx` creates inside the host `<div>`
 // handed to it through `onBodyHost`/`onNoteHost`, and owns from then on:
@@ -13,6 +15,8 @@
 // pitfalls), which would create a new editor per re-entry and leave the old
 // one alive.
 export interface SlideEditorProps {
+  /** The UI language every label here is shown in. */
+  language: Language
   hasSelection: boolean
   onBodyHost: (el: HTMLElement) => void
   onNoteHost: (el: HTMLElement) => void
@@ -29,7 +33,7 @@ export function SlideEditor(props: SlideEditorProps) {
         />
         <div className="shrink-0 h-40 flex flex-col">
           <div className="h-6 shrink-0 flex items-center px-3 text-xs uppercase tracking-wide text-muted-foreground bg-muted/30">
-            Speaker Notes
+            {messagesFor(props.language).speakerNotes}
           </div>
           <div
             ref={el => props.onNoteHost(el)}
@@ -38,7 +42,7 @@ export function SlideEditor(props: SlideEditorProps) {
           />
         </div>
       </div>
-      <p className={(props.hasSelection ? 'hidden ' : '') + 'p-3 text-sm text-muted-foreground'}>Select a slide to edit it.</p>
+      <p className={(props.hasSelection ? 'hidden ' : '') + 'p-3 text-sm text-muted-foreground'}>{messagesFor(props.language).selectSlideToEdit}</p>
     </div>
   )
 }

@@ -1,10 +1,14 @@
 'use client'
 
+import { type Language } from '../domain/language'
+import { messagesFor } from '../domain/messages'
 import type { VariantOption } from '../domain/deckVariants'
 
 // Props here are values (`presentMenuOpen={presentMenuOpen()}`), not signal
 // getters — see `components/WelcomeScreen.tsx` for why (BF044).
 export interface DeckHeaderProps {
+  /** The UI language every label here is shown in. */
+  language: Language
   deckPath: string | null
   /** Whether there's another same-base deck (deck.ja.md, ...) to switch to
    * — see `toVariantSwitcher` in domain/deckVariants.ts. */
@@ -40,7 +44,7 @@ export function DeckHeader(props: DeckHeaderProps) {
         <button
           type="button"
           onClick={() => props.onToggleVariantMenu()}
-          aria-label="Switch deck variant"
+          aria-label={messagesFor(props.language).switchDeckVariant}
           aria-haspopup="menu"
           aria-expanded={props.variantMenuOpen ? 'true' : 'false'}
           className="flex items-center gap-1 px-2 py-0.5 rounded-md border border-border text-xs hover:bg-accent"
@@ -109,13 +113,13 @@ export function DeckHeader(props: DeckHeaderProps) {
             className="pl-4 pr-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed flex items-center gap-1.5"
           >
             <span aria-hidden="true">▶</span>
-            {props.presentPending ? 'Presenting…' : 'Present'}
+            {props.presentPending ? messagesFor(props.language).presentPending : messagesFor(props.language).present}
           </button>
           <button
             type="button"
             disabled={!props.deckPath || props.presentPending}
             onClick={() => props.onTogglePresentMenu()}
-            aria-label="Present options"
+            aria-label={messagesFor(props.language).presentOptions}
             className="pl-2 pr-3 py-1.5 border-l border-primary-foreground/25 disabled:cursor-not-allowed"
           >
             <span aria-hidden="true">▾</span>
@@ -135,8 +139,8 @@ export function DeckHeader(props: DeckHeaderProps) {
               >
                 <span aria-hidden="true" className="mt-0.5">▶</span>
                 <span>
-                  <div className="text-sm font-medium">Present (Rehearsal)</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">Time each section as you go and save it for comparison against the plan.</div>
+                  <div className="text-sm font-medium">{messagesFor(props.language).presentRehearsal}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{messagesFor(props.language).presentRehearsalDetail}</div>
                 </span>
               </button>
             </div>

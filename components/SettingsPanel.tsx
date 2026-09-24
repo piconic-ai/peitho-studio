@@ -1,21 +1,25 @@
 'use client'
 
+import { LANGUAGES, type Language } from '../domain/language'
+import { LANGUAGE_NAMES, messagesFor } from '../domain/messages'
+
 // The app-wide settings, as an in-app modal opened from the app menu's
 // "Settings…" (Cmd+,) — not a native dialog (CLAUDE.md, Tauri pitfalls)
 // and not a window of its own: each window opens its own copy, and a change
 // saved from one reaches the others through `settings:changed`.
 //
 // Permanently mounted, only `hidden` toggling, like `SlideContextMenu`:
-// the settings items added later hold inputs whose state must survive the
-// panel closing and reopening. Escape is handled in `Studio.tsx`'s
-// `onKeyDown`, which also holds back every slide shortcut while this is
-// open.
-//
-// There are no settings yet (see `domain/settings.ts`); the first items
-// go in the body below.
+// the settings items hold inputs whose state must survive the panel
+// closing and reopening. Escape is handled in `Studio.tsx`'s `onKeyDown`,
+// which also holds back every slide shortcut while this is open.
 export interface SettingsPanelProps {
   isOpen: boolean
+  /** The UI language shown now — the saved choice, or the OS's while
+   * nothing is chosen — which the language picker marks as chosen. */
+  language: Language
   onClose: () => void
+  /** A language picked in the language picker, to be saved. */
+  onChangeLanguage: (language: Language) => void
 }
 
 export function SettingsPanel(props: SettingsPanelProps) {
@@ -35,10 +39,10 @@ export function SettingsPanel(props: SettingsPanelProps) {
         className="pointer-events-auto w-full max-w-md rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h2 id="settings-panel-title" className="text-sm font-medium">Settings</h2>
+          <h2 id="settings-panel-title" className="text-sm font-medium">{messagesFor(props.language).settings}</h2>
           <button
             type="button"
-            aria-label="Close settings"
+            aria-label={messagesFor(props.language).closeSettings}
             data-settings-panel-close
             onClick={() => props.onClose()}
             className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:bg-accent"
@@ -46,8 +50,28 @@ export function SettingsPanel(props: SettingsPanelProps) {
             ×
           </button>
         </div>
-        <div className="px-4 py-6">
-          <p className="text-sm text-muted-foreground">There are no settings to change yet.</p>
+        <div className="px-4 py-4 flex items-center justify-between gap-4">
+          <span id="settings-language-label" className="text-sm">{messagesFor(props.language).language}</span>
+          {/* Buttons rather than a `<select>`: a select's `value` binding only
+              writes when the language changes, so a pick that failed to save
+              would leave the select showing a language the UI isn't in.
+              Each language is named in itself (`LANGUAGE_NAMES`), so it can
+              be found without reading the current one. */}
+          <div role="radiogroup" aria-labelledby="settings-language-label" className="flex rounded-md border border-border overflow-hidden">
+            {LANGUAGES.map(language => (
+              <button
+                type="button"
+                key={language}
+                role="radio"
+                data-settings-language={language}
+                aria-checked={props.language === language ? 'true' : 'false'}
+                onClick={() => props.onChangeLanguage(language)}
+                className={(props.language === language ? 'bg-primary text-primary-foreground ' : 'hover:bg-accent ') + 'px-3 py-1 text-sm'}
+              >
+                {LANGUAGE_NAMES[language]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       </div>
