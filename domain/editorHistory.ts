@@ -30,6 +30,15 @@ export interface EditorHistory {
 
 export const EMPTY_HISTORY: EditorHistory = { undo: [], redo: [] }
 
+/** How running one step against the deck ended. */
+export type StepOutcome =
+  // It ran; `inverse` undoes it.
+  | { kind: 'done'; inverse: HistoryStep }
+  // It no longer fits the deck (e.g. its slide is gone), so nothing ran.
+  | { kind: 'rejected' }
+  // It ran and the commit failed; the error is already shown.
+  | { kind: 'failed' }
+
 /** Oldest entries past this many are dropped, so a long session can't grow
  * the undo stack without bound. */
 export const MAX_HISTORY_DEPTH = 100
