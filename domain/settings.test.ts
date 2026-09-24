@@ -11,8 +11,8 @@ import {
 } from './settings'
 import { LANGUAGE_SETTINGS } from './language'
 
-// A stand-in with real fields — the app's own `Settings` has none yet — so
-// the per-field reading every future setting relies on is exercised now.
+// A stand-in independent of the app's own `Settings`, so the per-field
+// reading every setting relies on is exercised whatever fields the app has.
 interface Sample {
   vimMode: boolean
   uiLanguage: 'en' | 'ja'
@@ -30,8 +30,8 @@ describe('defaultsOf', () => {
     expect(defaultsOf(SAMPLE)).toEqual(DEFAULTS)
   })
 
-  test('spec: Given the app\'s own schema, when nothing is saved yet, then the UI language follows the OS', () => {
-    expect(defaultsOf(SETTINGS_SCHEMA)).toEqual({ uiLanguage: 'system' })
+  test('spec: Given the app\'s own schema, when nothing is saved yet, then the UI language follows the OS and vim mode is off', () => {
+    expect(defaultsOf(SETTINGS_SCHEMA)).toEqual({ uiLanguage: 'system', vimMode: false })
   })
 })
 
@@ -70,13 +70,23 @@ describe('parseSettings', () => {
 
   test('spec: Given a saved UI language, when read with the app\'s own schema, then it is kept', () => {
     for (const uiLanguage of LANGUAGE_SETTINGS) {
-      expect(parseSettings(SETTINGS_SCHEMA, { uiLanguage })).toEqual({ uiLanguage })
+      expect(parseSettings(SETTINGS_SCHEMA, { uiLanguage })).toEqual({ uiLanguage, vimMode: false })
     }
   })
 
   test('adversarial: Given a missing or unsupported UI language, when read with the app\'s own schema, then it follows the OS', () => {
     for (const raw of [null, {}, { vimMode: true }, 'x', { uiLanguage: 'fr' }, { uiLanguage: 'JA' }, { uiLanguage: '' }, { uiLanguage: null }, { uiLanguage: ['ja'] }]) {
-      expect(parseSettings(SETTINGS_SCHEMA, raw)).toEqual({ uiLanguage: 'system' })
+      expect(parseSettings(SETTINGS_SCHEMA, raw).uiLanguage).toBe('system')
+    }
+  })
+
+  test('spec: Given the app\'s own schema and vim mode saved as on, when read, then vim mode is on', () => {
+    expect(parseSettings(SETTINGS_SCHEMA, { vimMode: true })).toEqual({ uiLanguage: 'system', vimMode: true })
+  })
+
+  test('adversarial: Given the app\'s own schema and no valid vim mode saved, when read, then vim mode is off', () => {
+    for (const raw of [null, {}, { vimMode: 'true' }, { vimMode: 1 }, { vimMode: null }, 'x', [true]]) {
+      expect(parseSettings(SETTINGS_SCHEMA, raw).vimMode).toBe(false)
     }
   })
 
