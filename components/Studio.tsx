@@ -22,6 +22,7 @@ import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOpti
 import { racePresentOutcome } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
+import { blurEditorFieldOnRowPress } from '../dom/fieldFocus'
 import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, setManifestKeysSource } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
@@ -846,8 +847,11 @@ export function Studio() {
   // work) sidesteps the browser's native DnD stack entirely.
   function startSlideDrag(index: number) {
     return (event: MouseEvent) => {
-      if (event.button !== 0) return
       if ((event.target as HTMLElement).closest('input, textarea')) return
+      // Any button, so Cmd+Z after a right-click menu operation also
+      // reaches the structural undo rather than the body textarea.
+      blurEditorFieldOnRowPress()
+      if (event.button !== 0) return
       // Without this, the browser's own native text-selection drag runs
       // alongside the custom drag below — the mouse path highlights
       // whatever text/inputs it crosses (most visibly the section-name
