@@ -11,7 +11,7 @@ import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
-import { type HistoryStep, type StepOutcome, commandForStep, inverseStep } from '../domain/editorHistory'
+import { type HistoryStep, type StepOutcome, commandForStep, inverseStep, slideConfigOfText } from '../domain/editorHistory'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import { type LayoutVerdict } from '../domain/layoutFit'
@@ -161,7 +161,7 @@ export function Studio() {
   // capture. See CLAUDE.md's BarefootJS pitfalls for the full account.
   const ui = createUiStore()
   // Structural undo/redo (Cmd+Z / Cmd+Shift+Z outside the textareas) — see
-  // `state/historyStore.ts` and `undo`/`redo` below.
+  // `state/historyStore.ts` and `replayHistory` below.
   const history = createHistoryStore()
   // Distinct from `isBusy` above (the deck-lifecycle one): this guards
   // `commitChange`'s own in-flight save, which used to share the same
@@ -792,44 +792,28 @@ export function Studio() {
     if (outcome.kind === 'done') history.record(outcome.inverse)
   }
 
-  // Cmd+Z outside the textareas. The step is popped before the commit is
-  // awaited (see `state/historyStore.ts`), and a press while any commit is
-  // still in flight is ignored — the step would be computed against slides
-  // that are about to change.
-  async function undo(): Promise<void> {
+  // Cmd+Z (`undo`) / Cmd+Shift+Z (`redo`) outside the textareas. The step is
+  // popped before the commit is awaited (see `state/historyStore.ts`), and a
+  // press while any commit is still in flight is ignored — the step would be
+  // computed against slides that are about to change. On success the
+  // opposite step goes onto the other stack; a failed commit puts the step
+  // back so it can be retried; a rejected one means the history no longer
+  // matches the deck, so it is dropped whole rather than left to misfire on
+  // the next press.
+  async function replayHistory(direction: 'undo' | 'redo'): Promise<void> {
     if (isSavingSlide()) return
-    const step = history.takeUndo()
+    const isUndo = direction === 'undo'
+    const step = isUndo ? history.takeUndo() : history.takeRedo()
     if (step === null) return
     const outcome = await runStep(step)
     if (outcome.kind === 'done') {
-      history.pushRedo(outcome.inverse)
-      setStatusMessage('Undone')
+      if (isUndo) history.pushRedo(outcome.inverse)
+      else history.pushUndo(outcome.inverse)
+      setStatusMessage(isUndo ? 'Undone' : 'Redone')
+    } else if (outcome.kind === 'failed') {
+      if (isUndo) history.pushUndo(step)
+      else history.pushRedo(step)
     } else {
-      settleFailedHistoryStep(outcome, () => history.pushUndo(step))
-    }
-  }
-
-  // Cmd+Shift+Z outside the textareas — `undo`'s mirror image.
-  async function redo(): Promise<void> {
-    if (isSavingSlide()) return
-    const step = history.takeRedo()
-    if (step === null) return
-    const outcome = await runStep(step)
-    if (outcome.kind === 'done') {
-      history.pushUndo(outcome.inverse)
-      setStatusMessage('Redone')
-    } else {
-      settleFailedHistoryStep(outcome, () => history.pushRedo(step))
-    }
-  }
-
-  // A failed commit puts the step back so it can be retried. A rejected one
-  // means the history no longer matches the deck, so it is dropped whole
-  // rather than left to misfire on the next press.
-  function settleFailedHistoryStep(outcome: StepOutcome, putBack: () => void): void {
-    if (outcome.kind === 'failed') {
-      putBack()
-    } else if (outcome.kind === 'rejected') {
       history.clear()
       setStatusMessage('Undo history cleared — the deck changed since.')
     }
@@ -1063,8 +1047,7 @@ export function Studio() {
   // for any other slide.
   function slideConfigOf(index: number): PageConfig {
     if (index === editor.selectedIndex()) return editor.pageConfig()
-    const { rest: withoutNote } = extractNote(editor.slideRanges()[index]?.text ?? '')
-    return extractPageComment(withoutNote).config
+    return slideConfigOfText(editor.slideRanges()[index]?.text ?? '')
   }
 
   // Routed through `syncedSource` (not a direct range-slice replace) so a
@@ -1204,7 +1187,7 @@ export function Studio() {
       const key = event.key.toLowerCase()
       if (event.metaKey && key === 'z') {
         event.preventDefault()
-        void (event.shiftKey ? redo() : undo())
+        void replayHistory(event.shiftKey ? 'redo' : 'undo')
         return
       }
       // `slideEntries().length`, not `manifest.slideCount`/`manifest.slides.length`

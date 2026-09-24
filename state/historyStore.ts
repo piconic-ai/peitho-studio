@@ -52,5 +52,3 @@ export function createHistoryStore() {
     },
   }
 }
-
-export type HistoryStore = ReturnType<typeof createHistoryStore>
