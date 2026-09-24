@@ -169,9 +169,10 @@ export function setCodeEditorPlaceholder(view: EditorView, text: string): void {
 /** Turns vim key bindings on or off, keeping the text, cursor and undo
  * history. Off, the editor behaves exactly as without vim mode. */
 export function setCodeEditorVimMode(view: EditorView, on: boolean): void {
-  if ((vimModeOf.get(view) ?? false) === on) return
+  const options = optionsOf.get(view)
+  if (options === undefined || (vimModeOf.get(view) ?? false) === on) return
   vimModeOf.set(view, on)
-  view.dispatch({ effects: vimCompartment.reconfigure(vimExtension(optionsOf.get(view) ?? { onChange: () => {} }, on)) })
+  view.dispatch({ effects: vimCompartment.reconfigure(vimExtension(options, on)) })
 }
 
 /** Replaces the editor's text with `text`, as an edit Undo skips, touching
