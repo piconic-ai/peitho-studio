@@ -31,7 +31,7 @@ export function WelcomeScreen(props: WelcomeScreenProps) {
             keeps it on-theme). Decorative: the heading right after it
             already names the app. */}
         <svg aria-hidden="true" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round" className="block w-12 h-12 text-foreground">
-          <path d="M17 53V11h24a6 6 0 0 1 6 6v12a6 6 0 0 1-6 6H17" />
+          <path d="M16 52V13h20a13 13 0 0 1 0 26a7 7 0 0 1 0-14" />
         </svg>
         <h1 className="text-lg font-semibold">Peitho Studio</h1>
         <div className="flex items-center gap-2">
