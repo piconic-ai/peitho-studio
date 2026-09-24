@@ -20,6 +20,19 @@ describe('createEditorSlideStates', () => {
     expect(cache.take(1)).toBeUndefined()
   })
 
+  test('spec: Given a state kept for slide 1, when slide 1 is peeked at, then the state comes back and is still kept', () => {
+    const cache = cacheOf({ 1: 'B' })
+    expect(cache.peek(1)).toBe('B')
+    expect(cache.take(1)).toBe('B')
+  })
+
+  test('adversarial: peeking at a slide with no kept state, or at a position that is no slide, finds nothing', () => {
+    const cache = cacheOf({ 1: 'B' })
+    expect(cache.peek(0)).toBeUndefined()
+    expect(cache.peek(-1)).toBeUndefined()
+    expect(cache.peek(Number.NaN)).toBeUndefined()
+  })
+
   test('spec: Given a state kept for a slide, when another state is stored for it, then the newer one replaces it', () => {
     const cache = cacheOf({ 0: 'old' })
     cache.store(0, 'new')
