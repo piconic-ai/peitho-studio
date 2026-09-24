@@ -86,21 +86,19 @@ export function DownloadPanel() {
 
   return (
     <div className="dl" data-status={status()}>
-      <p className={status() === 'loading' ? 'dim' : 'dim hidden'}>Checking the latest release…</p>
+      <p className={status() === 'loading' ? 'muted' : 'muted hidden'}>Checking the latest release…</p>
 
       {/* A release with downloadable assets: the visitor's build(s) first. */}
       <div className={status() === 'ready' && hasDownloads() ? 'dl-ready' : 'dl-ready hidden'}>
-        <ul className={primary().length > 0 ? 'rows dl-primary' : 'rows dl-primary hidden'} role="list">
+        <div className={primary().length > 0 ? 'dl-primary' : 'dl-primary hidden'}>
           {/* @client */ primary().map((pick) => (
-            <li key={pick.asset.name} className="row">
-              <a className="row-link" href={pick.asset.browser_download_url} data-primary-download>
-                <span className="row-title">Download for {PLATFORM_LABEL[pick.platform]}</span>
-                <span className="row-meta">{ARCH_LABEL[pick.arch] || pick.kind} · {pick.kind} · {formatSize(pick.asset.size)}</span>
-              </a>
-            </li>
+            <a key={pick.asset.name} className="btn btn-primary btn-big" href={pick.asset.browser_download_url} data-primary-download>
+              <span>Download for {PLATFORM_LABEL[pick.platform]}</span>
+              <small>{ARCH_LABEL[pick.arch] || pick.kind} · {formatSize(pick.asset.size)}</small>
+            </a>
           ))}
-        </ul>
-        <p className={primary().length === 0 ? 'dim' : 'dim hidden'}>
+        </div>
+        <p className={primary().length === 0 ? 'muted' : 'muted hidden'}>
           No {PLATFORM_LABEL[platform()]} build in this release.
         </p>
         <p className="dl-meta">
@@ -117,13 +115,11 @@ export function DownloadPanel() {
           {/* @client */ groups().map((group) => (
             <div key={group.platform} className="dl-group">
               <h4>{PLATFORM_LABEL[group.platform]}</h4>
-              <ul className="rows" role="list">
+              <ul>
                 {/* @client */ group.assets.map((item) => (
-                  <li key={item.asset.name} className="row">
-                    <a className="row-link" href={item.asset.browser_download_url}>
-                      <span className="row-title">{item.asset.name}</span>
-                      <span className="row-meta">{formatSize(item.asset.size)}</span>
-                    </a>
+                  <li key={item.asset.name}>
+                    <a href={item.asset.browser_download_url}>{item.asset.name}</a>
+                    <span className="dl-size">{formatSize(item.asset.size)}</span>
                   </li>
                 ))}
               </ul>
@@ -134,18 +130,16 @@ export function DownloadPanel() {
 
       {/* No release yet, no assets on it, or the API couldn't be reached. */}
       <div className={status() === 'loading' || (status() === 'ready' && hasDownloads()) ? 'dl-fallback hidden' : 'dl-fallback'}>
-        <ul className="rows" role="list">
-          <li className="row">
-            <a className="row-link" href={RELEASES_URL}>
-              <span className="row-title">Releases on GitHub</span>
-              <span className="row-meta" data-fallback-note>
-                {status() === 'ready'
-                  ? `No packaged download in ${version()} yet.`
-                  : 'No packaged download yet.'}
-              </span>
-            </a>
-          </li>
-        </ul>
+        <div className="dl-primary">
+          <a className="btn btn-primary btn-big" href={RELEASES_URL}>
+            <span>Releases on GitHub</span>
+            <small data-fallback-note>
+              {status() === 'ready'
+                ? `No packaged download in ${version()} yet`
+                : 'No packaged download yet'}
+            </small>
+          </a>
+        </div>
       </div>
     </div>
   )

@@ -14,98 +14,77 @@
   <link rel="stylesheet" href="/site.css">
 </head>
 <body>
-  <header class="site-header">
-    <a class="brand" href="/">Peitho Studio</a>
+  <header class="top">
+    <a class="brand" href="/"><img src="/favicon.svg" alt="" width="26" height="26"><span>Peitho Studio</span></a>
     <nav aria-label="Primary">
+      <a href="#features">Features</a>
       <a href="#download">Download</a>
-      <a href="https://peitho.gosu.ke">Peitho</a>
       <a href="https://github.com/piconic-ai/peitho-studio">GitHub</a>
     </nav>
   </header>
 
-  <main class="page">
+  <main>
     <section class="hero">
-      <p class="hero-lead">A desktop editor for <a href="https://peitho.gosu.ke">Peitho</a> decks.</p>
-      <p class="hero-tagline">The Markdown file stays the source of truth.</p>
+      <h1>Edit <a href="https://peitho.gosu.ke">Peitho</a> decks in a window.</h1>
+      <p class="lede">Slides, editor and live preview around one Markdown file. The file stays yours.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="#download">Download</a>
+        <a class="btn" href="https://github.com/piconic-ai/peitho-studio">Source</a>
+      </div>
     </section>
 
-    <section id="tour">
-      <h2>Tour</h2>
+    <section id="tour" class="band" aria-label="Tour">
       <div id="tour-root" class="island">
-        <noscript><p class="dim">The interactive tour needs JavaScript.</p></noscript>
+        <noscript><p class="muted">The interactive tour needs JavaScript.</p></noscript>
       </div>
     </section>
 
     <section id="features">
-      <h2>Pillars</h2>
-      <ul class="rows" role="list">
-        <li class="row"><div class="row-link">
-          <span class="row-title">Markdown in, Markdown out</span>
-          <span class="row-meta">No project file, no export step. Edit the same deck from any other editor; Studio watches it and merges the change.</span>
-        </div></li>
-        <li class="row"><div class="row-link">
-          <span class="row-title">Preview by peitho-core itself</span>
-          <span class="row-meta">The engine runs in-process, so thumbnails and preview match <code>peitho present</code>. Flip the canvas to a phone.</span>
-        </div></li>
-        <li class="row"><div class="row-link">
-          <span class="row-title">Slides you can grab</span>
-          <span class="row-meta">Drag to reorder. Cut, paste, change layout, mark as Draft or Skip. Layout mismatches are errors, not broken slides.</span>
-        </div></li>
-        <li class="row"><div class="row-link">
-          <span class="row-title">Sections with a time budget</span>
-          <span class="row-meta">Name, minutes, collapse. Rehearsal mode times each section against the plan.</span>
-        </div></li>
-        <li class="row"><div class="row-link">
-          <span class="row-title">An editor for the keyboard</span>
-          <span class="row-meta">CodeMirror 6 with an optional vim mode. Undo and redo span text and slide operations.</span>
-        </div></li>
+      <p class="label">Features</p>
+      <ul class="feat" role="list">
+        <li><b>Plain Markdown</b><span>Edit the deck from any tool. Studio picks up the change.</span></li>
+        <li><b>The real renderer</b><span>peitho-core runs inside the app. Preview as PC or phone.</span></li>
+        <li><b>Hands-on slides</b><span>Drag, cut, paste, relayout. Mark as Draft or Skip.</span></li>
+        <li><b>Timed sections</b><span>Set minutes per section, then rehearse against them.</span></li>
+        <li><b>Keyboard editor</b><span>CodeMirror 6, optional vim, one undo for everything.</span></li>
+        <li><b>Variants</b><span>Switch language versions of a deck. UI in English and Japanese.</span></li>
       </ul>
     </section>
 
     <section id="download">
-      <h2>Download</h2>
+      <p class="label">Download</p>
       <div id="download-root" class="island">
         <!-- Replaced by the DownloadPanel island; kept as the no-JS fallback. -->
-        <ul class="rows" role="list">
-          <li class="row"><a class="row-link" href="https://github.com/piconic-ai/peitho-studio/releases/latest">
-            <span class="row-title">Latest release</span>
-            <span class="row-meta">github.com/piconic-ai/peitho-studio/releases</span>
-          </a></li>
-        </ul>
+        <div class="dl-primary">
+          <a class="btn btn-primary btn-big" href="https://github.com/piconic-ai/peitho-studio/releases/latest">
+            <span>Latest release</span><small>on GitHub</small>
+          </a>
+        </div>
       </div>
-      <p class="dim">The Present button runs the <code>peitho</code> CLI:</p>
-      <pre><code>brew install mizzy/tap/peitho</code></pre>
-      <details id="build" class="build">
-        <summary>Build from source</summary>
-        <pre><code>git clone https://github.com/piconic-ai/peitho-studio
-cd peitho-studio
-bun install
+      <div class="extras">
+        <div>
+          <p class="muted">Present needs the <code>peitho</code> CLI.</p>
+          <pre><code>brew install mizzy/tap/peitho</code></pre>
+        </div>
+        <details id="build">
+          <summary>Build from source</summary>
+          <pre><code>git clone https://github.com/piconic-ai/peitho-studio
+cd peitho-studio && bun install
 bunx tauri build</code></pre>
-        <p class="dim">Needs Bun, Rust and the <a href="https://tauri.app/start/prerequisites/">Tauri v2 prerequisites</a>.</p>
-      </details>
-    </section>
-
-    <section id="start">
-      <h2>Start</h2>
-      <ul class="rows" role="list">
-        <li class="row"><a class="row-link" href="https://peitho.gosu.ke/guide/">
-          <span class="row-title">Read the Peitho guide</span>
-          <span class="row-meta">Writing decks, layouts, frontmatter, the CLI.</span>
-        </a></li>
-        <li class="row"><a class="row-link" href="https://peitho.gosu.ke/examples/">
-          <span class="row-title">Browse Peitho examples</span>
-          <span class="row-meta">Open any of them in Studio.</span>
-        </a></li>
-        <li class="row"><a class="row-link" href="https://github.com/piconic-ai/peitho-studio">
-          <span class="row-title">View source</span>
-          <span class="row-meta">MIT licensed. Built with Tauri and BarefootJS.</span>
-        </a></li>
-      </ul>
+          <p class="muted">Needs Bun, Rust and the <a href="https://tauri.app/start/prerequisites/">Tauri v2 prerequisites</a>.</p>
+        </details>
+      </div>
     </section>
   </main>
 
-  <footer class="site-footer">
-    <a href="https://github.com/piconic-ai/peitho-studio">github.com/piconic-ai/peitho-studio</a>
+  <footer class="foot">
+    <span>Peitho Studio · MIT</span>
+    <nav aria-label="Links">
+      <a href="https://peitho.gosu.ke/guide/">Peitho guide</a>
+      <a href="https://peitho.gosu.ke/examples/">Examples</a>
+      <a href="https://github.com/piconic-ai/peitho-studio/issues">Issues</a>
+      <a href="https://github.com/piconic-ai/peitho-studio">GitHub</a>
+    </nav>
   </footer>
 
   <script type="module" src="/src/main.ts"></script>

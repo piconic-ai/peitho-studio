@@ -133,8 +133,8 @@ export function FeatureTour() {
         <div className="tour-caption" aria-live="polite">
           <p data-step-body>{step().body}</p>
           <div className="tour-nav">
-            <button type="button" aria-label="Previous" onClick={() => select(prevStepId(stepId()))} data-prev>← prev</button>
-            <button type="button" aria-label="Next" onClick={() => select(nextStepId(stepId()))} data-next>next →</button>
+            <button type="button" aria-label="Previous" onClick={() => select(prevStepId(stepId()))} data-prev>←</button>
+            <button type="button" aria-label="Next" onClick={() => select(nextStepId(stepId()))} data-next>→</button>
           </div>
         </div>
       </div>

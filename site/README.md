@@ -8,17 +8,16 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 
 - One static `index.html`, styled by `public/site.css`. It reads fully
   without JavaScript (features, links, build instructions, a plain link to
-  the latest release). The look follows the Peitho site
-  ([peitho.gosu.ke](https://peitho.gosu.ke), source in `mizzy/peitho`'s
-  `site/`): black on white, a serif face, one 800px column, a rule above
-  each section heading, and title-plus-one-line rows.
+  the latest release). It is not the Peitho site and does not
+  copy its look: warm stone neutrals from the app icon, the system sans
+  the app uses, one indigo accent, and light/dark following the OS.
 - Two [BarefootJS](https://barefootjs.dev) islands (CSR adapter, compiled by
   `@barefootjs/vite`), mounted from `src/main.ts` into placeholders in the
   HTML:
   - `src/components/DownloadPanel.tsx` fetches
     `https://api.github.com/repos/piconic-ai/peitho-studio/releases/latest`,
     detects the visitor's platform (and, on Chromium, the CPU architecture
-    via UA Client Hints), and shows the matching asset on the big button,
+    via UA Client Hints), and shows the matching asset on the primary button,
     with every other asset behind a toggle. When there is no release, the
     release has no assets, or the API can't be reached, it falls back to the
     Releases page and the build-from-source section.
