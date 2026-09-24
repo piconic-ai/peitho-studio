@@ -116,11 +116,16 @@ export interface MockDeck {
    * Set it to give the picker real slide canvases to inspect. */
   layoutFragment?: string
   /** What `get_settings` answers — defaults to `{}` (nothing saved yet).
-   * Passed as is, so a test can hand over a malformed value too. */
+   * Passed as is, so a test can hand over a malformed value too.
+   * `update_settings` merges its patch into this and, like `settings.rs`,
+   * broadcasts the result as `settings:changed`. */
   settings?: unknown
   /** What `get_system_locales` answers (the OS's preferred languages) —
    * defaults to `['en-US']`. */
   systemLocales?: unknown
+  /** The OS clipboard's text that `plugin:clipboard-manager|read_text`
+   * answers and `write_text` replaces — defaults to none (`null`). */
+  clipboardText?: string | null
 }
 
 function sleep(ms: number): Promise<void> {
@@ -245,6 +250,10 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         }, payload)
         return payload
       }
+      case 'plugin:clipboard-manager|read_text': return deck.clipboardText ?? null
+      case 'plugin:clipboard-manager|write_text':
+        deck.clipboardText = args.text as string
+        return null
       default: return null
     }
   })
