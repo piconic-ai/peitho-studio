@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: テキスト編集・構造操作を含む統一Undo/Redoスタックを実装する
 tags: [undo-redo, editor, architecture]
 ---
@@ -18,12 +18,24 @@ Undo/Redoスタックをアプリ側に持つ」方針を選択。既存タス�
 
 - **目的**: テキスト編集・構造操作(レイアウト変更/Draft化/Skip/並べ替え
   等)を問わず、直近の操作をUndo/Redoで取り消し/やり直しできるようにする。
-- **やらないこと**: 複数ウィンドウ間でのUndo履歴共有、デッキファイルの
+- **この todo の範囲 = 第1段階のみ**: 構造操作(レイアウト変更/Draft化/
+  Skip切替/並べ替え/新規スライド/カット・コピー・ペースト/削除)の
+  Undo/Redo と、ネイティブEditメニューとの共存方式。Redoは段階を分けず
+  Undoと同時に入れる(同じ履歴構造の表裏であり、「新規push時にredo履歴を
+  破棄」の規則やCmd+Z/Cmd+Shift+Zのメニュー配線もペアで決める必要がある
+  ため)。
+- **やらないこと**: テキスト編集(textarea)のUndo/Redoグルーピング
+  (第2段階。`studio-settings-panel.md`のvim mode調査でCodeMirror移行の
+  是非が決まってから設計する — 移行するならCodeMirror自身の履歴との統合
+  が前提になり、生textarea前提の設計は作り直しになるため。第1段階の間、
+  textarea内のテキスト編集はネイティブのundo/redoに任せたままにする)、
+  複数ウィンドウ間でのUndo履歴共有、デッキファイルの
   世代管理・スナップショット保存機能(あくまで「直前の操作を戻す」until
   the app closes の範囲。永続的な変更履歴はスコープ外)。
-- **受け入れ条件**: テキスト編集と構造操作を混在させた一連の操作を、
-  Cmd+Z/Cmd+Shift+Zで直感的な単位ごとに戻せる/やり直せる。ネイティブ
-  textarea undoとの二重発火が起きない。
+- **受け入れ条件(第1段階)**: 構造操作をCmd+Z/Cmd+Shift+Zで1操作ずつ
+  戻せる/やり直せる。textareaにフォーカスがあるときはネイティブの
+  テキストundo/redoが従来どおり効き、アプリ側の構造操作undoと二重発火
+  しない(Cmd+Zの行き先の振り分け方式は実装時に決め、PR本文に明記する)。
 - 規模が大きいため、実装は一括ではなく段階的なPRに分けることを推奨する
   (例: 構造操作のみのUndoを先に通し、テキスト編集のグルーピングは別PR)
   — 実装着手時にFableと相談して決める。
@@ -83,15 +95,43 @@ Undo/Redoスタックをアプリ側に持つ」方針を選択。既存タス�
   場合にredoスタックが破棄されること)。
 - 4種の`SlideCommand`それぞれの逆操作関数のspec/adversarialテスト。
 
+## 第1段階の実装内容(提案 — 人間の判断待ち)
+
+- **履歴の単位**: `domain/editorHistory.ts`の`HistoryStep`。
+  `slides`(`SlideCommand`そのまま: New Slide/Paste=insert、Delete/Cut=
+  delete、並べ替え=move)と`config`(PageCommentのフィールドパッチ:
+  レイアウト/Draft/Skip/Section切替/セクション名・時間の編集)の2種。
+  `config`を全文`replace`にしなかったのは、レイアウト変更後にその
+  スライドへ打ち込んだ本文までUndoで巻き戻ってしまうため。
+- **逆操作はUndo/Redoの実行時点の内容から計算し直す**
+  (`inverseStep(現在のスライド列, step)`)。新規スライドに打ち込んで
+  からUndo→Redoすると、打ち込んだ本文ごと戻る。
+- **Cmd+Zの振り分け(フォーカス基準)**: textarea/inputにフォーカスが
+  あるときは`Studio.tsx`の`onKeyDown`が何もせず、従来どおりネイティブの
+  Editメニュー(テキストundo)に届く。それ以外では常に
+  `preventDefault`して構造操作のUndo/Redoを実行する(履歴が空でも
+  止める — WebKitの文書全体undoがフォーカス外のtextareaを書き換えない
+  ように)。`src-tauri/src/lib.rs`のメニューは変更していない。
+- **既知の制限**: メニューバーの「編集 > 取り消す」をマウスで
+  クリックした場合はネイティブのテキストundoのみで、構造操作は戻らない。
+  デッキをディスクから読み直したとき(開き直し・外部変更)と、打ち込んだ
+  本文(`---`行・閉じていないコードフェンス)でスライドの数が変わる
+  保存のときは、履歴を捨てる(位置がずれるため)。
+- **直列化**: 構造操作とUndo/Redoは1つずつ順に実行する
+  (`Studio.tsx`の`serialized`)。前の操作の保存が終わってから次の操作が
+  スライド列を読むので、Cmd+Zの連打も落とさず順に効く。
+- **テスト**: `domain/editorHistory.test.ts`(spec/adversarial/往復の
+  property)、`state/historyStore.test.ts`、
+  `e2e/structural-undo-redo.e2e.ts`(モックIPCで実際のkeydown経路)。
+
 ## 完了条件
 
 自動で確認できる項目:
-- [ ] `domain/editorHistory.ts` + 逆操作関数 + テスト
-- [ ] `Studio.tsx`への配線
-- [ ] `bun test` / `bun run typecheck` グリーン
+- [x] `domain/editorHistory.ts` + 逆操作関数 + テスト
+- [x] `Studio.tsx`への配線
+- [x] `bun test` / `bun run typecheck` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] テキスト編集のグルーピング戦略をFableと決定
 - [ ] ネイティブUndo(Edit menu)との共存方式を決定
 - [ ] `src-tauri/src/lib.rs`のメニュー変更(必要な場合)、`cargo test`グリーン
 - [ ] 実機確認(テキスト編集・構造操作を混在させた一連の操作のundo/redoが
@@ -99,4 +139,15 @@ Undo/Redoスタックをアプリ側に持つ」方針を選択。既存タス�
 
 ## 先送り事項
 
-(実装時に見つかった、本筋と無関係な改善点があればここに書き出す)
+- 第2段階: テキスト編集のUndo/Redoグルーピング(スペース区切り・無入力
+  時間・IME確定単位など)と、構造操作との統一スタック化。vim mode調査
+  (CodeMirror移行の是非)の結論待ち。第1段階完了時に別todoとして切り出す。
+- PageCommentを持たないスライドへのレイアウト変更などをUndoすると、
+  `updatePageComment`の仕様上`<!-- {} -->`が残る(peitho-coreの
+  `PageComment`は全フィールドが`Option`なので受け付け、実害はない)。
+  空になったPageCommentを除去するかは別途。
+- Undo/Redoの可否をUI(メニューのグレーアウト等)に出すかどうか。
+- 本文のオートセーブ(`handleSave`)は上記の直列化の外にある(この変更
+  以前からの挙動)。オートセーブの保存中に構造操作やUndoを実行すると、
+  2つの全文保存が競合し、後に終わった方が先の方を上書きしうる。
+  実際に問題になったら対応する。

@@ -11,6 +11,7 @@ import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
+import { type HistoryStep, type StepOutcome, commandForStep, inverseStep, slideConfigOfText } from '../domain/editorHistory'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import { type LayoutVerdict } from '../domain/layoutFit'
@@ -21,12 +22,14 @@ import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOpti
 import { racePresentOutcome } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
+import { blurEditorFieldOnRowPress } from '../dom/fieldFocus'
 import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, setManifestKeysSource } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
 import { createRenderStore } from '../state/renderStore'
 import { createEditorStore } from '../state/editorStore'
 import { createDeckStore } from '../state/deckStore'
+import { createHistoryStore } from '../state/historyStore'
 import {
   splitSlides,
   extractNote,
@@ -158,6 +161,9 @@ export function Studio() {
   // reactivity tracking, which `bf debug graph`'s static analysis doesn't
   // capture. See CLAUDE.md's BarefootJS pitfalls for the full account.
   const ui = createUiStore()
+  // Structural undo/redo (Cmd+Z / Cmd+Shift+Z outside the textareas) — see
+  // `state/historyStore.ts` and `replayHistory` below.
+  const history = createHistoryStore()
   // Distinct from `isBusy` above (the deck-lifecycle one): this guards
   // `commitChange`'s own in-flight save, which used to share the same
   // `isBusy` signal with the welcome-screen open/create flow. The two
@@ -479,6 +485,9 @@ export function Studio() {
   // up separately.
   async function refreshSource(preserveSelection: boolean, renderPayload?: RenderPayload): Promise<void> {
     const source = await deckIpc.readDeckSource()
+    // History steps address slides by position; a deck read fresh from disk
+    // (a newly opened deck, an external edit) may not match them anymore.
+    history.clear()
     if (renderPayload) render.applyRenderPayload(renderPayload, source)
     editor.setFullSource(source)
     const ranges = splitSlides(source)
@@ -558,11 +567,15 @@ export function Studio() {
   // front (section-header edits, drag-reorder) omit it and accept that
   // small risk, since those are discrete one-off actions, not continuous
   // typing.
+  //
+  // Resolves `true` once the change is rendered and saved, `false` if either
+  // step failed (the error is already shown) — undo history records only a
+  // change that actually landed.
   async function commitChange(
     nextSource: string,
     plan: SelectionPlan,
     expectedDraft?: { body: string; note: string },
-  ): Promise<void> {
+  ): Promise<boolean> {
     const before = editor.editorSession()
     setIsSavingSlide(true)
     setErrorMessage(null)
@@ -593,8 +606,10 @@ export function Studio() {
       // actually change, e.g. the user kept typing through the gap).
       if (next !== now) syncEditorFields()
       setStatusMessage('Saved')
+      return true
     } catch (err) {
       setErrorMessage(String(err))
+      return false
     } finally {
       setIsSavingSlide(false)
     }
@@ -607,6 +622,12 @@ export function Studio() {
   function currentSlideText(index: number): string {
     if (index === editor.selectedIndex() && editor.isDirty()) return buildSlideText(editor.pageConfig(), editor.bodyDraft(), editor.noteDraft())
     return editor.slideRanges()[index]?.text ?? ''
+  }
+
+  // Every slide's `currentSlideText`, trimmed — the list every structural
+  // operation (and its undo) applies its `SlideCommand` to.
+  function currentSlideTexts(): string[] {
+    return editor.slideRanges().map((_, i) => currentSlideText(i).trim())
   }
 
   // `window.confirm` used to gate this on discarding unsaved edits, but
@@ -635,7 +656,10 @@ export function Studio() {
     const newSlideText = buildSlideText(editor.pageConfig(), body, note)
     const source = editor.fullSource()
     const nextSource = source.slice(0, range.start) + newSlideText + source.slice(range.end)
-    await commitChange(nextSource, { kind: 'keep' }, { body, note })
+    // Typed text can itself re-split the deck (a `---` line, an unclosed code
+    // fence), shifting the positions every history step addresses slides by.
+    const resplits = splitSlides(nextSource).length !== editor.slideRanges().length
+    if (await commitChange(nextSource, { kind: 'keep' }, { body, note }) && resplits) history.clear()
   }
 
   // Rebuilds `fullSource` from an ordered list of slide texts, preserving
@@ -730,33 +754,82 @@ export function Studio() {
     const timeMs = savableSectionTimeMs(draft.timeMs, otherSectionsMs)
     updateSectionDraft(manifestIndex, current => ({ ...current, timeMs }))
     const slideText = currentSlideText(startIndex)
-    const updatedSlideText = updatePageComment(slideText, { section: draft.name, time: formatDurationMs(timeMs) })
+    const patch = { section: draft.name, time: formatDurationMs(timeMs) }
+    const updatedSlideText = updatePageComment(slideText, patch)
     if (updatedSlideText === slideText) return
-
-    let nextSource = editor.fullSource()
-    nextSource = nextSource.slice(0, range.start) + updatedSlideText + nextSource.slice(range.end)
-
-    // time here doesn't quietly break the next build.
-    nextSource = updateFrontmatterTime(nextSource, otherSectionsMs + timeMs)
-
-    await commitChange(nextSource, { kind: 'keep' })
+    // Through the same path as every other structural operation, so it is
+    // undoable; `syncedSource` re-totals the frontmatter `time:` from every
+    // section's own time, keeping the next build from rejecting a stale total.
+    await perform({ kind: 'config', index: startIndex, patch })
   }
 
+  // `selectionPlanFor(move)` is `follow-move`, not "select `to`":
+  // unconditionally selecting `to` would drag the *editor's* selection over
+  // to whatever slide just got dropped even when a *different* slide,
+  // mid-edit and not yet saved, was the one actually open. `follow-move`
+  // keeps the open slide's own position (shifted for the reorder) unless
+  // it's the one that moved, in which case that's `to` anyway.
   async function reorderSlides(from: number, to: number): Promise<void> {
-    const ranges = editor.slideRanges()
-    const texts = ranges.map((_, i) => currentSlideText(i).trim())
-    const cmd: SlideCommand = { type: 'move', from, to }
-    if (validate(texts, cmd)) return
-    const nextTexts = applyCommand(texts, cmd)
-    // `commitChange`'s selection-follows-plan step assumes every caller
-    // but this one already passes back a `keep` (a no-op for them) — so
-    // unconditionally selecting `to` here would drag the *editor's*
-    // selection over to whatever slide just got dropped even when a
-    // *different* slide, mid-edit and not yet saved, was the one actually
-    // open. `follow-move` keeps the open slide's own position (shifted
-    // for the reorder) unless it's the one that moved, in which case
-    // that's `to` anyway.
-    await commitChange(sourceFor(nextTexts, cmd), selectionPlanFor(cmd))
+    await perform({ kind: 'slides', cmd: { type: 'move', from, to } })
+  }
+
+  // Runs one history step against the current slides (the open slide's
+  // unsaved draft included) through the same `commitChange` path every
+  // structural operation uses, and reports the step that undoes it.
+  async function runStep(step: HistoryStep): Promise<StepOutcome> {
+    const texts = currentSlideTexts()
+    const cmd = commandForStep(texts, step)
+    if (validate(texts, cmd)) return { kind: 'rejected' }
+    const inverse = inverseStep(texts, step)
+    const ok = await commitChange(sourceFor(applyCommand(texts, cmd), cmd), selectionPlanFor(cmd))
+    return ok ? { kind: 'done', inverse } : { kind: 'failed' }
+  }
+
+  // Structural operations and undo/redo run one at a time: each reads the
+  // slides only once the previous one has landed. Run concurrently, both
+  // would compute from the same slides, the later whole-file save would
+  // silently overwrite the earlier, and the history would record a step for
+  // a change that is no longer in the file.
+  let structuralQueue: Promise<void> = Promise.resolve()
+  function serialized(run: () => Promise<void>): Promise<void> {
+    const next = structuralQueue.then(run)
+    structuralQueue = next.catch(() => undefined)
+    return next
+  }
+
+  // A new structural operation: runs it and records how to undo it.
+  function perform(step: HistoryStep): Promise<void> {
+    return serialized(async () => {
+      const outcome = await runStep(step)
+      if (outcome.kind === 'done') history.record(outcome.inverse)
+    })
+  }
+
+  // Cmd+Z (`undo`) / Cmd+Shift+Z (`redo`) outside the textareas, queued
+  // behind any structural operation still saving. On success the opposite
+  // step goes onto the other stack; a failed commit puts the step back so it
+  // can be retried; a rejected one means the history no longer matches the
+  // deck, so it is dropped whole rather than left to misfire on the next
+  // press.
+  function replayHistory(direction: 'undo' | 'redo'): Promise<void> {
+    return serialized(() => replayHistoryNow(direction))
+  }
+  async function replayHistoryNow(direction: 'undo' | 'redo'): Promise<void> {
+    const isUndo = direction === 'undo'
+    const step = isUndo ? history.takeUndo() : history.takeRedo()
+    if (step === null) return
+    const outcome = await runStep(step)
+    if (outcome.kind === 'done') {
+      if (isUndo) history.pushRedo(outcome.inverse)
+      else history.pushUndo(outcome.inverse)
+      setStatusMessage(isUndo ? 'Undone' : 'Redone')
+    } else if (outcome.kind === 'failed') {
+      if (isUndo) history.pushUndo(step)
+      else history.pushRedo(step)
+    } else {
+      history.clear()
+      setStatusMessage('Undo history cleared — the deck changed since.')
+    }
   }
 
   // `move` never changes *which* sections exist or their times, only
@@ -774,8 +847,11 @@ export function Studio() {
   // work) sidesteps the browser's native DnD stack entirely.
   function startSlideDrag(index: number) {
     return (event: MouseEvent) => {
-      if (event.button !== 0) return
       if ((event.target as HTMLElement).closest('input, textarea')) return
+      // Any button, so Cmd+Z after a right-click menu operation also
+      // reaches the structural undo rather than the body textarea.
+      blurEditorFieldOnRowPress()
+      if (event.button !== 0) return
       // Without this, the browser's own native text-selection drag runs
       // alongside the custom drag below — the mouse path highlights
       // whatever text/inputs it crosses (most visibly the section-name
@@ -921,11 +997,7 @@ export function Studio() {
   // time total is re-synced in case the removed slide was itself a section
   // start (see `syncedSource`).
   async function deleteSlide(index: number): Promise<void> {
-    const texts = editor.slideRanges().map((_, i) => currentSlideText(i).trim())
-    const cmd: SlideCommand = { type: 'delete', index }
-    if (validate(texts, cmd)) return
-    const nextTexts = applyCommand(texts, cmd)
-    await commitChange(sourceFor(nextTexts, cmd), selectionPlanFor(cmd))
+    await perform({ kind: 'slides', cmd: { type: 'delete', index } })
   }
 
   async function cutSlide(index: number): Promise<void> {
@@ -954,15 +1026,12 @@ export function Studio() {
   // `new-slide`, `new-slide-2`, `new-slide-3`, ... against the deck's
   // actual current keys instead.
   async function addSlide(index: number): Promise<void> {
-    const texts = editor.slideRanges().map((_, i) => currentSlideText(i).trim())
+    const texts = currentSlideTexts()
     const insertAt = Math.min(index + 1, texts.length)
     const key = uniqueSlideKey(slugifyTitle('New Slide'), existingSlideKeys())
     const { config: previousConfig } = extractPageComment(texts[index] ?? '')
     const config = newSlideConfig(previousConfig, key)
-    const cmd: SlideCommand = { type: 'insert', at: insertAt, text: buildSlideText(config, NEW_SLIDE_MARKDOWN, '') }
-    if (validate(texts, cmd)) return
-    const nextTexts = applyCommand(texts, cmd)
-    await commitChange(sourceFor(nextTexts, cmd), selectionPlanFor(cmd))
+    await perform({ kind: 'slides', cmd: { type: 'insert', at: insertAt, text: buildSlideText(config, NEW_SLIDE_MARKDOWN, '') } })
   }
 
   // Same collision as `addSlide`, one step removed: pasting the same
@@ -974,18 +1043,14 @@ export function Studio() {
   async function pasteSlideAfter(index: number): Promise<void> {
     const clip = ui.clipboardSlideText()
     if (clip === null) return
-    const texts = editor.slideRanges().map((_, i) => currentSlideText(i).trim())
-    const insertAt = Math.min(index + 1, texts.length)
+    const insertAt = Math.min(index + 1, editor.slideRanges().length)
     const trimmedClip = clip.trim()
     const { config } = extractPageComment(trimmedClip)
     const baseKey = typeof config.key === 'string' && config.key !== ''
       ? config.key
       : slugifyTitle(extractHeadingText(trimmedClip) ?? '')
     const key = uniqueSlideKey(baseKey, existingSlideKeys())
-    const cmd: SlideCommand = { type: 'insert', at: insertAt, text: updatePageComment(trimmedClip, { key }) }
-    if (validate(texts, cmd)) return
-    const nextTexts = applyCommand(texts, cmd)
-    await commitChange(sourceFor(nextTexts, cmd), selectionPlanFor(cmd))
+    await perform({ kind: 'slides', cmd: { type: 'insert', at: insertAt, text: updatePageComment(trimmedClip, { key }) } })
   }
 
   async function moveSlide(index: number, direction: 1 | -1): Promise<void> {
@@ -998,8 +1063,7 @@ export function Studio() {
   // for any other slide.
   function slideConfigOf(index: number): PageConfig {
     if (index === editor.selectedIndex()) return editor.pageConfig()
-    const { rest: withoutNote } = extractNote(editor.slideRanges()[index]?.text ?? '')
-    return extractPageComment(withoutNote).config
+    return slideConfigOfText(editor.slideRanges()[index]?.text ?? '')
   }
 
   // Routed through `syncedSource` (not a direct range-slice replace) so a
@@ -1008,13 +1072,10 @@ export function Studio() {
   // (layout/draft/skip) that don't touch `section`/`time`.
   async function updateSlideConfig(index: number, updates: Partial<PageConfig>): Promise<void> {
     const slideText = currentSlideText(index)
-    const updated = updatePageComment(slideText, updates)
-    if (updated === slideText) return
-    const texts = editor.slideRanges().map((_, i) => currentSlideText(i).trim())
-    const cmd: SlideCommand = { type: 'replace', index, text: updated.trim() }
-    if (validate(texts, cmd)) return
-    const nextTexts = applyCommand(texts, cmd)
-    await commitChange(sourceFor(nextTexts, cmd), selectionPlanFor(cmd))
+    if (updatePageComment(slideText, updates) === slideText) return
+    // Recorded as a field patch, not a whole-text replace, so undoing it
+    // later keeps text typed into the slide in between.
+    await perform({ kind: 'config', index, patch: updates })
   }
 
   async function changeSlideLayout(index: number, layout: string): Promise<void> {
@@ -1059,6 +1120,7 @@ export function Studio() {
       )
       if (!discard) {
         const ranges = splitSlides(source)
+        history.clear()
         editor.setFullSource(source)
         editor.setSlideRanges(ranges)
         const i = editor.selectedIndex()
@@ -1132,6 +1194,18 @@ export function Studio() {
       }
       const tag = document.activeElement?.tagName.toLowerCase()
       if (tag === 'input' || tag === 'textarea') return
+      // Cmd+Z / Cmd+Shift+Z: inside a textarea/input (returned above) the
+      // native Edit-menu undo/redo still handles the field's text; anywhere
+      // else they undo/redo structural operations. Always `preventDefault`
+      // here, even with nothing to undo, so WebKit's own document-wide undo
+      // never runs outside a focused field and edits a textarea from
+      // behind.
+      const key = event.key.toLowerCase()
+      if (event.metaKey && key === 'z') {
+        event.preventDefault()
+        void replayHistory(event.shiftKey ? 'redo' : 'undo')
+        return
+      }
       // `slideEntries().length`, not `manifest.slideCount`/`manifest.slides.length`
       // — the latter excludes drafts, which would leave ArrowUp/ArrowDown
       // permanently unable to reach a draft placeholder (or anything past
@@ -1139,7 +1213,6 @@ export function Studio() {
       const count = slideEntries().length
       if (count === 0) return
       const current = editor.selectedIndex()
-      const key = event.key.toLowerCase()
       if (current !== null) {
         if (event.metaKey && event.shiftKey && event.key === 'ArrowUp') {
           event.preventDefault()
