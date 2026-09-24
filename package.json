@@ -10,7 +10,8 @@
     "watch": "concurrently -k -n build,uno -c blue,magenta \"vite build --watch\" \"unocss --watch\"",
     "test": "bun test",
     "test:e2e": "playwright test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "icons": "bun run scripts/render-app-icon.ts && tauri icon brand/app-icon.png -o src-tauri/icons && rm -rf src-tauri/icons/android src-tauri/icons/ios"
   },
   "dependencies": {
     "@barefootjs/client": "^0.35.7",
