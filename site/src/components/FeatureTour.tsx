@@ -22,7 +22,6 @@ export function FeatureTour() {
 
   const step = createMemo(() => findStep(stepId()))
   const slides = createMemo(() => splitSlides(collapsed()))
-  const stepIndex = createMemo(() => TOUR_STEPS.findIndex((s) => s.id === stepId()) + 1)
 
   const select = (id: string) => {
     const next = findStep(id)
@@ -132,12 +131,10 @@ export function FeatureTour() {
         </div>
 
         <div className="tour-caption" aria-live="polite">
-          <p className="tour-counter">{stepIndex()} / {TOUR_STEPS.length}</p>
-          <h3 data-step-title>{step().title}</h3>
           <p data-step-body>{step().body}</p>
           <div className="tour-nav">
-            <button type="button" className="btn btn-ghost" onClick={() => select(prevStepId(stepId()))} data-prev>← Previous</button>
-            <button type="button" className="btn btn-outline" onClick={() => select(nextStepId(stepId()))} data-next>Next →</button>
+            <button type="button" className="btn btn-ghost" aria-label="Previous" onClick={() => select(prevStepId(stepId()))} data-prev>←</button>
+            <button type="button" className="btn btn-ghost" aria-label="Next" onClick={() => select(nextStepId(stepId()))} data-next>→</button>
           </div>
         </div>
       </div>

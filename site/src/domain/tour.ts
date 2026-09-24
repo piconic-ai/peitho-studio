@@ -21,8 +21,8 @@ export interface TourStep {
 export const TOUR_STEPS: readonly TourStep[] = [
   {
     id: 'three-panes',
-    title: 'Three panes around one Markdown file',
-    body: 'Slide list, editor and live preview. The deck stays a plain Peitho Markdown file on disk — Studio adds a GUI on top, nothing else.',
+    title: 'Three panes',
+    body: 'Slides, editor, preview. Around one Markdown file.',
     highlight: 'all',
     phone: false,
     collapsed: false,
@@ -30,8 +30,8 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
   {
     id: 'slide-list',
-    title: 'Slides you can grab',
-    body: 'Thumbnails rendered by the real engine. Drag to reorder, right-click to cut, copy, paste, delete or change layout — with a structure check before a layout swap, so a mismatch is an error you can read instead of a broken slide.',
+    title: 'Slides',
+    body: 'Drag to reorder. Right-click to cut, paste, or change layout.',
     highlight: 'list',
     phone: false,
     collapsed: false,
@@ -39,8 +39,8 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
   {
     id: 'sections',
-    title: 'Sections with a time budget',
-    body: 'Mark a slide as a section start, give the section a name and minutes, collapse it out of the way. Draft and Skip flags show up as badges on the thumbnails.',
+    title: 'Sections',
+    body: 'Name it, give it minutes, collapse it. Draft and Skip show as badges.',
     highlight: 'list',
     phone: false,
     collapsed: true,
@@ -48,8 +48,8 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
   {
     id: 'editor',
-    title: 'A CodeMirror 6 editor, vim optional',
-    body: 'Slide body and speaker notes side by side. Undo and redo are unified across text edits and slide operations, and live in the Edit menu like any native app.',
+    title: 'Editor',
+    body: 'CodeMirror 6, vim optional. Undo works across text and slides.',
     highlight: 'editor',
     phone: false,
     collapsed: false,
@@ -57,8 +57,8 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
   {
     id: 'preview',
-    title: 'Preview on a PC or a phone canvas',
-    body: 'peitho-core runs in-process, so the preview is exactly what `peitho present` will show. Flip the viewport to a phone shape to check how the deck reads on a small screen.',
+    title: 'Preview',
+    body: 'Rendered by peitho-core itself. Flip it to a phone.',
     highlight: 'preview',
     phone: true,
     collapsed: false,
@@ -66,8 +66,8 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
   {
     id: 'file-watch',
-    title: 'Edit the file elsewhere, too',
-    body: 'Studio watches the deck on disk. Save from another editor or let an AI agent rewrite it — the change is merged into what you are looking at, or the deck reloads.',
+    title: 'File watch',
+    body: 'Save from any other editor. Studio merges it in.',
     highlight: 'status',
     phone: false,
     collapsed: false,
@@ -75,8 +75,8 @@ export const TOUR_STEPS: readonly TourStep[] = [
   },
   {
     id: 'present',
-    title: 'Present, or rehearse against the plan',
-    body: 'One button launches `peitho present`. Rehearsal mode times each section as you go and saves it, so the next run can be compared with the plan.',
+    title: 'Present',
+    body: 'One button runs `peitho present`. Rehearsal mode times each section.',
     highlight: 'header',
     phone: false,
     collapsed: false,

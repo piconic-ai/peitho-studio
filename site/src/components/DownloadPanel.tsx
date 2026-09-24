@@ -99,7 +99,7 @@ export function DownloadPanel() {
           ))}
         </div>
         <p className={primary().length === 0 ? 'dl-note' : 'dl-note hidden'}>
-          No build for {PLATFORM_LABEL[platform()]} in this release — every available download is listed below.
+          No {PLATFORM_LABEL[platform()]} build in this release. See the list below.
         </p>
         <p className="dl-meta">
           <span data-version>{version()}</span>
@@ -131,8 +131,8 @@ export function DownloadPanel() {
       <div className={status() === 'loading' || (status() === 'ready' && hasDownloads()) ? 'dl-fallback hidden' : 'dl-fallback'}>
         <p className="dl-note" data-fallback-note>
           {status() === 'ready'
-            ? `The latest release (${version()}) has no packaged download yet.`
-            : 'No packaged download is published yet, or the release list could not be loaded.'}
+            ? `No packaged download in ${version()} yet.`
+            : 'No packaged download yet.'}
         </p>
         <div className="dl-primary">
           <a className="btn btn-primary btn-lg" href={RELEASES_URL}>
