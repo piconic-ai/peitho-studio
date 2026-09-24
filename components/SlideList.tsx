@@ -3,7 +3,7 @@
 import { type Manifest, type ManifestSection, type SectionDraft } from '../domain/render'
 import { type DurationPart, formatDurationMs, msToMinutesSeconds } from '../domain/slides'
 import { type SlideListEntry } from '../domain/slideList'
-import { type RowVisibility, lastVisibleRow } from '../domain/sectionCollapse'
+import { type RowVisibility } from '../domain/sectionCollapse'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 import { isFocusMovingWithinSectionHeader, showCanonicalValue } from '../dom/sectionHeader'
 
@@ -65,6 +65,9 @@ export interface SlideListProps {
    * sections (`domain/sectionCollapse.ts`'s `rowVisibilities`) — a
    * section's header row is `header-only` exactly while it is collapsed. */
   rowVisibility: RowVisibility[]
+  /** The last row that shows at all (`domain/sectionCollapse.ts`'s
+   * `lastVisibleRow` over `rowVisibility`), or `null` when none do. */
+  lastVisibleRow: number | null
   /** Collapses, or expands again, the section whose header sits on row
    * `index`. */
   onToggleSectionCollapse: (index: number) => void
@@ -152,7 +155,7 @@ export function SlideList(props: SlideListProps) {
                   // The gap after the whole list is marked on the last row
                   // that shows at all: the very last row may sit inside a
                   // collapsed section.
-                  + (props.draggedIndex !== null && props.dragOverGap === props.entries.length && entry.sourceIndex === lastVisibleRow(props.rowVisibility) ? 'border-b-2 border-b-primary ' : '')
+                  + (props.draggedIndex !== null && props.dragOverGap === props.entries.length && entry.sourceIndex === props.lastVisibleRow ? 'border-b-2 border-b-primary ' : '')
                   // A collapsed section's rows stay mounted and are only
                   // hidden: unmounting and remounting a row's canvas host
                   // runs into piconic-ai/barefootjs#2927/#3009 (see

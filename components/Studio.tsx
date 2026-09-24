@@ -16,7 +16,7 @@ import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isL
 import { type LayoutVerdict } from '../domain/layoutFit'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
 import { buildSlideList, manifestIndexAt, sectionStartBySourceIndex } from '../domain/slideList'
-import { collapseKeyAt, collapsedSectionContaining, collapsedSectionStarts, rowVisibilities, sectionSpans } from '../domain/sectionCollapse'
+import { collapseKeyAt, collapsedSectionContaining, collapsedSectionStarts, lastVisibleRow, rowVisibilities, sectionSpans } from '../domain/sectionCollapse'
 import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOptionsOf } from '../domain/deckVariants'
 import { racePresentOutcome } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
@@ -255,6 +255,9 @@ export function Studio() {
   const sectionRowSpans = createMemo(() => sectionSpans(Object.keys(sectionStarts()).map(Number), slideEntries().length))
   const collapsedStarts = createMemo(() => collapsedSectionStarts(slideEntries(), sectionStarts(), ui.collapsedSectionKeys()))
   const rowVisibility = createMemo(() => rowVisibilities(sectionRowSpans(), collapsedStarts(), slideEntries().length))
+  // Hoisted out of the slide list's rows so each row compares against one
+  // precomputed index instead of rescanning every row's visibility itself.
+  const lastShownRow = createMemo(() => lastVisibleRow(rowVisibility()))
   /** Collapses, or expands again, the section whose header sits on row
    * `index` (a no-op for a row that can't carry one). */
   function toggleSectionAt(index: number): void {
@@ -1272,6 +1275,7 @@ export function Studio() {
           selectedIndex={editor.selectedIndex()}
           sectionStartByIndex={sectionStarts()}
           rowVisibility={rowVisibility()}
+          lastVisibleRow={lastShownRow()}
           onToggleSectionCollapse={toggleSectionAt}
           sectionDraftOf={index => {
             const manifestIndex = manifestIndexAt(slideEntries(), index)
