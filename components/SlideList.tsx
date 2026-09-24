@@ -3,6 +3,7 @@
 import { type Manifest, type ManifestSection, type SectionDraft } from '../domain/render'
 import { type DurationPart, formatDurationMs, msToMinutesSeconds } from '../domain/slides'
 import { type SlideListEntry } from '../domain/slideList'
+import { type RowVisibility, lastVisibleRow } from '../domain/sectionCollapse'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 import { isFocusMovingWithinSectionHeader, showCanonicalValue } from '../dom/sectionHeader'
 
@@ -60,6 +61,13 @@ export interface SlideListProps {
    * Studio.tsx normalizes it with `withDurationPart`. */
   onSectionTimeInput: (index: number, part: DurationPart, value: number) => void
   onCommitSectionEdit: (index: number) => void
+  /** How each row (by `sourceIndex`) shows under the currently collapsed
+   * sections (`domain/sectionCollapse.ts`'s `rowVisibilities`) — a
+   * section's header row is `header-only` exactly while it is collapsed. */
+  rowVisibility: RowVisibility[]
+  /** Collapses, or expands again, the section whose header sits on row
+   * `index`. */
+  onToggleSectionCollapse: (index: number) => void
 }
 
 /** This row's status badge, if any — `draft` wins over `skip` for a
@@ -141,7 +149,17 @@ export function SlideList(props: SlideListProps) {
                   // overlapping instead of visibly floating over it.
                   (props.draggedIndex === entry.sourceIndex ? 'relative z-10 opacity-60 shadow-lg rounded-md ' : '')
                   + (props.draggedIndex !== null && props.dragOverGap === entry.sourceIndex ? 'border-t-2 border-t-primary ' : '')
-                  + (props.draggedIndex !== null && entry.sourceIndex === props.entries.length - 1 && props.dragOverGap === entry.sourceIndex + 1 ? 'border-b-2 border-b-primary ' : '')
+                  // The gap after the whole list is marked on the last row
+                  // that shows at all: the very last row may sit inside a
+                  // collapsed section.
+                  + (props.draggedIndex !== null && props.dragOverGap === props.entries.length && entry.sourceIndex === lastVisibleRow(props.rowVisibility) ? 'border-b-2 border-b-primary ' : '')
+                  // A collapsed section's rows stay mounted and are only
+                  // hidden: unmounting and remounting a row's canvas host
+                  // runs into piconic-ai/barefootjs#2927/#3009 (see
+                  // CLAUDE.md). A hidden row has an all-zero bounding box,
+                  // so `dom/dragGesture.ts`'s `gapUnderCursor` never picks
+                  // it as a drop gap.
+                  + (props.rowVisibility[entry.sourceIndex] === 'hidden' ? 'hidden ' : '')
                   + 'cursor-grab'
                 }
                 // `scale` lives here instead of a `scale-95` class
@@ -154,83 +172,103 @@ export function SlideList(props: SlideListProps) {
                 style={props.draggedIndex === entry.sourceIndex ? `transform: translateY(${String(props.dragDeltaY)}px) scale(0.95)` : ''}
               >
                 {props.sectionStartByIndex[entry.sourceIndex] ? (
-                  props.editingSectionIndex === entry.sourceIndex ? (
-                    // The time is edited with two number spinners instead of
-                    // free text in peitho's `1m30s` format, so no input can
-                    // produce a time peitho rejects (see `domain/slides.ts`'s
-                    // `withDurationPart`). The header saves — and collapses
-                    // back to its plain summary below — once focus leaves
-                    // it, not on each input's own blur (see
-                    // `isFocusMovingWithinSectionHeader`).
-                    <div data-section-header="" className="flex items-center gap-1 pt-3 pb-1">
-                      <input
-                        aria-label="Section name"
-                        // Mounts focused: entering edit mode is a deliberate
-                        // click, so the name field is ready to type in
-                        // immediately rather than making that click's own
-                        // target (the collapsed summary button below) also
-                        // double as a focus target to aim for.
-                        ref={el => el.focus()}
-                        value={props.sectionDraftOf(entry.sourceIndex).name}
-                        onInput={e => props.onSectionNameInput(entry.sourceIndex, e.target.value)}
-                        onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
-                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                        className="min-w-0 flex-1 bg-transparent outline-none text-xs font-semibold text-foreground/80"
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        aria-label="Section minutes"
-                        value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes)}
-                        onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'minutes', e.target.valueAsNumber)}
-                        onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes))}
-                        onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
-                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                        className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
-                      />
-                      <span className="shrink-0 text-xs text-muted-foreground">m</span>
-                      {/* No `min`/`max` on the seconds spinner, so its arrows
-                          step past 59 and below 0 and carry into or borrow
-                          from the minutes. */}
-                      <input
-                        type="number"
-                        step="1"
-                        aria-label="Section seconds"
-                        value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds)}
-                        onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'seconds', e.target.valueAsNumber)}
-                        onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds))}
-                        onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
-                        onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                        className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
-                      />
-                      <span className="shrink-0 text-xs text-muted-foreground">s</span>
-                    </div>
-                  ) : (
-                    // Collapsed by default: the native spinner arrows
-                    // permanently sitting in an otherwise plain list read as
-                    // an unstyled form, not a slide list, so they only
-                    // appear once someone actually asks to edit this header.
+                  <div className="flex items-center gap-1">
+                    {/* Folds the section's slides away (or back) — separate
+                        from the summary button beside it, which opens the
+                        header's name/time editor instead. */}
                     <button
                       type="button"
-                      aria-label="Edit section name and time"
-                      onClick={() => props.onEditSection(entry.sourceIndex)}
-                      className="w-full flex items-center gap-1 pt-3 pb-1 text-left"
+                      aria-label={props.rowVisibility[entry.sourceIndex] === 'header-only' ? 'Expand section' : 'Collapse section'}
+                      aria-expanded={props.rowVisibility[entry.sourceIndex] === 'header-only' ? 'false' : 'true'}
+                      onClick={() => props.onToggleSectionCollapse(entry.sourceIndex)}
+                      className="shrink-0 w-4 pt-3 pb-1 text-xs text-muted-foreground hover:text-foreground"
                     >
-                      <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground/80">
-                        {props.sectionDraftOf(entry.sourceIndex).name}
-                      </span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {formatDurationMs(props.sectionDraftOf(entry.sourceIndex).timeMs)}
-                      </span>
+                      {props.rowVisibility[entry.sourceIndex] === 'header-only' ? '▸' : '▾'}
                     </button>
-                  )
+                    <div className="min-w-0 flex-1">
+                      {props.editingSectionIndex === entry.sourceIndex ? (
+                        // The time is edited with two number spinners instead of
+                        // free text in peitho's `1m30s` format, so no input can
+                        // produce a time peitho rejects (see `domain/slides.ts`'s
+                        // `withDurationPart`). The header saves — and collapses
+                        // back to its plain summary below — once focus leaves
+                        // it, not on each input's own blur (see
+                        // `isFocusMovingWithinSectionHeader`).
+                        <div data-section-header="" className="flex items-center gap-1 pt-3 pb-1">
+                          <input
+                            aria-label="Section name"
+                            // Mounts focused: entering edit mode is a deliberate
+                            // click, so the name field is ready to type in
+                            // immediately rather than making that click's own
+                            // target (the collapsed summary button below) also
+                            // double as a focus target to aim for.
+                            ref={el => el.focus()}
+                            value={props.sectionDraftOf(entry.sourceIndex).name}
+                            onInput={e => props.onSectionNameInput(entry.sourceIndex, e.target.value)}
+                            onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
+                            onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                            className="min-w-0 flex-1 bg-transparent outline-none text-xs font-semibold text-foreground/80"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            aria-label="Section minutes"
+                            value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes)}
+                            onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'minutes', e.target.valueAsNumber)}
+                            onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes))}
+                            onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
+                            onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                            className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
+                          />
+                          <span className="shrink-0 text-xs text-muted-foreground">m</span>
+                          {/* No `min`/`max` on the seconds spinner, so its arrows
+                              step past 59 and below 0 and carry into or borrow
+                              from the minutes. */}
+                          <input
+                            type="number"
+                            step="1"
+                            aria-label="Section seconds"
+                            value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds)}
+                            onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'seconds', e.target.valueAsNumber)}
+                            onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds))}
+                            onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
+                            onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                            className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
+                          />
+                          <span className="shrink-0 text-xs text-muted-foreground">s</span>
+                        </div>
+                      ) : (
+                        // Collapsed by default: the native spinner arrows
+                        // permanently sitting in an otherwise plain list read as
+                        // an unstyled form, not a slide list, so they only
+                        // appear once someone actually asks to edit this header.
+                        <button
+                          type="button"
+                          aria-label="Edit section name and time"
+                          onClick={() => props.onEditSection(entry.sourceIndex)}
+                          className="w-full flex items-center gap-1 pt-3 pb-1 text-left"
+                        >
+                          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground/80">
+                            {props.sectionDraftOf(entry.sourceIndex).name}
+                          </span>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {formatDurationMs(props.sectionDraftOf(entry.sourceIndex).timeMs)}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 ) : null}
                 <button
                   type="button"
                   title={(entry.kind === 'rendered' ? entry.slide.text.title : entry.title) || `Slide ${String(entry.sourceIndex + 1)}`}
                   onClick={() => props.onSelectSlide(entry.sourceIndex)}
-                  className="w-full flex items-start gap-2 mb-2"
+                  // `hidden` replaces the layout classes rather than joining
+                  // them: `hidden` and `flex` both set `display`, and which
+                  // one wins would come down to their order in UnoCSS's
+                  // output.
+                  className={(props.rowVisibility[entry.sourceIndex] ?? 'full') === 'full' ? 'w-full flex items-start gap-2 mb-2' : 'hidden'}
                 >
                   <span className="w-4 pt-1 text-xs text-muted-foreground shrink-0">{String(entry.sourceIndex + 1)}</span>
                   {/* A semi-transparent hover border color (e.g. `border-foreground/40`)

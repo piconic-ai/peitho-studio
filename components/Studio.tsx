@@ -16,6 +16,7 @@ import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isL
 import { type LayoutVerdict } from '../domain/layoutFit'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
 import { buildSlideList, manifestIndexAt, sectionStartBySourceIndex } from '../domain/slideList'
+import { collapseKeyAt, collapsedSectionContaining, collapsedSectionStarts, rowVisibilities, sectionSpans } from '../domain/sectionCollapse'
 import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOptionsOf } from '../domain/deckVariants'
 import { racePresentOutcome } from '../domain/eventRace'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
@@ -247,6 +248,28 @@ export function Studio() {
   // with anything other than the source that actually produced it is
   // exactly what corrupted a thumbnail's canvas permanently.
   const slideEntries = createMemo(() => buildSlideList(render.renderedSource(), render.manifest()?.slides ?? []))
+  const sectionStarts = createMemo(() => sectionStartBySourceIndex(render.manifest()?.sections ?? [], slideEntries()))
+  // The slide list's section folding (`domain/sectionCollapse.ts`): each
+  // section's rows, which of them are collapsed, and from that how every
+  // row shows.
+  const sectionRowSpans = createMemo(() => sectionSpans(Object.keys(sectionStarts()).map(Number), slideEntries().length))
+  const collapsedStarts = createMemo(() => collapsedSectionStarts(slideEntries(), sectionStarts(), ui.collapsedSectionKeys()))
+  const rowVisibility = createMemo(() => rowVisibilities(sectionRowSpans(), collapsedStarts(), slideEntries().length))
+  // A slide that becomes selected inside a collapsed section (New Slide or
+  // Paste from its header row, a delete that moves the selection there)
+  // expands that section, so the selection never lands out of sight. Only
+  // a selection change triggers this — collapsing the section the open
+  // slide sits in is a deliberate click and stays collapsed. By the time
+  // `commitChange` moves the selection, `applyRenderPayload` has already
+  // refreshed the entries this reads, so the spans match the new index.
+  createEffect(() => {
+    const selected = editor.selectedIndex()
+    untrack(() => {
+      const start = collapsedSectionContaining(sectionRowSpans(), collapsedStarts(), selected)
+      const key = start === null ? null : collapseKeyAt(slideEntries(), start)
+      if (key !== null) ui.toggleSectionCollapsed(key)
+    })
+  })
   const currentMenuItems = createMemo(() => computeMenuItems(ui.contextMenu(), {
     slideCount: slideEntries().length,
     hasClipboard: ui.clipboardSlideText() !== null,
@@ -1242,7 +1265,12 @@ export function Studio() {
           dragOverGap={ui.dragOverGap()}
           dragDeltaY={ui.dragDeltaY()}
           selectedIndex={editor.selectedIndex()}
-          sectionStartByIndex={sectionStartBySourceIndex(render.manifest()?.sections ?? [], slideEntries())}
+          sectionStartByIndex={sectionStarts()}
+          rowVisibility={rowVisibility()}
+          onToggleSectionCollapse={index => {
+            const key = collapseKeyAt(slideEntries(), index)
+            if (key !== null) ui.toggleSectionCollapsed(key)
+          }}
           sectionDraftOf={index => {
             const manifestIndex = manifestIndexAt(slideEntries(), index)
             return manifestIndex === null ? { name: '', timeMs: 0 } : render.sectionDraftOf(manifestIndex)
