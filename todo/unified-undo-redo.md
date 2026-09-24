@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: テキスト編集・構造操作を含む統一Undo/Redoスタックを実装する
 tags: [undo-redo, editor, architecture]
 ---
@@ -95,12 +95,37 @@ Undo/Redoスタックをアプリ側に持つ」方針を選択。既存タス�
   場合にredoスタックが破棄されること)。
 - 4種の`SlideCommand`それぞれの逆操作関数のspec/adversarialテスト。
 
+## 第1段階の実装内容(提案 — 人間の判断待ち)
+
+- **履歴の単位**: `domain/editorHistory.ts`の`HistoryStep`。
+  `slides`(`SlideCommand`そのまま: New Slide/Paste=insert、Delete/Cut=
+  delete、並べ替え=move)と`config`(PageCommentのフィールドパッチ:
+  レイアウト/Draft/Skip/Section切替/セクション名・時間の編集)の2種。
+  `config`を全文`replace`にしなかったのは、レイアウト変更後にその
+  スライドへ打ち込んだ本文までUndoで巻き戻ってしまうため。
+- **逆操作はUndo/Redoの実行時点の内容から計算し直す**
+  (`inverseStep(現在のスライド列, step)`)。新規スライドに打ち込んで
+  からUndo→Redoすると、打ち込んだ本文ごと戻る。
+- **Cmd+Zの振り分け(フォーカス基準)**: textarea/inputにフォーカスが
+  あるときは`Studio.tsx`の`onKeyDown`が何もせず、従来どおりネイティブの
+  Editメニュー(テキストundo)に届く。それ以外では常に
+  `preventDefault`して構造操作のUndo/Redoを実行する(履歴が空でも
+  止める — WebKitの文書全体undoがフォーカス外のtextareaを書き換えない
+  ように)。`src-tauri/src/lib.rs`のメニューは変更していない。
+- **既知の制限**: メニューバーの「編集 > 取り消す」をマウスで
+  クリックした場合はネイティブのテキストundoのみで、構造操作は戻らない。
+  `isSavingSlide`中(直前の保存が終わる前)のCmd+Zは無視する。デッキを
+  ディスクから読み直したとき(開き直し・外部変更)は履歴を捨てる。
+- **テスト**: `domain/editorHistory.test.ts`(spec/adversarial/往復の
+  property)、`state/historyStore.test.ts`、
+  `e2e/structural-undo-redo.e2e.ts`(モックIPCで実際のkeydown経路)。
+
 ## 完了条件
 
 自動で確認できる項目:
-- [ ] `domain/editorHistory.ts` + 逆操作関数 + テスト
-- [ ] `Studio.tsx`への配線
-- [ ] `bun test` / `bun run typecheck` グリーン
+- [x] `domain/editorHistory.ts` + 逆操作関数 + テスト
+- [x] `Studio.tsx`への配線
+- [x] `bun test` / `bun run typecheck` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] ネイティブUndo(Edit menu)との共存方式を決定
@@ -113,3 +138,7 @@ Undo/Redoスタックをアプリ側に持つ」方針を選択。既存タス�
 - 第2段階: テキスト編集のUndo/Redoグルーピング(スペース区切り・無入力
   時間・IME確定単位など)と、構造操作との統一スタック化。vim mode調査
   (CodeMirror移行の是非)の結論待ち。第1段階完了時に別todoとして切り出す。
+- PageCommentを持たないスライドへのレイアウト変更などをUndoすると、
+  `updatePageComment`の仕様上`<!-- {} -->`が残る(peitho-coreの`PageComment`は全フィールドが`Option`なので
+  受け付けるので実害はない)。空になったPageCommentを除去するかは別途。
+- Undo/Redoの可否をUI(メニューのグレーアウト等)に出すかどうか。
