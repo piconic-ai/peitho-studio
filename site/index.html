@@ -3,106 +3,109 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Peitho Studio — a desktop editor for Peitho decks</title>
-  <meta name="description" content="A desktop editor for Peitho decks. The deck stays plain Markdown; Studio adds a slide list, an editor and a live preview. Free and open source.">
-  <meta property="og:title" content="Peitho Studio">
-  <meta property="og:description" content="A desktop editor for Peitho decks. The deck stays plain Markdown.">
+  <title>Peitho Studio</title>
+  <meta name="description" content="A desktop editor for Peitho decks. The Markdown file stays the source of truth.">
   <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Peitho Studio">
+  <meta property="og:title" content="Peitho Studio">
+  <meta property="og:description" content="A desktop editor for Peitho decks. The Markdown file stays the source of truth.">
   <meta property="og:image" content="/icon.png">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/site.css">
 </head>
 <body>
-  <header class="top">
-    <a class="brand" href="/">
-      <img src="/favicon.svg" alt="" width="28" height="28">
-      <span>Peitho Studio</span>
-    </a>
-    <nav>
-      <a href="#features">Features</a>
+  <header class="site-header">
+    <a class="brand" href="/">Peitho Studio</a>
+    <nav aria-label="Primary">
       <a href="#download">Download</a>
+      <a href="https://peitho.gosu.ke">Peitho</a>
       <a href="https://github.com/piconic-ai/peitho-studio">GitHub</a>
     </nav>
   </header>
 
-  <main>
+  <main class="page">
     <section class="hero">
-      <h1>A desktop editor for <a href="https://github.com/mizzy/peitho">Peitho</a> decks.</h1>
-      <p class="lede">Your deck stays a plain Markdown file. Studio adds the slide list, the editor and a live preview.</p>
-      <div class="hero-actions">
-        <a class="btn btn-primary btn-lg" href="#download">Download</a>
-        <a class="btn btn-outline btn-lg" href="https://github.com/piconic-ai/peitho-studio">GitHub</a>
-      </div>
-      <p class="hero-note">Free · MIT · macOS, Windows, Linux (Tauri)</p>
+      <p class="hero-lead">A desktop editor for <a href="https://peitho.gosu.ke">Peitho</a> decks.</p>
+      <p class="hero-tagline">The Markdown file stays the source of truth.</p>
     </section>
 
-    <section id="tour" class="section section-tour" aria-label="Tour">
+    <section id="tour">
+      <h2>Tour</h2>
       <div id="tour-root" class="island">
-        <noscript><p class="dl-note">The interactive tour needs JavaScript.</p></noscript>
+        <noscript><p class="dim">The interactive tour needs JavaScript.</p></noscript>
       </div>
     </section>
 
-    <section id="features" class="section">
-      <h2>Features</h2>
-      <ul class="feat">
-        <li>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8M8 17h5"/></svg>
-          <b>Plain Markdown, always</b>
-          <span>Edit the same file with any tool. Studio reloads.</span>
-        </li>
-        <li>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
-          <b>Preview by the real engine</b>
-          <span>peitho-core runs in-process. PC or phone canvas.</span>
-        </li>
-        <li>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1"/><rect x="3" y="15" width="18" height="5" rx="1"/><path d="M12 9v6M9 12l3 3 3-3"/></svg>
-          <b>Drag, cut, paste slides</b>
-          <span>Reorder, relayout, flag as Draft or Skip.</span>
-        </li>
-        <li>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></svg>
-          <b>Sections with a time budget</b>
-          <span>Name, minutes, collapse. Rehearse against it.</span>
-        </li>
-        <li>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M9 13h6M8 17h8"/></svg>
-          <b>CodeMirror 6, vim optional</b>
-          <span>Speaker notes. Undo and redo in the Edit menu.</span>
-        </li>
-        <li>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
-          <b>Variants and languages</b>
-          <span>Switch deck variants. UI in English and Japanese.</span>
-        </li>
+    <section id="features">
+      <h2>Pillars</h2>
+      <ul class="rows" role="list">
+        <li class="row"><div class="row-link">
+          <span class="row-title">Markdown in, Markdown out</span>
+          <span class="row-meta">No project file, no export step. Edit the same deck from any other editor; Studio watches it and merges the change.</span>
+        </div></li>
+        <li class="row"><div class="row-link">
+          <span class="row-title">Preview by peitho-core itself</span>
+          <span class="row-meta">The engine runs in-process, so thumbnails and preview match <code>peitho present</code>. Flip the canvas to a phone.</span>
+        </div></li>
+        <li class="row"><div class="row-link">
+          <span class="row-title">Slides you can grab</span>
+          <span class="row-meta">Drag to reorder. Cut, paste, change layout, mark as Draft or Skip. Layout mismatches are errors, not broken slides.</span>
+        </div></li>
+        <li class="row"><div class="row-link">
+          <span class="row-title">Sections with a time budget</span>
+          <span class="row-meta">Name, minutes, collapse. Rehearsal mode times each section against the plan.</span>
+        </div></li>
+        <li class="row"><div class="row-link">
+          <span class="row-title">An editor for the keyboard</span>
+          <span class="row-meta">CodeMirror 6 with an optional vim mode. Undo and redo span text and slide operations.</span>
+        </div></li>
       </ul>
     </section>
 
-    <section id="download" class="section">
+    <section id="download">
       <h2>Download</h2>
       <div id="download-root" class="island">
         <!-- Replaced by the DownloadPanel island; kept as the no-JS fallback. -->
-        <div class="dl-primary">
-          <a class="btn btn-primary btn-lg" href="https://github.com/piconic-ai/peitho-studio/releases/latest">
-            <span>Latest release on GitHub</span>
-            <small>github.com/piconic-ai/peitho-studio</small>
-          </a>
-        </div>
+        <ul class="rows" role="list">
+          <li class="row"><a class="row-link" href="https://github.com/piconic-ai/peitho-studio/releases/latest">
+            <span class="row-title">Latest release</span>
+            <span class="row-meta">github.com/piconic-ai/peitho-studio/releases</span>
+          </a></li>
+        </ul>
       </div>
-      <p class="dl-note">The Present button needs the <a href="https://github.com/mizzy/peitho"><code>peitho</code> CLI</a>. Editing and preview don't.</p>
+      <p class="dim">The Present button runs the <code>peitho</code> CLI:</p>
+      <pre><code>brew install mizzy/tap/peitho</code></pre>
       <details id="build" class="build">
         <summary>Build from source</summary>
-        <p class="dl-note"><a href="https://bun.sh">Bun</a>, Rust, and the <a href="https://tauri.app/start/prerequisites/">Tauri v2 prerequisites</a>.</p>
-<pre><code>git clone https://github.com/piconic-ai/peitho-studio
+        <pre><code>git clone https://github.com/piconic-ai/peitho-studio
 cd peitho-studio
 bun install
-bunx tauri build   # installers in src-tauri/target/release/bundle/</code></pre>
+bunx tauri build</code></pre>
+        <p class="dim">Needs Bun, Rust and the <a href="https://tauri.app/start/prerequisites/">Tauri v2 prerequisites</a>.</p>
       </details>
+    </section>
+
+    <section id="start">
+      <h2>Start</h2>
+      <ul class="rows" role="list">
+        <li class="row"><a class="row-link" href="https://peitho.gosu.ke/guide/">
+          <span class="row-title">Read the Peitho guide</span>
+          <span class="row-meta">Writing decks, layouts, frontmatter, the CLI.</span>
+        </a></li>
+        <li class="row"><a class="row-link" href="https://peitho.gosu.ke/examples/">
+          <span class="row-title">Browse Peitho examples</span>
+          <span class="row-meta">Open any of them in Studio.</span>
+        </a></li>
+        <li class="row"><a class="row-link" href="https://github.com/piconic-ai/peitho-studio">
+          <span class="row-title">View source</span>
+          <span class="row-meta">MIT licensed. Built with Tauri and BarefootJS.</span>
+        </a></li>
+      </ul>
     </section>
   </main>
 
-  <footer class="foot">
-    <p><a href="https://github.com/piconic-ai/peitho-studio/blob/main/LICENSE">MIT</a> · <a href="https://github.com/piconic-ai/peitho-studio/issues">Issues</a> · <a href="https://github.com/piconic-ai/peitho-studio/releases">Releases</a> · Peitho by <a href="https://github.com/mizzy/peitho">mizzy</a> · Built with <a href="https://tauri.app">Tauri</a> and <a href="https://barefootjs.dev">BarefootJS</a></p>
+  <footer class="site-footer">
+    <a href="https://github.com/piconic-ai/peitho-studio">github.com/piconic-ai/peitho-studio</a>
   </footer>
 
   <script type="module" src="/src/main.ts"></script>

@@ -8,7 +8,10 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 
 - One static `index.html`, styled by `public/site.css`. It reads fully
   without JavaScript (features, links, build instructions, a plain link to
-  the latest release).
+  the latest release). The look follows the Peitho site
+  ([peitho.gosu.ke](https://peitho.gosu.ke), source in `mizzy/peitho`'s
+  `site/`): black on white, a serif face, one 800px column, a rule above
+  each section heading, and title-plus-one-line rows.
 - Two [BarefootJS](https://barefootjs.dev) islands (CSR adapter, compiled by
   `@barefootjs/vite`), mounted from `src/main.ts` into placeholders in the
   HTML:
