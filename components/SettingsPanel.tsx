@@ -24,7 +24,8 @@ export interface SettingsPanelProps {
   onClose: () => void
   /** A language picked in the language picker, to be saved. */
   onChangeLanguage: (language: Language) => void
-  onVimModeChange: (on: boolean) => void
+  /** A vim mode switch, to be saved; resolves to whether it was saved. */
+  onVimModeChange: (on: boolean) => Promise<boolean>
 }
 
 export function SettingsPanel(props: SettingsPanelProps) {
@@ -84,7 +85,13 @@ export function SettingsPanel(props: SettingsPanelProps) {
               type="checkbox"
               data-setting="vim-mode"
               checked={props.vimMode}
-              onChange={e => props.onVimModeChange((e.target as HTMLInputElement).checked)}
+              // `checked` writes to the DOM only when `props.vimMode` changes,
+              // and a failed save leaves it as it was, so put the box back
+              // by hand (CLAUDE.md, BarefootJS pitfalls: input bindings).
+              onChange={e => {
+                const box = e.target as HTMLInputElement
+                void props.onVimModeChange(box.checked).then(saved => { if (!saved) box.checked = props.vimMode })
+              }}
               className="mt-0.5"
             />
             <span>

@@ -1250,11 +1250,13 @@ export function Studio() {
   // Every window, this one included, also hears the saved result through
   // `settings:changed`; applying the answer here too keeps this window
   // right even if that broadcast is missed.
-  async function changeVimMode(on: boolean): Promise<void> {
+  async function changeVimMode(on: boolean): Promise<boolean> {
     try {
       settings.applyChanged(await settingsIpc.updateSettings({ vimMode: on }))
+      return true
     } catch (err) {
       setErrorMessage(settings.messages().vimModeSaveFailed(String(err)))
+      return false
     }
   }
 
@@ -1643,7 +1645,7 @@ export function Studio() {
         vimMode={settings.settings().vimMode}
         onClose={closeSettings}
         onChangeLanguage={language => void changeLanguage(language)}
-        onVimModeChange={on => { void changeVimMode(on) }}
+        onVimModeChange={changeVimMode}
       />
     </div>
   )
