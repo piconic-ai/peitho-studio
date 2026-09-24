@@ -19,6 +19,10 @@ bunx tauri dev
 bunx tauri build
 ```
 
+## Site
+
+The landing page (features, download links picked from the latest GitHub Release) lives in [`site/`](site/) as its own Bun project, deployed to Cloudflare Workers as static assets. See [site/README.md](site/README.md).
+
 ## License
 
 The source code is licensed under the [MIT License](LICENSE) — fork it, build it, ship it. The "Peitho Studio" name and app icon are not covered by that grant and remain reserved as trademarks/branding of this project.
