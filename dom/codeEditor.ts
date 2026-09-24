@@ -59,7 +59,21 @@ function placeholderExtension(text: string): Extension {
   return text === '' ? [] : placeholderText(text)
 }
 
+// One theme per font, made once: every `EditorView.theme()` call mounts a
+// new style module that is never removed, and `resetCodeEditorText`
+// rebuilds the extensions on each slide switch.
+const themes = new Map<boolean, Extension>()
+
 function editorTheme(monospace: boolean): Extension {
+  let theme = themes.get(monospace)
+  if (theme === undefined) {
+    theme = createEditorTheme(monospace)
+    themes.set(monospace, theme)
+  }
+  return theme
+}
+
+function createEditorTheme(monospace: boolean): Extension {
   return EditorView.theme({
     '&': { height: '100%', fontSize: '0.875rem' },
     '&.cm-focused': { outline: 'none' },
