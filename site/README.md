@@ -53,13 +53,25 @@ PORT=3013 bun run start &
 bun site/scripts/capture-hero.ts   # CHROME_PATH=/path/to/chrome if Chrome isn't installed
 ```
 
-## Icon (provisional)
+## Brand
 
-`public/icon-256.png`, `apple-touch-icon.png`, `favicon-32.png`,
-`favicon-16.png` and the share image `og.png` (1200×630) were cut from a
-provisional 286px PNG of the icon. Replace them once the final artwork
-exists — ideally from an SVG or a 1024px source, so the hero icon stays sharp
-on high-density screens.
+The logo and icons are the app's own, from [`brand/`](../brand/README.md)
+(generated at the repository root by `bun run icons`):
+
+- `index.html` references `../brand/logo-wordmark.svg` (nav),
+  `../brand/app-icon.svg` (hero), `../brand/app-icon-small.svg` (favicon) and
+  `../src-tauri/icons/32x32.png` (PNG favicon) directly; Vite copies them
+  into the build with hashed names, so a brand change reaches the site on
+  the next build.
+- Headings use Charis SIL, the wordmark's face (`@fontsource/charis-sil`,
+  pinned to the same version as the app, SIL Open Font License).
+- The rasters that can't be SVG — `public/apple-touch-icon.png`,
+  `public/og.png` and `public/favicon-32.png` (for `404.html`) — are
+  rendered from `brand/` by a script; rerun it after a brand change:
+
+```sh
+bun site/scripts/build-brand-assets.ts   # from the repository root
+```
 
 ## Before going live
 
