@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: スライドを切り替えてもCodeMirrorの状態(テキストの履歴)を捨てず、スライドごとに保持する
 tags: [undo-redo, editor, codemirror]
 ---
@@ -94,7 +94,9 @@ CodeMirrorの状態を作り直し、テキストの履歴を捨てている。�
 - [x] `bun test` / `bun run typecheck` / `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機確認: スライドを行き来してからのCmd+Zとvimの`u`、日本語入力
+- [x] 実機確認: スライドを行き来してからのCmd+Zとvimの`u`、日本語入力
+
+実機確認の結果(2026-09-25、ユーザー): スライドを行き来してからのCmd+Zとvimの`u`、日本語入力は、いずれも問題なし(#88の実機確認と合わせて確認)。
 
 ## 先送り事項
 
