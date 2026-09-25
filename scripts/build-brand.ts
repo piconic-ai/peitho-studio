@@ -30,7 +30,7 @@ function write(path: string, data: string | Uint8Array): void {
 
 // ── Vector assets ────────────────────────────────────────────────────
 
-/** A viewBox around the mark's ink, padded (more when a rim is drawn). */
+/** A viewBox around the mark's silhouette, padded. */
 function markViewBox(pad: number): { x: number; y: number; w: number; h: number } {
   return { x: MARK_BOUNDS.x - pad, y: MARK_BOUNDS.y - pad, w: MARK_BOUNDS.width + 2 * pad, h: MARK_BOUNDS.height + 2 * pad }
 }
@@ -42,7 +42,7 @@ function markDocument(body: string, pad: number): string {
 }
 
 /** "Peitho Studio" set in Charis SIL (OFL), converted to one path so the file needs no font. */
-function wordmarkDocument(ink: string, rim: string | null): string {
+function wordmarkDocument(ink: string, mark: string): string {
   const font = opentype.loadSync(out('node_modules/@fontsource/charis-sil/files/charis-sil-latin-400-normal.woff'))
   const size = 100
   const tracking = -0.03 * size // the letter-spacing Peitho's own wordmark uses
@@ -58,7 +58,7 @@ function wordmarkDocument(ink: string, rim: string | null): string {
   const textWidth = x - tracking
   const capHeight = font.tables.os2.sCapHeight * unit
 
-  const pad = rim ? 4 : 1
+  const pad = 1
   const v = markViewBox(pad)
   const markHeight = capHeight * 2.4
   const markScale = markHeight / v.h
@@ -69,7 +69,7 @@ function wordmarkDocument(ink: string, rim: string | null): string {
   const baseline = margin + markHeight / 2 + capHeight / 2
   const width = margin + markWidth + gap + textWidth + margin
   const body =
-    `<g transform="translate(${(margin - v.x * markScale).toFixed(2)} ${(margin - v.y * markScale).toFixed(2)}) scale(${markScale.toFixed(4)})">${markBody({ rim })}</g>` +
+    `<g transform="translate(${(margin - v.x * markScale).toFixed(2)} ${(margin - v.y * markScale).toFixed(2)}) scale(${markScale.toFixed(4)})">${mark}</g>` +
     `<path transform="translate(${(margin + markWidth + gap).toFixed(2)} ${baseline.toFixed(2)})" fill="${ink}" d="${parts.join('')}"/>`
   return svgDocument(Math.ceil(width), Math.ceil(height), body)
 }
@@ -85,11 +85,12 @@ async function rasterize(page: Page, svg: string, size: number): Promise<Uint8Ar
 }
 
 async function main(): Promise<void> {
-  write('brand/logo-mark.svg', markDocument(markBody(), 1))
-  write('brand/logo-mark-mono.svg', markDocument(markBody({ blush: null }), 1))
-  write('brand/logo-mark-inverse.svg', markDocument(markBody({ rim: PAPER }), 5))
-  write('brand/logo-wordmark.svg', wordmarkDocument(INK, null))
-  write('brand/logo-wordmark-inverse.svg', wordmarkDocument(PAPER, PAPER))
+  const onLight = markBody()
+  const onDark = markBody({ figure: PAPER, line: INK })
+  write('brand/logo-mark.svg', markDocument(onLight, 1))
+  write('brand/logo-mark-inverse.svg', markDocument(onDark, 1))
+  write('brand/logo-wordmark.svg', wordmarkDocument(INK, onLight))
+  write('brand/logo-wordmark-inverse.svg', wordmarkDocument(PAPER, onDark))
   write('brand/app-icon.svg', appIconSvg())
   write('brand/app-icon-small.svg', appIconSvg({ small: true }))
   write('public/favicon.svg', appIconSvg({ small: true, shadow: false, tile: 'full' }))

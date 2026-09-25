@@ -1,95 +1,65 @@
 // The Peitho Studio mark, as pure functions returning SVG markup.
 //
-// The goddess Peitho, drawn front-on in a Japanese kawaii register: the
-// krobylos (the knot Greek statues tie at the back of the head) moves up to
-// become an odango bun, and its spiral is the same two-semicircle volute
-// the earlier mark used — Peitho's ball of twine. A stephane (the diadem
-// she wears in vase painting) sits across the hair as a tiara, the eyes
-// are closed in a smile, and the only colour outside ink and paper is the
-// sakura blush on her cheeks.
+// Peitho, the Greek goddess of persuasion the engine is named after, in
+// profile the way Greek vases and coins show her: hair tied back into a
+// krobylos at the nape, a fillet (stephane) across the crown. The kawaii
+// part is in the proportions and the face — a big round head, a short neck,
+// an eye closed in a smile, three manga blush strokes — and nowhere else.
+// No colour: ink and paper only, the same two peitho.gosu.ke uses. The
+// spiral in the krobylos is her ball of twine, drawn as semicircles on one
+// axis like an Ionic volute.
 //
-// Everything is drawn in a 100-unit box. Two cuts exist, the way a type
-// family has optical sizes: `markBody` for 64 px and up, `markSmallBody`
-// for 48 px and below, where the spiral, tiara gem and mouth would turn to
-// noise and the eyes need to be solid to survive.
+// Everything is drawn in a 100-unit box as one silhouette plus a handful
+// of lines. Two cuts exist, the way a type family has optical sizes:
+// `markBody` for 64 px and up, `markSmallBody` for 48 px and below, where
+// the spiral and blush strokes would turn to noise and the lines need to
+// be heavier to survive.
 
 export const INK = '#111111'
 export const PAPER = '#ffffff'
-export const BLUSH = '#F4A6B8'
-export const TILE_TOP = '#FDF0F3'
-export const TILE_BOTTOM = '#F8D9E1'
 
 /** Sizes at or below this use the small cut. */
 export const SMALL_CUT_MAX_PX = 48
 
-const HAIR_BACK =
-  'M50 22C29 22 18.5 37 18.5 56C18.5 64 20.5 71 23.5 76.5C24.5 78.3 26.8 78.6 28 77C29.5 75 30 72 30 69L70 69C70 72 70.5 75 72 77C73.2 78.6 75.5 78.3 76.5 76.5C79.5 71 81.5 64 81.5 56C81.5 37 71 22 50 22Z'
-const BUN = { cx: 50, cy: 17, r: 10 }
-const FACE =
-  'M50 42C35 42 27.5 52 27.5 62.5C27.5 73.5 37 81.5 50 81.5C63 81.5 72.5 73.5 72.5 62.5C72.5 52 65 42 50 42Z'
-const BANGS =
-  'M26.8 62C26.8 46.5 37 35.5 50 35.5C63 35.5 73.2 46.5 73.2 62C67.5 57 61.5 51.5 56.8 45.5C55.3 50 52.9 53.2 50 54.8C47.1 53.2 44.7 50 43.2 45.5C38.5 51.5 32.5 57 26.8 62Z'
-const SPIRAL = 'M51.6 17a1.6 1.6 0 1 0-3.2 0a3.4 3.4 0 1 0 6.8 0a5.2 5.2 0 1 0-10.4 0'
-const TIARA = 'M33.8 32.6C43 27.4 57 27.4 66.2 32.6'
-const EYES = 'M38.8 64.6q3.4-3.8 6.8 0M54.4 64.6q3.4-3.8 6.8 0'
-const MOUTH = 'M47.9 72.3q2.1 1.9 4.2 0'
-
-/** An ellipse as path data (two arcs), for renderers — or JSX typings — without `<ellipse>`. */
-export function ellipsePath(cx: number, cy: number, rx: number, ry: number): string {
-  if (!(rx > 0) || !(ry > 0)) throw new RangeError(`ellipsePath: radii must be > 0, got ${rx}, ${ry}`)
-  return `M${round2(cx - rx)} ${round2(cy)}a${round2(rx)} ${round2(ry)} 0 1 0 ${round2(2 * rx)} 0a${round2(rx)} ${round2(ry)} 0 1 0 ${round2(-2 * rx)} 0Z`
-}
-const BLUSH_CHEEKS = ellipsePath(36.3, 70.6, 4.2, 2.5) + ellipsePath(63.7, 70.6, 4.2, 2.5)
-const SMALL_EYES = ellipsePath(42.2, 64, 3.3, 4) + ellipsePath(57.8, 64, 3.3, 4)
-const SMALL_BLUSH_CHEEKS = ellipsePath(35.6, 71, 5.2, 3.2) + ellipsePath(64.4, 71, 5.2, 3.2)
+const HEAD =
+  'M60 85L60 71C64 70.5 68.5 68 70 64.5C71.3 61.5 72.5 59 74.5 56.5C76 54.8 77 53.3 76.9 52C76.7 50 74.6 46 73.6 42C72.5 36 71 30 66 25C60 19 52 17 46 17.5C35 18.5 26 26 24 36C18 36 12 42 12.5 50C13 58 20 62 26 60C28 66 33 70 40 72C41 76 41 81 40 85C46 87.5 54 87.5 60 85Z'
+const HAIRLINE = 'M64 24C58 29 55 37 54.5 45C54 53 50.5 61 44 67.5'
+const FILLET = 'M29.5 28C40 19.5 54 17.5 62 22'
+const EYE = 'M61 47q3-3 6 0'
+const SPIRAL = 'M21.6 49a1.6 1.6 0 1 0-3.2 0a3.4 3.4 0 1 0 6.8 0a5.2 5.2 0 1 0-10.4 0'
+const CHEEK = 'M62.6 57.4l1.8-3M65.6 57.4l1.8-3M68.6 57.4l1.8-3'
 
 /**
  * The path data, exported so a test can check that components/WelcomeScreen.tsx
  * (which has to inline the mark as JSX) hasn't drifted from it.
  */
-export const MARK_PATHS = { HAIR_BACK, FACE, BANGS, SPIRAL, TIARA, EYES, BLUSH_CHEEKS, MOUTH } as const
+export const MARK_PATHS = { HEAD, HAIRLINE, FILLET, EYE, SPIRAL, CHEEK } as const
 
-/** The mark's inked extent inside its 100-unit box (without a rim). */
-export const MARK_BOUNDS = { x: 18.5, y: 7, width: 63, height: 74.5 } as const
+/** The silhouette's extent inside its 100-unit box; every line sits inside it. */
+export const MARK_BOUNDS = { x: 12.5, y: 17, width: 64.5, height: 70.5 } as const
 
 export interface MarkOptions {
-  /** Cheek colour, or null for the single-colour version. */
-  blush?: string | null
-  /** Draws a keyline of this colour around the silhouette, for dark grounds. */
-  rim?: string | null
+  /** The silhouette's colour. Ink for light grounds, paper for dark ones. */
+  figure?: string
+  /** The colour the lines are drawn in — the ground's colour, so they read as cut out. */
+  line?: string
+  /** The manga blush strokes. Full cut only. */
+  cheek?: boolean
 }
 
-function silhouette(fill: string, strokeWidth: number): string {
-  return `<g fill="${fill}" stroke="${fill}" stroke-width="${strokeWidth}" stroke-linejoin="round"><circle cx="${BUN.cx}" cy="${BUN.cy}" r="${BUN.r}"/><path d="${HAIR_BACK}"/><path d="${FACE}"/></g>`
-}
-
-function head(): string {
-  return `<circle cx="${BUN.cx}" cy="${BUN.cy}" r="${BUN.r}" fill="${INK}"/><path d="${HAIR_BACK}" fill="${INK}"/><path d="${FACE}" fill="${PAPER}"/><path d="${BANGS}" fill="${INK}"/>`
+function lines(line: string, strokeWidth: number, extra: string): string {
+  return `<g fill="none" stroke="${line}" stroke-width="${strokeWidth}" stroke-linecap="round"><path d="${HAIRLINE}"/><path d="${FILLET}"/><path d="${EYE}" stroke-width="${round2(strokeWidth * 1.1)}"/>${extra}</g>`
 }
 
 /** Full-detail cut, for 64 px and up. */
-export function markBody({ blush = BLUSH, rim = null }: MarkOptions = {}): string {
-  return [
-    rim ? silhouette(rim, 7) : '',
-    head(),
-    `<path d="${SPIRAL}" fill="none" stroke="${PAPER}" stroke-width="1.6" stroke-linecap="round"/>`,
-    `<path d="${TIARA}" fill="none" stroke="${PAPER}" stroke-width="1.8" stroke-linecap="round"/>`,
-    `<circle cx="50" cy="28.9" r="1.9" fill="${PAPER}"/>`,
-    `<path d="${EYES}" fill="none" stroke="${INK}" stroke-width="2.3" stroke-linecap="round"/>`,
-    blush ? `<path d="${BLUSH_CHEEKS}" fill="${blush}"/>` : '',
-    `<path d="${MOUTH}" fill="none" stroke="${INK}" stroke-width="1.9" stroke-linecap="round"/>`,
-  ].join('')
+export function markBody({ figure = INK, line = PAPER, cheek = true }: MarkOptions = {}): string {
+  const extra = `<path d="${SPIRAL}" stroke-width="1.7"/>` + (cheek ? `<path d="${CHEEK}" stroke-width="1.4"/>` : '')
+  return `<path d="${HEAD}" fill="${figure}"/>${lines(line, 2, extra)}`
 }
 
-/** Small cut, for 48 px and below: solid eyes, a heavier tiara, bigger blush. */
-export function markSmallBody({ blush = BLUSH, rim = null }: MarkOptions = {}): string {
-  return [
-    rim ? silhouette(rim, 8) : '',
-    head(),
-    `<path d="${TIARA}" fill="none" stroke="${PAPER}" stroke-width="3.4" stroke-linecap="round"/>`,
-    `<path d="${SMALL_EYES}" fill="${INK}"/>`,
-    blush ? `<path d="${SMALL_BLUSH_CHEEKS}" fill="${blush}"/>` : '',
-  ].join('')
+/** Small cut, for 48 px and below: no spiral or blush, heavier lines. */
+export function markSmallBody({ figure = INK, line = PAPER }: Omit<MarkOptions, 'cheek'> = {}): string {
+  return `<path d="${HEAD}" fill="${figure}"/>${lines(line, 3.6, '')}`
 }
 
 /**
@@ -127,21 +97,23 @@ export interface AppIconOptions {
   tile?: 'macos' | 'full'
 }
 
-/** The app icon on a 1024×1024 canvas. */
+/** The app icon on a 1024×1024 canvas: a paper-white Peitho on an ink tile. */
 export function appIconSvg({ small = false, shadow = true, tile = 'macos' }: AppIconOptions = {}): string {
   const half = tile === 'macos' ? 412 : 512
-  const scale = (small ? 7.6 : 6.9) * (half / 412)
-  const offset = 512 - 50 * scale
-  const lift = (small ? 6 : 14) * (half / 412)
+  // The silhouette fills about 62% of the tile's height (a little more in the small cut).
+  const scale = ((small ? 0.68 : 0.62) * 2 * half) / MARK_BOUNDS.height
+  const cx = MARK_BOUNDS.x + MARK_BOUNDS.width / 2
+  const cy = MARK_BOUNDS.y + MARK_BOUNDS.height / 2
   const filter = shadow
-    ? '<filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.22"/></filter>'
+    ? '<defs><filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.28"/></filter></defs>'
     : ''
+  const colours = { figure: PAPER, line: INK }
   return svgDocument(
     1024,
     1024,
-    `<defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${TILE_TOP}"/><stop offset="1" stop-color="${TILE_BOTTOM}"/></linearGradient>${filter}</defs>` +
-      `<path d="${squirclePath(512, 512, half)}" fill="url(#tile)"${shadow ? ' filter="url(#shadow)"' : ''}/>` +
-      `<g transform="translate(${round2(offset)} ${round2(offset + lift)}) scale(${round2(scale)})">${small ? markSmallBody() : markBody()}</g>`,
+    filter +
+      `<path d="${squirclePath(512, 512, half)}" fill="${INK}"${shadow ? ' filter="url(#shadow)"' : ''}/>` +
+      `<g transform="translate(${round2(512 - cx * scale)} ${round2(512 - cy * scale)}) scale(${round2(scale)})">${small ? markSmallBody(colours) : markBody(colours)}</g>`,
   )
 }
 

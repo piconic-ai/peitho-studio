@@ -32,17 +32,15 @@ export function WelcomeScreen(props: WelcomeScreenProps) {
             so it's inlined here; scripts/brand/mark.test.ts fails if these
             paths drift from the source. Decorative: the heading right after
             it already names the app. */}
-        <svg aria-hidden="true" viewBox="17.5 6 65 76.5" className="block w-16 h-16">
-          <circle cx="50" cy="17" r="10" fill="#111111" />
-          <path fill="#111111" d="M50 22C29 22 18.5 37 18.5 56C18.5 64 20.5 71 23.5 76.5C24.5 78.3 26.8 78.6 28 77C29.5 75 30 72 30 69L70 69C70 72 70.5 75 72 77C73.2 78.6 75.5 78.3 76.5 76.5C79.5 71 81.5 64 81.5 56C81.5 37 71 22 50 22Z" />
-          <path fill="#ffffff" d="M50 42C35 42 27.5 52 27.5 62.5C27.5 73.5 37 81.5 50 81.5C63 81.5 72.5 73.5 72.5 62.5C72.5 52 65 42 50 42Z" />
-          <path fill="#111111" d="M26.8 62C26.8 46.5 37 35.5 50 35.5C63 35.5 73.2 46.5 73.2 62C67.5 57 61.5 51.5 56.8 45.5C55.3 50 52.9 53.2 50 54.8C47.1 53.2 44.7 50 43.2 45.5C38.5 51.5 32.5 57 26.8 62Z" />
-          <path fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" d="M51.6 17a1.6 1.6 0 1 0-3.2 0a3.4 3.4 0 1 0 6.8 0a5.2 5.2 0 1 0-10.4 0" />
-          <path fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" d="M33.8 32.6C43 27.4 57 27.4 66.2 32.6" />
-          <circle cx="50" cy="28.9" r="1.9" fill="#ffffff" />
-          <path fill="none" stroke="#111111" stroke-width="2.3" stroke-linecap="round" d="M38.8 64.6q3.4-3.8 6.8 0M54.4 64.6q3.4-3.8 6.8 0" />
-          <path fill="#F4A6B8" d="M32.1 70.6a4.2 2.5 0 1 0 8.4 0a4.2 2.5 0 1 0 -8.4 0ZM59.5 70.6a4.2 2.5 0 1 0 8.4 0a4.2 2.5 0 1 0 -8.4 0Z" />
-          <path fill="none" stroke="#111111" stroke-width="1.9" stroke-linecap="round" d="M47.9 72.3q2.1 1.9 4.2 0" />
+        <svg aria-hidden="true" viewBox="11.5 16 66.5 72.5" className="block w-16 h-16">
+          <path fill="#111111" d="M60 85L60 71C64 70.5 68.5 68 70 64.5C71.3 61.5 72.5 59 74.5 56.5C76 54.8 77 53.3 76.9 52C76.7 50 74.6 46 73.6 42C72.5 36 71 30 66 25C60 19 52 17 46 17.5C35 18.5 26 26 24 36C18 36 12 42 12.5 50C13 58 20 62 26 60C28 66 33 70 40 72C41 76 41 81 40 85C46 87.5 54 87.5 60 85Z" />
+          <g fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round">
+            <path d="M64 24C58 29 55 37 54.5 45C54 53 50.5 61 44 67.5" />
+            <path d="M29.5 28C40 19.5 54 17.5 62 22" />
+            <path stroke-width="2.2" d="M61 47q3-3 6 0" />
+            <path stroke-width="1.7" d="M21.6 49a1.6 1.6 0 1 0-3.2 0a3.4 3.4 0 1 0 6.8 0a5.2 5.2 0 1 0-10.4 0" />
+            <path stroke-width="1.4" d="M62.6 57.4l1.8-3M65.6 57.4l1.8-3M68.6 57.4l1.8-3" />
+          </g>
         </svg>
         <h1 className="text-lg font-semibold">Peitho Studio</h1>
         <div className="flex items-center gap-2">

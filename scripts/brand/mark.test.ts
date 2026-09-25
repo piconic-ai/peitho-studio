@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { appIconSvg, BLUSH, ellipsePath, MARK_PATHS, markBody, markSmallBody, squirclePath, svgDocument } from './mark'
+import { appIconSvg, INK, MARK_PATHS, markBody, markSmallBody, PAPER, squirclePath, svgDocument } from './mark'
 
 function points(path: string): [number, number][] {
   expect(path.startsWith('M')).toBe(true)
@@ -52,53 +52,54 @@ describe('squirclePath', () => {
   })
 })
 
-describe('ellipsePath', () => {
-  test('Given a centre and radii, When drawn, Then it is two half-arcs starting at the left extreme and closing', () => {
-    expect(ellipsePath(10, 20, 4, 2)).toBe('M6 20a4 2 0 1 0 8 0a4 2 0 1 0 -8 0Z')
-  })
-
-  test.each([[0, 1], [1, 0], [-1, 1], [Number.NaN, 1]])('Given radii (%p, %p), When drawn, Then throws', (rx, ry) => {
-    expect(() => ellipsePath(0, 0, rx, ry)).toThrow(RangeError)
-  })
-})
-
 describe('markBody / markSmallBody', () => {
-  test('Given the defaults, When drawn, Then the full cut has the blush, the spiral and no rim', () => {
+  const colours = (svg: string) => new Set(svg.match(/#[0-9a-fA-F]{6}/g))
+
+  test('Given the defaults, When drawn, Then the full cut is an ink silhouette with paper lines, spiral and blush strokes', () => {
     const svg = markBody()
-    expect(svg).toContain(BLUSH)
-    expect(svg).toContain('a1.6 1.6') // spiral
-    expect(svg).not.toContain('stroke-width="7"') // rim
+    expect(svg).toContain(`<path d="${MARK_PATHS.HEAD}" fill="${INK}"/>`)
+    expect(svg).toContain(`stroke="${PAPER}"`)
+    expect(svg).toContain(MARK_PATHS.SPIRAL)
+    expect(svg).toContain(MARK_PATHS.CHEEK)
   })
 
-  test('Given blush: null, When drawn, Then neither cut uses the blush colour', () => {
-    expect(markBody({ blush: null })).not.toContain(BLUSH)
-    expect(markSmallBody({ blush: null })).not.toContain(BLUSH)
+  test('Given any options, When drawn, Then only the figure and line colours appear (the mark has no colour of its own)', () => {
+    expect(colours(markBody())).toEqual(new Set([INK, PAPER]))
+    expect(colours(markBody({ figure: '#000001', line: '#000002' }))).toEqual(new Set(['#000001', '#000002']))
+    expect(colours(markSmallBody({ figure: '#000001', line: '#000002' }))).toEqual(new Set(['#000001', '#000002']))
   })
 
-  test('Given a rim colour, When drawn, Then the rim is drawn first, behind the head', () => {
-    const svg = markBody({ rim: '#abcdef' })
-    expect(svg.indexOf('#abcdef')).toBe(svg.indexOf('<g fill="#abcdef"') + '<g fill="'.length)
-    expect(svg.indexOf('#abcdef')).toBeLessThan(svg.indexOf('#111111'))
+  test('Given cheek: false, When drawn, Then the blush strokes are left out and the rest stays', () => {
+    const svg = markBody({ cheek: false })
+    expect(svg).not.toContain(MARK_PATHS.CHEEK)
+    expect(svg).toContain(MARK_PATHS.SPIRAL)
   })
 
-  test('Given the small cut, When drawn, Then it drops the spiral and mouth that turn to noise at 16 px', () => {
+  test('Given the small cut, When drawn, Then it drops the spiral and blush that turn to noise at 16 px, and draws heavier lines', () => {
     const svg = markSmallBody()
-    expect(svg).not.toContain('a1.6 1.6')
-    expect(svg).not.toContain('q2.1 1.9') // mouth
+    expect(svg).not.toContain(MARK_PATHS.SPIRAL)
+    expect(svg).not.toContain(MARK_PATHS.CHEEK)
+    expect(svg).toContain('stroke-width="3.6"')
+    expect(svg).toContain(MARK_PATHS.EYE)
   })
 })
 
 describe('appIconSvg / svgDocument', () => {
-  test('Given the defaults, When drawn, Then it is a 1024 document with the macOS shadow', () => {
+  test('Given the defaults, When drawn, Then it is a 1024 document: ink tile, paper figure, macOS shadow', () => {
     const svg = appIconSvg()
     expect(svg).toContain('viewBox="0 0 1024 1024"')
     expect(svg).toContain('feDropShadow')
+    expect(svg).toContain(`<path d="${MARK_PATHS.HEAD}" fill="${PAPER}"/>`)
   })
 
   test('Given shadow: false and a full tile, When drawn, Then there is no filter and the tile reaches the canvas edge', () => {
     const svg = appIconSvg({ shadow: false, tile: 'full' })
     expect(svg).not.toContain('filter')
     expect(svg).toContain('M1024 512')
+  })
+
+  test('Given small: true, When drawn, Then the small cut is used', () => {
+    expect(appIconSvg({ small: true })).not.toContain(MARK_PATHS.SPIRAL)
   })
 
   test('Given a title with markup characters, When wrapped, Then they are escaped so the document stays well-formed', () => {
@@ -112,6 +113,5 @@ describe('WelcomeScreen inline mark', () => {
     for (const [name, d] of Object.entries(MARK_PATHS)) {
       expect(tsx.includes(`d="${d}"`), `WelcomeScreen.tsx is missing ${name}`).toBe(true)
     }
-    expect(tsx).toContain(BLUSH)
   })
 })
