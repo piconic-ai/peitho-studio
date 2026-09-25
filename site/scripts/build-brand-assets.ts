@@ -41,7 +41,7 @@ await shoot(`<div style="width:1200px;height:630px;display:flex;align-items:cent
   background:radial-gradient(640px 640px at 380px 315px, rgba(28,25,23,.06), rgba(28,25,23,0)), #fbfaf8;color:#1c1917">
   <img src="${appIcon}" width="300" height="300">
   <div><div style="font-family:'Charis SIL',serif;font-size:96px;letter-spacing:-.03em;line-height:1.05">Peitho Studio</div>
-  <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif;font-size:36px;color:#6b635d;margin-top:14px">Desktop app for Peitho</div></div></div>`,
+  <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif;font-size:36px;color:#6b635d;margin-top:14px">A Markdown editor powered by Peitho</div></div></div>`,
   1200, 630, 'og.png')
 
 copyFileSync(resolve(ROOT, 'src-tauri/icons/32x32.png'), resolve(OUT, 'favicon-32.png'))
