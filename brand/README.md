@@ -7,8 +7,8 @@ named after — in profile, the way Greek vases and coins show her:
   with a fillet (*stephane*) across the crown. The spiral in the knot is
   the ball of twine she holds in vase painting, drawn as semicircles on one
   axis like an Ionic volute.
-- **Kawaii, in proportion only.** A big round head, a short neck, an eye
-  closed in a smile, and three manga blush strokes on the cheek.
+- **Kawaii, in proportion only.** A big round head, a short neck and an
+  eye closed in a smile.
 - **No colour.** Ink `#111111` and paper `#ffffff`, the same two
   peitho.gosu.ke uses. The mark is one silhouette with its lines cut out in
   the ground's colour; on dark grounds the two swap.
@@ -39,8 +39,7 @@ The outlines are embedded as paths, so no font ships with the SVG.
 
 Like a type family's optical sizes, the mark has a full cut and a small
 cut (`markBody` / `markSmallBody` in `scripts/brand/mark.ts`). At 48 px and
-below the spiral and the blush strokes fall under a pixel, so the small
-cut drops them and draws the remaining lines — hairline, fillet, eye —
+below the spiral falls under a pixel, so the small cut drops it and draws the remaining lines — hairline, fillet, eye —
 nearly twice as heavy.
 
 `tauri icon` can't do this — it resizes one image into every size — so

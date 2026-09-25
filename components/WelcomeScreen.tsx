@@ -39,7 +39,6 @@ export function WelcomeScreen(props: WelcomeScreenProps) {
             <path d="M29.5 28C40 19.5 54 17.5 62 22" />
             <path stroke-width="2.2" d="M61 47q3-3 6 0" />
             <path stroke-width="1.7" d="M21.6 49a1.6 1.6 0 1 0-3.2 0a3.4 3.4 0 1 0 6.8 0a5.2 5.2 0 1 0-10.4 0" />
-            <path stroke-width="1.4" d="M62.6 57.4l1.8-3M65.6 57.4l1.8-3M68.6 57.4l1.8-3" />
           </g>
         </svg>
         <h1 className="text-lg font-semibold">Peitho Studio</h1>

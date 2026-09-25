@@ -55,12 +55,11 @@ describe('squirclePath', () => {
 describe('markBody / markSmallBody', () => {
   const colours = (svg: string) => new Set(svg.match(/#[0-9a-fA-F]{6}/g))
 
-  test('Given the defaults, When drawn, Then the full cut is an ink silhouette with paper lines, spiral and blush strokes', () => {
+  test('Given the defaults, When drawn, Then the full cut is an ink silhouette with paper lines and the spiral', () => {
     const svg = markBody()
     expect(svg).toContain(`<path d="${MARK_PATHS.HEAD}" fill="${INK}"/>`)
     expect(svg).toContain(`stroke="${PAPER}"`)
     expect(svg).toContain(MARK_PATHS.SPIRAL)
-    expect(svg).toContain(MARK_PATHS.CHEEK)
   })
 
   test('Given any options, When drawn, Then only the figure and line colours appear (the mark has no colour of its own)', () => {
@@ -69,16 +68,10 @@ describe('markBody / markSmallBody', () => {
     expect(colours(markSmallBody({ figure: '#000001', line: '#000002' }))).toEqual(new Set(['#000001', '#000002']))
   })
 
-  test('Given cheek: false, When drawn, Then the blush strokes are left out and the rest stays', () => {
-    const svg = markBody({ cheek: false })
-    expect(svg).not.toContain(MARK_PATHS.CHEEK)
-    expect(svg).toContain(MARK_PATHS.SPIRAL)
-  })
 
-  test('Given the small cut, When drawn, Then it drops the spiral and blush that turn to noise at 16 px, and draws heavier lines', () => {
+  test('Given the small cut, When drawn, Then it drops the spiral that turns to noise at 16 px, and draws heavier lines', () => {
     const svg = markSmallBody()
     expect(svg).not.toContain(MARK_PATHS.SPIRAL)
-    expect(svg).not.toContain(MARK_PATHS.CHEEK)
     expect(svg).toContain('stroke-width="3.6"')
     expect(svg).toContain(MARK_PATHS.EYE)
   })

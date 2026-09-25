@@ -4,7 +4,7 @@
 // profile the way Greek vases and coins show her: hair tied back into a
 // krobylos at the nape, a fillet (stephane) across the crown. The kawaii
 // part is in the proportions and the face — a big round head, a short neck,
-// an eye closed in a smile, three manga blush strokes — and nowhere else.
+// and an eye closed in a smile — and nowhere else.
 // No colour: ink and paper only, the same two peitho.gosu.ke uses. The
 // spiral in the krobylos is her ball of twine, drawn as semicircles on one
 // axis like an Ionic volute.
@@ -12,8 +12,8 @@
 // Everything is drawn in a 100-unit box as one silhouette plus a handful
 // of lines. Two cuts exist, the way a type family has optical sizes:
 // `markBody` for 64 px and up, `markSmallBody` for 48 px and below, where
-// the spiral and blush strokes would turn to noise and the lines need to
-// be heavier to survive.
+// the spiral would turn to noise and the lines need to be heavier to
+// survive.
 
 export const INK = '#111111'
 export const PAPER = '#ffffff'
@@ -27,13 +27,12 @@ const HAIRLINE = 'M64 24C58 29 55 37 54.5 45C54 53 50.5 61 44 67.5'
 const FILLET = 'M29.5 28C40 19.5 54 17.5 62 22'
 const EYE = 'M61 47q3-3 6 0'
 const SPIRAL = 'M21.6 49a1.6 1.6 0 1 0-3.2 0a3.4 3.4 0 1 0 6.8 0a5.2 5.2 0 1 0-10.4 0'
-const CHEEK = 'M62.6 57.4l1.8-3M65.6 57.4l1.8-3M68.6 57.4l1.8-3'
 
 /**
  * The path data, exported so a test can check that components/WelcomeScreen.tsx
  * (which has to inline the mark as JSX) hasn't drifted from it.
  */
-export const MARK_PATHS = { HEAD, HAIRLINE, FILLET, EYE, SPIRAL, CHEEK } as const
+export const MARK_PATHS = { HEAD, HAIRLINE, FILLET, EYE, SPIRAL } as const
 
 /** The silhouette's extent inside its 100-unit box; every line sits inside it. */
 export const MARK_BOUNDS = { x: 12.5, y: 17, width: 64.5, height: 70.5 } as const
@@ -43,8 +42,6 @@ export interface MarkOptions {
   figure?: string
   /** The colour the lines are drawn in — the ground's colour, so they read as cut out. */
   line?: string
-  /** The manga blush strokes. Full cut only. */
-  cheek?: boolean
 }
 
 function lines(line: string, strokeWidth: number, extra: string): string {
@@ -52,13 +49,12 @@ function lines(line: string, strokeWidth: number, extra: string): string {
 }
 
 /** Full-detail cut, for 64 px and up. */
-export function markBody({ figure = INK, line = PAPER, cheek = true }: MarkOptions = {}): string {
-  const extra = `<path d="${SPIRAL}" stroke-width="1.7"/>` + (cheek ? `<path d="${CHEEK}" stroke-width="1.4"/>` : '')
-  return `<path d="${HEAD}" fill="${figure}"/>${lines(line, 2, extra)}`
+export function markBody({ figure = INK, line = PAPER }: MarkOptions = {}): string {
+  return `<path d="${HEAD}" fill="${figure}"/>${lines(line, 2, `<path d="${SPIRAL}" stroke-width="1.7"/>`)}`
 }
 
-/** Small cut, for 48 px and below: no spiral or blush, heavier lines. */
-export function markSmallBody({ figure = INK, line = PAPER }: Omit<MarkOptions, 'cheek'> = {}): string {
+/** Small cut, for 48 px and below: no spiral, heavier lines. */
+export function markSmallBody({ figure = INK, line = PAPER }: MarkOptions = {}): string {
   return `<path d="${HEAD}" fill="${figure}"/>${lines(line, 3.6, '')}`
 }
 
