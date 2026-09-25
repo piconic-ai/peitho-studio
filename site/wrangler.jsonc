@@ -7,7 +7,13 @@
   "assets": {
     "directory": "./dist",
     "not_found_handling": "404-page"
-  }
-  // Attach the production hostname once it is decided, e.g.
-  // "routes": [{ "pattern": "studio.peitho.app", "custom_domain": true }]
+  },
+  // The production hostname. `custom_domain` makes `wrangler deploy` create
+  // the DNS record and certificate on the piconic.ai zone itself; nothing
+  // to set up in the dashboard.
+  "routes": [{ "pattern": "peitho-studio.piconic.ai", "custom_domain": true }],
+  // One host only: no `*.workers.dev` copy of the page, and no per-version
+  // preview URLs.
+  "workers_dev": false,
+  "preview_urls": false
 }
