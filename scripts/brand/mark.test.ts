@@ -56,22 +56,24 @@ describe('markBody / markSmallBody', () => {
   const colours = (svg: string) => new Set(svg.match(/#[0-9a-fA-F]{6}/g))
   const names = Object.keys(EXPRESSIONS) as Expression[]
 
-  test('Given the defaults, When drawn, Then it is an ink silhouette with the hairline, the spiral and the smiling eye cut out in paper', () => {
-    const svg = markBody()
-    expect(svg).toContain(`<path d="${MARK_PATHS.HEAD}" fill="${INK}"/>`)
-    expect(svg).toContain(MARK_PATHS.HAIRLINE)
-    expect(svg).toContain(MARK_PATHS.SPIRAL)
-    expect(svg).toContain(EXPRESSIONS.smile(PAPER, 1))
+  test('Given the defaults, When drawn, Then it is an ink silhouette with the hairline and the neutral eye cut out in paper, and nothing else', () => {
+    expect(markBody()).toBe(`<path d="${MARK_PATHS.HEAD}" fill="${INK}"/>` + `<path d="${MARK_PATHS.HAIRLINE}" fill="none" stroke="${PAPER}" stroke-width="2" stroke-linecap="round"/>` + EXPRESSIONS.neutral(PAPER, 1))
   })
 
-  test('Given the head, When drawn, Then there is no line across the crown', () => {
-    expect(markBody()).not.toContain('M29.5 28C40 19.5 54 17.5 62 22')
+  test('Given the head, When drawn, Then there is no line across the crown and no spiral in the knot', () => {
+    const svg = markBody()
+    expect(svg).not.toContain('M29.5 28C40 19.5 54 17.5 62 22')
+    expect(svg).not.toContain('a1.6 1.6')
+  })
+
+  test('Given the expression set, When listed, Then it is exactly neutral and calm', () => {
+    expect(Object.keys(EXPRESSIONS).sort()).toEqual(['calm', 'neutral'])
   })
 
   test.each(names)('Given the %s expression, When drawn, Then only the face changes', name => {
     const svg = markBody({ expression: name })
     expect(svg).toContain(EXPRESSIONS[name](PAPER, 1))
-    expect(svg.replace(EXPRESSIONS[name](PAPER, 1), '')).toBe(markBody().replace(EXPRESSIONS.smile(PAPER, 1), ''))
+    expect(svg.replace(EXPRESSIONS[name](PAPER, 1), '')).toBe(markBody().replace(EXPRESSIONS.neutral(PAPER, 1), ''))
   })
 
   test('Given every expression, When drawn, Then no two faces are the same', () => {
@@ -91,11 +93,11 @@ describe('markBody / markSmallBody', () => {
     expect(() => markSmallBody({ expression: 'toString' })).toThrow()
   })
 
-  test('Given the small cut, When drawn, Then it drops the spiral and draws the hairline and face heavier', () => {
+  test('Given the small cut, When drawn, Then the hairline and face are heavier than in the full cut', () => {
     const svg = markSmallBody()
-    expect(svg).not.toContain(MARK_PATHS.SPIRAL)
     expect(svg).toContain('stroke-width="3.6"')
-    expect(svg).toContain(EXPRESSIONS.smile(PAPER, 1.6))
+    expect(svg).toContain(EXPRESSIONS.neutral(PAPER, 1.6))
+    expect(EXPRESSIONS.neutral(PAPER, 1.6)).not.toBe(EXPRESSIONS.neutral(PAPER, 1))
   })
 })
 
@@ -114,8 +116,8 @@ describe('appIconSvg / svgDocument', () => {
   })
 
   test('Given small: true, When drawn, Then the small cut is used', () => {
-    expect(appIconSvg({ small: true })).not.toContain(MARK_PATHS.SPIRAL)
-    expect(appIconSvg()).toContain(MARK_PATHS.SPIRAL)
+    expect(appIconSvg({ small: true })).toContain('stroke-width="3.6"')
+    expect(appIconSvg()).not.toContain('stroke-width="3.6"')
   })
 
   test('Given a title with markup characters, When wrapped, Then they are escaped so the document stays well-formed', () => {
