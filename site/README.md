@@ -34,9 +34,10 @@ from the app (its own `package.json` and lockfile), living in `site/`.
   platform detection) and their `bun test` specs, following the app's
   `.ts` = pure / `.tsx` = stateful convention.
 - Deployed as [Cloudflare Workers static
-  assets](https://developers.cloudflare.com/workers/static-assets/): no
-  Worker script runs, `wrangler.jsonc` only points `assets.directory` at
-  `dist/`. `public/_headers` sets a strict Content-Security-Policy (scripts,
+  assets](https://developers.cloudflare.com/workers/static-assets/) at
+  [peitho-studio.piconic.ai](https://peitho-studio.piconic.ai/): no Worker
+  script runs, `wrangler.jsonc` points `assets.directory` at `dist/` and
+  names the host. `public/_headers` sets a strict Content-Security-Policy (scripts,
   styles and images from the site itself, `fetch` only to `api.github.com`)
   and long-lived caching for Vite's hashed `/assets/*`; `public/404.html` is
   served for unknown paths (`not_found_handling: "404-page"`).
@@ -77,11 +78,15 @@ The logo and icons are the app's own, from [`brand/`](../brand/README.md)
 bun site/scripts/build-brand-assets.ts   # from the repository root
 ```
 
-## Before going live
+## Hostname
 
-- Set the production hostname in `wrangler.jsonc` (`routes`), and make
-  `og:image` in `index.html` an absolute URL on that host — most link
-  previewers ignore a relative one.
+The site lives at <https://peitho-studio.piconic.ai/>. `wrangler.jsonc`
+declares it as a `custom_domain` route, so `wrangler deploy` creates the DNS
+record and certificate on the `piconic.ai` zone itself; `workers_dev` and
+`preview_urls` are off so this is the page's only host. `index.html` spells
+the host out in `<link rel="canonical">`, `og:url` and `og:image` (most link
+previewers ignore a relative `og:image`), so changing the hostname means
+updating both files.
 
 ## Commands
 
@@ -104,8 +109,8 @@ repository*), watching `main`, with the project's root set to `site/`:
 - Build command: `bun run build`
 - Deploy command: `bunx wrangler deploy`
 
-Add the production hostname to `wrangler.jsonc`'s `routes` once it is
-decided (the commented example shows the shape).
+Either way the deploy attaches `peitho-studio.piconic.ai` (see
+[Hostname](#hostname)).
 
 ## Release assets
 
