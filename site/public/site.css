@@ -11,6 +11,7 @@
   --focus: #2563eb;
   --radius: 12px;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", "Noto Sans", Helvetica, Arial, sans-serif;
+  --serif: "Charis SIL", Charter, "Bitstream Charter", Georgia, serif; /* the wordmark's face */
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   color-scheme: light;
   interpolate-size: allow-keywords; /* lets <details> animate where supported */
@@ -34,8 +35,8 @@ img { display: block; max-width: 100%; }
 /* Nav */
 .nav, .foot { width: min(1080px, 100% - 40px); margin-inline: auto; }
 .nav { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; }
-.nav-brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; text-decoration: none; }
-.nav-brand img { border-radius: 6px; }
+.nav-brand { display: inline-flex; align-items: center; }
+.nav-brand img { height: 28px; width: auto; }
 .nav-links { display: flex; gap: 22px; }
 .nav-links a { color: var(--muted); font-size: 14px; text-decoration: none; }
 .nav-links a:hover { color: var(--fg); }
@@ -52,11 +53,9 @@ section { width: min(1080px, 100% - 40px); margin-inline: auto; }
   pointer-events: none;
 }
 .hero-copy { text-align: center; }
-.hero-icon {
-  width: 88px; height: 88px; margin: 0 auto 22px;
-  filter: drop-shadow(0 12px 22px rgb(28 25 23 / 0.22)) drop-shadow(0 2px 3px rgb(28 25 23 / 0.12));
-}
-.hero h1 { margin: 0; font-size: clamp(40px, 7.5vw, 64px); line-height: 1.05; font-weight: 700; letter-spacing: -0.035em; }
+.hero-icon { width: 128px; height: 128px; margin: 0 auto 10px; } /* the SVG carries its own shadow and grid margin */
+h1, h2 { font-family: var(--serif); font-weight: 400; letter-spacing: -0.03em; }
+.hero h1 { margin: 0; font-size: clamp(44px, 8vw, 72px); line-height: 1.05; }
 .hero-lede { margin: 12px 0 0; font-size: clamp(18px, 2.6vw, 21px); color: var(--muted); }
 .hero-lede a { color: var(--fg); font-weight: 500; }
 
@@ -113,7 +112,7 @@ section { width: min(1080px, 100% - 40px); margin-inline: auto; }
   box-shadow: 0 1px 2px rgb(28 25 23 / 0.04), 0 20px 40px -28px rgb(28 25 23 / 0.18);
 }
 .eyebrow { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.peitho h2 { margin: 4px 0 0; font-size: 40px; line-height: 1.1; letter-spacing: -0.03em; }
+.peitho h2 { margin: 4px 0 0; font-size: 44px; line-height: 1.1; }
 .peitho-tagline { margin: 14px 0 0; font-size: 19px; line-height: 1.5; }
 .peitho-link { display: inline-flex; gap: 6px; margin-top: 18px; font-size: 15px; font-weight: 500; text-decoration: none; }
 .peitho-link span { transition: transform 0.15s ease; }
@@ -138,7 +137,7 @@ section { width: min(1080px, 100% - 40px); margin-inline: auto; }
 
 /* Download: one accordion entry per platform */
 .downloads { width: min(640px, 100% - 40px); margin-top: clamp(72px, 12vh, 120px); margin-bottom: clamp(72px, 12vh, 120px); }
-.downloads h2 { margin: 0 0 18px; font-size: 28px; letter-spacing: -0.02em; text-align: center; }
+.downloads h2 { margin: 0 0 18px; font-size: 34px; text-align: center; }
 .acc { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; }
 .acc-item + .acc-item { border-top: 1px solid var(--line); }
 .acc-item summary {
@@ -180,7 +179,7 @@ section { width: min(1080px, 100% - 40px); margin-inline: auto; }
 
 /* 404 */
 .notfound { text-align: center; padding: 96px 20px; }
-.notfound h1 { margin: 0; font-size: 40px; letter-spacing: -0.03em; }
+.notfound h1 { margin: 0; font-size: 44px; }
 .notfound p { color: var(--muted); }
 
 @media (max-width: 860px) {
@@ -196,6 +195,6 @@ section { width: min(1080px, 100% - 40px); margin-inline: auto; }
   .window-title { font-size: 11px; }
   .peitho-visual { grid-template-columns: 1fr; }
   .arrow { transform: rotate(90deg); justify-self: center; }
-  .peitho h2 { font-size: 32px; }
+  .peitho h2 { font-size: 36px; }
   .peitho-tagline { font-size: 17px; }
 }

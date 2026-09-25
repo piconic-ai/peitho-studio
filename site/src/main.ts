@@ -3,6 +3,9 @@
 // import) and mounting it happens here, into placeholders the static
 // `index.html` already contains. DownloadPanel is mounted twice — the hero
 // button and the Download section's list — and shares one release request.
+// Charis SIL, the face of the Peitho Studio wordmark (brand/), for the
+// page's headings. Latin only; Vite emits it as a hashed file with a <link>.
+import '@fontsource/charis-sil/latin-400.css'
 import { render } from '@barefootjs/client/runtime'
 import './components/DownloadPanel'
 

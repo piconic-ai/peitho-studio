@@ -7,8 +7,8 @@
   <meta name="description" content="Peitho Studio is the desktop app for Peitho, an HTML-native presentation tool that treats Markdown as the source of truth.">
   <meta name="theme-color" content="#fbfaf8">
   <meta name="color-scheme" content="light">
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+  <link rel="icon" type="image/svg+xml" href="../brand/app-icon-small.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="../src-tauri/icons/32x32.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <!-- og:image is relative until the production hostname is fixed; make it
        absolute (https://<host>/og.png) together with wrangler.jsonc's route. -->
@@ -26,8 +26,7 @@
 <body>
   <header class="nav">
     <a class="nav-brand" href="/">
-      <img src="/favicon-32.png" alt="" width="24" height="24">
-      <span>Peitho Studio</span>
+      <img src="../brand/logo-wordmark.svg" alt="Peitho Studio" width="117" height="28">
     </a>
     <nav class="nav-links" aria-label="Site">
       <a href="#download">Download</a>
@@ -38,7 +37,7 @@
   <main>
     <section class="hero" aria-labelledby="title">
       <div class="hero-copy">
-        <img class="hero-icon" src="/icon-256.png" alt="" width="88" height="88">
+        <img class="hero-icon" src="../brand/app-icon.svg" alt="" width="128" height="128">
         <h1 id="title">Peitho Studio</h1>
         <p class="hero-lede">Desktop app for <a href="https://peitho.gosu.ke">Peitho</a></p>
         <div id="download-button" class="download">

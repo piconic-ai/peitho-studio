@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@barefootjs/client": "^0.35.7",
-    "@barefootjs/jsx": "^0.35.7"
+    "@barefootjs/jsx": "^0.35.7",
+    "@fontsource/charis-sil": "5.3.0"
   },
   "devDependencies": {
     "@barefootjs/vite": "^0.35.7",
