@@ -3,33 +3,55 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Peitho Studio</title>
-  <meta name="description" content="Peitho Studio: desktop app for Peitho, an HTML-native presentation tool that treats Markdown as the source of truth.">
+  <title>Peitho Studio — Desktop app for Peitho</title>
+  <meta name="description" content="Peitho Studio is the desktop app for Peitho, an HTML-native presentation tool that treats Markdown as the source of truth.">
+  <meta name="theme-color" content="#fbfaf8">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <!-- og:image is relative until the production hostname is fixed; make it
+       absolute (https://<host>/og.png) together with wrangler.jsonc's route. -->
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Peitho Studio">
   <meta property="og:title" content="Peitho Studio">
   <meta property="og:description" content="Desktop app for Peitho.">
-  <meta property="og:image" content="/icon.png">
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <meta property="og:image" content="/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="/site.css">
 </head>
 <body>
-  <main>
-    <section class="peitho">
-      <a class="peitho-name" href="https://peitho.gosu.ke">Peitho</a>
-      <p>An HTML-native presentation tool that treats Markdown as the source of truth.</p>
-    </section>
+  <header class="nav">
+    <a class="nav-brand" href="/">
+      <img src="/favicon-32.png" alt="" width="24" height="24">
+      <span>Peitho Studio</span>
+    </a>
+    <a class="nav-link" href="https://github.com/piconic-ai/peitho-studio">GitHub</a>
+  </header>
 
-    <section class="studio">
-      <img class="icon" src="/favicon.svg" alt="" width="64" height="64">
-      <h1>Peitho Studio</h1>
-      <p>Desktop app for Peitho</p>
+  <main>
+    <section class="hero" aria-labelledby="title">
+      <img class="hero-icon" src="/icon-256.png" alt="Peitho Studio app icon" width="128" height="128">
+      <h1 id="title">Peitho Studio</h1>
+      <p class="hero-lede">Desktop app for <a href="https://peitho.gosu.ke">Peitho</a></p>
       <div id="download-root" class="download">
         <!-- Replaced by the DownloadPanel island; kept as the no-JS fallback. -->
-        <a class="btn" href="https://github.com/piconic-ai/peitho-studio/releases/latest">Download</a>
+        <a class="btn btn-big" href="https://github.com/piconic-ai/peitho-studio/releases/latest">Download</a>
       </div>
     </section>
+
+    <section class="about" aria-labelledby="about-peitho">
+      <h2 id="about-peitho">Peitho</h2>
+      <p>An HTML-native presentation tool that treats Markdown as the source of truth.</p>
+      <a class="about-link" href="https://peitho.gosu.ke">peitho.gosu.ke <span aria-hidden="true">→</span></a>
+    </section>
   </main>
+
+  <footer class="foot">
+    <span>© 2026 kfly8 · <a href="https://github.com/piconic-ai/peitho-studio/blob/main/LICENSE">MIT License</a></span>
+  </footer>
 
   <script type="module" src="/src/main.ts"></script>
 </body>
