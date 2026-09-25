@@ -27,6 +27,16 @@ export function WelcomeScreen(props: WelcomeScreenProps) {
   return (
     <div className="flex-1 flex items-center justify-center">
       <div className="w-full max-w-sm flex flex-col items-center gap-4 px-6">
+        {/* The brand mark: brand/logo-mark.svg, generated from
+            scripts/brand/mark.ts. JSX can't take that markup as a string,
+            so it's inlined here; scripts/brand/mark.test.ts fails if these
+            paths drift from the source. Decorative: the heading right after
+            it already names the app. */}
+        <svg aria-hidden="true" viewBox="11.5 16 66.5 72.5" className="block w-16 h-16">
+          <path fill="#111111" d="M60 85L60 71C64 70.5 68.5 68 70 64.5C71.3 61.5 72.5 59 74.5 56.5C76 54.8 77 53.3 76.9 52C76.7 50 74.6 46 73.6 42C72.5 36 71 30 66 25C60 19 52 17 46 17.5C35 18.5 26 26 24 36C18 36 12 42 12.5 50C13 58 20 62 26 60C28 66 33 70 40 72C41 76 41 81 40 85C46 87.5 54 87.5 60 85Z" />
+          <path fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" d="M64 24C58 29 55 37 54.5 45C54 53 50.5 61 44 67.5" />
+          <circle cx="64" cy="46" r="1.9" fill="#ffffff" />
+        </svg>
         <h1 className="text-lg font-semibold">Peitho Studio</h1>
         <div className="flex items-center gap-2">
           <button
