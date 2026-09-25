@@ -69,6 +69,11 @@ export function DownloadPanel() {
   const primary = createMemo<ClassifiedAsset[]>(() => recommendedAssets(assets(), platform(), arch()))
   const groups = createMemo(() => groupByPlatform(assets()))
   const hasDownloads = createMemo(() => groups().length > 0)
+  // With nothing to put on the button (an unrecognised platform such as a
+  // phone, or no build for this one), the full list is the answer: show it
+  // open and drop the toggle.
+  const noPick = createMemo(() => primary().length === 0)
+  const listOpen = createMemo(() => showAll() || noPick())
   const version = createMemo(() => release()?.tag_name ?? '')
   const publishedOn = createMemo(() => {
     const iso = release()?.published_at
@@ -85,36 +90,44 @@ export function DownloadPanel() {
   })
 
   return (
-    <div className="dl" data-status={status()}>
-      <p className={status() === 'loading' ? 'muted' : 'muted hidden'}>Checking the latest release…</p>
+    <div className="dl" data-status={status()} aria-busy={status() === 'loading'}>
+      {/* Same footprint as the real button, so the page doesn't jump. */}
+      <div className={status() === 'loading' ? 'dl-primary' : 'dl-primary hidden'}>
+        <span className="btn btn-big is-loading" aria-hidden="true">Download</span>
+        <span className="sr-only">Checking the latest release…</span>
+      </div>
 
       {/* A release with downloadable assets: the visitor's build(s) first. */}
       <div className={status() === 'ready' && hasDownloads() ? 'dl-ready' : 'dl-ready hidden'}>
-        <div className={primary().length > 0 ? 'dl-primary' : 'dl-primary hidden'}>
+        <div className={noPick() ? 'dl-primary hidden' : 'dl-primary'}>
           {/* @client */ primary().map((pick) => (
-            <a key={pick.asset.name} className="btn btn-primary btn-big" href={pick.asset.browser_download_url} data-primary-download>
+            <a key={pick.asset.name} className="btn btn-big" href={pick.asset.browser_download_url} data-primary-download>
               <span>Download for {PLATFORM_LABEL[pick.platform]}</span>
               <small>{ARCH_LABEL[pick.arch] || pick.kind} · {formatSize(pick.asset.size)}</small>
             </a>
           ))}
         </div>
-        <p className={primary().length === 0 ? 'muted' : 'muted hidden'}>
-          No {PLATFORM_LABEL[platform()]} build in this release.
+        <p className={noPick() ? 'dl-note' : 'dl-note hidden'} data-no-pick>
+          {platform() === 'unknown'
+            ? 'Choose the build for your computer.'
+            : `No ${PLATFORM_LABEL[platform()]} build in this release yet.`}
         </p>
         <p className="dl-meta">
           <span data-version>{version()}</span>
           <span className={publishedOn() ? '' : 'hidden'}> · {publishedOn()}</span>
           {' · '}
-          <a href={release()?.html_url ?? RELEASES_URL}>release notes</a>
-          {' · '}
-          <button type="button" className="linkish" onClick={() => setShowAll(!showAll())} aria-expanded={showAll()} data-toggle-all>
-            {showAll() ? 'hide other downloads' : 'other downloads'}
-          </button>
+          <a href={release()?.html_url ?? RELEASES_URL}>Release notes</a>
+          <span className={noPick() ? 'hidden' : ''}>
+            {' · '}
+            <button type="button" className="linkish" onClick={() => setShowAll(!showAll())} aria-expanded={listOpen()} aria-controls="dl-groups" data-toggle-all>
+              {showAll() ? 'Hide other downloads' : 'Other downloads'}
+            </button>
+          </span>
         </p>
-        <div className={showAll() ? 'dl-groups' : 'dl-groups hidden'}>
+        <div id="dl-groups" className={listOpen() ? 'dl-groups' : 'dl-groups hidden'}>
           {/* @client */ groups().map((group) => (
             <div key={group.platform} className="dl-group">
-              <h4>{PLATFORM_LABEL[group.platform]}</h4>
+              <p className="dl-group-title">{PLATFORM_LABEL[group.platform]}</p>
               <ul>
                 {/* @client */ group.assets.map((item) => (
                   <li key={item.asset.name}>
@@ -131,12 +144,12 @@ export function DownloadPanel() {
       {/* No release yet, no assets on it, or the API couldn't be reached. */}
       <div className={status() === 'loading' || (status() === 'ready' && hasDownloads()) ? 'dl-fallback hidden' : 'dl-fallback'}>
         <div className="dl-primary">
-          <a className="btn btn-primary btn-big" href={RELEASES_URL}>
-            <span>Releases on GitHub</span>
+          <a className="btn btn-big" href={RELEASES_URL}>
+            <span>Download from GitHub</span>
             <small data-fallback-note>
               {status() === 'ready'
-                ? `No packaged download in ${version()} yet`
-                : 'No packaged download yet'}
+                ? `No packaged build in ${version()} yet`
+                : 'Releases page'}
             </small>
           </a>
         </div>
