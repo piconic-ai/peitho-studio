@@ -12,8 +12,8 @@ import { deviceForShape, effectiveCanvas } from '../domain/viewport'
 import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
-import { type SlideCommand, applyCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
-import { type HistoryStep, type StepOutcome, commandForStep, inverseStep, slideConfigOfText } from '../domain/editorHistory'
+import { type SlideCommand, applyCommand, indexAfterCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
+import { type HistoryStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, commandForStep, inverseStep, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import { type LayoutVerdict } from '../domain/layoutFit'
@@ -28,7 +28,8 @@ import { takesCommandKeys, type VimMode } from '../domain/vimMode'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
 import { blurEditorFieldOnRowPress, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
-import { createCodeEditor, resetCodeEditorText, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, type CodeEditorOptions } from '../dom/codeEditor'
+import { canReplayCodeEditorGroup, createCodeEditor, isolateCodeEditorHistory, replayCodeEditorGroup, replayFocusedCodeEditorHistory, restoreCodeEditor, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, snapshotCodeEditor, type CodeEditorOptions, type CodeEditorSnapshot } from '../dom/codeEditor'
+import { createEditorSlideStates } from '../dom/editorSlideStates'
 import { createVimClipboardBridge, onClipboardMayHaveChanged } from '../dom/vimClipboard'
 import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
 import { focusSettingsPanel, restoreFocusAfterSettingsPanel } from '../dom/settingsPanel'
@@ -71,6 +72,12 @@ import { SlideList } from './SlideList'
 // Just the heading — `addSlide` attaches an explicit, collision-free
 // PageComment `key` around this (see its own comment for why).
 const NEW_SLIDE_MARKDOWN = '# New Slide\n'
+
+// How `syncEditorFields` pushes the drafts into the editors (see there).
+type EditorSync =
+  | { kind: 'same-slide' }
+  | { kind: 'switch'; from: number | null; to: number | null }
+  | { kind: 'reset' }
 
 export function Studio() {
   const deckIpc = createTauriDeckIpc()
@@ -171,8 +178,9 @@ export function Studio() {
   // reactivity tracking, which `bf debug graph`'s static analysis doesn't
   // capture. See CLAUDE.md's BarefootJS pitfalls for the full account.
   const ui = createUiStore()
-  // Structural undo/redo (Cmd+Z / Cmd+Shift+Z outside the text editors) — see
-  // `state/historyStore.ts` and `replayHistory` below.
+  // Undo/redo (Edit menu, Cmd+Z / Cmd+Shift+Z): one timeline of slide
+  // operations and the editors' typing — see `state/historyStore.ts` and
+  // `replayHistory` below.
   const history = createHistoryStore()
   // App-wide settings, whether this window's settings panel is open, and
   // the UI language they come to — see `state/settingsStore.ts`. Saved and
@@ -220,6 +228,11 @@ export function Studio() {
   // reactive binding (see the note above it).
   let bodyEditor: ReturnType<typeof createCodeEditor> | undefined
   let noteEditor: ReturnType<typeof createCodeEditor> | undefined
+  // Both editors' states for each slide the user has left, so going back
+  // to one brings back its undo history (`dom/editorSlideStates.ts`).
+  // Positional like the structural history: `forgetSlidePositions` drops
+  // both together.
+  const slideStates = createEditorSlideStates<{ body: CodeEditorSnapshot | undefined; note: CodeEditorSnapshot | undefined }>()
   // The context menu is permanently mounted (only its `hidden` class
   // toggles — see the comment above its JSX for why), so its `ref` fires
   // exactly once and this stays valid for the component's whole lifetime.
@@ -236,12 +249,68 @@ export function Studio() {
   // - `same-slide` (a save response for the slide still open): touches only
   //   what differs, keeps the cursor and the undo history, and stays out of
   //   the history itself.
-  // - `new-slide` (a slide switch, a deck read fresh from disk): also drops
-  //   the undo history, so Undo can't bring back another slide's text.
-  function syncEditorFields(scope: 'same-slide' | 'new-slide'): void {
-    const write = scope === 'new-slide' ? resetCodeEditorText : setCodeEditorText
-    if (bodyEditor) write(bodyEditor, editor.bodyDraft())
-    if (noteEditor) write(noteEditor, editor.noteDraft())
+  // - `switch` (another slide opened): keeps the editors' states for the
+  //   slide left, at `from` — its position *now*, after any command that
+  //   just ran, or `null` when it no longer exists — and brings back the
+  //   ones kept for `to`. A slide with none kept (or whose text changed
+  //   since) starts with an empty history, so Undo can't bring back
+  //   another slide's text.
+  // - `reset` (a deck read fresh from disk): the open slide's history goes
+  //   too; call `forgetSlidePositions` first for the other slides'.
+  function syncEditorFields(sync: EditorSync): void {
+    if (sync.kind === 'same-slide') {
+      if (bodyEditor) setCodeEditorText(bodyEditor, editor.bodyDraft())
+      if (noteEditor) setCodeEditorText(noteEditor, editor.noteDraft())
+      return
+    }
+    // Stored before taking, so a switch whose `from` and `to` name the same
+    // slide (the one open before a delete above it) keeps its own state.
+    if (sync.kind === 'switch' && sync.from !== null) {
+      slideStates.store(sync.from, {
+        body: bodyEditor && snapshotCodeEditor(bodyEditor),
+        note: noteEditor && snapshotCodeEditor(noteEditor),
+      })
+    }
+    const kept = sync.kind === 'switch' && sync.to !== null ? slideStates.take(sync.to) : undefined
+    if (bodyEditor) restoreCodeEditor(bodyEditor, editor.bodyDraft(), kept?.body)
+    if (noteEditor) restoreCodeEditor(noteEditor, editor.noteDraft(), kept?.note)
+  }
+
+  // History steps and the kept editor states both address slides by
+  // position; after anything that may have shifted positions some other
+  // way (a deck read fresh from disk, a save that re-split the deck), none
+  // of them can be trusted. `slidePositionsEpoch` counts these, so a step
+  // taken before an `await` can tell it no longer applies.
+  let slidePositionsEpoch = 0
+  function forgetSlidePositions(): void {
+    slidePositionsEpoch++
+    history.clear()
+    slideStates.clear()
+  }
+
+  function codeEditorOf(field: TextField): ReturnType<typeof createCodeEditor> | undefined {
+    return field === 'body' ? bodyEditor : noteEditor
+  }
+
+  // A new group of typing in one editor goes onto the timeline, marked
+  // with the slide it was typed into. The other editor's newest group is
+  // closed, so typing there next starts a group above this one instead of
+  // joining one below it.
+  function recordTextGroup(field: TextField, seq: number): void {
+    const index = editor.selectedIndex()
+    if (index === null) return
+    const other = codeEditorOf(field === 'body' ? 'note' : 'body')
+    if (other) isolateCodeEditorHistory(other)
+    history.record({ kind: 'text', index, field, seq })
+  }
+
+  // Closes both editors' newest group of typing, for when a slide
+  // operation (or an undo/redo of any step) joins the timeline: CodeMirror
+  // would otherwise merge quick typing on both sides of it into one group,
+  // whose marker sits below the operation.
+  function separateTextHistory(): void {
+    if (bodyEditor) isolateCodeEditorHistory(bodyEditor)
+    if (noteEditor) isolateCodeEditorHistory(noteEditor)
   }
 
   function selectAsciiInputFor(mode: VimMode): void {
@@ -271,22 +340,27 @@ export function Studio() {
 
   // A host remounts only with the whole editor pane (a deck-lifecycle
   // branch), so the previous editor, if any, is already detached.
+  // The kept states belong to the editors they were taken from.
   function onBodyEditorHost(el: HTMLElement): void {
     bodyEditor?.destroy()
+    slideStates.clear()
     bodyEditor = createCodeEditor(el, editor.bodyDraft(), {
       ...vimEditorOptions(),
       monospace: true,
       spellcheck: false,
       onChange: text => editor.setEditorSession(session => withDraftBody(session, text)),
+      onHistoryGroup: seq => { recordTextGroup('body', seq) },
     })
   }
 
   function onNoteEditorHost(el: HTMLElement): void {
     noteEditor?.destroy()
+    slideStates.clear()
     noteEditor = createCodeEditor(el, editor.noteDraft(), {
       ...vimEditorOptions(),
       placeholder: untrack(() => settings.messages().speakerNotesPlaceholder),
       onChange: text => editor.setEditorSession(session => withDraftNote(session, text)),
+      onHistoryGroup: seq => { recordTextGroup('note', seq) },
     })
   }
 
@@ -547,9 +621,9 @@ export function Studio() {
   // up separately.
   async function refreshSource(preserveSelection: boolean, renderPayload?: RenderPayload): Promise<void> {
     const source = await deckIpc.readDeckSource()
-    // History steps address slides by position; a deck read fresh from disk
-    // (a newly opened deck, an external edit) may not match them anymore.
-    history.clear()
+    // A deck read fresh from disk (a newly opened deck, an external edit)
+    // may not match any position kept so far.
+    forgetSlidePositions()
     if (renderPayload) render.applyRenderPayload(renderPayload, source)
     editor.setFullSource(source)
     const ranges = splitSlides(source)
@@ -563,7 +637,7 @@ export function Studio() {
       const fields: SlideFields = { body: rest, note, config }
       editor.setEditorSession({ kind: 'editing', index: nextIndex, saved: fields, draft: fields })
     }
-    syncEditorFields('new-slide')
+    syncEditorFields({ kind: 'reset' })
   }
 
   async function refreshRecentDecks(): Promise<void> {
@@ -630,13 +704,16 @@ export function Studio() {
   // small risk, since those are discrete one-off actions, not continuous
   // typing.
   //
+  // `cmd`: the structural command `nextSource` applies, if any — the kept
+  // editor states follow their slides through it.
+  //
   // Resolves `true` once the change is rendered and saved, `false` if either
   // step failed (the error is already shown) — undo history records only a
   // change that actually landed.
   async function commitChange(
     nextSource: string,
     plan: SelectionPlan,
-    expectedDraft?: { body: string; note: string },
+    { expectedDraft, cmd }: { expectedDraft?: { body: string; note: string }; cmd?: SlideCommand } = {},
   ): Promise<boolean> {
     const before = editor.editorSession()
     setIsSavingSlide(true)
@@ -648,6 +725,7 @@ export function Studio() {
       editor.setFullSource(nextSource)
       const ranges = splitSlides(nextSource)
       editor.setSlideRanges(ranges)
+      if (cmd) slideStates.shift(cmd)
       // `reconcileAfterCommit` only moves the selection/refreshes `saved`
       // if the user hasn't already navigated elsewhere themselves while
       // this was in flight — every caller passes a `SelectionPlan` naming
@@ -666,7 +744,18 @@ export function Studio() {
       // to push into the editors. Otherwise `saved` refreshed and/or
       // `draft` synced to it, so re-sync (a no-op if `draft` itself didn't
       // actually change, e.g. the user kept typing through the gap).
-      if (next !== now) syncEditorFields(opensSameSlide(plan) ? 'same-slide' : 'new-slide')
+      if (next !== now) {
+        if (opensSameSlide(plan)) {
+          syncEditorFields({ kind: 'same-slide' })
+        } else {
+          const left = before.kind === 'editing' ? before.index : null
+          syncEditorFields({
+            kind: 'switch',
+            from: left !== null && cmd ? indexAfterCommand(left, cmd) : left,
+            to: next.kind === 'editing' ? next.index : null,
+          })
+        }
+      }
       setStatusMessage({ kind: 'saved' })
       return true
     } catch (err) {
@@ -705,8 +794,9 @@ export function Studio() {
     const { rest: withoutNote, note } = extractNote(editor.slideRanges()[index]?.text ?? '')
     const { rest, config } = extractPageComment(withoutNote)
     const fields: SlideFields = { body: rest, note, config }
+    const from = editor.selectedIndex()
     editor.setEditorSession({ kind: 'editing', index, saved: fields, draft: fields })
-    syncEditorFields('new-slide')
+    syncEditorFields({ kind: 'switch', from, to: index })
   }
 
   async function handleSave(): Promise<void> {
@@ -721,7 +811,7 @@ export function Studio() {
     // Typed text can itself re-split the deck (a `---` line, an unclosed code
     // fence), shifting the positions every history step addresses slides by.
     const resplits = splitSlides(nextSource).length !== editor.slideRanges().length
-    if (await commitChange(nextSource, { kind: 'keep' }, { body, note }) && resplits) history.clear()
+    if (await commitChange(nextSource, { kind: 'keep' }, { expectedDraft: { body, note } }) && resplits) forgetSlidePositions()
   }
 
   // Rebuilds `fullSource` from an ordered list of slide texts, preserving
@@ -835,15 +925,17 @@ export function Studio() {
     await perform({ kind: 'slides', cmd: { type: 'move', from, to } })
   }
 
-  // Runs one history step against the current slides (the open slide's
+  // Runs one slide operation against the current slides (the open slide's
   // unsaved draft included) through the same `commitChange` path every
   // structural operation uses, and reports the step that undoes it.
-  async function runStep(step: HistoryStep): Promise<StepOutcome> {
+  // `planFor` picks which slide ends up open: the operation's own choice
+  // (`selectionPlanFor`), or for an undo/redo the slide it changed.
+  async function runStep(step: StructuralStep, planFor: (cmd: SlideCommand) => SelectionPlan): Promise<StepOutcome> {
     const texts = currentSlideTexts()
     const cmd = commandForStep(texts, step)
     if (validate(texts, cmd)) return { kind: 'rejected' }
     const inverse = inverseStep(texts, step)
-    const ok = await commitChange(sourceFor(applyCommand(texts, cmd), cmd), selectionPlanFor(cmd))
+    const ok = await commitChange(sourceFor(applyCommand(texts, cmd), cmd), planFor(cmd), { cmd })
     return ok ? { kind: 'done', inverse } : { kind: 'failed' }
   }
 
@@ -860,36 +952,88 @@ export function Studio() {
   }
 
   // A new structural operation: runs it and records how to undo it.
-  function perform(step: HistoryStep): Promise<void> {
+  function perform(step: StructuralStep): Promise<void> {
     return serialized(async () => {
-      const outcome = await runStep(step)
-      if (outcome.kind === 'done') history.record(outcome.inverse)
+      const outcome = await runStep(step, selectionPlanFor)
+      if (outcome.kind !== 'done') return
+      history.record(outcome.inverse)
+      separateTextHistory()
     })
   }
 
-  // Edit > Undo (`undo`) / Redo (`redo`) outside the text fields, queued
-  // behind any structural operation still saving. On success the opposite
-  // step goes onto the other stack; a failed commit puts the step back so it
-  // can be retried; a rejected one means the history no longer matches the
-  // deck, so it is dropped whole rather than left to misfire on the next
-  // press.
+  // Edit > Undo (`undo`) / Redo (`redo`): the newest step on the timeline,
+  // whatever has focus, queued behind any structural operation still
+  // saving. A text marker whose group vim's `u` / `Ctrl-R` already moved
+  // past is dropped on the way (`takeLive`).
   function replayHistory(direction: 'undo' | 'redo'): Promise<void> {
     return serialized(() => replayHistoryNow(direction))
   }
   async function replayHistoryNow(direction: 'undo' | 'redo'): Promise<void> {
+    separateTextHistory()
+    for (;;) {
+      const step = history.take(direction, marker => textStepIsLive(marker, direction))
+      if (step === null) return
+      if (step.kind === 'slides' || step.kind === 'config') {
+        await replayStructuralStep(step, direction)
+        return
+      }
+      const outcome = await replayTextStep(step, direction)
+      // The group turned out to be gone once its slide was open: on to the
+      // next step, as if it had been skipped up front.
+      if (outcome === 'gone') continue
+      if (outcome === 'done') pushReplayed(step, direction)
+      return
+    }
+  }
+
+  // Puts the step that reverses a replayed one onto the other stack.
+  function pushReplayed(opposite: HistoryStep, direction: 'undo' | 'redo'): void {
+    if (direction === 'undo') history.pushRedo(opposite)
+    else history.pushUndo(opposite)
+    setStatusMessage({ kind: direction === 'undo' ? 'undone' : 'redone' })
+  }
+
+  // Whether `step`'s group is still the next one its editor would undo (or
+  // redo): the open slide's editor as it is now, another slide's as kept
+  // when the user left it. A slide with no kept state has none.
+  function textStepIsLive(step: TextStep, direction: 'undo' | 'redo'): boolean {
+    if (step.index >= editor.slideRanges().length) return false
+    const view = codeEditorOf(step.field)
+    const snapshot = step.index === editor.selectedIndex()
+      ? view && snapshotCodeEditor(view)
+      : slideStates.peek(step.index)?.[step.field]
+    return snapshot !== undefined && canReplayCodeEditorGroup(snapshot, direction, step.seq)
+  }
+
+  // Opens `step`'s slide (saving the open one's draft first, as any switch
+  // does) and undoes or redoes its group in that editor; the marker itself
+  // is its own opposite. Keyboard focus stays where it is; the editor
+  // scrolls the change into view. `forgotten`: that save re-split the deck,
+  // so the history is gone, this step with it.
+  async function replayTextStep(step: TextStep, direction: 'undo' | 'redo'): Promise<'done' | 'gone' | 'forgotten'> {
+    const epoch = slidePositionsEpoch
+    await selectSlide(step.index)
+    if (epoch !== slidePositionsEpoch) return 'forgotten'
+    const view = codeEditorOf(step.field)
+    if (view === undefined || editor.selectedIndex() !== step.index) return 'gone'
+    return replayCodeEditorGroup(view, direction, step.seq) ? 'done' : 'gone'
+  }
+
+  // A slide operation's undo/redo opens the slide it changed
+  // (`selectionForReplay`). On success the opposite step goes onto the
+  // other stack; a failed commit puts the step back so it can be retried; a
+  // rejected one means the history no longer matches the deck, so it is
+  // dropped whole rather than left to misfire on the next press.
+  async function replayStructuralStep(step: StructuralStep, direction: 'undo' | 'redo'): Promise<void> {
     const isUndo = direction === 'undo'
-    const step = isUndo ? history.takeUndo() : history.takeRedo()
-    if (step === null) return
-    const outcome = await runStep(step)
+    const outcome = await runStep(step, cmd => selectionForReplay(step, cmd, editor.selectedIndex()))
     if (outcome.kind === 'done') {
-      if (isUndo) history.pushRedo(outcome.inverse)
-      else history.pushUndo(outcome.inverse)
-      setStatusMessage({ kind: isUndo ? 'undone' : 'redone' })
+      pushReplayed(outcome.inverse, direction)
     } else if (outcome.kind === 'failed') {
       if (isUndo) history.pushUndo(step)
       else history.pushRedo(step)
     } else {
-      history.clear()
+      forgetSlidePositions()
       setStatusMessage({ kind: 'history-cleared' })
     }
   }
@@ -910,8 +1054,8 @@ export function Studio() {
   function startSlideDrag(index: number) {
     return (event: MouseEvent) => {
       if ((event.target as HTMLElement).closest('input, textarea')) return
-      // Any button, so Cmd+Z after a right-click menu operation also
-      // reaches the structural undo rather than the body editor.
+      // Any button, so the slide list's keys after a right-click menu
+      // operation act on the slides rather than type into the body editor.
       blurEditorFieldOnRowPress()
       if (event.button !== 0) return
       // Without this, the browser's own native text-selection drag runs
@@ -1180,7 +1324,7 @@ export function Studio() {
       const discard = window.confirm(settings.messages().externalChangeConfirm)
       if (!discard) {
         const ranges = splitSlides(source)
-        history.clear()
+        forgetSlidePositions()
         editor.setFullSource(source)
         editor.setSlideRanges(ranges)
         const i = editor.selectedIndex()
@@ -1310,14 +1454,21 @@ export function Studio() {
     })
 
     // Edit > Undo/Redo, by mouse or by Cmd+Z / Cmd+Shift+Z (see
-    // `src-tauri/src/edit_menu.rs`): a focused text field gets its own text
-    // undo, anything else undoes a slide operation. Only the slide operation
-    // waits while the phone shape menu is open, like every other shortcut in
-    // `onKeyDown`: WebKit keeps focus in the body through the clicks that
-    // open that menu, and its text undo must still run.
+    // `src-tauri/src/edit_menu.rs`): a focused plain text field (a section
+    // header's name) gets its own text undo; anything else, the body and
+    // notes editors included, walks the timeline. That waits while the
+    // settings panel or the phone shape menu is open, like every other
+    // shortcut in `onKeyDown` — except that WebKit keeps focus in the body
+    // through the clicks that open the phone shape menu, and undoing the
+    // typing there must still work: the focused editor undoes on its own,
+    // as vim's `u` would.
     const onMenuHistory = (direction: 'undo' | 'redo') => {
       if (replayFocusedFieldHistory(direction)) return
-      if (ui.phoneShapeMenuOpen() || settings.panelOpen()) return
+      if (settings.panelOpen()) return
+      if (ui.phoneShapeMenuOpen()) {
+        replayFocusedCodeEditorHistory(direction)
+        return
+      }
       void replayHistory(direction)
     }
     const unlistenMenuUndo = deckIpc.onMenuUndo(() => { onMenuHistory('undo') })

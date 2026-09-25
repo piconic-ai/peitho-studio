@@ -1,11 +1,11 @@
 //! The Edit menu's Undo/Redo items.
 //!
 //! They replace `PredefinedMenuItem::undo`/`redo`, which only ever ran the
-//! webview's native text undo. What an Undo should do depends on where
-//! focus sits in the page (a text field's own undo, or the slide
-//! operations' history — see `onMenuUndo` in `ipc/deckIpc.ts`), which only
-//! the frontend knows, so a click (or the Cmd+Z / Cmd+Shift+Z accelerator)
-//! is forwarded there as an event.
+//! webview's native text undo. What an Undo should do is up to the page (a
+//! plain text field's own undo, or the app's one timeline of slide
+//! operations and typing in the slide editors — see `onMenuUndo` in
+//! `ipc/deckIpc.ts`), which only the frontend knows, so a click (or the
+//! Cmd+Z / Cmd+Shift+Z accelerator) is forwarded there as an event.
 //!
 //! The event goes to the focused window alone. Each window keeps its own
 //! history, and a broadcast `emit` would undo the last operation in every
