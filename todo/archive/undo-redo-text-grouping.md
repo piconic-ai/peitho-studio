@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: Cmd+Zをテキスト編集とスライド操作をまたぐ1本の時系列にする(統一Undo/Redoの第2段階)
 tags: [undo-redo, editor, codemirror]
 ---
@@ -191,7 +191,7 @@ tags: [undo-redo, editor, codemirror]
 - [x] `bun test` / `bun run typecheck` / `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機確認: 受け入れ条件の1〜4と、vimの`u`との組み合わせ
+- [x] 実機確認: 受け入れ条件の1〜4と、vimの`u`との組み合わせ
 
 ## 実装メモ
 
@@ -210,6 +210,8 @@ tags: [undo-redo, editor, codemirror]
   時系列を止め、フォーカスのあるエディタだけがvimの`u`と同じように自分の
   履歴を戻す(既存のe2eが確かめている挙動を保つため)。その目印は後で
   飛ばされる。
+
+実機確認の結果(2026-09-25、ユーザー): 受け入れ条件1〜4とvimの`u`との組み合わせ、変換中のCmd+Zは、いずれも問題なし。
 
 ## 先送り事項
 
