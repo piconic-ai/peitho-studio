@@ -21,8 +21,8 @@ generated — edit `scripts/brand/mark.ts`, then run `bun run icons`.
 
 | File | What it is |
 | --- | --- |
-| `logo-mark.svg` | Ink silhouette, paper gap and eye. For light backgrounds. |
-| `logo-mark-inverse.svg` | Paper silhouette, ink gap and eye. For dark backgrounds. |
+| `logo-mark.svg` | Ink silhouette, paper hairline and eye. For light backgrounds. |
+| `logo-mark-inverse.svg` | Paper silhouette, ink hairline and eye. For dark backgrounds. |
 | `logo-wordmark.svg` | Mark + "Peitho Studio" in Charis SIL, −0.03 em tracking, converted to paths. |
 | `logo-wordmark-inverse.svg` | The wordmark for dark backgrounds. |
 | `app-icon.svg` | The app icon: a paper-white Peitho on an ink tile — a continuous-corner squircle (superellipse, n = 5) on the macOS grid, an 824 px body on a 1024 px canvas, with a soft drop shadow. |
@@ -42,16 +42,17 @@ cut (`markBody` / `markSmallBody` in `scripts/brand/mark.ts`). At 48 px and
 below the 2-unit hairline and the eye fall under a pixel, so the small
 cut draws both heavier.
 
-## Expressions
-
-`EXPRESSIONS` in `scripts/brand/mark.ts` holds her faces; pass one as
-`markBody({ expression })`. Each draws only the eye, in the line colour, so every expression keeps the same silhouette and the same
-two colours (both are checked by tests). To add one, add an entry there and
-run `bun run icons`.
-
 `tauri icon` can't do this — it resizes one image into every size — so
 `scripts/build-brand.ts` renders each size on its own and packs
 `icon.icns` / `icon.ico` itself (`scripts/brand/iconContainers.ts`).
+
+## Expressions
+
+`EXPRESSIONS` in `scripts/brand/mark.ts` holds her faces; pass one as
+`markBody({ expression })`. Each draws only the eye, in the line colour,
+so every expression keeps the same silhouette and the same two colours
+(both are checked by tests). To add one, add an entry there and run
+`bun run icons`.
 
 ## Regenerating
 
