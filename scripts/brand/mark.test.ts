@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { appIconSvg, INK, MARK_PATHS, markBody, markSmallBody, PAPER, squirclePath, svgDocument } from './mark'
+import { appIconSvg, EXPRESSIONS, type Expression, INK, MARK_PATHS, markBody, markSmallBody, PAPER, squirclePath, svgDocument } from './mark'
 
 function points(path: string): [number, number][] {
   expect(path.startsWith('M')).toBe(true)
@@ -54,31 +54,48 @@ describe('squirclePath', () => {
 
 describe('markBody / markSmallBody', () => {
   const colours = (svg: string) => new Set(svg.match(/#[0-9a-fA-F]{6}/g))
+  const names = Object.keys(EXPRESSIONS) as Expression[]
 
-  test('Given the defaults, When drawn, Then it is an ink head with the hair band laid over it, a paper gap around the band, and a paper dot for the eye', () => {
+  test('Given the defaults, When drawn, Then it is an ink silhouette with the hairline, the spiral and the smiling eye cut out in paper', () => {
     const svg = markBody()
-    expect(svg).toContain(`<path d="${MARK_PATHS.FACE}" fill="${INK}"/>`)
-    expect(svg).toContain(`<path d="${MARK_PATHS.HAIR}" stroke="${PAPER}" stroke-width="13.5"/>`)
-    expect(svg).toContain(`<path d="${MARK_PATHS.HAIR}" stroke="${INK}" stroke-width="9.5"/>`)
-    expect(svg).toMatch(new RegExp(`<circle [^>]*fill="${PAPER}"/>`))
+    expect(svg).toContain(`<path d="${MARK_PATHS.HEAD}" fill="${INK}"/>`)
+    expect(svg).toContain(MARK_PATHS.HAIRLINE)
+    expect(svg).toContain(MARK_PATHS.SPIRAL)
+    expect(svg).toContain(EXPRESSIONS.smile(PAPER, 1))
   })
 
-  test('Given the hair, When drawn, Then the gap goes down before the band so the band sits on top of it', () => {
-    const svg = markBody()
-    expect(svg.indexOf('stroke-width="13.5"')).toBeLessThan(svg.indexOf('stroke-width="9.5"'))
+  test('Given the head, When drawn, Then there is no line across the crown', () => {
+    expect(markBody()).not.toContain('M29.5 28C40 19.5 54 17.5 62 22')
   })
 
-  test('Given any options, When drawn, Then only the figure and line colours appear (the mark has no colour of its own)', () => {
-    expect(colours(markBody())).toEqual(new Set([INK, PAPER]))
-    expect(colours(markBody({ figure: '#000001', line: '#000002' }))).toEqual(new Set(['#000001', '#000002']))
-    expect(colours(markSmallBody({ figure: '#000001', line: '#000002' }))).toEqual(new Set(['#000001', '#000002']))
+  test.each(names)('Given the %s expression, When drawn, Then only the face changes', name => {
+    const svg = markBody({ expression: name })
+    expect(svg).toContain(EXPRESSIONS[name](PAPER, 1))
+    expect(svg.replace(EXPRESSIONS[name](PAPER, 1), '')).toBe(markBody().replace(EXPRESSIONS.smile(PAPER, 1), ''))
   })
 
-  test('Given the small cut, When drawn, Then the gap and the eye are larger than in the full cut so they survive at 16 px', () => {
-    const small = markSmallBody()
-    expect(small).toContain('stroke-width="16.5"')
-    expect(small).toContain('r="3"')
-    expect(small).toContain(`stroke="${INK}" stroke-width="9.5"`) // the band itself keeps its width
+  test('Given every expression, When drawn, Then no two faces are the same', () => {
+    const faces = names.map(n => EXPRESSIONS[n](PAPER, 1))
+    expect(new Set(faces).size).toBe(names.length)
+  })
+
+  test.each(names)('Given the %s expression in any colours, When drawn in either cut, Then only the figure and line colours appear', name => {
+    expect(colours(markBody({ expression: name, figure: '#000001', line: '#000002' }))).toEqual(new Set(['#000001', '#000002']))
+    expect(colours(markSmallBody({ expression: name, figure: '#000001', line: '#000002' }))).toEqual(new Set(['#000001', '#000002']))
+  })
+
+  test('Given an expression name that does not exist, When drawn, Then throws', () => {
+    // @ts-expect-error — exercising the runtime guard for untyped callers
+    expect(() => markBody({ expression: 'angry' })).toThrow(RangeError)
+    // @ts-expect-error — a prototype key must not pass as an expression
+    expect(() => markSmallBody({ expression: 'toString' })).toThrow()
+  })
+
+  test('Given the small cut, When drawn, Then it drops the spiral and draws the hairline and face heavier', () => {
+    const svg = markSmallBody()
+    expect(svg).not.toContain(MARK_PATHS.SPIRAL)
+    expect(svg).toContain('stroke-width="3.6"')
+    expect(svg).toContain(EXPRESSIONS.smile(PAPER, 1.6))
   })
 })
 
@@ -87,7 +104,7 @@ describe('appIconSvg / svgDocument', () => {
     const svg = appIconSvg()
     expect(svg).toContain('viewBox="0 0 1024 1024"')
     expect(svg).toContain('feDropShadow')
-    expect(svg).toContain(`<path d="${MARK_PATHS.FACE}" fill="${PAPER}"/>`)
+    expect(svg).toContain(`<path d="${MARK_PATHS.HEAD}" fill="${PAPER}"/>`)
   })
 
   test('Given shadow: false and a full tile, When drawn, Then there is no filter and the tile reaches the canvas edge', () => {
@@ -97,8 +114,8 @@ describe('appIconSvg / svgDocument', () => {
   })
 
   test('Given small: true, When drawn, Then the small cut is used', () => {
-    expect(appIconSvg({ small: true })).toContain('stroke-width="16.5"')
-    expect(appIconSvg()).not.toContain('stroke-width="16.5"')
+    expect(appIconSvg({ small: true })).not.toContain(MARK_PATHS.SPIRAL)
+    expect(appIconSvg()).toContain(MARK_PATHS.SPIRAL)
   })
 
   test('Given a title with markup characters, When wrapped, Then they are escaped so the document stays well-formed', () => {

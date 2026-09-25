@@ -1,6 +1,7 @@
 // Builds every brand asset from the geometry in scripts/brand/mark.ts:
 //
 //   brand/*.svg              the mark, wordmark and app-icon sources
+//   brand/expressions/*.svg  the mark wearing each of her expressions
 //   brand/app-icon.png       the 1024 px app icon, for reference/previews
 //   public/favicon.svg       the small cut on a full-bleed tile
 //   src-tauri/icons/*        every PNG Tauri bundles, plus icon.icns / icon.ico
@@ -17,7 +18,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { encodeIco, encodeIcns, type IcnsType } from './brand/iconContainers'
-import { appIconSvg, INK, MARK_BOUNDS, markBody, PAPER, SMALL_CUT_MAX_PX, svgDocument } from './brand/mark'
+import { appIconSvg, EXPRESSIONS, type Expression, INK, MARK_BOUNDS, markBody, PAPER, SMALL_CUT_MAX_PX, svgDocument } from './brand/mark'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const out = (path: string) => resolve(ROOT, path)
@@ -91,6 +92,10 @@ async function main(): Promise<void> {
   write('brand/logo-mark-inverse.svg', markDocument(onDark, 1))
   write('brand/logo-wordmark.svg', wordmarkDocument(INK, onLight))
   write('brand/logo-wordmark-inverse.svg', wordmarkDocument(PAPER, onDark))
+  for (const expression of Object.keys(EXPRESSIONS) as Expression[]) {
+    write(`brand/expressions/${expression}.svg`, markDocument(markBody({ expression }), 1))
+    write(`brand/expressions/${expression}-inverse.svg`, markDocument(markBody({ expression, figure: PAPER, line: INK }), 1))
+  }
   write('brand/app-icon.svg', appIconSvg())
   write('brand/app-icon-small.svg', appIconSvg({ small: true }))
   write('public/favicon.svg', appIconSvg({ small: true, shadow: false, tile: 'full' }))
