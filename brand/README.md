@@ -1,64 +1,84 @@
 # Peitho Studio brand assets
 
-The mark is a single monoline stroke that reads three ways at once:
+The mark is Peitho herself — the Greek goddess of persuasion the engine is
+named after — drawn front-on in a Japanese *kawaii* register:
 
-- **Π** — the initial of Πειθώ, the goddess the engine is named after. The
-  stem and the lintel are the left leg and top bar of a Π.
-- **A volute** — the lintel curls into the spiral of an Ionic capital, the
-  Greek temple's own ornament, and at the same time into Peitho's attribute
-  in vase painting: the ball of twine she holds (words that bind), see
-  [Theoi](https://www.theoi.com/Daimon/Peitho.html).
-- **P** — the Latin initial the product name is written with, so the mark
-  sits next to "Peitho Studio" without a second letter fighting it.
+- **Odango bun with a spiral.** Greek statues tie the hair into a
+  *krobylos* at the back of the head; here it moves up into an odango bun.
+  The spiral inside it is the ball of twine Peitho holds in vase painting,
+  drawn as two semicircles on one axis (the same construction as an Ionic
+  volute).
+- **Stephane.** The diadem she wears in vase painting, as a small tiara
+  with a single gem.
+- **Centre-parted fringe, closed smiling eyes, sakura blush.** The kawaii
+  part: a round mochi face, eyes closed in a smile, a tiny mouth, and the
+  only colour in the mark on her cheeks.
 
-No fills, no second color — the same neutral palette as the app's own UI
-tokens (`public/tokens.css`): ink `#171717` (`--primary`) and paper
-`#fafafa` (`--primary-foreground`).
+Background on Peitho's attributes: [Theoi](https://www.theoi.com/Daimon/Peitho.html).
+
+## Palette
+
+| Token | Value | Use |
+| --- | --- | --- |
+| Ink | `#111111` | hair, eyes, mouth, wordmark — the same ink as peitho.gosu.ke |
+| Paper | `#ffffff` | face, tiara, bun spiral |
+| Blush | `#F4A6B8` | cheeks only |
+| Tile | `#FDF0F3` → `#F8D9E1` | the app icon's vertical gradient |
+
+## Files
+
+Everything here (and `public/favicon.svg`, and `src-tauri/icons/`) is
+generated — edit `scripts/brand/mark.ts`, then run `bun run icons`.
 
 | File | What it is |
 | --- | --- |
-| `logo-mark.svg` | The mark alone, ink on transparent (64×64 viewBox). For light backgrounds. |
-| `logo-mark-inverse.svg` | Same mark in paper, for dark backgrounds. |
-| `logo-wordmark.svg` | Mark + "Peitho Studio" (Inter SemiBold, −0.02 em tracking, converted to paths so no font is needed). |
-| `logo-wordmark-inverse.svg` | The wordmark in paper. |
-| `app-icon.svg` | The app icon's source: a 1024×1024 canvas with an 824 px rounded square (radius 185, macOS style) in ink and the mark in paper. |
-| `app-icon.png` | `app-icon.svg` rasterized by `scripts/render-app-icon.ts`; the input `tauri icon` resizes into `src-tauri/icons/`. |
+| `logo-mark.svg` | The mark, full colour, transparent background. |
+| `logo-mark-mono.svg` | The mark without the blush, for one-colour use. |
+| `logo-mark-inverse.svg` | The mark with a white keyline, for dark backgrounds (the hair would otherwise vanish into them). |
+| `logo-wordmark.svg` | Mark + "Peitho Studio" in Charis SIL, −0.03 em tracking, converted to paths. |
+| `logo-wordmark-inverse.svg` | The wordmark for dark backgrounds. |
+| `app-icon.svg` | The app icon: a continuous-corner tile (superellipse, n = 5) on the macOS grid — an 824 px body on a 1024 px canvas — with a soft drop shadow. |
+| `app-icon-small.svg` | The same icon with the small cut, used for every raster at 48 px and below. |
+| `app-icon.png` | `app-icon.svg` at 1024 px, for previews. |
 
-`public/favicon.svg` is the same construction as `app-icon.svg` on a 32 px
-canvas, and `components/WelcomeScreen.tsx` inlines the mark with
-`stroke="currentColor"` so it follows the theme.
+The wordmark's face is [Charis SIL](https://software.sil.org/charis/)
+(SIL Open Font License 1.1), chosen because it descends from Bitstream
+Charter — the fallback peitho.gosu.ke itself names after Iowan Old Style.
+The outlines are embedded as paths, so no font ships with the SVG.
 
-## Geometry
+## Two cuts
 
-Everything derives from one path in a 64-unit box, stroke width 6, round
-joins, flat (butt) terminals:
+Like a type family's optical sizes, the mark has a full cut and a small
+cut (`markBody` / `markSmallBody` in `scripts/brand/mark.ts`). Below 64 px
+the spiral, the tiara's gem and the mouth turn to noise and the 2.3-unit
+eye strokes fall under a pixel, so at 48 px and below the small cut drops
+them, draws the eyes as solid ovals, thickens the tiara and enlarges the
+blush.
 
-```
-M16 52 V13 H36 A13 13 0 0 1 36 39 A7 7 0 0 1 36 25
-```
+`tauri icon` can't do this — it resizes one image into every size — so
+`scripts/build-brand.ts` renders each size on its own and packs
+`icon.icns` / `icon.ico` itself (`scripts/brand/iconContainers.ts`).
 
-Stem 39 tall at x 16, lintel 20 wide at y 13, then a half-turn of radius 13
-bulging right and a half-turn of radius 7 bulging left — the two arcs share
-the x 36 axis, so the volute is two semicircles, not a freehand spiral. The
-ink spans x 13–52 and y 10–55, so the mark is centered in its box. Scale
-the box, don't redraw the path, when placing the mark somewhere new: the
-stroke has to stay 9.4 % of the box or the volute's counter closes up.
-
-## Regenerating the platform icons
+## Regenerating
 
 ```sh
 bun run icons
 ```
 
-That renders `app-icon.svg` → `app-icon.png` with Playwright's Chromium
-(`CHROME_BIN=/path/to/chromium` if there is no system Chrome), then runs
-`tauri icon` into `src-tauri/icons/`, and finally removes the `android/`
-and `ios/` sets `tauri icon` also emits — this app only ships for desktop
-today; drop that last step when a mobile target appears.
+Rasterizes with Playwright's Chromium: the system Chrome by default, or
+`CHROME_BIN=/path/to/chromium bun run icons`.
+
+## macOS 26 (Tahoe)
+
+macOS 26 draws app icons that aren't a full squircle inside a grey
+squircle. This icon is a full-bleed squircle on Apple's grid, but it is
+still a classic `.icns`; whether Tahoe shows it unmodified has not been
+checked on a real device yet, and the Liquid Glass treatment would need an
+Icon Composer (`.icon`) source on top of this.
 
 ## Usage
 
 The source code is MIT-licensed; the "Peitho Studio" name and these assets
 are not (see the top-level README). Use them to refer to Peitho Studio
-itself — don't recolor the mark, add effects, or set the wordmark in a
-different face.
+itself — don't recolour the mark, redraw her face, or set the wordmark in
+a different face.
