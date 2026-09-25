@@ -1,19 +1,18 @@
 // The Peitho Studio mark, as pure functions returning SVG markup.
 //
 // Peitho, the Greek goddess of persuasion the engine is named after, in
-// profile the way Greek vases and coins show her: hair tied back into a
-// krobylos at the nape, a fillet (stephane) across the crown. The kawaii
-// part is in the proportions and the face — a big round head, a short neck,
-// and an eye closed in a smile — and nowhere else.
-// No colour: ink and paper only, the same two peitho.gosu.ke uses. The
-// spiral in the krobylos is her ball of twine, drawn as semicircles on one
-// axis like an Ionic volute.
+// profile the way Greek coins show her, with her hair hanging down behind
+// her neck and ending in a curl — the ball of twine she holds in vase
+// painting, and an Ionic volute. Her face is expressionless: a single dot
+// for the eye. No colour: ink and paper only, the same two peitho.gosu.ke
+// uses.
 //
-// Everything is drawn in a 100-unit box as one silhouette plus a handful
-// of lines. Two cuts exist, the way a type family has optical sizes:
-// `markBody` for 64 px and up, `markSmallBody` for 48 px and below, where
-// the spiral would turn to noise and the lines need to be heavier to
-// survive.
+// The mark is two shapes: the head, and the hair as a band laid over it.
+// A thin gap in the ground's colour separates them, so the whole mark
+// reads as one silhouette with one line cut into it. Two cuts exist, the
+// way a type family has optical sizes: `markBody` for 64 px and up,
+// `markSmallBody` for 48 px and below, where the gap and the eye are drawn
+// larger so they survive.
 
 export const INK = '#111111'
 export const PAPER = '#ffffff'
@@ -21,41 +20,47 @@ export const PAPER = '#ffffff'
 /** Sizes at or below this use the small cut. */
 export const SMALL_CUT_MAX_PX = 48
 
-const HEAD =
-  'M60 85L60 71C64 70.5 68.5 68 70 64.5C71.3 61.5 72.5 59 74.5 56.5C76 54.8 77 53.3 76.9 52C76.7 50 74.6 46 73.6 42C72.5 36 71 30 66 25C60 19 52 17 46 17.5C35 18.5 26 26 24 36C18 36 12 42 12.5 50C13 58 20 62 26 60C28 66 33 70 40 72C41 76 41 81 40 85C46 87.5 54 87.5 60 85Z'
-const HAIRLINE = 'M64 24C58 29 55 37 54.5 45C54 53 50.5 61 44 67.5'
-const FILLET = 'M29.5 28C40 19.5 54 17.5 62 22'
-const EYE = 'M61 47q3-3 6 0'
-const SPIRAL = 'M21.6 49a1.6 1.6 0 1 0-3.2 0a3.4 3.4 0 1 0 6.8 0a5.2 5.2 0 1 0-10.4 0'
+const FACE =
+  'M60 85L60 71C64 70.5 68.5 68 70 64.5C71.3 61.5 72.5 59 74.5 56.5C76 54.8 77 53.3 76.9 52C76.7 50 74.6 46 73.6 42C72.5 36 71 30 66 25C60 19 52 17 46 17.5C35 18.5 26 26 24 36C22 46 25 56 32 63C36 67 40 70 42 72C42.5 77 42 81 41 85C47 87 54 87 60 85Z'
+// The hair band's centreline: from the hairline, over the crown just inside
+// the head's outline, down behind the neck, into a curl.
+const HAIR =
+  'M63 26.5C57 22.2 50.5 21.6 46 22.3C37 23.2 30.2 29.2 28.8 36.5C27.2 46 28.2 56 32.2 64C36 71.8 36.2 80.6 31.5 84.8C27.5 88 23.5 85 25.3 82C26.8 79.7 30 80.8 29.5 83.5'
+const HAIR_WIDTH = 9.5
+const EYE = { cx: 64, cy: 46 } as const
 
 /**
  * The path data, exported so a test can check that components/WelcomeScreen.tsx
  * (which has to inline the mark as JSX) hasn't drifted from it.
  */
-export const MARK_PATHS = { HEAD, HAIRLINE, FILLET, EYE, SPIRAL } as const
+export const MARK_PATHS = { FACE, HAIR } as const
 
-/** The silhouette's extent inside its 100-unit box; every line sits inside it. */
-export const MARK_BOUNDS = { x: 12.5, y: 17, width: 64.5, height: 70.5 } as const
+/** The drawn extent inside the 100-unit box (head and hair band together). */
+export const MARK_BOUNDS = { x: 20, y: 17.2, width: 57, height: 73.8 } as const
 
 export interface MarkOptions {
   /** The silhouette's colour. Ink for light grounds, paper for dark ones. */
   figure?: string
-  /** The colour the lines are drawn in — the ground's colour, so they read as cut out. */
+  /** The ground's colour, used for the gap around the hair and for the eye. */
   line?: string
 }
 
-function lines(line: string, strokeWidth: number, extra: string): string {
-  return `<g fill="none" stroke="${line}" stroke-width="${strokeWidth}" stroke-linecap="round"><path d="${HAIRLINE}"/><path d="${FILLET}"/><path d="${EYE}" stroke-width="${round2(strokeWidth * 1.1)}"/>${extra}</g>`
+function drawMark(figure: string, line: string, gap: number, eyeRadius: number): string {
+  return (
+    `<path d="${FACE}" fill="${figure}"/>` +
+    `<g fill="none" stroke-linecap="round"><path d="${HAIR}" stroke="${line}" stroke-width="${HAIR_WIDTH + 2 * gap}"/><path d="${HAIR}" stroke="${figure}" stroke-width="${HAIR_WIDTH}"/></g>` +
+    `<circle cx="${EYE.cx}" cy="${EYE.cy}" r="${eyeRadius}" fill="${line}"/>`
+  )
 }
 
 /** Full-detail cut, for 64 px and up. */
 export function markBody({ figure = INK, line = PAPER }: MarkOptions = {}): string {
-  return `<path d="${HEAD}" fill="${figure}"/>${lines(line, 2, `<path d="${SPIRAL}" stroke-width="1.7"/>`)}`
+  return drawMark(figure, line, 2, 1.9)
 }
 
-/** Small cut, for 48 px and below: no spiral, heavier lines. */
+/** Small cut, for 48 px and below: a wider gap and a bigger eye. */
 export function markSmallBody({ figure = INK, line = PAPER }: MarkOptions = {}): string {
-  return `<path d="${HEAD}" fill="${figure}"/>${lines(line, 3.6, '')}`
+  return drawMark(figure, line, 3.5, 3)
 }
 
 /**

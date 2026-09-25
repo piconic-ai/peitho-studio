@@ -55,11 +55,17 @@ describe('squirclePath', () => {
 describe('markBody / markSmallBody', () => {
   const colours = (svg: string) => new Set(svg.match(/#[0-9a-fA-F]{6}/g))
 
-  test('Given the defaults, When drawn, Then the full cut is an ink silhouette with paper lines and the spiral', () => {
+  test('Given the defaults, When drawn, Then it is an ink head with the hair band laid over it, a paper gap around the band, and a paper dot for the eye', () => {
     const svg = markBody()
-    expect(svg).toContain(`<path d="${MARK_PATHS.HEAD}" fill="${INK}"/>`)
-    expect(svg).toContain(`stroke="${PAPER}"`)
-    expect(svg).toContain(MARK_PATHS.SPIRAL)
+    expect(svg).toContain(`<path d="${MARK_PATHS.FACE}" fill="${INK}"/>`)
+    expect(svg).toContain(`<path d="${MARK_PATHS.HAIR}" stroke="${PAPER}" stroke-width="13.5"/>`)
+    expect(svg).toContain(`<path d="${MARK_PATHS.HAIR}" stroke="${INK}" stroke-width="9.5"/>`)
+    expect(svg).toMatch(new RegExp(`<circle [^>]*fill="${PAPER}"/>`))
+  })
+
+  test('Given the hair, When drawn, Then the gap goes down before the band so the band sits on top of it', () => {
+    const svg = markBody()
+    expect(svg.indexOf('stroke-width="13.5"')).toBeLessThan(svg.indexOf('stroke-width="9.5"'))
   })
 
   test('Given any options, When drawn, Then only the figure and line colours appear (the mark has no colour of its own)', () => {
@@ -68,12 +74,11 @@ describe('markBody / markSmallBody', () => {
     expect(colours(markSmallBody({ figure: '#000001', line: '#000002' }))).toEqual(new Set(['#000001', '#000002']))
   })
 
-
-  test('Given the small cut, When drawn, Then it drops the spiral that turns to noise at 16 px, and draws heavier lines', () => {
-    const svg = markSmallBody()
-    expect(svg).not.toContain(MARK_PATHS.SPIRAL)
-    expect(svg).toContain('stroke-width="3.6"')
-    expect(svg).toContain(MARK_PATHS.EYE)
+  test('Given the small cut, When drawn, Then the gap and the eye are larger than in the full cut so they survive at 16 px', () => {
+    const small = markSmallBody()
+    expect(small).toContain('stroke-width="16.5"')
+    expect(small).toContain('r="3"')
+    expect(small).toContain(`stroke="${INK}" stroke-width="9.5"`) // the band itself keeps its width
   })
 })
 
@@ -82,7 +87,7 @@ describe('appIconSvg / svgDocument', () => {
     const svg = appIconSvg()
     expect(svg).toContain('viewBox="0 0 1024 1024"')
     expect(svg).toContain('feDropShadow')
-    expect(svg).toContain(`<path d="${MARK_PATHS.HEAD}" fill="${PAPER}"/>`)
+    expect(svg).toContain(`<path d="${MARK_PATHS.FACE}" fill="${PAPER}"/>`)
   })
 
   test('Given shadow: false and a full tile, When drawn, Then there is no filter and the tile reaches the canvas edge', () => {
@@ -92,7 +97,8 @@ describe('appIconSvg / svgDocument', () => {
   })
 
   test('Given small: true, When drawn, Then the small cut is used', () => {
-    expect(appIconSvg({ small: true })).not.toContain(MARK_PATHS.SPIRAL)
+    expect(appIconSvg({ small: true })).toContain('stroke-width="16.5"')
+    expect(appIconSvg()).not.toContain('stroke-width="16.5"')
   })
 
   test('Given a title with markup characters, When wrapped, Then they are escaped so the document stays well-formed', () => {
