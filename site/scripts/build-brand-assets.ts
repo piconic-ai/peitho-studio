@@ -7,7 +7,7 @@
 // regenerating when the brand changes. From the repository root:
 //   bun site/scripts/build-brand-assets.ts   # CHROME_PATH=... to pick a browser
 import { chromium } from '@playwright/test'
-import { copyFileSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const ROOT = resolve(import.meta.dir, '../..')
