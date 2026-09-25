@@ -1,8 +1,9 @@
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineConfig } from 'vite'
+import { defineConfig, normalizePath } from 'vite'
 import { barefoot } from '@barefootjs/vite'
 import { CSRAdapter } from '@barefootjs/client/csr-adapter'
+import { rewriteOutOfRootUrls } from './vite/outOfRootAssets'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -36,5 +37,15 @@ export default defineConfig({
     // site has no backend: hand the dev server back its own index.html.
     // Declared after barefoot (which is `enforce: 'pre'`) so this wins.
     { name: 'site-serve-index-html', config: () => ({ appType: 'spa' }) },
+    // The dev server can't serve index.html's `../brand/*.svg` references
+    // (the build resolves them fine) — see vite/outOfRootAssets.ts.
+    {
+      name: 'site-serve-out-of-root-assets',
+      apply: 'serve',
+      transformIndexHtml: {
+        order: 'pre',
+        handler: (html) => rewriteOutOfRootUrls(html, normalizePath(HERE)),
+      },
+    },
   ],
 })

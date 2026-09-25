@@ -62,7 +62,10 @@ The logo and icons are the app's own, from [`brand/`](../brand/README.md)
   `../brand/app-icon.svg` (hero), `../brand/app-icon-small.svg` (favicon) and
   `../src-tauri/icons/32x32.png` (PNG favicon) directly; Vite copies them
   into the build with hashed names, so a brand change reaches the site on
-  the next build.
+  the next build. The dev server can't serve paths outside the site root
+  on its own (`/brand/x.svg` would fall through to index.html), so
+  `vite/outOfRootAssets.ts` rewrites those references to Vite's `/@fs/`
+  endpoint in dev only.
 - Headings use Charis SIL, the wordmark's face (`@fontsource/charis-sil`,
   pinned to the same version as the app, SIL Open Font License).
 - The rasters that can't be SVG — `public/apple-touch-icon.png`,
