@@ -6,27 +6,23 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 
 ## Stack
 
-- One static `index.html`, styled by `public/site.css`. It reads fully
-  without JavaScript (features, links, build instructions, a plain link to
-  the latest release). It is not the Peitho site and does not
-  copy its look: warm stone neutrals from the app icon, the system sans
-  the app uses, one indigo accent, and light/dark following the OS.
-- Two [BarefootJS](https://barefootjs.dev) islands (CSR adapter, compiled by
-  `@barefootjs/vite`), mounted from `src/main.ts` into placeholders in the
-  HTML:
-  - `src/components/DownloadPanel.tsx` fetches
-    `https://api.github.com/repos/piconic-ai/peitho-studio/releases/latest`,
-    detects the visitor's platform (and, on Chromium, the CPU architecture
-    via UA Client Hints), and shows the matching asset on the primary button,
-    with every other asset behind a toggle. When there is no release, the
-    release has no assets, or the API can't be reached, it falls back to the
-    Releases page and the build-from-source section.
-  - `src/components/FeatureTour.tsx` is a schematic of the Studio window
-    that lights up the pane each tour step talks about; the phone-viewport
-    and section-collapse toggles inside it are live controls.
-- `src/domain/*.ts` holds the pure rules (asset classification, platform
-  detection, the tour's steps and navigation) and their `bun test` specs,
-  following the app's `.ts` = pure / `.tsx` = stateful convention.
+- One static `index.html`, styled by `public/site.css` (light only). It
+  says three things: what Peitho is (linking to
+  [peitho.gosu.ke](https://peitho.gosu.ke)), what Peitho Studio is, and where
+  to download it. It reads without JavaScript, with a plain link to the
+  latest release.
+- One [BarefootJS](https://barefootjs.dev) island (CSR adapter, compiled by
+  `@barefootjs/vite`), mounted from `src/main.ts`:
+  `src/components/DownloadPanel.tsx` fetches
+  `https://api.github.com/repos/piconic-ai/peitho-studio/releases/latest`,
+  detects the visitor's platform (and, on Chromium, the CPU architecture via
+  UA Client Hints), and shows the matching asset on the download button,
+  with every other asset behind a toggle. When there is no release, the
+  release has no assets, or the API can't be reached, it links the Releases
+  page instead.
+- `src/domain/releases.ts` holds the pure rules (asset classification,
+  platform detection) and their `bun test` specs, following the app's
+  `.ts` = pure / `.tsx` = stateful convention.
 - Deployed as [Cloudflare Workers static
   assets](https://developers.cloudflare.com/workers/static-assets/): no
   Worker script runs, `wrangler.jsonc` only points `assets.directory` at
