@@ -3,13 +3,11 @@
 The mark is Peitho herself — the Greek goddess of persuasion the engine is
 named after — in profile, the way Greek vases and coins show her:
 
-- **Krobylos.** Her hair is tied back into a knot at the nape. The spiral
-  in the knot is the ball of twine she holds in vase painting, drawn as
-  semicircles on one axis like an Ionic volute.
+- **Krobylos.** Her hair is tied back into a plain round knot at the nape.
 - **Kawaii, in proportion.** A big round head and a short neck.
-- **Expressions.** The same head can wear different faces — only the eye
-  (and a brow, where needed) changes. The default, used for the app icon,
-  is her eye closed in a smile.
+- **Expressions.** The same head can wear two faces — only the eye
+  changes: `neutral` (an open dot, no expression; the default and the app
+  icon's) and `calm` (the eye closed, at rest).
 - **No colour.** Ink `#111111` and paper `#ffffff`, the same two
   peitho.gosu.ke uses. The mark is one silhouette with its lines cut out in
   the ground's colour; on dark grounds the two swap.
@@ -30,7 +28,7 @@ generated — edit `scripts/brand/mark.ts`, then run `bun run icons`.
 | `app-icon.svg` | The app icon: a paper-white Peitho on an ink tile — a continuous-corner squircle (superellipse, n = 5) on the macOS grid, an 824 px body on a 1024 px canvas, with a soft drop shadow. |
 | `app-icon-small.svg` | The same icon with the small cut, used for every raster at 48 px and below. |
 | `app-icon.png` | `app-icon.svg` at 1024 px, for previews. |
-| `expressions/<name>.svg` | The mark wearing each expression — `smile`, `neutral`, `calm`, `surprised`, `troubled`, `sleepy` — plus a `-inverse` of each for dark backgrounds. |
+| `expressions/<name>.svg` | The mark wearing each expression — `neutral` and `calm` — plus a `-inverse` of each for dark backgrounds. |
 
 The wordmark's face is [Charis SIL](https://software.sil.org/charis/)
 (SIL Open Font License 1.1), chosen because it descends from Bitstream
@@ -41,14 +39,13 @@ The outlines are embedded as paths, so no font ships with the SVG.
 
 Like a type family's optical sizes, the mark has a full cut and a small
 cut (`markBody` / `markSmallBody` in `scripts/brand/mark.ts`). At 48 px and
-below the spiral falls under a pixel, so the small cut drops it and draws
-the hairline and the face heavier.
+below the 2-unit hairline and the eye fall under a pixel, so the small
+cut draws both heavier.
 
 ## Expressions
 
 `EXPRESSIONS` in `scripts/brand/mark.ts` holds her faces; pass one as
-`markBody({ expression })`. Each draws only in the line colour and only
-around the eye, so every expression keeps the same silhouette and the same
+`markBody({ expression })`. Each draws only the eye, in the line colour, so every expression keeps the same silhouette and the same
 two colours (both are checked by tests). To add one, add an entry there and
 run `bun run icons`.
 
