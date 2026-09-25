@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { appIconSvg, BLUSH, ellipsePath, markBody, markSmallBody, squirclePath, svgDocument } from './mark'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { appIconSvg, BLUSH, ellipsePath, MARK_PATHS, markBody, markSmallBody, squirclePath, svgDocument } from './mark'
 
 function points(path: string): [number, number][] {
   expect(path.startsWith('M')).toBe(true)
@@ -104,3 +106,12 @@ describe('appIconSvg / svgDocument', () => {
   })
 })
 
+describe('WelcomeScreen inline mark', () => {
+  test('Given the mark source, When the welcome screen inlines it, Then every path matches the source verbatim', () => {
+    const tsx = readFileSync(resolve(import.meta.dir, '../../components/WelcomeScreen.tsx'), 'utf8')
+    for (const [name, d] of Object.entries(MARK_PATHS)) {
+      expect(tsx.includes(`d="${d}"`), `WelcomeScreen.tsx is missing ${name}`).toBe(true)
+    }
+    expect(tsx).toContain(BLUSH)
+  })
+})

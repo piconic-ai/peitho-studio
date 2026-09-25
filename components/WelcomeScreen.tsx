@@ -27,11 +27,22 @@ export function WelcomeScreen(props: WelcomeScreenProps) {
   return (
     <div className="flex-1 flex items-center justify-center">
       <div className="w-full max-w-sm flex flex-col items-center gap-4 px-6">
-        {/* The brand mark (brand/logo-mark.svg, inlined so `currentColor`
-            keeps it on-theme). Decorative: the heading right after it
-            already names the app. */}
-        <svg aria-hidden="true" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round" className="block w-12 h-12 text-foreground">
-          <path d="M16 52V13h20a13 13 0 0 1 0 26a7 7 0 0 1 0-14" />
+        {/* The brand mark: brand/logo-mark.svg, generated from
+            scripts/brand/mark.ts. JSX can't take that markup as a string,
+            so it's inlined here; scripts/brand/mark.test.ts fails if these
+            paths drift from the source. Decorative: the heading right after
+            it already names the app. */}
+        <svg aria-hidden="true" viewBox="17.5 6 65 76.5" className="block w-16 h-16">
+          <circle cx="50" cy="17" r="10" fill="#111111" />
+          <path fill="#111111" d="M50 22C29 22 18.5 37 18.5 56C18.5 64 20.5 71 23.5 76.5C24.5 78.3 26.8 78.6 28 77C29.5 75 30 72 30 69L70 69C70 72 70.5 75 72 77C73.2 78.6 75.5 78.3 76.5 76.5C79.5 71 81.5 64 81.5 56C81.5 37 71 22 50 22Z" />
+          <path fill="#ffffff" d="M50 42C35 42 27.5 52 27.5 62.5C27.5 73.5 37 81.5 50 81.5C63 81.5 72.5 73.5 72.5 62.5C72.5 52 65 42 50 42Z" />
+          <path fill="#111111" d="M26.8 62C26.8 46.5 37 35.5 50 35.5C63 35.5 73.2 46.5 73.2 62C67.5 57 61.5 51.5 56.8 45.5C55.3 50 52.9 53.2 50 54.8C47.1 53.2 44.7 50 43.2 45.5C38.5 51.5 32.5 57 26.8 62Z" />
+          <path fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" d="M51.6 17a1.6 1.6 0 1 0-3.2 0a3.4 3.4 0 1 0 6.8 0a5.2 5.2 0 1 0-10.4 0" />
+          <path fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" d="M33.8 32.6C43 27.4 57 27.4 66.2 32.6" />
+          <circle cx="50" cy="28.9" r="1.9" fill="#ffffff" />
+          <path fill="none" stroke="#111111" stroke-width="2.3" stroke-linecap="round" d="M38.8 64.6q3.4-3.8 6.8 0M54.4 64.6q3.4-3.8 6.8 0" />
+          <path fill="#F4A6B8" d="M32.1 70.6a4.2 2.5 0 1 0 8.4 0a4.2 2.5 0 1 0 -8.4 0ZM59.5 70.6a4.2 2.5 0 1 0 8.4 0a4.2 2.5 0 1 0 -8.4 0Z" />
+          <path fill="none" stroke="#111111" stroke-width="1.9" stroke-linecap="round" d="M47.9 72.3q2.1 1.9 4.2 0" />
         </svg>
         <h1 className="text-lg font-semibold">Peitho Studio</h1>
         <div className="flex items-center gap-2">
