@@ -29,5 +29,10 @@ export default defineConfig({
       adapter: new CSRAdapter(),
       components: ['src/components'],
     }),
+    // The barefoot plugin sets `appType: 'custom'`, which assumes a separate
+    // backend serves the HTML, so `vite` alone answered "Cannot GET /". This
+    // site has no backend: hand the dev server back its own index.html.
+    // Declared after barefoot (which is `enforce: 'pre'`) so this wins.
+    { name: 'site-serve-index-html', config: () => ({ appType: 'spa' }) },
   ],
 })
