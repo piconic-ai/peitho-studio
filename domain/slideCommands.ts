@@ -1,8 +1,9 @@
 import { type SelectionPlan } from './editorSession'
+import { indexAfterMove } from './slides'
 
 /** Every way the slide list itself can change shape. Adding a new kind of
  * slide operation means adding one variant here plus one `case` in each
- * of the four functions below — the open/closed seam `Studio.tsx`'s
+ * of the functions below — the open/closed seam `Studio.tsx`'s
  * `addSlide`/`deleteSlide`/`reorderSlides`/`pasteSlideAfter`/
  * `updateSlideConfig` used to lack, each hand-rolling its own splice and
  * its own guess at the resulting selection. */
@@ -35,6 +36,30 @@ export function applyCommand(texts: readonly string[], cmd: SlideCommand): strin
     case 'replace':
       next[cmd.index] = cmd.text
       return next
+    default: {
+      const _exhaustive: never = cmd
+      throw new Error(`Unhandled SlideCommand: ${JSON.stringify(_exhaustive)}`)
+    }
+  }
+}
+
+/** Where the slide at position `i` sits after `cmd` has run, or `null` if
+ * `cmd` deleted it (or `i` names no slide at all: negative or not an
+ * integer). Pure position arithmetic — `i` is not checked against the
+ * slide count, which this function never sees. `replace` rewrites a
+ * slide in place, so it never moves anything. */
+export function indexAfterCommand(i: number, cmd: SlideCommand): number | null {
+  if (!Number.isInteger(i) || i < 0) return null
+  switch (cmd.type) {
+    case 'insert':
+      return i >= cmd.at ? i + 1 : i
+    case 'delete':
+      if (i === cmd.index) return null
+      return i > cmd.index ? i - 1 : i
+    case 'move':
+      return indexAfterMove(i, cmd.from, cmd.to)
+    case 'replace':
+      return i
     default: {
       const _exhaustive: never = cmd
       throw new Error(`Unhandled SlideCommand: ${JSON.stringify(_exhaustive)}`)
