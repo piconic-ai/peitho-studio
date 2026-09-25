@@ -57,7 +57,6 @@ section { width: min(1080px, 100% - 40px); margin-inline: auto; }
 h1, h2 { font-family: var(--serif); font-weight: 400; letter-spacing: -0.03em; }
 .hero h1 { margin: 0; font-size: clamp(44px, 8vw, 72px); line-height: 1.05; }
 .hero-lede { margin: 12px 0 0; font-size: clamp(18px, 2.6vw, 21px); color: var(--muted); }
-.hero-lede a { color: var(--fg); font-weight: 500; }
 
 /* The app window */
 .window {
