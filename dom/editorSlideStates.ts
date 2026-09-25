@@ -19,6 +19,8 @@ export interface EditorSlideStates<T> {
   store(index: number, entry: T): void
   /** Removes and returns the state kept for the slide at `index`. */
   take(index: number): T | undefined
+  /** The state kept for the slide at `index`, left in place. */
+  peek(index: number): T | undefined
   /** Moves every kept state to where its slide sits after `cmd`; the state
    * of a slide `cmd` deleted is dropped. */
   shift(cmd: SlideCommand): void
@@ -36,6 +38,9 @@ export function createEditorSlideStates<T>(): EditorSlideStates<T> {
       const entry = states.get(index)
       states.delete(index)
       return entry
+    },
+    peek(index) {
+      return states.get(index)
     },
     shift(cmd) {
       const shifted = new Map<number, T>()

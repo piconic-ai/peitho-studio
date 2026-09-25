@@ -13,9 +13,9 @@ describe('history store', () => {
       const store = createHistoryStore()
       store.record(UNDO_INSERT)
 
-      expect(store.takeUndo()).toEqual(UNDO_INSERT)
+      expect(store.take('undo')).toEqual(UNDO_INSERT)
       // A second Cmd+Z pressed before the first commit finished finds nothing.
-      expect(store.takeUndo()).toBeNull()
+      expect(store.take('undo')).toBeNull()
     })
   })
 
@@ -23,10 +23,10 @@ describe('history store', () => {
     createRoot(() => {
       const store = createHistoryStore()
       store.record(UNDO_INSERT)
-      store.takeUndo()
+      store.take('undo')
       store.pushRedo(REDO_INSERT)
 
-      expect(store.takeRedo()).toEqual(REDO_INSERT)
+      expect(store.take('redo')).toEqual(REDO_INSERT)
       expect(store.history().redo).toEqual([])
     })
   })
@@ -38,7 +38,7 @@ describe('history store', () => {
 
       store.record(UNDO_LAYOUT)
 
-      expect(store.takeRedo()).toBeNull()
+      expect(store.take('redo')).toBeNull()
       expect(store.history().undo).toEqual([UNDO_LAYOUT])
     })
   })
@@ -47,11 +47,11 @@ describe('history store', () => {
     createRoot(() => {
       const store = createHistoryStore()
       store.record(UNDO_LAYOUT)
-      const step = store.takeUndo()!
+      const step = store.take('undo')!
 
       store.pushUndo(step)
 
-      expect(store.takeUndo()).toEqual(UNDO_LAYOUT)
+      expect(store.take('undo')).toEqual(UNDO_LAYOUT)
     })
   })
 
@@ -70,8 +70,29 @@ describe('history store', () => {
   test('adversarial: taking from an empty store leaves it empty', () => {
     createRoot(() => {
       const store = createHistoryStore()
-      expect(store.takeUndo()).toBeNull()
-      expect(store.takeRedo()).toBeNull()
+      expect(store.take('undo')).toBeNull()
+      expect(store.take('redo')).toBeNull()
+      expect(store.history()).toEqual(EMPTY_HISTORY)
+    })
+  })
+
+  test('spec: Given text markers the editor already took back, when undo is taken, then they are dropped and the step below comes back', () => {
+    createRoot(() => {
+      const store = createHistoryStore()
+      store.record(UNDO_LAYOUT)
+      store.record({ kind: 'text', index: 0, field: 'body', seq: 1 })
+
+      expect(store.take('undo', () => false)).toEqual(UNDO_LAYOUT)
+      expect(store.history()).toEqual(EMPTY_HISTORY)
+    })
+  })
+
+  test('adversarial: Given only text markers the editor already took back, when undo is taken, then nothing comes back and they are gone', () => {
+    createRoot(() => {
+      const store = createHistoryStore()
+      store.record({ kind: 'text', index: 0, field: 'note', seq: 4 })
+
+      expect(store.take('undo', () => false)).toBeNull()
       expect(store.history()).toEqual(EMPTY_HISTORY)
     })
   })
@@ -81,7 +102,7 @@ describe('history store', () => {
       const a = createHistoryStore()
       const b = createHistoryStore()
       a.record(UNDO_INSERT)
-      expect(b.takeUndo()).toBeNull()
+      expect(b.take('undo')).toBeNull()
     })
   })
 })

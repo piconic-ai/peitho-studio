@@ -1,9 +1,9 @@
 // The slide body and speaker notes are CodeMirror 6 editors
 // (`dom/codeEditor.ts`). These cover what the user sees of them: typing is
-// saved, switching slides swaps the text without Undo reaching back into
-// the previous slide, each slide keeps its own undo history for when the
-// user comes back to it (`dom/editorSlideStates.ts`), and Edit > Undo
-// undoes the focused editor's typing.
+// saved, switching slides swaps the text, each slide keeps its own undo
+// history for when the user comes back to it (`dom/editorSlideStates.ts`),
+// and Edit > Undo takes typing back in the slide it was typed into, in
+// order with slide operations (more in `undo-timeline.e2e.ts`).
 // Edit > Undo is sent as the `menu:undo` event the Rust side emits for the
 // menu item and its Cmd+Z accelerator (`src-tauri/src/edit_menu.rs`); the
 // native menu itself, and IME on a real WKWebView, are on-device checks.
@@ -92,10 +92,10 @@ test.describe('functional', () => {
     expect(await editorText(page, 'note')).toBe('')
   })
 
-  test('Given a character deleted in one slide, when another slide is selected, then the editor shows that slide, and Edit > Undo there does not bring back the deleted character', async ({ page }) => {
-    // A deletion is what a history kept across the switch would replay
-    // visibly: undoing it re-inserts the character into the other slide's
-    // text ("# Slide Twoe").
+  test('Given a character deleted in one slide, when another slide is selected and Edit > Undo is chosen there, then the first slide opens again with the character back, and the other slide is untouched', async ({ page }) => {
+    // A deletion is what a history carried across the switch would replay
+    // visibly: undoing it in the wrong editor re-inserts the character into
+    // the other slide's text ("# Slide Twoe").
     const deck: MockDeck = { source: TWO_SLIDES }
     await openDeck(page, deck)
     await moveToEditorEnd(page)
@@ -108,10 +108,8 @@ test.describe('functional', () => {
     await editorContent(page).click()
     await menu(page, 'undo')
 
-    // Give a wrongly kept history time to land before asserting it didn't.
-    await page.waitForTimeout(800)
-    expect(await editorText(page)).toBe('# Slide Two')
-    expect(deck.source).toContain('# Slide On\n')
+    await expect.poll(() => editorText(page)).toBe('# Slide One')
+    await expect.poll(() => deck.source).toContain('# Slide One\n')
     expect(deck.source).toContain('# Slide Two\n')
   })
 
@@ -192,7 +190,7 @@ test.describe('functional: each slide keeps its own undo history', () => {
     await expect.poll(() => deck.source).not.toContain('note text')
   })
 
-  test('Given text typed into slide One and into slide Two, when each is reopened, then Edit > Undo there takes back only that slide\'s own typing', async ({ page }) => {
+  test('Given text typed into slide One and then into slide Two, when Edit > Undo is chosen twice from slide One, then slide Two\'s typing is taken back first, in slide Two, and slide One\'s next, in slide One', async ({ page }) => {
     const deck: MockDeck = { source: TWO_SLIDES }
     await openDeck(page, deck)
     await typeAndSave(page, deck, ' one')
@@ -202,16 +200,16 @@ test.describe('functional: each slide keeps its own undo history', () => {
     await selectRow(page, 0, '# Slide One one')
     await editorContent(page).click()
     await menu(page, 'undo')
-    await expect.poll(() => editorText(page)).toBe('# Slide One')
-
-    await selectRow(page, 1, '# Slide Two two')
-    await editorContent(page).click()
-    await menu(page, 'undo')
     await expect.poll(() => editorText(page)).toBe('# Slide Two')
+    await expect.poll(() => deck.source).not.toContain(' two')
+    expect(deck.source).toContain('# Slide One one')
+
+    await menu(page, 'undo')
+    await expect.poll(() => editorText(page)).toBe('# Slide One')
     await expect.poll(() => deck.source).not.toMatch(/ one| two/)
   })
 
-  test('Given text typed into slide One, when slide Two is moved above it and slide One is reopened in second place, then Edit > Undo takes back slide One\'s typing', async ({ page }) => {
+  test('Given text typed into slide One and then slide Two moved above it, when slide One is reopened in second place, then its typing is still there to undo: Edit > Undo takes back the move first and the typing next', async ({ page }) => {
     const deck: MockDeck = { source: TWO_SLIDES }
     await openDeck(page, deck)
     await typeAndSave(page, deck, ' typed')
@@ -225,11 +223,14 @@ test.describe('functional: each slide keeps its own undo history', () => {
     await selectRow(page, 1, '# Slide One typed')
     await editorContent(page).click()
     await menu(page, 'undo')
+    await expect.poll(() => deck.source.indexOf('# Slide One') < deck.source.indexOf('# Slide Two')).toBe(true)
+    await menu(page, 'undo')
     await expect.poll(() => editorText(page)).toBe('# Slide One')
+    await expect.poll(() => deck.source).not.toContain('typed')
     expect(deck.source).toContain('# Slide Two\n')
   })
 
-  test('Given text typed into slide Three and slide One open, when slide Two is deleted, then the editor opens slide Three and Edit > Undo takes back its typing', async ({ page }) => {
+  test('Given text typed into slide Three and slide One open, when slide Two is deleted, then the editor opens slide Three with its typing still there to undo: Edit > Undo brings slide Two back first and takes the typing back next', async ({ page }) => {
     const deck: MockDeck = { source: THREE_SLIDES }
     await openDeck(page, deck, 3)
     await selectRow(page, 2, '# Slide Three')
@@ -243,7 +244,10 @@ test.describe('functional: each slide keeps its own undo history', () => {
     await expect.poll(() => editorText(page)).toBe('# Slide Three typed')
     await editorContent(page).click()
     await menu(page, 'undo')
+    await expect(page.locator('[data-slide-row]')).toHaveCount(3)
+    await menu(page, 'undo')
     await expect.poll(() => editorText(page)).toBe('# Slide Three')
+    await expect.poll(() => deck.source).not.toContain('typed')
   })
 
   test('Given text typed into slide One, when a save in slide Two splits it into two slides and slide One is reopened, then Edit > Undo there changes nothing', async ({ page }) => {

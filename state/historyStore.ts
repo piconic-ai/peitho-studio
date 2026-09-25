@@ -3,29 +3,23 @@ import {
   EMPTY_HISTORY,
   type EditorHistory,
   type HistoryStep,
+  type TextStep,
   pushRedo,
   pushUndo,
   record,
-  takeRedo,
-  takeUndo,
+  takeLive,
 } from '../domain/editorHistory'
 
-/** The window's structural undo/redo history (`domain/editorHistory.ts`).
- * Lives only as long as the window: nothing here is persisted.
+/** The window's undo/redo timeline (`domain/editorHistory.ts`): slide
+ * operations and markers for the text editors' typing, in one order. Lives
+ * only as long as the window: nothing here is persisted.
  *
- * `takeUndo`/`takeRedo` pop synchronously, before the caller's commit is
+ * `take` pops synchronously, before the caller's commit is
  * awaited, so a second Cmd+Z pressed while the first is still saving can't
  * take the same step again. The caller then pushes the opposite step on
  * success, or puts the taken one back on failure. */
 export function createHistoryStore() {
   const [history, setHistory] = createSignal<EditorHistory>(EMPTY_HISTORY)
-
-  function takeFrom(take: typeof takeUndo): HistoryStep | null {
-    const taken = take(history())
-    if (!taken) return null
-    setHistory(taken.history)
-    return taken.step
-  }
 
   return {
     history,
@@ -33,11 +27,12 @@ export function createHistoryStore() {
     record(undoStep: HistoryStep): void {
       setHistory(h => record(h, undoStep))
     },
-    takeUndo(): HistoryStep | null {
-      return takeFrom(takeUndo)
-    },
-    takeRedo(): HistoryStep | null {
-      return takeFrom(takeRedo)
+    /** Takes the newest undo (or redo) step that can still run, dropping
+     * the text markers above it that `isLive` says can't (`takeLive`). */
+    take(direction: 'undo' | 'redo', isLive: (step: TextStep) => boolean = () => true): HistoryStep | null {
+      const taken = takeLive(history(), direction, isLive)
+      if (taken.history !== history()) setHistory(taken.history)
+      return taken.step
     },
     pushUndo(step: HistoryStep): void {
       setHistory(h => pushUndo(h, step))
