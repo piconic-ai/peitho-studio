@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Peitho Studio — A Markdown editor powered by Peitho</title>
+  <meta name="description" content="Peitho Studio is a desktop Markdown editor powered by Peitho, an HTML-native presentation tool that treats Markdown as the source of truth.">
+  <meta name="theme-color" content="#fbfaf8">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" type="image/svg+xml" href="../brand/app-icon-small.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="../src-tauri/icons/32x32.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <!-- og:image is relative until the production hostname is fixed; make it
+       absolute (https://<host>/og.png) together with wrangler.jsonc's route. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Peitho Studio">
+  <meta property="og:title" content="Peitho Studio">
+  <meta property="og:description" content="A Markdown editor powered by Peitho.">
+  <meta property="og:image" content="/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preload" as="image" href="/studio@2x.webp" imagesrcset="/studio.webp 1280w, /studio@2x.webp 2560w" imagesizes="(min-width: 1140px) 1080px, 100vw">
+  <link rel="stylesheet" href="/site.css">
+</head>
+<body>
+  <header class="nav">
+    <a class="nav-brand" href="/">
+      <img src="../brand/logo-wordmark.svg" alt="Peitho Studio" width="117" height="28">
+    </a>
+    <nav class="nav-links" aria-label="Site">
+      <a href="#download">Download</a>
+      <a href="https://github.com/piconic-ai/peitho-studio">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="title">
+      <div class="hero-copy">
+        <img class="hero-icon" src="../brand/app-icon.svg" alt="" width="128" height="128">
+        <h1 id="title">Peitho Studio</h1>
+        <p class="hero-lede">A Markdown editor powered by <a href="https://peitho.gosu.ke">Peitho</a></p>
+        <div id="download-button" class="download">
+          <!-- Replaced by the DownloadPanel island; kept as the no-JS fallback. -->
+          <a class="btn btn-big" href="https://github.com/piconic-ai/peitho-studio/releases/latest">Download</a>
+        </div>
+      </div>
+
+      <figure class="window">
+        <div class="window-bar" aria-hidden="true">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="window-title">deck.md — Peitho Studio</span>
+        </div>
+        <img class="window-shot"
+             src="/studio.webp"
+             srcset="/studio.webp 1280w, /studio@2x.webp 2560w"
+             sizes="(min-width: 1140px) 1080px, 100vw"
+             width="1280" height="800"
+             alt="Peitho Studio with a deck open: the slide list with sections on the left, the Markdown editor and speaker notes in the middle, and the live slide preview on the right.">
+      </figure>
+    </section>
+
+    <section class="peitho" aria-labelledby="peitho-title">
+      <div class="peitho-copy">
+        <p class="eyebrow">Built on</p>
+        <h2 id="peitho-title">Peitho</h2>
+        <p class="peitho-tagline">An HTML-native presentation tool that treats Markdown as the source of truth.</p>
+        <a class="peitho-link" href="https://peitho.gosu.ke">peitho.gosu.ke <span aria-hidden="true">→</span></a>
+      </div>
+      <div class="peitho-visual" aria-hidden="true">
+        <pre class="md"><span class="md-file">deck.md</span><code><b># Why plain text</b>
+
+- One file, any editor
+- Diffs you can review
+- Nothing locked in</code></pre>
+        <span class="arrow">→</span>
+        <div class="slide">
+          <p class="slide-title">Why plain text</p>
+          <ul><li>One file, any editor</li><li>Diffs you can review</li><li>Nothing locked in</li></ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="download" class="downloads" aria-labelledby="download-title">
+      <h2 id="download-title">Download</h2>
+      <div id="download-list">
+        <!-- Replaced by the DownloadPanel island; kept as the no-JS fallback. -->
+        <p class="acc-empty">Builds for macOS, Windows and Linux are on <a href="https://github.com/piconic-ai/peitho-studio/releases">GitHub Releases</a>.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>© 2026 kfly8 · <a href="https://github.com/piconic-ai/peitho-studio/blob/main/LICENSE">MIT License</a></span>
+  </footer>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

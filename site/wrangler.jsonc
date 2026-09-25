@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "peitho-studio-site",
+  "compatibility_date": "2026-08-15",
+  // No `main`: nothing runs on the Worker. `vite build` emits a fully static
+  // page under `dist/`, and Cloudflare serves it as Workers Static Assets.
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  }
+  // Attach the production hostname once it is decided, e.g.
+  // "routes": [{ "pattern": "studio.peitho.app", "custom_domain": true }]
+}
