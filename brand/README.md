@@ -1,17 +1,17 @@
 # Peitho Studio brand assets
 
 The mark is Peitho herself — the Greek goddess of persuasion the engine is
-named after — in profile, the way Greek vases and coins show her:
+named after — in profile, the way Greek coins show her:
 
-- **Krobylos and fillet.** Her hair is tied back into a knot at the nape,
-  with a fillet (*stephane*) across the crown. The spiral in the knot is
-  the ball of twine she holds in vase painting, drawn as semicircles on one
-  axis like an Ionic volute.
-- **Kawaii, in proportion only.** A big round head, a short neck and an
-  eye closed in a smile.
+- **Hair hanging down.** Her hair runs over the crown and falls behind her
+  neck, ending in a curl: the ball of twine she holds in vase painting, and
+  an Ionic volute.
+- **Expressionless.** A single dot for the eye, nothing else in the face.
 - **No colour.** Ink `#111111` and paper `#ffffff`, the same two
-  peitho.gosu.ke uses. The mark is one silhouette with its lines cut out in
-  the ground's colour; on dark grounds the two swap.
+  peitho.gosu.ke uses. The mark is the head plus the hair laid over it as a
+  band, with a thin gap in the ground's colour between them — one
+  silhouette with one line cut into it. On dark grounds the two colours
+  swap.
 
 Background on Peitho's attributes: [Theoi](https://www.theoi.com/Daimon/Peitho.html).
 
@@ -22,8 +22,8 @@ generated — edit `scripts/brand/mark.ts`, then run `bun run icons`.
 
 | File | What it is |
 | --- | --- |
-| `logo-mark.svg` | Ink silhouette, paper lines. For light backgrounds. |
-| `logo-mark-inverse.svg` | Paper silhouette, ink lines. For dark backgrounds. |
+| `logo-mark.svg` | Ink silhouette, paper gap and eye. For light backgrounds. |
+| `logo-mark-inverse.svg` | Paper silhouette, ink gap and eye. For dark backgrounds. |
 | `logo-wordmark.svg` | Mark + "Peitho Studio" in Charis SIL, −0.03 em tracking, converted to paths. |
 | `logo-wordmark-inverse.svg` | The wordmark for dark backgrounds. |
 | `app-icon.svg` | The app icon: a paper-white Peitho on an ink tile — a continuous-corner squircle (superellipse, n = 5) on the macOS grid, an 824 px body on a 1024 px canvas, with a soft drop shadow. |
@@ -39,8 +39,8 @@ The outlines are embedded as paths, so no font ships with the SVG.
 
 Like a type family's optical sizes, the mark has a full cut and a small
 cut (`markBody` / `markSmallBody` in `scripts/brand/mark.ts`). At 48 px and
-below the spiral falls under a pixel, so the small cut drops it and draws the remaining lines — hairline, fillet, eye —
-nearly twice as heavy.
+below the 2-unit gap around the hair and the eye would fall under a pixel,
+so the small cut draws the gap at 3.5 units and the eye at radius 3.
 
 `tauri icon` can't do this — it resizes one image into every size — so
 `scripts/build-brand.ts` renders each size on its own and packs
@@ -67,5 +67,5 @@ Icon Composer (`.icon`) source on top of this.
 
 The source code is MIT-licensed; the "Peitho Studio" name and these assets
 are not (see the top-level README). Use them to refer to Peitho Studio
-itself — don't add colour to the mark, redraw her face, or set the
-wordmark in a different face.
+itself — don't add colour to the mark, give her an expression, or set
+the wordmark in a different face.
