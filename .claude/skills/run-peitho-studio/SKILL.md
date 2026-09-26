@@ -64,8 +64,8 @@ log (a cargo build runs on the first launch or after a Rust-side change,
 taking tens of seconds to a few minutes; a frontend-only change hits the
 cache and takes a few seconds).
 
-Identify the native window's PID (the process name is `app`, per
-`[package] name = "app"` in Cargo.toml):
+Identify the native window's PID (the process name is `peitho-studio`, per
+`[package] name = "peitho-studio"` in Cargo.toml):
 
 ```bash
 ps aux | grep -i "target/debug/peitho-studio" | grep -v grep
