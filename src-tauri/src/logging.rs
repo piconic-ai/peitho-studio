@@ -21,24 +21,41 @@ pub(crate) const LOG_FILE_MENU_ID: &str = "show_log_file";
 /// ones get a timestamp suffix).
 const LOG_FILE_NAME: &str = "Peitho Studio";
 
-/// Once the current file reaches this size it is rotated, keeping only the
-/// previous one, so the log directory holds at most about twice this.
+/// Once the current file reaches this size it is renamed with a timestamp
+/// and a new one started, keeping only that one previous file
+/// (`KeepSome(1)` — `KeepOne` would delete the full file outright, losing
+/// what led up to a problem right after a rotation). The log directory
+/// thus holds at most about twice this.
 const MAX_LOG_FILE_BYTES: u128 = 5 * 1024 * 1024;
 
 /// The log plugin: the app log directory (`~/Library/Logs/<identifier>/`
 /// on macOS) always, plus stdout in debug builds for `tauri dev`.
+/// Dependencies log at Info; this crate at `app_log_level`.
 pub(crate) fn plugin<R: Runtime>() -> TauriPlugin<R> {
+    let debug_build = cfg!(debug_assertions);
     let mut targets = vec![Target::new(TargetKind::LogDir { file_name: Some(LOG_FILE_NAME.into()) })];
-    if cfg!(debug_assertions) {
+    if debug_build {
         targets.push(Target::new(TargetKind::Stdout));
     }
     tauri_plugin_log::Builder::default()
         .clear_targets()
         .targets(targets)
         .level(log::LevelFilter::Info)
+        .level_for(env!("CARGO_CRATE_NAME"), app_log_level(debug_build))
         .max_file_size(MAX_LOG_FILE_BYTES)
-        .rotation_strategy(RotationStrategy::KeepOne)
+        .rotation_strategy(RotationStrategy::KeepSome(1))
         .build()
+}
+
+/// This crate's own log level: `Debug` in a debug build, so `log::debug!`
+/// helps while developing; `Info` in a release build, keeping the file a
+/// user attaches to failures and lifecycle events.
+pub fn app_log_level(debug_build: bool) -> log::LevelFilter {
+    if debug_build {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    }
 }
 
 /// Shows the current log file in Finder, selected in its folder — the file a
@@ -97,6 +114,20 @@ mod tests {
 
     fn here() -> &'static Location<'static> {
         Location::caller()
+    }
+
+    #[test]
+    fn given_a_debug_build_when_the_app_log_level_is_chosen_then_debug_messages_are_kept() {
+        assert_eq!(app_log_level(true), log::LevelFilter::Debug);
+        assert!(log::Level::Debug <= app_log_level(true));
+        assert!(log::Level::Trace > app_log_level(true));
+    }
+
+    #[test]
+    fn given_a_release_build_when_the_app_log_level_is_chosen_then_debug_messages_are_dropped() {
+        assert_eq!(app_log_level(false), log::LevelFilter::Info);
+        assert!(log::Level::Info <= app_log_level(false));
+        assert!(log::Level::Debug > app_log_level(false));
     }
 
     #[test]
