@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { appIconSvg, EXPRESSIONS, type Expression, INK, MARK_PATHS, markBody, markSmallBody, PAPER, squirclePath, svgDocument } from './mark'
+import { appIconSvg, EXPRESSIONS, type Expression, iconComposerGlyphSvg, iconComposerJson, INK, MARK_PATHS, markBody, markSmallBody, PAPER, squirclePath, srgbFill, svgDocument } from './mark'
 
 function points(path: string): [number, number][] {
   expect(path.startsWith('M')).toBe(true)
@@ -131,5 +131,62 @@ describe('WelcomeScreen inline mark', () => {
     for (const [name, d] of Object.entries(MARK_PATHS)) {
       expect(tsx.includes(`d="${d}"`), `WelcomeScreen.tsx is missing ${name}`).toBe(true)
     }
+  })
+})
+
+describe('srgbFill', () => {
+  test('Given ink, When converted, Then it is the srgb triple with full alpha, five decimals each', () => {
+    expect(srgbFill(INK)).toBe('srgb:0.06667,0.06667,0.06667,1.00000')
+    expect(srgbFill(PAPER)).toBe('srgb:1.00000,1.00000,1.00000,1.00000')
+    expect(srgbFill('#000000')).toBe('srgb:0.00000,0.00000,0.00000,1.00000')
+  })
+
+  test.each(['', '#fff', '111111', '#11111', '#1111111', '#gggggg', '#111111 ', 'rgb(1,1,1)'])('Given %j, When converted, Then throws', hex => {
+    expect(() => srgbFill(hex)).toThrow(RangeError)
+  })
+})
+
+describe('iconComposerGlyphSvg', () => {
+  const svg = iconComposerGlyphSvg()
+
+  test('Given the glyph layer, When drawn, Then it is a 1024 document holding only the paper figure with ink lines', () => {
+    expect(svg).toContain('viewBox="0 0 1024 1024"')
+    expect(svg).toContain(markBody({ figure: PAPER, line: INK }))
+    expect(svg).not.toContain('feDropShadow')
+    expect(svg).not.toContain(squirclePath(512, 512, 412))
+    expect(svg).not.toContain(squirclePath(512, 512, 512))
+  })
+
+  test('Given the glyph layer, When placed, Then it is centred on the canvas at the same proportion as the full-tile app icon', () => {
+    // The .icon's fill is the whole 1024 canvas, so the figure sits as it does on appIconSvg's full tile.
+    const full = appIconSvg({ shadow: false, tile: 'full' })
+    const transform = (s: string) => /<g transform="([^"]+)"/.exec(s)?.[1]
+    expect(transform(svg)).toBe(transform(full))
+  })
+})
+
+describe('iconComposerJson', () => {
+  const doc = JSON.parse(iconComposerJson('glyph.svg'))
+
+  test('Given the glyph file, When written, Then the fill is solid ink and the one layer is that file, flat', () => {
+    expect(doc.fill).toEqual({ solid: srgbFill(INK) })
+    expect(doc.groups).toHaveLength(1)
+    expect(doc.groups[0].layers).toEqual([
+      expect.objectContaining({ 'image-name': 'glyph.svg', name: 'glyph', glass: false, hidden: false }),
+    ])
+    expect(doc.groups[0].shadow.kind).toBe('none')
+    expect(doc.groups[0].specular).toBe(false)
+    expect(doc.groups[0].translucency.enabled).toBe(false)
+    expect(doc['supported-platforms']).toEqual({ squares: ['macOS'] })
+  })
+
+  test('Given the output, When read back, Then it ends with a newline and round-trips as JSON', () => {
+    const text = iconComposerJson('glyph.svg')
+    expect(text.endsWith('\n')).toBe(true)
+    expect(JSON.stringify(JSON.parse(text))).toBe(JSON.stringify(doc))
+  })
+
+  test.each(['', 'glyph', 'Assets/glyph.svg', '../glyph.svg', 'glyph.jpg', 'glyph.svg '])('Given %j as the glyph file, When written, Then throws', file => {
+    expect(() => iconComposerJson(file)).toThrow(RangeError)
   })
 })

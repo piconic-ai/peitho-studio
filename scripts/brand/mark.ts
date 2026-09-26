@@ -138,3 +138,69 @@ export function svgDocument(width: number, height: number, body: string, viewBox
   const safeTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" width="${width}" height="${height}" role="img"><title>${safeTitle}</title>${body}</svg>\n`
 }
+
+// ── macOS 26 (Tahoe) layered icon ────────────────────────────────────
+//
+// Tahoe draws a classic .icns in a smaller "legacy" slot with its own
+// glass treatment on top, so the app icon read a size smaller than its
+// neighbours and the paper silhouette looked embossed. A layered icon in
+// Icon Composer's `.icon` format (an `icon.json` plus the layer images)
+// is drawn at full size with the effects we choose — none — and is what
+// `src-tauri/icons/Assets.car` is compiled from. Older macOS keeps using
+// the .icns.
+
+/** A `#rrggbb` colour as Icon Composer's `srgb:R,G,B,A` fill string. */
+export function srgbFill(hex: string): string {
+  const m = /^#([0-9a-fA-F]{6})$/.exec(hex)
+  if (!m) throw new RangeError(`srgbFill: expected #rrggbb, got ${JSON.stringify(hex)}`)
+  const channels = [0, 2, 4].map(i => (parseInt(m[1].slice(i, i + 2), 16) / 255).toFixed(5))
+  return `srgb:${channels.join(',')},1.00000`
+}
+
+/**
+ * The icon's foreground layer: the paper Peitho on a transparent 1024 px
+ * canvas, placed as on the tile of `appIconSvg`. The tile itself is the
+ * `.icon`'s solid fill, so the system can shape and light it.
+ */
+export function iconComposerGlyphSvg(): string {
+  const scale = (0.62 * 1024) / MARK_BOUNDS.height
+  const cx = MARK_BOUNDS.x + MARK_BOUNDS.width / 2
+  const cy = MARK_BOUNDS.y + MARK_BOUNDS.height / 2
+  return svgDocument(
+    1024,
+    1024,
+    `<g transform="translate(${round2(512 - cx * scale)} ${round2(512 - cy * scale)}) scale(${round2(scale)})">${markBody({ figure: PAPER, line: INK })}</g>`,
+  )
+}
+
+/**
+ * The `icon.json` of the `.icon` bundle: an ink fill under one flat glyph
+ * layer — no glass, no specular, no shadow, no translucency — so Tahoe
+ * shows the same icon the site's hero does.
+ */
+export function iconComposerJson(glyphFile: string): string {
+  if (!/^[\w.-]+\.(svg|png)$/.test(glyphFile)) throw new RangeError(`iconComposerJson: glyph must be a bare .svg/.png file name, got ${JSON.stringify(glyphFile)}`)
+  const name = glyphFile.replace(/\.(svg|png)$/, '')
+  const doc = {
+    fill: { solid: srgbFill(INK) },
+    groups: [
+      {
+        layers: [
+          {
+            'blend-mode': 'normal',
+            glass: false,
+            hidden: false,
+            'image-name': glyphFile,
+            name,
+            position: { scale: 1, 'translation-in-points': [0, 0] },
+          },
+        ],
+        shadow: { kind: 'none', opacity: 0 },
+        specular: false,
+        translucency: { enabled: false, value: 0 },
+      },
+    ],
+    'supported-platforms': { squares: ['macOS'] },
+  }
+  return JSON.stringify(doc, null, 2) + '\n'
+}
