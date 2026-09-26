@@ -94,9 +94,13 @@ mod tests {
 pub(crate) mod fixtures {
     use std::path::PathBuf;
 
+    /// Where the `peitho` checkout's `examples/` is: `PEITHO_EXAMPLES_DIR`
+    /// when set (CI checks out peitho at the tag `Cargo.toml` pins), the
+    /// author's sibling checkout otherwise.
+    const DEFAULT_EXAMPLES_DIR: &str = "/Users/kfly8/src/github.com/mizzy/peitho/examples";
+
     pub fn example_deck(name: &str) -> PathBuf {
-        PathBuf::from("/Users/kfly8/src/github.com/mizzy/peitho/examples")
-            .join(name)
-            .join("deck.md")
+        let examples = std::env::var_os("PEITHO_EXAMPLES_DIR").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(DEFAULT_EXAMPLES_DIR));
+        examples.join(name).join("deck.md")
     }
 }
