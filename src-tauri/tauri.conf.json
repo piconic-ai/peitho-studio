@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "studio.peitho.app",
   "build": {
-    "frontendDist": "../dist",
+    "frontendDist": "../dist/app",
     "devUrl": "http://localhost:3003",
     "beforeDevCommand": "bun run dev",
-    "beforeBuildCommand": "bun run build"
+    "beforeBuildCommand": "bun run build:app"
   },
   "app": {
     "windows": [

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite build && unocss && concurrently -k -n build,uno,server -c blue,magenta,green \"vite build --watch\" \"unocss --watch\" \"tsx watch server.ts\"",
     "build": "vite build && unocss",
+    "build:app": "bun run build && bun run scripts/stage-app.ts",
     "start": "tsx server.ts",
     "watch": "concurrently -k -n build,uno -c blue,magenta \"vite build --watch\" \"unocss --watch\"",
     "test": "bun test",
