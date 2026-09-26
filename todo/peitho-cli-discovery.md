@@ -79,7 +79,7 @@ tags: [release, present, error-handling]
   を置き、`DeckHeader.tsx`の無効化条件と説明文をここから引く。
   文言は`domain/messages.ts`のi18nに乗せる。
 - 見つからない場合の導線は、StatusBar上のメッセージにURL(READMEの
-  該当節)を添える。URLを開くには`todo/release-app-metadata.md`で入れる
+  該当節)を添える。URLを開くには`todo/archive/release-app-metadata.md`で入れる
   openerプラグインを使う(依存順: そちらが先)。
 
 ## レイヤー配置

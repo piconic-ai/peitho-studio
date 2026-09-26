@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: 配布物に出る名前・著作権・カテゴリなどのバンドル情報を整え、テンプレート由来の残骸を消す(リリース前)
 tags: [release, tauri-config, menu]
 ---
@@ -112,8 +112,8 @@ GitHub Releaseも存在しない(初回リリース前)。
 - [x] `grep -c android src-tauri/tauri.conf.json`が0
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機で、メニューバーのアプリ名とAboutダイアログの表記・著作権を確認
-- [ ] `copyright`/`publisher`の文言(LICENSEは「Copyright (c) 2026 kfly8」)
+- [x] 実機で、メニューバーのアプリ名とAboutダイアログの表記・著作権を確認
+- [x] `copyright`/`publisher`の文言(LICENSEは「Copyright (c) 2026 kfly8」) — そのまま採用
 - [x] `minimumSystemVersion`の値(13.0 Ventura に決定)
 
 ## 先送り事項

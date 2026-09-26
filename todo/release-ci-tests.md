@@ -85,8 +85,8 @@ tags: [release, ci]
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] PR上で3ジョブがグリーン
-- [ ] `gh run list --workflow test.yml`で`main`の実行が成功している
+- [x] PR上で3ジョブがグリーン(#99、#100)
+- [x] `gh run list --workflow test.yml`で`main`の実行が成功している(5f3377c)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [x] `rust`ジョブのランナー(macOS vs ubuntu)の最終決定(コスト) — macos-latest(公開リポジトリなので標準ランナーは無料)
