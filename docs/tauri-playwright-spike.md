@@ -152,7 +152,7 @@ bun run build && bun run start
 
 # Terminal 2 — the real app, with the e2e plugin linked in
 cd src-tauri && cargo build --features e2e-testing
-./target/debug/app  # do this from a terminal with the display actually awake
+./target/debug/peitho-studio  # do this from a terminal with the display actually awake
 
 # Once "tauri-plugin-playwright: listening on unix:/tmp/tauri-playwright.sock" appears:
 npx playwright test --config e2e-tauri/playwright.config.ts

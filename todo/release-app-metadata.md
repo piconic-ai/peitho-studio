@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: 配布物に出る名前・著作権・カテゴリなどのバンドル情報を整え、テンプレート由来の残骸を消す(リリース前)
 tags: [release, tauri-config, menu]
 ---
@@ -106,15 +106,15 @@ GitHub Releaseも存在しない(初回リリース前)。
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `cargo test` グリーン、`bun run typecheck` グリーン
-- [ ] `bunx tauri build`が成功し、`src-tauri/target/release/bundle/macos/
+- [x] `cargo test` グリーン、`bun run typecheck` グリーン
+- [x] `bunx tauri build`が成功し、`src-tauri/target/release/bundle/macos/
   Peitho Studio.app`が生成される
-- [ ] `grep -c android src-tauri/tauri.conf.json`が0
+- [x] `grep -c android src-tauri/tauri.conf.json`が0
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機で、メニューバーのアプリ名とAboutダイアログの表記・著作権を確認
 - [ ] `copyright`/`publisher`の文言(LICENSEは「Copyright (c) 2026 kfly8」)
-- [ ] `minimumSystemVersion`の値
+- [x] `minimumSystemVersion`の値(13.0 Ventura に決定)
 
 ## 先送り事項
 
