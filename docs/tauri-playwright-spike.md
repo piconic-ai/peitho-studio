@@ -66,9 +66,9 @@ assumed from reading the README):
 - **Plugin registration must happen before Tauri creates its windows, not
   inside `.setup()`.** `tauri-plugin-playwright` injects
   `window.__PW_ACTIVE__ = true` via `.js_init_script(...)`, which only
-  reaches a webview's *first* page load. This app's other conditionally-
-  registered plugin (`tauri_plugin_log`, debug-only) is registered inside
-  `.setup()`, which runs *after* `tauri.conf.json`'s declared windows
+  reaches a webview's *first* page load. This app's
+  `tauri_plugin_log` (at the time, registered only in debug builds) is
+  registered inside `.setup()`, which runs *after* `tauri.conf.json`'s declared windows
   already exist — copying that pattern for `tauri-plugin-playwright`
   compiled fine but silently never actually worked: `window.__PW_ACTIVE__`
   never appeared, and every test hung on Playwright's own readiness wait

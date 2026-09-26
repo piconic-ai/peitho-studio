@@ -4,6 +4,7 @@ mod engine;
 mod help_links;
 mod i18n;
 mod input_source;
+mod logging;
 mod peitho;
 mod settings;
 
@@ -22,7 +23,7 @@ const WARM_UP_RECENT_DECKS: usize = 3;
 /// platform-standard items — Quit, Cut/Copy/Paste, About, etc. — wired
 /// automatically) and adds "New Deck…"/"Open Deck…"/"Open Recent" at the
 /// top of File, "Settings…" (Cmd+,) to the app menu, links to the
-/// project's GitHub pages (`help_links`) to Help, with Edit's Undo/Redo
+/// project's GitHub pages (`help_links`) and "Show Log File in Finder" to Help, with Edit's Undo/Redo
 /// swapped for `edit_menu`'s own items.
 /// Kept as an explicit rebuild rather than mutating
 /// `Menu::default()`'s output, since that method doesn't hand back the
@@ -129,9 +130,12 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
     ];
     #[cfg(target_os = "macos")]
     let about_items: [PredefinedMenuItem<tauri::Wry>; 0] = [];
+    let log_file_separator = PredefinedMenuItem::separator(app)?;
+    let log_file = MenuItem::with_id(app, logging::LOG_FILE_MENU_ID, labels.show_log_file, true, None::<&str>)?;
     let help_items: Vec<&dyn IsMenuItem<tauri::Wry>> = help_link_items
         .iter()
         .map(|item| item as &dyn IsMenuItem<tauri::Wry>)
+        .chain([&log_file_separator as &dyn IsMenuItem<tauri::Wry>, &log_file])
         .chain(about_items.iter().map(|item| item as &dyn IsMenuItem<tauri::Wry>))
         .collect();
     let help_menu = Submenu::with_items(app, labels.help, true, &help_items)?;
@@ -245,6 +249,10 @@ pub fn run() {
                 if let Err(err) = app_handle.opener().open_url(url, None::<&str>) {
                     log::error!("failed to open a Help link: {err}");
                 }
+            } else if id == logging::LOG_FILE_MENU_ID {
+                if let Err(err) = logging::show_log_file(app_handle) {
+                    log::error!("failed to show the log file: {err}");
+                }
             } else if let Some(index) = id.strip_prefix("recent_deck:").and_then(|s| s.parse::<usize>().ok()) {
                 let recents = peitho::read_recent_decks(app_handle);
                 if let Some(path) = recents.get(index).cloned() {
@@ -263,13 +271,9 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            app.handle().plugin(logging::plugin())?;
+            logging::install_panic_hook();
+            log::info!("Peitho Studio {} starting", app.package_info().version);
             // Replaces the placeholder menu bar (built with an empty
             // Recent list, since `app.path()` isn't usable yet when
             // `Builder::menu()`'s factory runs) with the real one now that

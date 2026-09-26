@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: リリースビルドでもログファイルを書き、パニックも記録して、バグ報告に添付できるようにする(リリース前)
 tags: [release, logging]
 ---
@@ -16,7 +16,7 @@ tags: [release, logging]
 
 - **目的**: リリースビルドでもアプリのログディレクトリにログファイルを
   書き、Rust側のパニックもそこに残す。ユーザーがバグ報告に添付できる
-  ようにHelpメニューから「ログフォルダを開く」で辿れるようにする。
+  ようにHelpメニューの「ログファイルをFinderで表示」で辿れるようにする。
 - **やらないこと**:
   - テレメトリ/クラッシュレポートの外部送信(現状ゼロ。入れない)。
   - フロント側の`console.*`をファイルに転送すること(WKWebViewの
@@ -29,7 +29,10 @@ tags: [release, logging]
   - 意図的なパニック(テスト用の隠しコマンドではなく、`cargo test`での
     フック検証)がログに`panic`として残る。
   - ログはサイズ上限でローテーションされ、無限に肥大しない。
-  - Helpメニューに「Open Log Folder」があり、Finderでそのフォルダが開く。
+  - Helpメニューに「Show Log File in Finder」があり、Finderでログファイルが
+    選択された状態で表示される(ログディレクトリ名`studio.peitho.app`は
+    `.app`で終わるためmacOSがアプリバンドル扱いし、フォルダを`open`すると
+    起動に失敗する。ファイルをrevealする)。
   - デッキの本文や画像パスのような**ユーザーの内容はログに書かない**
     (パスのファイル名程度まで)。
 
@@ -45,7 +48,7 @@ tags: [release, logging]
 - エラーはStatusBar経由でユーザーに見えるが、ファイルには残らない。
 - `tauri-plugin-log`は`Target::new(TargetKind::LogDir { file_name })`と
   `max_file_size`/`rotation_strategy`を持つ。
-- Finderでフォルダを開くには`todo/release-app-metadata.md`で入れる
+- Finderでログファイルを表示するには`todo/release-app-metadata.md`で入れる
   openerプラグイン(`reveal_item_in_dir`/`open_path`)を使う。依存順:
   そちらが先。
 
@@ -63,7 +66,7 @@ tags: [release, logging]
   `KeepOne`または`KeepAll`+上限に。
 - `setup`の先頭で`std::panic::set_hook`を設定し、パニックのメッセージ
   と位置を`log::error!`で書いてから既定のフックにも渡す。
-- Helpメニューに「Open Log Folder」を追加(`i18n.rs`に日英ラベル)。
+- Helpメニューに「Show Log File in Finder」を追加(`i18n.rs`に日英ラベル)。
 - 記録する内容の指針を`lib.rs`のdocコメントに1段落書く(ユーザー内容を
   書かない)。
 
@@ -81,17 +84,17 @@ tags: [release, logging]
   payloadが`&str`でも`String`でもない、改行を含むメッセージが1行に
   畳まれる)。
 - 実機: リリースビルドを起動してログファイルの生成を確認、Helpメニュー
-  からフォルダが開くこと。
+  からFinderでログファイルが選択表示されること。
 
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `cargo test` グリーン
-- [ ] `bunx tauri build`後に`.app`を起動し、`ls ~/Library/Logs/
+- [x] `cargo test` グリーン
+- [x] `bunx tauri build`後に`.app`を起動し、`ls ~/Library/Logs/
   studio.peitho.app/`にファイルがある
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] ログレベルとローテーション上限の値
+- [x] ログレベルとローテーション上限の値 — Info(開発ビルドは自クレートのみDebug)、5MBで`KeepSome(1)`(直前の1ファイルを残し最大約10MB)
 - [ ] READMEの「バグ報告のしかた」にログの場所を書く
   (`todo/readme-end-user.md`と連携)
 

@@ -81,6 +81,7 @@ pub struct MenuLabels {
     pub help_repository: &'static str,
     pub help_report_issue: &'static str,
     pub help_releases: &'static str,
+    pub show_log_file: &'static str,
     /// The folder picker "Open Deck…" shows.
     pub open_deck_dialog_title: &'static str,
     about_template: &'static str,
@@ -133,6 +134,7 @@ const EN: MenuLabels = MenuLabels {
     help_repository: "Peitho Studio on GitHub",
     help_report_issue: "Report an Issue",
     help_releases: "Releases",
+    show_log_file: "Show Log File in Finder",
     open_deck_dialog_title: "Open Deck",
     about_template: "About {app}",
     hide_template: "Hide {app}",
@@ -167,6 +169,7 @@ const JA: MenuLabels = MenuLabels {
     help_repository: "GitHubのPeitho Studio",
     help_report_issue: "問題を報告",
     help_releases: "リリース一覧",
+    show_log_file: "ログファイルをFinderで表示",
     open_deck_dialog_title: "デッキを開く",
     about_template: "{app}について",
     hide_template: "{app}を隠す",
@@ -214,6 +217,7 @@ mod tests {
             ("help_repository", labels.help_repository),
             ("help_report_issue", labels.help_report_issue),
             ("help_releases", labels.help_releases),
+            ("show_log_file", labels.show_log_file),
             ("open_deck_dialog_title", labels.open_deck_dialog_title),
         ]
     }
