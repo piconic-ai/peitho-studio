@@ -170,6 +170,21 @@ don't bundle everything into one giant commit.
   simply hadn't been exercised with real `<ul>` content before). Any other
   inherited property `.peitho-slide`'s CSS doesn't already pin should be
   treated with the same suspicion.
+- macOS 26 (Tahoe) draws a classic `.icns` app icon in a smaller
+  "legacy" slot with a glass treatment on top — the icon looks a size
+  smaller than its Dock neighbours and flat artwork comes out embossed.
+  Only Icon Composer's layered `.icon` format (compiled to `Assets.car`,
+  wired via `CFBundleIconName`) is drawn at full size, as authored. Tauri
+  CLI 2.11+ accepts an `Assets.car` (or `.icon`) in `bundle.icon`, but
+  under the Node CLI its own `actool` run crashes
+  ([tauri-apps/tauri#15315](https://github.com/tauri-apps/tauri/issues/15315)),
+  so `bun run icons` precompiles `src-tauri/icons/Assets.car` and
+  `src-tauri/tauri.macos.conf.json` lists it (a platform config replaces
+  the whole `bundle.icon` array, so it repeats the base list). Rendering
+  `NSWorkspace.shared.icon(forFile:)` to a PNG shows the glass treatment
+  (or its absence) without launching anything, but not the Dock's
+  legacy-slot shrink — it drew the old and new bundles the same size —
+  so the size has to be checked in the real Dock/Finder.
 - State that should differ per window (the open deck, its file watcher,
   its subprocess) must be kept in a map keyed by `window.label()` rather
   than a single global — otherwise a second window silently overwrites

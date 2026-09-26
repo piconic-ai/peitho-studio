@@ -28,6 +28,8 @@ generated — edit `scripts/brand/mark.ts`, then run `bun run icons`.
 | `app-icon.svg` | The app icon: a paper-white Peitho on an ink tile — a continuous-corner squircle (superellipse, n = 5) on the macOS grid, an 824 px body on a 1024 px canvas, with a soft drop shadow. |
 | `app-icon-small.svg` | The same icon with the small cut, used for every raster at 48 px and below. |
 | `app-icon.png` | `app-icon.svg` at 1024 px, for previews. |
+| `../src-tauri/icons/AppIcon.icon` | The icon in Icon Composer's layered format, for macOS 26: an ink fill under one flat glyph layer (`Assets/glyph.svg`, the paper Peitho on a transparent canvas). |
+| `../src-tauri/icons/Assets.car` | `AppIcon.icon` compiled with Xcode 26's `actool`, which is what the app bundle ships. |
 | `expressions/<name>.svg` | The mark wearing each expression — `neutral` and `calm` — plus a `-inverse` of each for dark backgrounds. |
 
 The wordmark's face is [Charis SIL](https://software.sil.org/charis/)
@@ -65,11 +67,28 @@ Rasterizes with Playwright's Chromium: the system Chrome by default, or
 
 ## macOS 26 (Tahoe)
 
-macOS 26 draws app icons that aren't a full squircle inside a grey
-squircle. This icon is a full-bleed squircle on Apple's grid, but it is
-still a classic `.icns`; whether Tahoe shows it unmodified has not been
-checked on a real device yet, and the Liquid Glass treatment would need an
-Icon Composer (`.icon`) source on top of this.
+macOS 26 draws a classic `.icns` in a smaller "legacy" slot and puts its
+own glass treatment on top — the paper silhouette came out embossed and
+the whole icon a size smaller than its neighbours in the Dock. It draws an
+icon in Icon Composer's layered `.icon` format at full size, with only the
+effects the file asks for, so `src-tauri/icons/AppIcon.icon` asks for none
+(no glass, specular, shadow or translucency): a flat paper Peitho on a
+flat ink fill, the same picture as the site's hero.
+
+`bun run icons` writes the `.icon` from `scripts/brand/mark.ts` and, when
+Xcode 26's `actool` is available, compiles it to
+`src-tauri/icons/Assets.car` (on a machine without it the committed
+`Assets.car` is left alone). `src-tauri/tauri.macos.conf.json` lists that
+`Assets.car` in `bundle.icon`; Tauri's bundler copies it into the app and
+sets `CFBundleIconName`, keeping `icon.icns` as the fallback older macOS
+still reads. The bundler could compile the `.icon` itself, but under the
+Node CLI it starts `actool` with stdin closed and `actool` crashes
+([tauri-apps/tauri#15315](https://github.com/tauri-apps/tauri/issues/15315)),
+hence the precompiled catalogue.
+
+The `.icon` opens in Icon Composer (in Xcode 26) for previewing the
+default, dark, clear and tinted appearances, but edit
+`scripts/brand/mark.ts`, not the file.
 
 ## Usage
 
