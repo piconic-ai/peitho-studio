@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: PRとmainでフロント/Rustのテストと型検査を走らせるGitHub Actionsを追加する(リリース前)
 tags: [release, ci]
 ---
@@ -89,7 +89,7 @@ tags: [release, ci]
 - [ ] `gh run list --workflow test.yml`で`main`の実行が成功している
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] `rust`ジョブのランナー(macOS vs ubuntu)の最終決定(コスト)
+- [x] `rust`ジョブのランナー(macOS vs ubuntu)の最終決定(コスト) — macos-latest(公開リポジトリなので標準ランナーは無料)
 - [ ] ブランチ保護で必須チェックにするか
 
 ## 先送り事項
