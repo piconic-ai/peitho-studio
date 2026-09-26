@@ -26,7 +26,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -34,8 +37,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "android": {
-      "debugApplicationIdSuffix": ".debug"
+    "category": "Productivity",
+    "copyright": "Copyright (c) 2026 kfly8",
+    "publisher": "kfly8",
+    "shortDescription": "An editor for Peitho decks",
+    "longDescription": "Peitho Studio is a desktop editor for Peitho, a Markdown-driven presentation engine: edit a deck's Markdown, see each slide rendered as you type, and present it.",
+    "macOS": {
+      "minimumSystemVersion": "13.0"
     }
   }
 }
