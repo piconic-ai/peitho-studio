@@ -13,9 +13,8 @@
 #     whenever the OAuth token is missing or expired.
 #   - `model` pins Sonnet, which is the cheaper tier against those limits.
 #   - `timeout` bounds a single run's wall clock so a stuck agent cannot burn quota.
-#   - This repo is private, so GitHub Actions minutes are metered against the account's
-#     monthly quota (2,000 min/month on the free plan) rather than unlimited as on public
-#     repos — another reason to keep `timeout` tight.
+#   - This repo is public, so standard GitHub-hosted runner minutes are free; `timeout`
+#     still matters for the subscription's rate limits above.
 #
 # Every `uses:` is pinned to a commit SHA. SHAs need a manual bump to pick up upstream
 # fixes; the trailing comment records which tag each one was at when pinned.
