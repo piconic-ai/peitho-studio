@@ -103,14 +103,23 @@ bun run deploy     # build, then wrangler deploy (needs a Cloudflare login)
 
 ## Deploying
 
-Intended for Cloudflare Workers Builds (the dashboard's *Connect to a
-repository*), watching `main`, with the project's root set to `site/`:
+[Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)
+is connected to this repository and deploys `main`; nothing runs from a
+GitHub Actions workflow. Its settings, for reference:
 
+- Path (root directory): `/site` — everything below runs in this
+  directory, so `site/bun.lock` picks bun for the install.
 - Build command: `bun run build`
 - Deploy command: `bunx wrangler deploy`
+- Preview (non-production branch) command: left at its default. It runs on
+  pull requests as a build check only: `preview_urls` is off in
+  `wrangler.jsonc`, so the uploaded version gets no URL, and the page has
+  no `workers.dev` host at all.
+- Build watch paths, include: `site/*`, `brand/*`, `src-tauri/icons/*` —
+  the page pulls its icons from the other two, and any other commit to the
+  app doesn't need a build.
 
-Either way the deploy attaches `peitho-studio.piconic.ai` (see
-[Hostname](#hostname)).
+`bun run deploy` from a logged-in machine still works as a manual fallback.
 
 ## Release assets
 
