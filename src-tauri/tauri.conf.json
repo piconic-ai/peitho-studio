@@ -43,7 +43,8 @@
     "shortDescription": "An editor for Peitho decks",
     "longDescription": "Peitho Studio is a desktop editor for Peitho, a Markdown-driven presentation engine: edit a deck's Markdown, see each slide rendered as you type, and present it.",
     "macOS": {
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "-"
     }
   }
 }
