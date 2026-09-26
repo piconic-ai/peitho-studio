@@ -42,10 +42,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The engine's tests render peitho's own example decks
+      # (`engine::fixtures`). Keep `ref` on the tag src-tauri/Cargo.toml
+      # pins peitho-core to.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: mizzy/peitho
+          ref: v1.34.0
+          path: peitho
+          persist-credentials: false
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
       - run: cargo test --manifest-path src-tauri/Cargo.toml
+        env:
+          PEITHO_EXAMPLES_DIR: ${{ github.workspace }}/peitho/examples
 
   e2e:
     runs-on: ubuntu-latest
