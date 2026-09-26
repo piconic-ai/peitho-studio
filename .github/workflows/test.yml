@@ -1,0 +1,62 @@
+# Type checks and tests on every PR and on main.
+#
+# - frontend: `bun run typecheck` and `bun test` (pure logic only).
+# - rust: `cargo test` on macOS, the only platform the app ships for, so no
+#   webkit2gtk etc. to install and the same toolchain as the release build.
+# - e2e: the browser-mocked Playwright suite under e2e/. Not required yet
+#   (continue-on-error) until it has proven stable on CI.
+#
+# Every `uses:` is pinned to a commit SHA; the trailing comment records the
+# tag it was at when pinned.
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+
+  rust:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun install --frozen-lockfile
+      # playwright.config.ts uses `channel: 'chrome'`, which the runner
+      # image's preinstalled Google Chrome satisfies — nothing to install.
+      - run: bun run test:e2e
