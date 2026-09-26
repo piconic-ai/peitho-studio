@@ -81,26 +81,98 @@ mod tests {
         warm_up(&[]);
         warm_up(&[PathBuf::new(), dir.path().join("missing/deck.md"), dir.path().to_path_buf(), broken]);
     }
+
+    #[test]
+    fn peitho_core_manifest_spec_finds_it_among_the_packages() {
+        let json = r#"{"packages":[
+            {"name":"serde","manifest_path":"/reg/serde-1.0/Cargo.toml"},
+            {"name":"peitho-core","manifest_path":"/git/checkouts/peitho-abc/5c5734e/crates/peitho-core/Cargo.toml"}
+        ]}"#;
+        assert_eq!(
+            fixtures::peitho_core_manifest(json),
+            Ok(PathBuf::from("/git/checkouts/peitho-abc/5c5734e/crates/peitho-core/Cargo.toml"))
+        );
+    }
+
+    #[test]
+    fn peitho_core_manifest_adversarial_missing_or_malformed_metadata_is_an_error() {
+        for json in [
+            "",
+            "not json",
+            "{}",
+            r#"{"packages":{}}"#,
+            r#"{"packages":[]}"#,
+            r#"{"packages":[{"name":"peitho"}]}"#,
+            r#"{"packages":[{"name":"Peitho-Core","manifest_path":"/x/Cargo.toml"}]}"#,
+            r#"{"packages":[{"name":"peitho-core"}]}"#,
+            r#"{"packages":[{"name":"peitho-core","manifest_path":7}]}"#,
+        ] {
+            assert!(fixtures::peitho_core_manifest(json).is_err(), "{json:?}");
+        }
+    }
+
+    #[test]
+    fn example_deck_spec_resolves_to_a_real_deck_of_the_pinned_peitho() {
+        assert!(fixtures::example_deck("minimal").is_file());
+    }
 }
 
-/// Fixtures for the engine's tests: real decks from the sibling `peitho`
-/// checkout (`crates/peitho/examples/*`), the same corpus peitho's own test
-/// suite and this app's manual verification this session used. Exercising
+/// Fixtures for the engine's tests: real decks from peitho's own
+/// `examples/`, the same corpus peitho's own test suite uses. Exercising
 /// the embedded engine against real, maintained decks (rather than
 /// hand-rolled snippets) is what actually catches a peitho-core API/behavior
 /// drift — see `engine/mod.rs`'s module doc on why that's the real risk of
 /// this design.
+///
+/// Taken from the checkout Cargo itself fetched for the `peitho-core` git
+/// dependency, which holds the whole peitho repository at exactly the tag
+/// `Cargo.toml` pins, so the decks always match the engine under test.
+/// `PEITHO_EXAMPLES_DIR` overrides it (e.g. to try a local peitho branch).
 #[cfg(test)]
 pub(crate) mod fixtures {
-    use std::path::PathBuf;
-
-    /// Where the `peitho` checkout's `examples/` is: `PEITHO_EXAMPLES_DIR`
-    /// when set (CI checks out peitho at the tag `Cargo.toml` pins), the
-    /// author's sibling checkout otherwise.
-    const DEFAULT_EXAMPLES_DIR: &str = "/Users/kfly8/src/github.com/mizzy/peitho/examples";
+    use std::path::{Path, PathBuf};
+    use std::sync::OnceLock;
 
     pub fn example_deck(name: &str) -> PathBuf {
-        let examples = std::env::var_os("PEITHO_EXAMPLES_DIR").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(DEFAULT_EXAMPLES_DIR));
-        examples.join(name).join("deck.md")
+        examples_dir().join(name).join("deck.md")
+    }
+
+    fn examples_dir() -> &'static Path {
+        static DIR: OnceLock<PathBuf> = OnceLock::new();
+        DIR.get_or_init(|| match std::env::var_os("PEITHO_EXAMPLES_DIR") {
+            Some(dir) => PathBuf::from(dir),
+            None => examples_dir_from_cargo().unwrap_or_else(|err| panic!("can't find peitho's examples: {err}")),
+        })
+    }
+
+    fn examples_dir_from_cargo() -> Result<PathBuf, String> {
+        let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+        let output = std::process::Command::new(cargo)
+            .args(["metadata", "--format-version", "1", "--locked", "--offline", "--filter-platform", env!("PEITHO_STUDIO_TARGET")])
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .output()
+            .map_err(|err| format!("running cargo metadata: {err}"))?;
+        if !output.status.success() {
+            return Err(format!("cargo metadata failed: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+        let manifest = peitho_core_manifest(&String::from_utf8_lossy(&output.stdout))?;
+        manifest
+            .ancestors()
+            .map(|dir| dir.join("examples"))
+            .find(|examples| examples.is_dir())
+            .ok_or_else(|| format!("no examples/ above {}", manifest.display()))
+    }
+
+    /// `peitho-core`'s `Cargo.toml` path, from `cargo metadata`'s JSON.
+    pub(super) fn peitho_core_manifest(metadata_json: &str) -> Result<PathBuf, String> {
+        let metadata: serde_json::Value = serde_json::from_str(metadata_json).map_err(|err| format!("bad cargo metadata: {err}"))?;
+        metadata["packages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|package| package["name"] == "peitho-core")
+            .and_then(|package| package["manifest_path"].as_str())
+            .map(PathBuf::from)
+            .ok_or_else(|| "peitho-core is not among cargo metadata's packages".to_string())
     }
 }
