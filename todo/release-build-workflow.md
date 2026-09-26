@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: tagprが切るタグでmacOS用dmgをビルドしてGitHub Releaseに添付するワークフローを追加し、署名・公証の方針を決める(リリース前)
 tags: [release, ci, signing]
 ---
@@ -74,6 +74,13 @@ Releaseは本文だけで、ユーザーはソースからビルドするしか�
 
 ## 方針
 
+> 実装時の修正: `release: published`トリガーは使えない。tagprは
+> `GITHUB_TOKEN`でReleaseを作り、`GITHUB_TOKEN`由来のイベントは別の
+> ワークフローを起動しない。代わりに`tagpr.yml`が`tag`出力を見て
+> `release-build.yml`を`workflow_call`で呼ぶ(手動再実行用に
+> `workflow_dispatch`も持つ)。`tauri-action`は使わず、`tauri build`と
+> `gh release upload`を直接書いている。
+
 `.github/workflows/release-build.yml`(新規)を`release: published`
 トリガーで動かす:
 
@@ -117,8 +124,8 @@ Releaseは本文だけで、ユーザーはソースからビルドするしか�
   通る
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 署名・公証をするかどうか(Apple Developer Programの加入)
-- [ ] Universal vs aarch64のみ
+- [x] 署名・公証をするかどうか(Apple Developer Programの加入) — 初回は「しない」(未署名dmg)
+- [x] Universal vs aarch64のみ — aarch64のみ
 - [ ] 別Macでdmgをダウンロードして起動する確認
 
 ## 先送り事項
