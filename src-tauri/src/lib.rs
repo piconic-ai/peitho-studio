@@ -23,7 +23,7 @@ const WARM_UP_RECENT_DECKS: usize = 3;
 /// platform-standard items — Quit, Cut/Copy/Paste, About, etc. — wired
 /// automatically) and adds "New Deck…"/"Open Deck…"/"Open Recent" at the
 /// top of File, "Settings…" (Cmd+,) to the app menu, links to the
-/// project's GitHub pages (`help_links`) and "Open Log Folder" to Help, with Edit's Undo/Redo
+/// project's GitHub pages (`help_links`) and "Show Log File in Finder" to Help, with Edit's Undo/Redo
 /// swapped for `edit_menu`'s own items.
 /// Kept as an explicit rebuild rather than mutating
 /// `Menu::default()`'s output, since that method doesn't hand back the
@@ -130,12 +130,12 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
     ];
     #[cfg(target_os = "macos")]
     let about_items: [PredefinedMenuItem<tauri::Wry>; 0] = [];
-    let log_folder_separator = PredefinedMenuItem::separator(app)?;
-    let log_folder = MenuItem::with_id(app, logging::LOG_FOLDER_MENU_ID, labels.open_log_folder, true, None::<&str>)?;
+    let log_file_separator = PredefinedMenuItem::separator(app)?;
+    let log_file = MenuItem::with_id(app, logging::LOG_FILE_MENU_ID, labels.show_log_file, true, None::<&str>)?;
     let help_items: Vec<&dyn IsMenuItem<tauri::Wry>> = help_link_items
         .iter()
         .map(|item| item as &dyn IsMenuItem<tauri::Wry>)
-        .chain([&log_folder_separator as &dyn IsMenuItem<tauri::Wry>, &log_folder])
+        .chain([&log_file_separator as &dyn IsMenuItem<tauri::Wry>, &log_file])
         .chain(about_items.iter().map(|item| item as &dyn IsMenuItem<tauri::Wry>))
         .collect();
     let help_menu = Submenu::with_items(app, labels.help, true, &help_items)?;
@@ -249,9 +249,9 @@ pub fn run() {
                 if let Err(err) = app_handle.opener().open_url(url, None::<&str>) {
                     log::error!("failed to open a Help link: {err}");
                 }
-            } else if id == logging::LOG_FOLDER_MENU_ID {
-                if let Err(err) = logging::open_log_folder(app_handle) {
-                    log::error!("failed to open the log folder: {err}");
+            } else if id == logging::LOG_FILE_MENU_ID {
+                if let Err(err) = logging::show_log_file(app_handle) {
+                    log::error!("failed to show the log file: {err}");
                 }
             } else if let Some(index) = id.strip_prefix("recent_deck:").and_then(|s| s.parse::<usize>().ok()) {
                 let recents = peitho::read_recent_decks(app_handle);

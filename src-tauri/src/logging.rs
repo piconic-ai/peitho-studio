@@ -7,14 +7,19 @@
 
 use std::any::Any;
 use std::panic::Location;
+use std::path::{Path, PathBuf};
 
 use tauri::plugin::TauriPlugin;
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 use tauri_plugin_opener::OpenerExt;
 
-/// The Help menu's "Open Log Folder" item.
-pub(crate) const LOG_FOLDER_MENU_ID: &str = "open_log_folder";
+/// The Help menu's "Show Log File in Finder" item.
+pub(crate) const LOG_FILE_MENU_ID: &str = "show_log_file";
+
+/// The current log file is `<this>.log` in the app log directory (rotated
+/// ones get a timestamp suffix).
+const LOG_FILE_NAME: &str = "Peitho Studio";
 
 /// Once the current file reaches this size it is rotated, keeping only the
 /// previous one, so the log directory holds at most about twice this.
@@ -23,7 +28,7 @@ const MAX_LOG_FILE_BYTES: u128 = 5 * 1024 * 1024;
 /// The log plugin: the app log directory (`~/Library/Logs/<identifier>/`
 /// on macOS) always, plus stdout in debug builds for `tauri dev`.
 pub(crate) fn plugin<R: Runtime>() -> TauriPlugin<R> {
-    let mut targets = vec![Target::new(TargetKind::LogDir { file_name: None })];
+    let mut targets = vec![Target::new(TargetKind::LogDir { file_name: Some(LOG_FILE_NAME.into()) })];
     if cfg!(debug_assertions) {
         targets.push(Target::new(TargetKind::Stdout));
     }
@@ -36,12 +41,21 @@ pub(crate) fn plugin<R: Runtime>() -> TauriPlugin<R> {
         .build()
 }
 
-/// Shows the log directory in Finder, creating it first: nothing has been
-/// logged yet on a fresh install.
-pub(crate) fn open_log_folder<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+/// Shows the current log file in Finder, selected in its folder — the file a
+/// bug report attaches.
+///
+/// Not `open_path` on the folder: the log directory is named after the
+/// bundle identifier (`studio.peitho.app`), and its `.app` suffix makes
+/// macOS treat it as an application bundle, so `open` tries to launch it
+/// ("its executable is missing") instead of showing it.
+pub(crate) fn show_log_file<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let dir = app.path().app_log_dir().map_err(|err| err.to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
-    app.opener().open_path(dir.display().to_string(), None::<&str>).map_err(|err| err.to_string())
+    app.opener().reveal_item_in_dir(log_file_path(&dir)).map_err(|err| err.to_string())
+}
+
+/// Where the log plugin writes the current log file, given the log directory.
+pub fn log_file_path(log_dir: &Path) -> PathBuf {
+    log_dir.join(format!("{LOG_FILE_NAME}.log"))
 }
 
 /// Logs every panic before handing it on to the hook already installed
@@ -83,6 +97,18 @@ mod tests {
 
     fn here() -> &'static Location<'static> {
         Location::caller()
+    }
+
+    #[test]
+    fn given_the_log_directory_when_the_log_file_is_located_then_it_is_the_app_named_log_inside_it() {
+        let dir = Path::new("/Users/someone/Library/Logs/studio.peitho.app");
+        assert_eq!(log_file_path(dir), dir.join("Peitho Studio.log"));
+    }
+
+    #[test]
+    fn given_an_empty_or_relative_directory_when_the_log_file_is_located_then_only_the_file_name_is_joined() {
+        assert_eq!(log_file_path(Path::new("")), PathBuf::from("Peitho Studio.log"));
+        assert_eq!(log_file_path(Path::new("logs")), PathBuf::from("logs/Peitho Studio.log"));
     }
 
     #[test]
