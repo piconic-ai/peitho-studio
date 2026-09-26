@@ -7,7 +7,8 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 ## Stack
 
 - One static `index.html`, styled by `public/site.css` (light only):
-  - a hero with the app icon, "Peitho Studio", "Presentations in Markdown, powered by Peitho" and
+  - a hero with the app icon, "Peitho Studio", "Write slides with Peitho."
+    ("Plain Markdown and HTML, so AI can help too.") and
     the download button, above a screenshot of Studio with a deck open,
     framed as a window (`public/studio.webp`, `studio@2x.webp`);
   - a "Built on Peitho" card: Peitho's one-line description and a small
