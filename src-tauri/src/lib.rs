@@ -1,6 +1,7 @@
 mod deck_variants;
 mod edit_menu;
 mod engine;
+mod help_links;
 mod i18n;
 mod input_source;
 mod peitho;
@@ -11,6 +12,7 @@ use peitho::{PeithoSession, PendingDecks};
 use tauri::menu::{AboutMetadata, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 
 /// How many of the most recent decks `engine::warm_up` renders at launch.
 const WARM_UP_RECENT_DECKS: usize = 3;
@@ -19,7 +21,8 @@ const WARM_UP_RECENT_DECKS: usize = 3;
 /// `Menu::default()` produces (App/Edit/View/Window/Help, with all the
 /// platform-standard items — Quit, Cut/Copy/Paste, About, etc. — wired
 /// automatically) and adds "New Deck…"/"Open Deck…"/"Open Recent" at the
-/// top of File, "Settings…" (Cmd+,) to the app menu, with Edit's Undo/Redo
+/// top of File, "Settings…" (Cmd+,) to the app menu, links to the
+/// project's GitHub pages (`help_links`) to Help, with Edit's Undo/Redo
 /// swapped for `edit_menu`'s own items.
 /// Kept as an explicit rebuild rather than mutating
 /// `Menu::default()`'s output, since that method doesn't hand back the
@@ -114,15 +117,24 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
         ],
     )?;
 
-    let help_menu = Submenu::with_items(
-        app,
-        labels.help,
-        true,
-        &[
-            #[cfg(not(target_os = "macos"))]
-            &PredefinedMenuItem::about(app, Some(&labels.about(app_name)), Some(about_metadata.clone()))?,
-        ],
-    )?;
+    let help_link_items: Vec<MenuItem<tauri::Wry>> = help_links::HELP_LINKS
+        .iter()
+        .map(|link| MenuItem::with_id(app, link.menu_id(), link.label(labels), true, None::<&str>))
+        .collect::<tauri::Result<_>>()?;
+    // macOS has About in the app menu instead.
+    #[cfg(not(target_os = "macos"))]
+    let about_items = [
+        PredefinedMenuItem::separator(app)?,
+        PredefinedMenuItem::about(app, Some(&labels.about(app_name)), Some(about_metadata.clone()))?,
+    ];
+    #[cfg(target_os = "macos")]
+    let about_items: [PredefinedMenuItem<tauri::Wry>; 0] = [];
+    let help_items: Vec<&dyn IsMenuItem<tauri::Wry>> = help_link_items
+        .iter()
+        .map(|item| item as &dyn IsMenuItem<tauri::Wry>)
+        .chain(about_items.iter().map(|item| item as &dyn IsMenuItem<tauri::Wry>))
+        .collect();
+    let help_menu = Submenu::with_items(app, labels.help, true, &help_items)?;
 
     Menu::with_items(
         app,
@@ -182,7 +194,10 @@ pub fn run() {
         // (`ipc/editorIpc.ts`). Read from Rust rather than with
         // `navigator.clipboard.readText()`, which WKWebView answers only
         // after the user clicks a "Paste" callout.
-        .plugin(tauri_plugin_clipboard_manager::init());
+        .plugin(tauri_plugin_clipboard_manager::init())
+        // Opens the Help menu's GitHub links in the default browser. Used
+        // from Rust only, so no capability grants the frontend any of it.
+        .plugin(tauri_plugin_opener::init());
     // Only in an `--features e2e-testing` build (see
     // docs/tauri-playwright-spike.md): embeds a control server Playwright's
     // "tauri" mode connects to over a Unix socket to drive this real
@@ -226,6 +241,10 @@ pub fn run() {
                         let session = app_handle.state::<PeithoSession>();
                         let _ = peitho::open_deck_window_impl(&app_handle, &pending, &session, path.display().to_string());
                     });
+            } else if let Some(url) = help_links::url_for_menu_id(id) {
+                if let Err(err) = app_handle.opener().open_url(url, None::<&str>) {
+                    log::error!("failed to open a Help link: {err}");
+                }
             } else if let Some(index) = id.strip_prefix("recent_deck:").and_then(|s| s.parse::<usize>().ok()) {
                 let recents = peitho::read_recent_decks(app_handle);
                 if let Some(path) = recents.get(index).cloned() {
