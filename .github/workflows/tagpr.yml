@@ -12,10 +12,25 @@ permissions:
 jobs:
   tagpr:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tagpr.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: Songmu/tagpr@7ebae2dcc300132baa7cc9dd108c8923b07fc366 # v1.20.3
+      - id: tagpr
+        uses: Songmu/tagpr@7ebae2dcc300132baa7cc9dd108c8923b07fc366 # v1.20.3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # `tag` is set only on the push that merged a release PR, i.e. once tagpr
+  # has tagged and created the Release. Called from here because a Release
+  # tagpr creates with GITHUB_TOKEN never triggers `release: published`.
+  release-build:
+    needs: tagpr
+    if: needs.tagpr.outputs.tag != ''
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-build.yml
+    with:
+      tag: ${{ needs.tagpr.outputs.tag }}
