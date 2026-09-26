@@ -9,8 +9,12 @@ use std::any::Any;
 use std::panic::Location;
 
 use tauri::plugin::TauriPlugin;
-use tauri::Runtime;
+use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
+use tauri_plugin_opener::OpenerExt;
+
+/// The Help menu's "Open Log Folder" item.
+pub(crate) const LOG_FOLDER_MENU_ID: &str = "open_log_folder";
 
 /// Once the current file reaches this size it is rotated, keeping only the
 /// previous one, so the log directory holds at most about twice this.
@@ -30,6 +34,14 @@ pub(crate) fn plugin<R: Runtime>() -> TauriPlugin<R> {
         .max_file_size(MAX_LOG_FILE_BYTES)
         .rotation_strategy(RotationStrategy::KeepOne)
         .build()
+}
+
+/// Shows the log directory in Finder, creating it first: nothing has been
+/// logged yet on a fresh install.
+pub(crate) fn open_log_folder<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    let dir = app.path().app_log_dir().map_err(|err| err.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    app.opener().open_path(dir.display().to_string(), None::<&str>).map_err(|err| err.to_string())
 }
 
 /// Logs every panic before handing it on to the hook already installed
