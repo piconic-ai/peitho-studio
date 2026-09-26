@@ -29,7 +29,10 @@ tags: [release, logging]
   - 意図的なパニック(テスト用の隠しコマンドではなく、`cargo test`での
     フック検証)がログに`panic`として残る。
   - ログはサイズ上限でローテーションされ、無限に肥大しない。
-  - Helpメニューに「Open Log Folder」があり、Finderでそのフォルダが開く。
+  - Helpメニューに「Show Log File in Finder」があり、Finderでログファイルが
+    選択された状態で表示される(ログディレクトリ名`studio.peitho.app`は
+    `.app`で終わるためmacOSがアプリバンドル扱いし、フォルダを`open`すると
+    起動に失敗する。ファイルをrevealする)。
   - デッキの本文や画像パスのような**ユーザーの内容はログに書かない**
     (パスのファイル名程度まで)。
 
