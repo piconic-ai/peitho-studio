@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: リリースビルドでもログファイルを書き、パニックも記録して、バグ報告に添付できるようにする(リリース前)
 tags: [release, logging]
 ---
@@ -86,8 +86,8 @@ tags: [release, logging]
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `cargo test` グリーン
-- [ ] `bunx tauri build`後に`.app`を起動し、`ls ~/Library/Logs/
+- [x] `cargo test` グリーン
+- [x] `bunx tauri build`後に`.app`を起動し、`ls ~/Library/Logs/
   studio.peitho.app/`にファイルがある
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
