@@ -124,15 +124,22 @@ mod tests {
     fn given_a_real_panic_when_the_hook_runs_then_it_formats_that_panic() {
         // The same payload/location a real `panic!` hands the hook. The hook
         // is process-wide, so a panic from a test running in parallel may
-        // land here too: collect every line and look for this one.
+        // land here too: collect every line and look for this one, and pass
+        // each one on so a parallel test's failure still gets reported.
         let caught = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = caught.clone();
-        let previous = std::panic::take_hook();
+        let previous = std::sync::Arc::new(std::panic::take_hook());
+        let forward = previous.clone();
         std::panic::set_hook(Box::new(move |info| {
-            sink.lock().unwrap().push(format_panic(info.payload(), info.location()));
+            let line = format_panic(info.payload(), info.location());
+            let is_ours = line.contains("deck 7");
+            sink.lock().unwrap().push(line);
+            if !is_ours {
+                forward(info);
+            }
         }));
         let result = std::panic::catch_unwind(|| panic!("deck {} failed\nto render", 7));
-        std::panic::set_hook(previous);
+        std::panic::set_hook(Box::new(move |info| previous(info)));
         assert!(result.is_err());
         let line = caught.lock().unwrap().iter().find(|line| line.contains("deck 7")).cloned().expect("hook ran");
         assert!(line.starts_with("panicked at src/logging.rs:"), "{line}");
