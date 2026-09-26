@@ -5,6 +5,8 @@
 //   brand/app-icon.png       the 1024 px app icon, for reference/previews
 //   public/favicon.svg       the small cut on a full-bleed tile
 //   src-tauri/icons/*        every PNG Tauri bundles, plus icon.icns / icon.ico
+//   src-tauri/icons/AppIcon.icon  the Icon Composer source for macOS 26+
+//   src-tauri/icons/Assets.car    that source compiled with Xcode 26's actool
 //
 // Each raster size is rendered on its own (48 px and below from the small
 // cut) and packed into .icns/.ico here, instead of `tauri icon` resizing a
@@ -14,11 +16,13 @@
 // Chrome by default (like playwright.config.ts), or CHROME_BIN if set.
 import { chromium, type Page } from '@playwright/test'
 import opentype from 'opentype.js'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { encodeIco, encodeIcns, type IcnsType } from './brand/iconContainers'
-import { appIconSvg, EXPRESSIONS, type Expression, INK, MARK_BOUNDS, markBody, PAPER, SMALL_CUT_MAX_PX, svgDocument } from './brand/mark'
+import { appIconSvg, EXPRESSIONS, type Expression, iconComposerGlyphSvg, iconComposerJson, INK, MARK_BOUNDS, markBody, PAPER, SMALL_CUT_MAX_PX, svgDocument } from './brand/mark'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const out = (path: string) => resolve(ROOT, path)
@@ -75,6 +79,50 @@ function wordmarkDocument(ink: string, mark: string): string {
   return svgDocument(Math.ceil(width), Math.ceil(height), body)
 }
 
+// ── macOS 26 layered icon ────────────────────────────────────────────
+
+const ICON_COMPOSER_DIR = 'src-tauri/icons/AppIcon.icon'
+const ASSETS_CAR = 'src-tauri/icons/Assets.car'
+
+/** The major version of Xcode's actool, or null when there is none. */
+function actoolMajorVersion(): number | null {
+  const probe = spawnSync('xcrun', ['actool', '--version'], { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' })
+  if (probe.status !== 0) return null
+  const m = /<key>short-bundle-version<\/key>\s*<string>(\d+)/.exec(probe.stdout)
+  return m ? Number(m[1]) : null
+}
+
+/**
+ * Compiles the .icon into Assets.car with Xcode 26's actool. Tauri's
+ * bundler can run actool itself, but under the Node CLI it starts actool
+ * with stdin closed and actool's helper crashes (tauri-apps/tauri#15315),
+ * so the compiled catalogue is checked in and the bundler just copies it.
+ * stdin is explicitly /dev/null here for the same reason.
+ */
+function compileAssetsCar(): void {
+  const major = actoolMajorVersion()
+  if (major === null || major < 26) {
+    console.warn(`skipped ${ASSETS_CAR}: needs Xcode 26's actool (found ${major ?? 'none'}); the committed one stays as is`)
+    return
+  }
+  const work = mkdtempSync(join(tmpdir(), 'peitho-actool-'))
+  const result = spawnSync(
+    'xcrun',
+    [
+      'actool', out(ICON_COMPOSER_DIR), '--compile', work,
+      '--output-format', 'human-readable-text', '--notices', '--warnings', '--errors',
+      '--output-partial-info-plist', join(work, 'partial.plist'),
+      '--app-icon', 'AppIcon', '--include-all-app-icons',
+      '--enable-on-demand-resources', 'NO', '--development-region', 'en',
+      '--target-device', 'mac', '--minimum-deployment-target', '26.0', '--platform', 'macosx',
+    ],
+    { stdio: ['ignore', 'inherit', 'inherit'] },
+  )
+  if (result.status !== 0) throw new Error(`actool exited with ${result.status}`)
+  copyFileSync(join(work, 'Assets.car'), out(ASSETS_CAR))
+  console.log(`wrote ${ASSETS_CAR}`)
+}
+
 // ── Raster assets ────────────────────────────────────────────────────
 
 async function rasterize(page: Page, svg: string, size: number): Promise<Uint8Array> {
@@ -99,6 +147,9 @@ async function main(): Promise<void> {
   write('brand/app-icon.svg', appIconSvg())
   write('brand/app-icon-small.svg', appIconSvg({ small: true }))
   write('public/favicon.svg', appIconSvg({ small: true, shadow: false, tile: 'full' }))
+  write(`${ICON_COMPOSER_DIR}/icon.json`, iconComposerJson('glyph.svg'))
+  write(`${ICON_COMPOSER_DIR}/Assets/glyph.svg`, iconComposerGlyphSvg())
+  compileAssetsCar()
 
   const browser = await chromium.launch(process.env.CHROME_BIN ? { executablePath: process.env.CHROME_BIN } : { channel: 'chrome' })
   try {
