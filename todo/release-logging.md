@@ -16,7 +16,7 @@ tags: [release, logging]
 
 - **目的**: リリースビルドでもアプリのログディレクトリにログファイルを
   書き、Rust側のパニックもそこに残す。ユーザーがバグ報告に添付できる
-  ようにHelpメニューから「ログフォルダを開く」で辿れるようにする。
+  ようにHelpメニューの「ログファイルをFinderで表示」で辿れるようにする。
 - **やらないこと**:
   - テレメトリ/クラッシュレポートの外部送信(現状ゼロ。入れない)。
   - フロント側の`console.*`をファイルに転送すること(WKWebViewの
@@ -48,7 +48,7 @@ tags: [release, logging]
 - エラーはStatusBar経由でユーザーに見えるが、ファイルには残らない。
 - `tauri-plugin-log`は`Target::new(TargetKind::LogDir { file_name })`と
   `max_file_size`/`rotation_strategy`を持つ。
-- Finderでフォルダを開くには`todo/release-app-metadata.md`で入れる
+- Finderでログファイルを表示するには`todo/release-app-metadata.md`で入れる
   openerプラグイン(`reveal_item_in_dir`/`open_path`)を使う。依存順:
   そちらが先。
 
@@ -66,7 +66,7 @@ tags: [release, logging]
   `KeepOne`または`KeepAll`+上限に。
 - `setup`の先頭で`std::panic::set_hook`を設定し、パニックのメッセージ
   と位置を`log::error!`で書いてから既定のフックにも渡す。
-- Helpメニューに「Open Log Folder」を追加(`i18n.rs`に日英ラベル)。
+- Helpメニューに「Show Log File in Finder」を追加(`i18n.rs`に日英ラベル)。
 - 記録する内容の指針を`lib.rs`のdocコメントに1段落書く(ユーザー内容を
   書かない)。
 
@@ -84,7 +84,7 @@ tags: [release, logging]
   payloadが`&str`でも`String`でもない、改行を含むメッセージが1行に
   畳まれる)。
 - 実機: リリースビルドを起動してログファイルの生成を確認、Helpメニュー
-  からフォルダが開くこと。
+  からFinderでログファイルが選択表示されること。
 
 ## 完了条件
 
