@@ -94,7 +94,7 @@ tags: [release, logging]
   studio.peitho.app/`にファイルがある
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] ログレベルとローテーション上限の値
+- [x] ログレベルとローテーション上限の値 — Info(開発ビルドは自クレートのみDebug)、5MBで`KeepSome(1)`(直前の1ファイルを残し最大約10MB)
 - [ ] READMEの「バグ報告のしかた」にログの場所を書く
   (`todo/readme-end-user.md`と連携)
 
