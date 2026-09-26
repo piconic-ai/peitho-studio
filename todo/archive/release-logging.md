@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: リリースビルドでもログファイルを書き、パニックも記録して、バグ報告に添付できるようにする(リリース前)
 tags: [release, logging]
 ---
@@ -95,8 +95,11 @@ tags: [release, logging]
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [x] ログレベルとローテーション上限の値 — Info(開発ビルドは自クレートのみDebug)、5MBで`KeepSome(1)`(直前の1ファイルを残し最大約10MB)
-- [ ] READMEの「バグ報告のしかた」にログの場所を書く
-  (`todo/readme-end-user.md`と連携)
+- [x] READMEの「バグ報告のしかた」にログの場所を書く
+  (`todo/readme-end-user.md`と連携) — `readme-end-user.md`の
+  「Reporting bugs」節に引き継ぎ済み。ログファイルは
+  `~/Library/Logs/studio.peitho.app/Peitho Studio.log`、Helpメニューの
+  「Show Log File in Finder」で辿れる
 
 ## 先送り事項
 

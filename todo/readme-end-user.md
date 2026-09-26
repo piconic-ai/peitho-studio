@@ -38,7 +38,7 @@ tags: [release, docs]
     はない)、Present、主要なショートカット(メニュー: Cmd+N/O、
     Cmd+Z/Shift+Z、Cmd+,。スライド一覧: Cmd+Shift+↑/↓で移動、Cmd+Enter
     で新規、Cmd+X/C/Vはスライド単位。デバッグ: Cmd+Shift+D)。
-  - 「Reporting bugs」節: ログの場所(`todo/release-logging.md`)と
+  - 「Reporting bugs」節: ログの場所(`todo/archive/release-logging.md`)と
     Issuesへのリンク。
   - スクリーンショット1枚(`docs/`か`brand/`配下、リポジトリに含める)。
 
@@ -63,8 +63,11 @@ tags: [release, docs]
 
 要調査:
 
-1. 署名の有無(`release-build-workflow.md`の人間判断待ち)。決まるまで
-   両方の文面を用意しておき、決定後に片方を消す。
+1. 署名の有無 — `release-build-workflow.md`で「署名・公証する」に決定
+   (Apple Developer Programの承認待ち)。公証済みなら起動許可の手順は
+   不要になる。署名が間に合わないうちにリリースする場合だけ、未署名時の
+   手順(システム設定 > プライバシーとセキュリティ >「このまま開く」、
+   `v0.1.0-rc.2`で確認済み)を書く。
 2. 未署名アプリの起動許可手順の実機確認(macOS 15以降とそれ以前で
    違う)。
 
@@ -74,8 +77,8 @@ tags: [release, docs]
 (Shortcuts含む)→ Reporting bugs → Development(既存を修正)→ Build →
 Brand → License。1コミット1節を目安に。
 
-依存順: `release-app-metadata.md`(最低OS)、`release-build-workflow.md`
-(署名)、`release-logging.md`(ログの場所)、`peitho-cli-discovery.md`
+依存順: `archive/release-app-metadata.md`(最低OS、13.0で完了)、`release-build-workflow.md`
+(署名)、`archive/release-logging.md`(ログの場所、完了)、`peitho-cli-discovery.md`
 (探索先)の結論を取り込むので、**このtodoはそれらの後**に仕上げる。
 先に着手する場合は該当箇所を`<!-- TODO: … -->`で残し、完了条件で
 その残りがゼロであることを確認する。

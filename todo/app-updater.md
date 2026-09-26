@@ -9,7 +9,7 @@ tags: [release, updater]
 進捗管理用の作業台帳 — **完了したら削除ないし`todo/archive/`へ移動する**。
 
 発端: 現状、`tauri-plugin-updater`も更新チェックもなく、Helpメニューに
-Releasesへのリンクすらない(リンクは`todo/release-app-metadata.md`で足す)。
+Releasesへのリンクすらない(リンクは`todo/archive/release-app-metadata.md`で追加済み)。
 初回リリースの**前**には不要だが、2回目のリリース時に「ユーザーが
 新版に気づけない」問題になる。
 

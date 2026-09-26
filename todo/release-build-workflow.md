@@ -101,6 +101,18 @@ Releaseは本文だけで、ユーザーはソースからビルドするしか�
 初回は「しない」で出してもよいが、**どちらにするかを決めてから**
 タグを押す — Release本文とREADMEの記述が変わるため。
 
+> 経過(実装後):
+> - `v0.1.0-rc.1`の未署名dmgは「壊れている」と表示され開けなかった。
+>   実行ファイルのリンカ署名だけでバンドルが封印されていなかったため。
+>   `bundle.macOS.signingIdentity: "-"`(アドホック署名)で解消(#101)し、
+>   `v0.1.0-rc.2`は「検証できませんでした」→システム設定で許可、の
+>   通常の未公証アプリの挙動になった。
+> - 利用者にその許可を求めたくないため、署名・公証を「する」に変更。
+>   残作業: Developer ID Application証明書(.p12)と公証用の認証情報
+>   (App Store Connect APIキー推奨)をsecretsに登録し、
+>   `release-build.yml`のbuildステップにenvとして渡す。
+>   `signingIdentity: "-"`は外す(envの`APPLE_SIGNING_IDENTITY`が使われる)。
+
 ## レイヤー配置
 
 - `.github/workflows/release-build.yml`(新規)。
@@ -118,15 +130,21 @@ Releaseは本文だけで、ユーザーはソースからビルドするしか�
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] プレリリースタグでワークフローが成功し、`gh release view <tag>`
-  でdmgがassetsに載っている
+- [x] プレリリースタグでワークフローが成功し、`gh release view <tag>`
+  でdmgがassetsに載っている(`v0.1.0-rc.1`、`v0.1.0-rc.2`)
 - [ ] (署名する場合)`codesign --verify --deep --strict`と`spctl -a`が
   通る
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [x] 署名・公証をするかどうか(Apple Developer Programの加入) — 初回は「しない」(未署名dmg)
+- [x] 署名・公証をするかどうか(Apple Developer Programの加入) — **する**。
+  当初は「しない」で進めたが、未署名だとシステム設定での許可を利用者に
+  求めることになるため方針変更し、Developer Programに個人で加入申請済み
+  (承認待ち)。法人化したら個人→法人に切り替える(Team IDは維持される
+  とされる。切り替え後にDeveloper ID証明書を法人名で再発行する想定)
 - [x] Universal vs aarch64のみ — aarch64のみ
-- [ ] 別Macでdmgをダウンロードして起動する確認
+- [ ] 別Macでdmgをダウンロードして起動する確認(署名・公証後に、
+  Gatekeeperの警告なしで開けること。未署名の`v0.1.0-rc.2`は「検証
+  できませんでした」になりシステム設定での許可が必要だった)
 
 ## 先送り事項
 
