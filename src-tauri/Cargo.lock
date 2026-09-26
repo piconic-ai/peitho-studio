@@ -71,27 +71,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
-name = "app"
-version = "0.1.0"
-dependencies = [
- "log",
- "notify",
- "peitho-core",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sys-locale",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-log",
- "tauri-plugin-playwright",
- "tempfile",
- "tiny_http",
-]
-
-[[package]]
 name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3299,6 +3278,27 @@ dependencies = [
  "two-face",
  "url",
  "walkdir",
+]
+
+[[package]]
+name = "peitho-studio"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "notify",
+ "peitho-core",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sys-locale",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-log",
+ "tauri-plugin-playwright",
+ "tempfile",
+ "tiny_http",
 ]
 
 [[package]]

@@ -19,7 +19,7 @@ Always check before launching `tauri dev` yourself.
 
 ```bash
 lsof -i :3003 -sTCP:LISTEN
-ps aux | grep -iE "tauri dev|target/debug/app" | grep -v grep
+ps aux | grep -iE "tauri dev|target/debug/peitho-studio" | grep -v grep
 ```
 
 - If it's already running (the user's own dev session), verify against
@@ -27,7 +27,7 @@ ps aux | grep -iE "tauri dev|target/debug/app" | grep -v grep
   (port 3003 conflict) — it can also leave an orphaned Rust process
   behind with the frontend build in a failed state (killing `tauri dev`'s
   child process doesn't kill the native window binary itself,
-  `target/debug/app`, which survives). If you notice a duplicate launch,
+  `target/debug/peitho-studio`, which survives). If you notice a duplicate launch,
   identify and kill only the one you started by its launch time — don't
   take down the user's existing process.
 - GUI automation (mouse movement/clicks) steals OS-wide focus. Keep in
@@ -59,7 +59,7 @@ cd /Users/kfly8/src/github.com/piconic-ai/peitho-studio
 nohup bunx tauri dev > /tmp/tauri-dev.log 2>&1 &
 ```
 
-Launch is done once `[build] ... Running target/debug/app` appears in the
+Launch is done once `[build] ... Running target/debug/peitho-studio` appears in the
 log (a cargo build runs on the first launch or after a Rust-side change,
 taking tens of seconds to a few minutes; a frontend-only change hits the
 cache and takes a few seconds).
@@ -68,7 +68,7 @@ Identify the native window's PID (the process name is `app`, per
 `[package] name = "app"` in Cargo.toml):
 
 ```bash
-ps aux | grep -i "target/debug/app" | grep -v grep
+ps aux | grep -i "target/debug/peitho-studio" | grep -v grep
 ```
 
 ## 2. Bring the window to the front and screenshot it
@@ -187,7 +187,7 @@ Isolation/verification steps:
 
 Once verification is done, explicitly `kill` the `tauri dev` you started
 and its child processes (`concurrently`, `vite build --watch`, `unocss
---watch`, `tsx watch server.ts`, `target/debug/app`). Cross-check launch
+--watch`, `tsx watch server.ts`, `target/debug/peitho-studio`). Cross-check launch
 times via `ps aux` so you don't accidentally kill a process the user
 already had running. Also delete any deck folder created for testing.
 
