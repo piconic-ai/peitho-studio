@@ -112,6 +112,15 @@ Releaseは本文だけで、ユーザーはソースからビルドするしか�
 >   (App Store Connect APIキー推奨)をsecretsに登録し、
 >   `release-build.yml`のbuildステップにenvとして渡す。
 >   `signingIdentity: "-"`は外す(envの`APPLE_SIGNING_IDENTITY`が使われる)。
+> - Developer Program加入後: `release-build.yml`に署名・公証のenv、secrets
+>   の欠落チェック、`codesign`/`spctl`/`stapler`の検証ステップを追加し、
+>   `tagpr.yml`から`secrets: inherit`で渡すようにした。`signingIdentity:
+>   "-"`は削除。Entitlementsは置いていない(Tauri v2は`hardenedRuntime`
+>   が既定でtrue、JITなど追加権限が要る処理はない)。必要なsecrets:
+>   `APPLE_CERTIFICATE`(Developer ID Application証明書の.p12をbase64)、
+>   `APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、
+>   `APPLE_API_ISSUER`、`APPLE_API_KEY`(Key ID)、`APPLE_API_KEY_P8`(.p8の
+>   中身)。
 
 ## レイヤー配置
 
