@@ -3,6 +3,7 @@
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
 import type { VariantOption } from '../domain/deckVariants'
+import type { PageNumbersChoice, PageNumbersMode } from '../domain/frontmatter'
 
 // Props here are values (`presentMenuOpen={presentMenuOpen()}`), not signal
 // getters — see `components/WelcomeScreen.tsx` for why (BF044).
@@ -24,6 +25,9 @@ export interface DeckHeaderProps {
   onTogglePresentMenu: () => void
   onClosePresentMenu: () => void
   onPresent: (rehearsal: boolean) => void
+  /** The deck's `page_numbers` setting, read from its frontmatter. */
+  pageNumbersMode: PageNumbersMode
+  onChangePageNumbers: (choice: PageNumbersChoice) => void
 }
 
 export function DeckHeader(props: DeckHeaderProps) {
@@ -88,6 +92,62 @@ export function DeckHeader(props: DeckHeaderProps) {
         </div>
       </div>
       <div className="flex-1" />
+      {/* The deck's page-number setting: three radio buttons rather than a
+          <select>, whose `value={...}` binding writes to the DOM only when
+          the value changes — a pick whose save failed would stay shown. An
+          unknown frontmatter value checks none of them and shows a marker
+          (permanently mounted, toggled by `hidden`) explaining why. */}
+      <div
+        role="radiogroup"
+        aria-label={messagesFor(props.language).pageNumbers}
+        title={messagesFor(props.language).pageNumbersHint}
+        className={(props.deckPath ? '' : 'opacity-50 ') + 'shrink-0 flex items-center gap-1.5 text-xs'}
+      >
+        <span className="text-muted-foreground">{messagesFor(props.language).pageNumbers}</span>
+        <div className="flex items-center rounded-md border border-border overflow-hidden">
+          <button
+            type="button"
+            role="radio"
+            data-page-numbers="none"
+            aria-checked={props.pageNumbersMode.kind === 'none' ? 'true' : 'false'}
+            disabled={!props.deckPath}
+            onClick={() => props.onChangePageNumbers('none')}
+            className={(props.pageNumbersMode.kind === 'none' ? 'bg-accent font-medium ' : '') + 'px-2 py-0.5 hover:bg-accent disabled:cursor-not-allowed'}
+          >
+            {messagesFor(props.language).pageNumbersNone}
+          </button>
+          <button
+            type="button"
+            role="radio"
+            data-page-numbers="current"
+            aria-checked={props.pageNumbersMode.kind === 'current' ? 'true' : 'false'}
+            disabled={!props.deckPath}
+            onClick={() => props.onChangePageNumbers('current')}
+            className={(props.pageNumbersMode.kind === 'current' ? 'bg-accent font-medium ' : '') + 'px-2 py-0.5 border-l border-border hover:bg-accent disabled:cursor-not-allowed'}
+          >
+            {messagesFor(props.language).pageNumbersCurrent}
+          </button>
+          <button
+            type="button"
+            role="radio"
+            data-page-numbers="current_of_total"
+            aria-checked={props.pageNumbersMode.kind === 'current_of_total' ? 'true' : 'false'}
+            disabled={!props.deckPath}
+            onClick={() => props.onChangePageNumbers('current_of_total')}
+            className={(props.pageNumbersMode.kind === 'current_of_total' ? 'bg-accent font-medium ' : '') + 'px-2 py-0.5 border-l border-border hover:bg-accent disabled:cursor-not-allowed'}
+          >
+            {messagesFor(props.language).pageNumbersCurrentOfTotal}
+          </button>
+        </div>
+        <span
+          data-page-numbers-unknown=""
+          className={(props.pageNumbersMode.kind === 'unknown' ? '' : 'hidden ') + 'text-destructive font-medium'}
+          title={props.pageNumbersMode.kind === 'unknown' ? messagesFor(props.language).pageNumbersUnknown(props.pageNumbersMode.raw) : ''}
+          aria-label={props.pageNumbersMode.kind === 'unknown' ? messagesFor(props.language).pageNumbersUnknown(props.pageNumbersMode.raw) : ''}
+        >
+          ?
+        </span>
+      </div>
       <div className="relative">
         <div
           className={

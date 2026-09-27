@@ -24,7 +24,7 @@ export type ContextMenu =
 
 export type MenuAction =
   | 'new-slide' | 'cut' | 'copy' | 'paste' | 'delete' | 'change-layout'
-  | 'toggle-draft' | 'toggle-skip' | 'toggle-section' | 'move-up' | 'move-down'
+  | 'toggle-draft' | 'toggle-skip' | 'toggle-section' | 'toggle-page-number' | 'move-up' | 'move-down'
 
 export interface MenuItem {
   action: MenuAction
@@ -36,6 +36,9 @@ export interface MenuContext {
   slideCount: number
   hasClipboard: boolean
   configOf: (index: number) => PageConfig
+  /** Whether the deck shows page numbers at all (`page_numbers` is
+   * `current` or `current_of_total`) — see `pageNumbersShown`. */
+  pageNumbersShown: boolean
 }
 
 /** The right-clicked slide's index, or `null` when the menu is closed or
@@ -72,6 +75,13 @@ export function menuItems(menu: ContextMenu, ctx: MenuContext): MenuItem[] {
   // must disable themselves for it rather than reach commitChange with a
   // combination peitho-core is guaranteed to refuse.
   const isDraft = config?.draft === true
+  // peitho-core also refuses `page_number:false` on a draft slide, or on
+  // any slide of a deck with no `page_numbers` setting — so hiding a
+  // slide's number needs the deck to show numbers, and a slide that
+  // already hides its own can't be made a draft until it stops. Showing a
+  // hidden number again is always allowed: it's the way out of either
+  // refused combination, should a hand edit have produced one.
+  const hidesPageNumber = config?.page_number === false
   return [
     { action: 'new-slide', enabled: true },
     { action: 'cut', enabled: hasSlide },
@@ -79,9 +89,10 @@ export function menuItems(menu: ContextMenu, ctx: MenuContext): MenuItem[] {
     { action: 'paste', enabled: ctx.hasClipboard },
     { action: 'delete', enabled: hasSlide && ctx.slideCount > 1 },
     { action: 'change-layout', enabled: hasSlide },
-    { action: 'toggle-draft', enabled: hasSlide, checked: isDraft },
+    { action: 'toggle-draft', enabled: hasSlide && (isDraft || !hidesPageNumber), checked: isDraft },
     { action: 'toggle-skip', enabled: hasSlide && !isDraft, checked: config?.skip === true },
     { action: 'toggle-section', enabled: hasSlide && !isDraft, checked: typeof config?.section === 'string' },
+    { action: 'toggle-page-number', enabled: hasSlide && (hidesPageNumber || (!isDraft && ctx.pageNumbersShown)), checked: hidesPageNumber },
     { action: 'move-up', enabled: hasSlide && index > 0 },
     { action: 'move-down', enabled: hasSlide && index < ctx.slideCount - 1 },
   ]

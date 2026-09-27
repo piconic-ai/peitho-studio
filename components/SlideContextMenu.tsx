@@ -36,6 +36,7 @@ export interface SlideContextMenuProps {
   onToggleDraft: () => void
   onToggleSkip: () => void
   onToggleSection: () => void
+  onTogglePageNumber: () => void
   onMoveUp: () => void
   onMoveDown: () => void
 }
@@ -200,6 +201,15 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
         >
           <span>{messagesFor(props.language).sectionStart}</span>
           {menuItemChecked(props.menuItems, 'toggle-section') ? <span aria-hidden="true">✓</span> : null}
+        </button>
+        <button
+          type="button"
+          disabled={!menuItemEnabled(props.menuItems, 'toggle-page-number')}
+          onClick={() => props.onTogglePageNumber()}
+          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <span>{messagesFor(props.language).hidePageNumber}</span>
+          {menuItemChecked(props.menuItems, 'toggle-page-number') ? <span aria-hidden="true">✓</span> : null}
         </button>
         <div className="my-1 border-t border-border" />
         <button

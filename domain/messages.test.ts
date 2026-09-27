@@ -28,6 +28,7 @@ describe('messagesFor', () => {
       const mismatch = messages.layoutMismatch('cover', "missing 'body' slot")
       expect(mismatch).toContain('cover')
       expect(mismatch).toContain("missing 'body' slot")
+      expect(messages.pageNumbersUnknown('both')).toContain('both')
     }
   })
 
@@ -49,8 +50,9 @@ describe('messagesFor', () => {
   })
 
   test('spec: Given Japanese, when its messages are read, then the prose is actually translated, not left in English', () => {
-    // Words that read the same in both (the "PC" label) are the exception.
-    const same = new Set(['previewPc'])
+    // Words that read the same in both (the "PC" label, the page-number
+    // format samples) are the exception.
+    const same = new Set(['previewPc', 'pageNumbersCurrent', 'pageNumbersCurrentOfTotal'])
     const en = rendered(messagesFor('en'))
     const ja = rendered(messagesFor('ja'))
     const untranslated = Object.keys(en).filter(key => !same.has(key) && en[key] === ja[key])

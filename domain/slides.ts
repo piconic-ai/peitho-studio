@@ -11,6 +11,7 @@
 // blockquote or list continuation line (rare in practice) is not
 // special-cased here.
 
+import { setFrontmatterKey } from './frontmatter'
 import { parsePageComment, configOf, serializePageConfig, type PageConfig } from './pageConfig'
 
 export interface SlideRange {
@@ -140,7 +141,11 @@ export function buildSlideText(config: PageConfig, body: string, note: string): 
 /** Merges `updates` into a slide's PageComment JSON (the first HTML comment
  * whose trimmed body starts with `{`), rewriting that comment in place. If
  * the slide has no PageComment yet, a new one is prepended — `section` and
- * `time` are always set together since peitho requires them paired. */
+ * `time` are always set together since peitho requires them paired.
+ *
+ * When the merge leaves no fields (every remaining one set to `undefined`),
+ * the comment is removed rather than written as `<!-- {} -->`, which
+ * peitho-core refuses — see `removeComment` for the blank lines around it. */
 export function updatePageComment(raw: string, updates: Partial<PageConfig>): string {
   const re = /<!--([\s\S]*?)-->/g
   let match: RegExpExecArray | null
@@ -154,9 +159,29 @@ export function updatePageComment(raw: string, updates: Partial<PageConfig>): st
     }
   }
   const nextConfig: PageConfig = { ...(existing?.config ?? {}), ...updates }
-  const nextComment = `<!-- ${serializePageConfig(nextConfig)} -->`
+  const serialized = serializePageConfig(nextConfig)
+  if (serialized === '{}') return existing ? removeComment(raw, existing.commentText) : raw
+  const nextComment = `<!-- ${serialized} -->`
   if (existing) return raw.replace(existing.commentText, nextComment)
   return `${nextComment}\n${raw}`
+}
+
+/** `raw` without the first occurrence of `comment`, and without the line
+ * break that ended its line. When the comment sat alone between two blank
+ * lines, one of them goes too, so its removal never leaves a double blank
+ * line behind. A comment that follows text on its own line takes only the
+ * whitespace in front of it: that line's break stays, so the text doesn't
+ * join the next line. */
+function removeComment(raw: string, comment: string): string {
+  const at = raw.indexOf(comment)
+  if (at === -1) return raw
+  const before = raw.slice(0, at)
+  if (before !== '' && !before.endsWith('\n')) {
+    return before.replace(/[ \t]+$/, '') + raw.slice(at + comment.length)
+  }
+  let after = raw.slice(at + comment.length).replace(/^[ \t]*\r?\n/, '')
+  if (/(^|\n)[ \t]*\r?\n$/.test(before) || before === '') after = after.replace(/^[ \t]*\r?\n/, '')
+  return before + after
 }
 
 /** Slugifies a title the same way peitho-core derives a slide's key from
@@ -393,24 +418,7 @@ export function stabilizeByKey<T extends { key: string }>(previous: T[], next: T
 // in sync automatically instead of asking the user to hunt down and edit
 // the frontmatter by hand.
 export function updateFrontmatterTime(source: string, totalMs: number): string {
-  const value = formatDurationMs(totalMs)
-  const lines = source.split('\n')
-  if (lines[0]?.trim() !== '---') {
-    return `---\ntime: ${value}\n---\n${source}`
-  }
-  const closeIndex = lines.findIndex((line, i) => i > 0 && line.trim() === '---')
-  if (closeIndex === -1) return source
-
-  let replaced = false
-  for (let i = 1; i < closeIndex; i++) {
-    if (/^time\s*:/.test(lines[i])) {
-      lines[i] = `time: ${value}`
-      replaced = true
-      break
-    }
-  }
-  if (!replaced) lines.splice(closeIndex, 0, `time: ${value}`)
-  return lines.join('\n')
+  return setFrontmatterKey(source, 'time', formatDurationMs(totalMs))
 }
 
 /** Picks the index to focus after the slide list changes: `candidate` if

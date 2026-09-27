@@ -16,6 +16,7 @@ const ctx = (overrides: Partial<MenuContext> = {}): MenuContext => ({
   slideCount: 3,
   hasClipboard: false,
   configOf: () => ({}),
+  pageNumbersShown: true,
   ...overrides,
 })
 
@@ -142,6 +143,65 @@ describe('menuItems', () => {
     expect(byAction['toggle-draft'].enabled).toBe(true)
     expect(byAction['cut'].enabled).toBe(true)
     expect(byAction['change-layout'].enabled).toBe(true)
+  })
+})
+
+describe('menuItems: "Hide Page Number"', () => {
+  const pageNumberItem = (context: MenuContext, menu: ContextMenu = onSlide({ index: 0 })) =>
+    menuItems(menu, context).find(i => i.action === 'toggle-page-number')!
+
+  test('spec: Given a deck showing page numbers, when a plain slide is right-clicked, then "Hide Page Number" is enabled and unchecked', () => {
+    expect(pageNumberItem(ctx({ pageNumbersShown: true }))).toEqual({ action: 'toggle-page-number', enabled: true, checked: false })
+  })
+
+  test('spec: Given a slide that hides its page number, when it is right-clicked, then "Hide Page Number" is shown checked', () => {
+    expect(pageNumberItem(ctx({ configOf: () => ({ page_number: false }) })).checked).toBe(true)
+  })
+
+  test('spec: Given a deck with page numbers off, when a slide is right-clicked, then "Hide Page Number" is disabled (peitho refuses page_number:false there)', () => {
+    expect(pageNumberItem(ctx({ pageNumbersShown: false })).enabled).toBe(false)
+  })
+
+  test('spec: Given a draft slide, when it is right-clicked, then "Hide Page Number" is disabled (peitho refuses draft + page_number)', () => {
+    expect(pageNumberItem(ctx({ configOf: () => ({ draft: true }) })).enabled).toBe(false)
+  })
+
+  test('spec: Given a slide that hides its page number, when it is right-clicked, then "Mark as Draft" is disabled until it shows its number again', () => {
+    const items = menuItems(onSlide({ index: 0 }), ctx({ configOf: () => ({ page_number: false }) }))
+    expect(items.find(i => i.action === 'toggle-draft')?.enabled).toBe(false)
+  })
+
+  test('adversarial: right-clicking empty space leaves it disabled and unchecked', () => {
+    expect(pageNumberItem(ctx(), { kind: 'on-empty-space', x: 0, y: 0 })).toEqual({ action: 'toggle-page-number', enabled: false, checked: false })
+    expect(pageNumberItem(ctx(), { kind: 'closed' }).enabled).toBe(false)
+  })
+
+  test('adversarial: a hand-edited slide already in a refused combination can still show its number again', () => {
+    // page_number:false on a draft slide, and on a deck with no page_numbers
+    expect(pageNumberItem(ctx({ configOf: () => ({ draft: true, page_number: false }) })).enabled).toBe(true)
+    expect(pageNumberItem(ctx({ pageNumbersShown: false, configOf: () => ({ page_number: false }) })).enabled).toBe(true)
+    // ...and a draft slide that hides its number can still be un-drafted.
+    const items = menuItems(onSlide({ index: 0 }), ctx({ configOf: () => ({ draft: true, page_number: false }) }))
+    expect(items.find(i => i.action === 'toggle-draft')?.enabled).toBe(true)
+  })
+
+  test('adversarial: page_number:true (refused by peitho) doesn\'t read as hidden', () => {
+    expect(pageNumberItem(ctx({ configOf: () => ({ page_number: true }) }))).toEqual({ action: 'toggle-page-number', enabled: true, checked: false })
+  })
+
+  test('pairwise: enabled/checked over every deck mode x draft x page_number combination', () => {
+    for (const pageNumbersShown of [true, false]) {
+      for (const draft of [true, false, undefined]) {
+        for (const pageNumber of [false, true, undefined]) {
+          const item = pageNumberItem(ctx({ pageNumbersShown, configOf: () => ({ draft, page_number: pageNumber }) }))
+          const hides = pageNumber === false
+          expect({ pageNumbersShown, draft, pageNumber, item }).toEqual({
+            pageNumbersShown, draft, pageNumber,
+            item: { action: 'toggle-page-number', enabled: hides || (draft !== true && pageNumbersShown), checked: hides },
+          })
+        }
+      }
+    }
   })
 })
 

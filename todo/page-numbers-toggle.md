@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: デッキのページ番号(なし / 番号 / 番号+総数)をUIから切り替え、スライド単位の非表示もコンテキストメニューから切り替える
 tags: [deck-settings, frontmatter, context-menu]
 ---
@@ -188,9 +188,9 @@ index, { page_number: hidden ? undefined : false })`。`MenuContext`に
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `bun run test:e2e` グリーン(追加分含む)
-- [ ] `bunx bf debug graph`等で`DeckHeader`の新propsが反応的であること
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `bun run test:e2e` グリーン(追加分含む)
+- [x] `bunx bf debug graph`等で`DeckHeader`の新propsが反応的であること
   (静的解析の`no tracked deps`だけで断定しない — CLAUDE.md参照)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
@@ -199,6 +199,32 @@ index, { page_number: hidden ? undefined : false })`。`MenuContext`に
 - [ ] コントロールの見た目と置き場所の最終確認
 - [ ] 「なし」に切り替えたときに各スライドの`page_number:false`を黙って
   取り除く挙動でよいか(代案: 取り除かずにトグルを無効化して理由を表示)
+
+## 実装メモ(PR #112)
+
+- 要調査1: 空の`---`/`---`はpulldown-cmarkがメタデータブロックと認識しない
+  (`scanners.rs`の`scan_metadata_block`: 最初の行が閉じ`---`や空行なら
+  ブロックにならない)ので、peitho-coreは「deck starts with --- but no valid
+  YAML frontmatter」で拒否する。最後のキーを消したらブロックごと削除する
+  (`setFrontmatterKey`)。
+- 要調査2: Undoは方針(b)。`PageNumbersStep`は差分ではなく状態
+  (`value` + `hidden`)を持つので、inverseは実行前の状態そのもの。
+  frontmatterはCodeMirrorのエディタに入らないため`text`ステップとの衝突は
+  なく、(a)に倒す必要はなかった。
+- `parsePageNumbersMode`は計画どおり空文字も`unknown`にした(YAMLとしては
+  `page_numbers:`はnull=なし相当だが、表示が「不明」になるだけで害はない)。
+- 計画外で1点追加: `page_number:false`のスライドでは「下書きにする」も
+  無効化した(peitho-coreはdraft+page_numberの併用を拒否するため)。番号を
+  再表示する方向のトグルは常に有効(手編集で拒否される組み合わせに
+  なったスライドを戻せるように)。
+- 本番経路のトレース: ヘッダーのラジオ → `setPageNumbers` →
+  `performStep`(直列化キュー)→ `runPageNumbersStep` → `commitChange` →
+  `render_draft` / `save_deck_source`。peitho-coreは`render_deck`で
+  `<section>`に`data-peitho-page-number`を付け、Studioは`slide.html()`を
+  そのままfragmentにする。`patchSlideCanvas`は`.peitho-slide`要素ごと
+  差し替えるので属性の変化も反映される。実際に番号が描画されるか
+  (テーマCSSの`::after`がShadow DOMのサムネイル/プレビューで効くか)は
+  実機WKWebView依存で、未確認のまま下の人間の項目に残す。
 
 ## 先送り事項
 

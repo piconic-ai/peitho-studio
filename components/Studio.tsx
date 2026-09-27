@@ -13,7 +13,8 @@ import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, indexAfterCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
-import { type HistoryStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, commandForStep, inverseStep, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
+import { type HistoryStep, type PageNumbersStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyPageNumbersStep, commandForStep, inversePageNumbersStep, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
+import { PAGE_NUMBERS_KEY, type PageNumbersChoice, pageNumbersShown, pageNumbersValueOf, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import { type LayoutVerdict } from '../domain/layoutFit'
@@ -421,10 +422,15 @@ export function Studio() {
       if (start !== null) toggleSectionAt(start)
     })
   })
+  // The deck's `page_numbers` setting: its raw frontmatter value (what an
+  // undo writes back), and as the header's control shows it.
+  const pageNumbersValue = createMemo(() => readFrontmatterKey(editor.fullSource(), PAGE_NUMBERS_KEY))
+  const pageNumbersMode = createMemo(() => parsePageNumbersMode(pageNumbersValue()))
   const currentMenuItems = createMemo(() => computeMenuItems(ui.contextMenu(), {
     slideCount: slideEntries().length,
     hasClipboard: ui.clipboardSlideText() !== null,
     configOf: slideConfigOf,
+    pageNumbersShown: pageNumbersShown(pageNumbersMode()),
   }))
   const selectedSlide = createMemo<ManifestSlide | null>(() => {
     const i = editor.selectedIndex()
@@ -953,12 +959,41 @@ export function Studio() {
 
   // A new structural operation: runs it and records how to undo it.
   function perform(step: StructuralStep): Promise<void> {
+    return performStep(() => runStep(step, selectionPlanFor))
+  }
+
+  // Runs `run` once every earlier operation has landed, and records the
+  // step that undoes it if it did.
+  function performStep(run: () => Promise<StepOutcome>): Promise<void> {
     return serialized(async () => {
-      const outcome = await runStep(step, selectionPlanFor)
+      const outcome = await run()
       if (outcome.kind !== 'done') return
       history.record(outcome.inverse)
       separateTextHistory()
     })
+  }
+
+  // Header > Page numbers: sets the deck's `page_numbers` (and, turning
+  // them off, clears every slide's `page_number:false`) as one undoable
+  // step. The step is built only once earlier operations have landed, so
+  // the slides it keeps hidden are the ones hidden by then. Picking the
+  // setting already in place does nothing.
+  function setPageNumbers(choice: PageNumbersChoice): Promise<void> {
+    return performStep(async () => {
+      if (pageNumbersMode().kind === choice) return { kind: 'rejected' }
+      return runPageNumbersStep(pageNumbersStepFor(currentSlideTexts(), pageNumbersValueOf(choice)))
+    })
+  }
+
+  // Writes a page-number step's frontmatter value and slide flags through
+  // the same `commitChange` path as every structural operation. The open
+  // slide stays open: the step never moves or removes a slide.
+  async function runPageNumbersStep(step: PageNumbersStep): Promise<StepOutcome> {
+    const texts = currentSlideTexts()
+    const inverse = inversePageNumbersStep(texts, pageNumbersValue())
+    const nextSource = setFrontmatterKey(rebuildSource(applyPageNumbersStep(texts, step)), PAGE_NUMBERS_KEY, step.value)
+    const ok = await commitChange(nextSource, { kind: 'keep' })
+    return ok ? { kind: 'done', inverse } : { kind: 'failed' }
   }
 
   // Edit > Undo (`undo`) / Redo (`redo`): the newest step on the timeline,
@@ -973,7 +1008,7 @@ export function Studio() {
     for (;;) {
       const step = history.take(direction, marker => textStepIsLive(marker, direction))
       if (step === null) return
-      if (step.kind === 'slides' || step.kind === 'config') {
+      if (step.kind !== 'text') {
         await replayStructuralStep(step, direction)
         return
       }
@@ -1024,9 +1059,11 @@ export function Studio() {
   // other stack; a failed commit puts the step back so it can be retried; a
   // rejected one means the history no longer matches the deck, so it is
   // dropped whole rather than left to misfire on the next press.
-  async function replayStructuralStep(step: StructuralStep, direction: 'undo' | 'redo'): Promise<void> {
+  async function replayStructuralStep(step: StructuralStep | PageNumbersStep, direction: 'undo' | 'redo'): Promise<void> {
     const isUndo = direction === 'undo'
-    const outcome = await runStep(step, cmd => selectionForReplay(step, cmd, editor.selectedIndex()))
+    const outcome = step.kind === 'page-numbers'
+      ? await runPageNumbersStep(step)
+      : await runStep(step, cmd => selectionForReplay(step, cmd, editor.selectedIndex()))
     if (outcome.kind === 'done') {
       pushReplayed(outcome.inverse, direction)
     } else if (outcome.kind === 'failed') {
@@ -1294,6 +1331,12 @@ export function Studio() {
 
   async function toggleSlideSkip(index: number): Promise<void> {
     await updateSlideConfig(index, { skip: slideConfigOf(index).skip !== true })
+  }
+
+  // `page_number` is only ever `false` or absent: peitho-core refuses
+  // `true`, so showing the number again removes the field.
+  async function toggleSlidePageNumber(index: number): Promise<void> {
+    await updateSlideConfig(index, { page_number: slideConfigOf(index).page_number === false ? undefined : false })
   }
 
   // Toggles whether this slide marks the *start* of a section. peitho
@@ -1647,6 +1690,8 @@ export function Studio() {
         onTogglePresentMenu={() => ui.setPresentMenuOpen(!ui.presentMenuOpen())}
         onClosePresentMenu={() => ui.setPresentMenuOpen(false)}
         onPresent={rehearsal => void handlePresent(rehearsal)}
+        pageNumbersMode={pageNumbersMode()}
+        onChangePageNumbers={choice => void setPageNumbers(choice)}
       />
 
       {deck.deckPath() === null ? (
@@ -1772,6 +1817,7 @@ export function Studio() {
         onToggleDraft={() => { void toggleSlideDraft(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onToggleSkip={() => { void toggleSlideSkip(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onToggleSection={() => { void toggleSlideSection(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
+        onTogglePageNumber={() => { void toggleSlidePageNumber(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onMoveUp={() => { void moveSlide(contextMenuIndexOf(ui.contextMenu())!, -1); ui.closeContextMenu() }}
         onMoveDown={() => { void moveSlide(contextMenuIndexOf(ui.contextMenu())!, 1); ui.closeContextMenu() }}
       />
