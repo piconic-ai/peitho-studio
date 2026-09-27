@@ -53,7 +53,7 @@ const server = createServer(async (req, res) => {
   }
 
   // Usually just a route name (`/`, `/foo`) that needs `.html` appended,
-  // but Tauri's `WebviewUrl::App("index.html")` (see `open_deck_window` in
+  // but Tauri's `WebviewUrl::App("index.html")` (see `open_deck_window_impl` in
   // src-tauri/src/peitho.rs) requests the literal `/index.html` in dev
   // mode — already has the extension, so appending again would look for
   // the non-existent `index.html.html` and 404.

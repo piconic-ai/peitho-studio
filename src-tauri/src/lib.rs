@@ -303,7 +303,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             peitho::dev_default_deck,
             peitho::open_deck,
-            peitho::open_deck_window,
+            peitho::open_deck_variant,
             peitho::take_pending_deck,
             peitho::get_recent_decks,
             peitho::create_deck,

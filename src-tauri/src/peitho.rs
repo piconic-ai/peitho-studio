@@ -5,7 +5,7 @@
 // the real CLI; it's a one-shot fullscreen launch, not on any hot path).
 //
 // Sessions are keyed by window label rather than being a single global
-// slot: opening a deck in a new window (see `open_deck_window`) must not
+// slot: opening a deck in a new window (see `open_deck_window_impl`) must not
 // disturb whichever deck another already-open window is showing — a user
 // comparing two decks side by side is the whole point of that feature.
 
@@ -159,7 +159,7 @@ impl PeithoSession {
     }
 
     /// The label of a window that already has `target` open, if any — see
-    /// `matching_window_label`. `open_deck_window` uses this to bring an
+    /// `matching_window_label`. `open_deck_window_impl` uses this to bring an
     /// already-open deck's window to the front instead of opening a
     /// redundant second copy of it.
     pub fn window_label_for(&self, target: &Path) -> Option<String> {
@@ -293,7 +293,7 @@ fn resolve_deck_path(input: &str) -> Result<PathBuf, String> {
 /// auto-opens that deck on launch instead of waiting for a folder pick — no
 /// native dialog interaction required. No effect when unset. Only consulted
 /// by a window with no pending deck of its own (see `take_pending_deck`) —
-/// a window opened via `open_deck_window` always wins that race with its
+/// a window opened via `open_deck_window_impl` always wins that race with its
 /// own explicit path.
 #[tauri::command]
 pub fn dev_default_deck() -> Option<String> {
@@ -367,7 +367,7 @@ pub fn create_deck(parent_dir: String, name: String) -> Result<String, String> {
     Ok(dir.join("deck.md").display().to_string())
 }
 
-/// Windows spawned by `open_deck_window`, keyed by their (not-yet-loaded)
+/// Windows spawned by `open_deck_window_impl`, keyed by their (not-yet-loaded)
 /// label, holding the deck path that window should open once its frontend
 /// mounts and calls `take_pending_deck` — the hand-off that lets a brand
 /// new webview know which deck it's for without a URL query string.
@@ -381,12 +381,43 @@ static WINDOW_COUNTER: AtomicU32 = AtomicU32::new(0);
 /// from whichever one was already on top of it — otherwise a second deck
 /// opening exactly on top of the first looks like nothing happened at
 /// all. Not specific to the deck-language-variant switcher this constant
-/// was added for — it's every caller of `open_deck_window` (native "Open
+/// was added for — it's every caller of `open_deck_window_impl` (native "Open
 /// Deck…"/"Open Recent" too), since they all funnel through the same
 /// `open_deck_window_impl`.
 const WINDOW_CASCADE_STEP_PX: f64 = 32.0;
 const WINDOW_CASCADE_STEPS: u32 = 8;
 const WINDOW_BASE_POSITION: (f64, f64) = (120.0, 120.0);
+
+/// Opens one of the calling window's deck variants (`deck.md` ->
+/// `deck.ja.md`, see `list_deck_variants`) in a new window. The only way
+/// the frontend opens a deck in a new window — and it takes no arbitrary
+/// path, since a deck's layout `<script>` can call it too: `path` must be
+/// one of the variants listed next to this window's own deck (see
+/// `variant_to_open`). Native "Open Deck…"/"Open Recent" call
+/// `open_deck_window_impl` directly, Rust-side.
+#[tauri::command]
+pub fn open_deck_variant(
+    app: AppHandle,
+    window: WebviewWindow,
+    pending: State<PendingDecks>,
+    session: State<PeithoSession>,
+    path: String,
+) -> Result<(), String> {
+    let deck_path = session_deck_path(&session, window.label())?;
+    let variant = variant_to_open(&deck_variants_on_disk(&deck_path)?, &path)?;
+    open_deck_window_impl(&app, &pending, &session, variant)
+}
+
+/// `requested` if it's exactly one of `variants`' paths other than the
+/// current deck's own, else an error — `open_deck_variant`'s whole check,
+/// split out so it's testable without a window or session.
+fn variant_to_open(variants: &[DeckVariantPayload], requested: &str) -> Result<String, String> {
+    variants
+        .iter()
+        .find(|variant| !variant.is_current && variant.path == requested)
+        .map(|variant| variant.path.clone())
+        .ok_or_else(|| format!("not a variant of the open deck: {requested}"))
+}
 
 /// Opens `path` in a brand new window, leaving whichever window this was
 /// called from untouched — comparing two decks side by side means neither
@@ -394,11 +425,6 @@ const WINDOW_BASE_POSITION: (f64, f64) = (120.0, 120.0);
 /// open in some other window, that window is brought to the front
 /// instead of opening a redundant second copy of it, matching how
 /// re-opening a file already open elsewhere is expected to behave.
-#[tauri::command]
-pub fn open_deck_window(app: AppHandle, pending: State<PendingDecks>, session: State<PeithoSession>, path: String) -> Result<(), String> {
-    open_deck_window_impl(&app, &pending, &session, path)
-}
-
 pub(crate) fn open_deck_window_impl(app: &AppHandle, pending: &PendingDecks, session: &PeithoSession, path: String) -> Result<(), String> {
     if let Some(label) = session.window_label_for(&deck_path_for_comparison(&path)) {
         if let Some(window) = app.get_webview_window(&label) {
@@ -616,7 +642,7 @@ pub fn save_deck_source(content: String, window: WebviewWindow, session: State<P
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DeckVariantPayload {
-    /// Full path, ready to hand to `open_deck_window`.
+    /// Full path, ready to hand to `open_deck_variant`.
     path: String,
     file_name: String,
     suffix: Option<String>,
@@ -662,12 +688,13 @@ fn deck_variants_on_disk(deck_path: &Path) -> Result<Vec<DeckVariantPayload>, St
 /// state beyond reading the session's path.
 #[tauri::command(async)]
 pub fn list_deck_variants(window: WebviewWindow, session: State<PeithoSession>) -> Result<Vec<DeckVariantPayload>, String> {
-    let deck_path = {
-        let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
-        let state = guard.get(window.label()).ok_or_else(|| "no deck is open".to_string())?;
-        state.deck_path.clone()
-    };
-    deck_variants_on_disk(&deck_path)
+    deck_variants_on_disk(&session_deck_path(&session, window.label())?)
+}
+
+fn session_deck_path(session: &PeithoSession, label: &str) -> Result<PathBuf, String> {
+    let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+    let state = guard.get(label).ok_or_else(|| "no deck is open".to_string())?;
+    Ok(state.deck_path.clone())
 }
 
 #[derive(Serialize)]
@@ -1075,6 +1102,46 @@ mod tests {
     fn deck_variants_on_disk_adversarial_path_without_a_file_name_is_an_error() {
         assert!(deck_variants_on_disk(Path::new("/")).is_err());
         assert!(deck_variants_on_disk(Path::new("")).is_err());
+    }
+
+    fn listed_variants() -> Vec<DeckVariantPayload> {
+        ["deck.md", "deck.ja.md"]
+            .iter()
+            .map(|name| DeckVariantPayload {
+                path: format!("/decks/talk/{name}"),
+                file_name: name.to_string(),
+                suffix: name.strip_prefix("deck.").and_then(|rest| rest.strip_suffix(".md")).map(str::to_string),
+                is_current: *name == "deck.md",
+            })
+            .collect()
+    }
+
+    #[test]
+    fn variant_to_open_spec_returns_a_listed_sibling() {
+        assert_eq!(variant_to_open(&listed_variants(), "/decks/talk/deck.ja.md").unwrap(), "/decks/talk/deck.ja.md");
+    }
+
+    #[test]
+    fn variant_to_open_adversarial_rejects_a_path_outside_the_list() {
+        assert!(variant_to_open(&listed_variants(), "/Users/me/.zshrc").is_err());
+        assert!(variant_to_open(&listed_variants(), "/decks/other/deck.ja.md").is_err());
+    }
+
+    #[test]
+    fn variant_to_open_adversarial_rejects_the_current_deck_itself() {
+        assert!(variant_to_open(&listed_variants(), "/decks/talk/deck.md").is_err());
+    }
+
+    #[test]
+    fn variant_to_open_adversarial_rejects_a_bare_file_name_or_a_path_that_only_resolves_to_a_sibling() {
+        assert!(variant_to_open(&listed_variants(), "deck.ja.md").is_err());
+        assert!(variant_to_open(&listed_variants(), "/decks/talk/../talk/deck.ja.md").is_err());
+    }
+
+    #[test]
+    fn variant_to_open_adversarial_empty_inputs_are_errors() {
+        assert!(variant_to_open(&listed_variants(), "").is_err());
+        assert!(variant_to_open(&[], "/decks/talk/deck.ja.md").is_err());
     }
 
     #[test]

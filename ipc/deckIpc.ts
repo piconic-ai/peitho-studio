@@ -46,7 +46,7 @@ export type Unsubscribe = () => void
 export interface DeckIpc {
   devDefaultDeck(): Promise<string | null>
   createDeck(parentDir: string, name: string): Promise<string>
-  openDeckWindow(path: string): Promise<void>
+  openDeckVariant(path: string): Promise<void>
   takePendingDeck(): Promise<string | null>
   getRecentDecks(): Promise<string[]>
   openDeck(path: string): Promise<DeckSessionInfo>
@@ -105,7 +105,7 @@ export function createTauriDeckIpc(): DeckIpc {
   return {
     devDefaultDeck: () => invoke('dev_default_deck'),
     createDeck: (parentDir, name) => invoke('create_deck', { parentDir, name }),
-    openDeckWindow: path => invoke('open_deck_window', { path }),
+    openDeckVariant: path => invoke('open_deck_variant', { path }),
     takePendingDeck: () => invoke('take_pending_deck'),
     getRecentDecks: () => invoke('get_recent_decks'),
     openDeck: path => invoke('open_deck', { path }),
