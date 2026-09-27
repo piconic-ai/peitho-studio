@@ -270,6 +270,16 @@ impl DeckSettingsRegistry {
         self.front = Some(label.to_string());
     }
 
+    /// `label`'s window lost focus. If it was the front one, no window is
+    /// in front until another gains focus — the app went to the back, or
+    /// its window was minimized — so the menu goes disabled rather than
+    /// offering picks no focused window would receive.
+    pub(crate) fn blur(&mut self, label: &str) {
+        if self.front.as_deref() == Some(label) {
+            self.front = None;
+        }
+    }
+
     /// Forgets `label`'s settings: its window closed, or its page reloaded
     /// back to the welcome screen. It stays the front window if it was, so
     /// the menu shows no deck until another window comes to the front.
@@ -484,6 +494,32 @@ mod tests {
         registry.report("deck-2", settings("current", "4:3", "true", "ja"), true);
         registry.remove("deck-2");
         assert_eq!(registry.front_settings(), None);
+        registry.focus("main");
+        assert_eq!(registry.front_settings(), Some(&defaults()));
+    }
+
+    #[test]
+    fn given_the_front_window_loses_focus_then_the_menu_shows_no_deck_until_it_is_focused_again() {
+        let mut registry = DeckSettingsRegistry::default();
+        registry.report("main", defaults(), true);
+        registry.blur("main");
+        assert_eq!(registry.front_settings(), None);
+        registry.focus("main");
+        assert_eq!(registry.front_settings(), Some(&defaults()));
+    }
+
+    #[test]
+    fn given_focus_moves_between_windows_when_the_old_one_blurs_last_then_the_new_one_stays_in_front() {
+        // The order of the two events isn't guaranteed; either way, the
+        // window that gained focus must be the one shown.
+        let mut registry = DeckSettingsRegistry::default();
+        let japanese = settings("current", "4:3", "true", "ja");
+        registry.report("main", defaults(), true);
+        registry.report("deck-2", japanese.clone(), false);
+        registry.focus("deck-2");
+        registry.blur("main");
+        assert_eq!(registry.front_settings(), Some(&japanese));
+        registry.blur("deck-2");
         registry.focus("main");
         assert_eq!(registry.front_settings(), Some(&defaults()));
     }

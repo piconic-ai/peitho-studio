@@ -283,9 +283,10 @@ pub fn run() {
                     window.state::<DeckMenuState>().remove(window.label());
                     peitho::refresh_deck_menu(window.app_handle());
                 }
-                // The Deck menu shows the front window's deck.
-                tauri::WindowEvent::Focused(true) => {
-                    window.state::<DeckMenuState>().focus(window.label());
+                // The Deck menu shows the focused window's deck, and none
+                // while no window has focus.
+                tauri::WindowEvent::Focused(focused) => {
+                    window.state::<DeckMenuState>().set_focused(window.label(), *focused);
                     peitho::refresh_deck_menu(window.app_handle());
                 }
                 _ => {}

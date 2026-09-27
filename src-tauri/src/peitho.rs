@@ -829,10 +829,14 @@ pub fn present_deck(rehearsal: bool, window: WebviewWindow, session: State<Peith
 pub struct DeckMenuState(Mutex<DeckSettingsRegistry>);
 
 impl DeckMenuState {
-    /// `label`'s window came to the front (`WindowEvent::Focused(true)`).
-    pub fn focus(&self, label: &str) {
+    /// `label`'s window gained or lost focus (`WindowEvent::Focused`).
+    pub fn set_focused(&self, label: &str, focused: bool) {
         if let Ok(mut registry) = self.0.lock() {
-            registry.focus(label);
+            if focused {
+                registry.focus(label);
+            } else {
+                registry.blur(label);
+            }
         }
     }
 
