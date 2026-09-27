@@ -4,6 +4,19 @@ An editor for [Peitho](https://github.com/mizzy/peitho) decks, built with [Tauri
 
 Peitho decks are plain Markdown. Peitho Studio adds a 3-column GUI (slide list / editor / live preview) on top of Peitho, while leaving the deck file editable by other tools at the same time (it watches the file on disk and reloads automatically). It currently ships as a desktop app.
 
+## Layout scripts
+
+A deck's layout HTML can include `<script>`, and Peitho Studio runs it, as `peitho present` and `peitho build` do. Only open decks whose layouts you trust. A layout script in Studio runs inside the app itself, so beyond what it could do on a web page it can also:
+
+- rewrite the open deck's own `deck.md`,
+- change Studio's settings (vim mode, UI language),
+- read and write the clipboard,
+- create a new starter deck folder in any directory (it never overwrites an existing one),
+- start Present for the open deck,
+- show a folder-picker dialog.
+
+It can't read or overwrite other existing files: a window never switches to another deck once one is open, and the only new window a script can open is a language variant next to the open deck (`deck.ja.md` next to `deck.md`).
+
 ## Development
 
 Requires the `peitho` CLI on `PATH` (used only for Present), and a local checkout of the [peitho](https://github.com/mizzy/peitho) repo for the `peitho-core` path dependency (see `src-tauri/Cargo.toml`).
