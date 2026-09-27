@@ -96,7 +96,12 @@ jobs:
       # the app as users get it: from inside the mounted dmg.
       - name: Verify the signature and notarization
         run: |
-          dmg=$(echo src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg)
+          dmgs=(src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg)
+          if [ "${#dmgs[@]}" -ne 1 ] || [ ! -f "${dmgs[0]}" ]; then
+            echo "expected exactly one dmg, found: ${dmgs[*]}" >&2
+            exit 1
+          fi
+          dmg="${dmgs[0]}"
           codesign --verify --strict --verbose=2 "$dmg"
           mnt=$(mktemp -d)
           hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg"
