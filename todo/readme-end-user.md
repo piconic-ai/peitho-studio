@@ -28,7 +28,7 @@ tags: [release, docs]
   - `README.md:9`の古い記述が消え、開発手順が現状(git tag依存)と一致
     している。
   - 「Install」節: Releasesページからdmgを落として`Applications`に
-    入れる手順。署名の有無(`todo/release-build-workflow.md`の決定)に
+    入れる手順。署名の有無(`todo/archive/release-build-workflow.md`の決定)に
     応じて、未署名なら起動許可の手順(macOSのバージョン別)が書かれて
     いる。
   - 「Requirements」節: 対応macOSの最低バージョン(`todo/release-app-
@@ -63,9 +63,9 @@ tags: [release, docs]
 
 要調査:
 
-1. 署名の有無 — `release-build-workflow.md`で「署名・公証する」に決定
-   (Apple Developer Programの承認待ち)。公証済みなら起動許可の手順は
-   不要になる。署名が間に合わないうちにリリースする場合だけ、未署名時の
+1. 署名の有無 — `archive/release-build-workflow.md`で「署名・公証する」に
+   決定し、`v0.1.0-rc.4`から署名・公証済み(別Macで警告なしに起動を確認)。
+   起動許可の手順は不要。署名が間に合わないうちにリリースする場合だけ、未署名時の
    手順(システム設定 > プライバシーとセキュリティ >「このまま開く」、
    `v0.1.0-rc.2`で確認済み)を書く。
 2. 未署名アプリの起動許可手順の実機確認(macOS 15以降とそれ以前で
@@ -77,8 +77,8 @@ tags: [release, docs]
 (Shortcuts含む)→ Reporting bugs → Development(既存を修正)→ Build →
 Brand → License。1コミット1節を目安に。
 
-依存順: `archive/release-app-metadata.md`(最低OS、13.0で完了)、`release-build-workflow.md`
-(署名)、`archive/release-logging.md`(ログの場所、完了)、`peitho-cli-discovery.md`
+依存順: `archive/release-app-metadata.md`(最低OS、13.0で完了)、`archive/release-build-workflow.md`
+(署名、完了)、`archive/release-logging.md`(ログの場所、完了)、`peitho-cli-discovery.md`
 (探索先)の結論を取り込むので、**このtodoはそれらの後**に仕上げる。
 先に着手する場合は該当箇所を`<!-- TODO: … -->`で残し、完了条件で
 その残りがゼロであることを確認する。

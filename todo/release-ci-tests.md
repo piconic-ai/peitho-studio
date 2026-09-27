@@ -17,7 +17,7 @@ tags: [release, ci]
 - **目的**: PRと`main`へのpushで、`bun run typecheck`・`bun test`・
   `cargo test`が自動で走り、失敗がPRのチェックとして見える状態にする。
 - **やらないこと**:
-  - `bunx tauri build`とdmgの添付(`todo/release-build-workflow.md`)。
+  - `bunx tauri build`とdmgの添付(`todo/archive/release-build-workflow.md`)。
   - 実機Tauri e2e(`e2e-tauri/`)のCI化。`docs/tauri-playwright-spike.md:
     115-146`で「CI配線は未着手、ネイティブのフォルダ選択ダイアログを
     越えられない」と記録されている。別タスク。
