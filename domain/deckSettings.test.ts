@@ -12,6 +12,7 @@ import {
   parseDeckSettingPick,
   pickChangesNothing,
   readDeckSettings,
+  resolveDeckSettingPick,
   sameDeckSettingsReport,
 } from './deckSettings'
 import { readDeckSettingsExamples, writeDeckSettingExamples } from './deckSettings.examples'
@@ -153,6 +154,39 @@ describe('parseDeckSettingPick', () => {
         && (DECK_SETTING_CHOICES[key] as readonly string[]).includes(payload.choice)
       expect(pick !== null).toBe(offered)
     }))
+  })
+})
+
+describe('resolveDeckSettingPick', () => {
+  const off = readDeckSettings('# Title\n')
+  const on = readDeckSettings('---\nbreaks: true\n---\n# Title\n')
+  const TOGGLE = { key: 'breaks', choice: 'toggle' }
+
+  test('spec: a line-break toggle turns them on when off, and off when on', () => {
+    expect(resolveDeckSettingPick(TOGGLE, off)).toEqual({ key: 'breaks', choice: 'true' })
+    expect(resolveDeckSettingPick(TOGGLE, on)).toEqual({ key: 'breaks', choice: 'false' })
+  })
+
+  test('spec: any other pick reads as parseDeckSettingPick does', () => {
+    for (const pick of ALL_PICKS) expect(resolveDeckSettingPick({ ...pick }, on)).toEqual(pick)
+  })
+
+  test('adversarial: a toggle over an unknown or explicitly false value turns line breaks on', () => {
+    expect(resolveDeckSettingPick(TOGGLE, readDeckSettings('---\nbreaks: yes\n---\n# T\n'))).toEqual({ key: 'breaks', choice: 'true' })
+    expect(resolveDeckSettingPick(TOGGLE, readDeckSettings('---\nbreaks: false\n---\n# T\n'))).toEqual({ key: 'breaks', choice: 'true' })
+  })
+
+  test('adversarial: a toggle for any other key, or a malformed payload, is rejected', () => {
+    for (const payload of [{ key: 'lang', choice: 'toggle' }, { key: 'page_numbers', choice: 'toggle' }, { choice: 'toggle' }, 'toggle', null]) {
+      expect(resolveDeckSettingPick(payload, off)).toBeNull()
+    }
+  })
+
+  test('adversarial: two toggles, each resolved after the previous one landed, end where they began', () => {
+    const first = resolveDeckSettingPick(TOGGLE, off)!
+    const after = readDeckSettings(setFrontmatterKey('# Title\n', 'breaks', frontmatterValueOf(first.key, first.choice as never)))
+    const second = resolveDeckSettingPick(TOGGLE, after)!
+    expect(frontmatterValueOf(second.key, second.choice as never)).toBeNull()
   })
 })
 

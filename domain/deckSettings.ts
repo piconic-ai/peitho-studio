@@ -113,6 +113,26 @@ export function parseDeckSettingPick(payload: unknown): DeckSettingPick | null {
   return isChoiceOf(settingKey, choice) ? ({ key: settingKey, choice } as DeckSettingPick) : null
 }
 
+/** The choice the Deck menu's single Line Breaks item sends: flip whatever
+ * the deck holds when the pick runs. Resolving it then, rather than from
+ * the menu's last check mark, keeps two quick clicks an on-then-off. */
+export const BREAKS_TOGGLE = 'toggle'
+
+/** Reads a `menu:deck-setting` payload against the deck as it is now:
+ * like `parseDeckSettingPick`, plus `{ key: 'breaks', choice: 'toggle' }`,
+ * which picks the opposite of `state`'s line breaks (on for an unknown
+ * value). */
+export function resolveDeckSettingPick(payload: unknown, state: DeckSettingsState): DeckSettingPick | null {
+  if (typeof payload === 'object' && payload !== null) {
+    const { key, choice } = payload as { key?: unknown; choice?: unknown }
+    if (key === 'breaks' && choice === BREAKS_TOGGLE) {
+      const on = state.breaks.kind === 'known' && state.breaks.choice === 'true'
+      return { key: 'breaks', choice: on ? 'false' : 'true' }
+    }
+  }
+  return parseDeckSettingPick(payload)
+}
+
 /** Whether `pick` would leave `state` as it is: the choice is already the
  * one the deck holds. An `unknown` value is always replaced. */
 export function pickChangesNothing(state: DeckSettingsState, pick: DeckSettingPick): boolean {
