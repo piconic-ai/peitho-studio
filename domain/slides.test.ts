@@ -194,6 +194,56 @@ describe('updatePageComment', () => {
     expect(updated).toContain('plain note')
     expect(updated.startsWith('<!-- {"key":"a"} -->\n')).toBe(true)
   })
+
+  test('spec: removing the last field removes the comment instead of writing <!-- {} --> (which peitho refuses)', () => {
+    expect(updatePageComment('<!-- {"page_number":false} -->\n# Title\n', { page_number: undefined })).toBe('# Title\n')
+  })
+
+  test('spec: removing one of several fields keeps the others', () => {
+    expect(updatePageComment('<!-- {"key":"a","page_number":false} -->\n# Title\n', { page_number: undefined }))
+      .toBe('<!-- {"key":"a"} -->\n# Title\n')
+  })
+
+  test('adversarial: removing a field from a slide with no PageComment leaves the slide unchanged', () => {
+    expect(updatePageComment('# Title\n', { page_number: undefined })).toBe('# Title\n')
+    expect(updatePageComment('', { page_number: undefined })).toBe('')
+  })
+
+  test('adversarial: an empty update on a slide with no PageComment doesn\'t add one', () => {
+    expect(updatePageComment('# Title\n', {})).toBe('# Title\n')
+  })
+
+  test('adversarial: an existing <!-- {} --> comment is removed by any update that leaves it empty', () => {
+    expect(updatePageComment('<!-- {} -->\n# Title\n', {})).toBe('# Title\n')
+  })
+
+  test('adversarial: a comment between two blank lines leaves one blank line, not two', () => {
+    expect(updatePageComment('# Title\n\n<!-- {"page_number":false} -->\n\nBody\n', { page_number: undefined }))
+      .toBe('# Title\n\nBody\n')
+  })
+
+  test('adversarial: a comment directly under a line leaves the following blank line alone', () => {
+    expect(updatePageComment('# Title\n<!-- {"page_number":false} -->\n\nBody\n', { page_number: undefined }))
+      .toBe('# Title\n\nBody\n')
+  })
+
+  test('adversarial: CRLF line breaks are removed along with the comment', () => {
+    expect(updatePageComment('<!-- {"page_number":false} -->\r\n\r\n# Title\r\n', { page_number: undefined })).toBe('# Title\r\n')
+  })
+
+  test('adversarial: a comment at the very end of the slide goes without touching the text before it', () => {
+    expect(updatePageComment('# Title\n\n<!-- {"page_number":false} -->', { page_number: undefined })).toBe('# Title\n\n')
+  })
+
+  test('adversarial: the speaker note is kept when the PageComment is removed', () => {
+    const raw = '<!-- {"page_number":false} -->\n# Title\n\n<!--\nnote\n-->\n'
+    expect(updatePageComment(raw, { page_number: undefined })).toBe('# Title\n\n<!--\nnote\n-->\n')
+  })
+
+  test('adversarial: a malformed PageComment is left alone by an update that would empty it', () => {
+    const raw = '<!-- {not json} -->\n# Title\n'
+    expect(updatePageComment(raw, { page_number: undefined })).toBe(raw)
+  })
 })
 
 describe('slugifyTitle', () => {
