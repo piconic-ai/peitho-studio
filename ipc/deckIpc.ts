@@ -102,8 +102,7 @@ export function subscribe(event: string, callback: () => void): Unsubscribe {
 /** Like `subscribe`, but only for events sent to this window. A plain
  * `listen()` also hears events `emit_to` sends to *another* window. */
 export function subscribeToThisWindow(event: string, callback: () => void): Unsubscribe {
-  const unlisten = getCurrentWebviewWindow().listen(event, () => { callback() })
-  return () => { void unlisten.then(stop => { stop() }) }
+  return subscribeToThisWindowWithPayload(event, () => { callback() })
 }
 
 /** `subscribeToThisWindow` with the event's payload. */

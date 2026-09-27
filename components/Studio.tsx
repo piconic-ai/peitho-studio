@@ -1013,20 +1013,20 @@ export function Studio() {
 
   // Deck menu: writes the picked choice into the deck's frontmatter as one
   // undoable step, removing the key for peitho-core's default. Page numbers
-  // go through `setPageNumbers`, which also clears the slides' own
+  // go through a `PageNumbersStep`, which also clears the slides' own
   // `page_number:false` when turning them off. Picking the choice already
   // in place does nothing. `payload` is the menu event's, read only once
   // earlier operations have landed, so the Line Breaks toggle flips what
   // the deck holds by then; one that isn't a pick the menu offers is
   // dropped.
   function setDeckSetting(payload: unknown): Promise<void> {
-    const pick = resolveDeckSettingPick(payload, deckSettings())
-    if (pick === null) return Promise.resolve()
-    if (pick.key === 'page_numbers') return setPageNumbers(pick.choice)
     return performStep(async () => {
-      const current = resolveDeckSettingPick(payload, deckSettings())
-      if (current === null || current.key === 'page_numbers' || pickChangesNothing(deckSettings(), current)) return { kind: 'rejected' }
-      return runFrontmatterStep({ kind: 'frontmatter', key: current.key, value: frontmatterValueOf(current.key, current.choice) })
+      const pick = resolveDeckSettingPick(payload, deckSettings())
+      if (pick === null || pickChangesNothing(deckSettings(), pick)) return { kind: 'rejected' }
+      const value = frontmatterValueOf(pick.key, pick.choice)
+      return pick.key === 'page_numbers'
+        ? runPageNumbersStep(pageNumbersStepFor(currentSlideTexts(), value))
+        : runFrontmatterStep({ kind: 'frontmatter', key: pick.key, value })
     })
   }
 
@@ -1106,13 +1106,19 @@ export function Studio() {
   // other stack; a failed commit puts the step back so it can be retried; a
   // rejected one means the history no longer matches the deck, so it is
   // dropped whole rather than left to misfire on the next press.
+  function runReplayedStep(step: StructuralStep | PageNumbersStep | FrontmatterStep): Promise<StepOutcome> {
+    switch (step.kind) {
+      case 'page-numbers':
+        return runPageNumbersStep(step)
+      case 'frontmatter':
+        return runFrontmatterStep(step)
+      default:
+        return runStep(step, cmd => selectionForReplay(step, cmd, editor.selectedIndex()))
+    }
+  }
   async function replayStructuralStep(step: StructuralStep | PageNumbersStep | FrontmatterStep, direction: 'undo' | 'redo'): Promise<void> {
     const isUndo = direction === 'undo'
-    const outcome = step.kind === 'page-numbers'
-      ? await runPageNumbersStep(step)
-      : step.kind === 'frontmatter'
-        ? await runFrontmatterStep(step)
-        : await runStep(step, cmd => selectionForReplay(step, cmd, editor.selectedIndex()))
+    const outcome = await runReplayedStep(step)
     if (outcome.kind === 'done') {
       pushReplayed(outcome.inverse, direction)
     } else if (outcome.kind === 'failed') {
