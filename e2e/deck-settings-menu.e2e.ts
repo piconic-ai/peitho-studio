@@ -93,6 +93,20 @@ test('Given line breaks off, when they are turned on and then off, then breaks: 
   await expect.poll(() => deck.source).toBe(PLAIN_DECK)
 })
 
+test('Given line breaks off and a slow save, when the Line Breaks item is clicked twice in a row, then they end up off again (on, then off)', async ({ page }) => {
+  const deck: MockDeck = { source: PLAIN_DECK, renderDraftDelayMs: 300 }
+  await openDeck(page, deck)
+  const invoked: string[] = []
+  deck.invokedCommands = invoked
+
+  // What Rust sends for the single on/off item (see `pick_for_click`).
+  await pick(page, { key: 'breaks', choice: 'toggle' })
+  await pick(page, { key: 'breaks', choice: 'toggle' })
+
+  await expect.poll(() => invoked.filter(cmd => cmd === 'save_deck_source').length).toBe(2)
+  expect(deck.source).toBe(PLAIN_DECK)
+})
+
 test('Given an English deck, when Language > 日本語 is picked and undone, then lang: ja is saved and removed again', async ({ page }) => {
   const deck: MockDeck = { source: PLAIN_DECK }
   await openDeck(page, deck)
@@ -140,6 +154,7 @@ test.describe('robustness', () => {
     await pick(page, { key: 'pointer_color', choice: 'red' })
     await pick(page, null)
     await pick(page, { key: 'lang', choice: 'en' }, 'another-window')
+    await pick(page, { key: 'lang', choice: 'toggle' })
     // A later, valid pick still lands, so the ones before it had their turn.
     await pick(page, { key: 'breaks', choice: 'true' })
     await expect.poll(() => deck.source).toContain('breaks: true')
