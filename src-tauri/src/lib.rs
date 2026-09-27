@@ -1,3 +1,4 @@
+mod deck_menu;
 mod deck_variants;
 mod edit_menu;
 mod engine;
