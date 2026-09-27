@@ -840,18 +840,15 @@ impl DeckMenuState {
         }
     }
 
-    /// Forgets `label`'s settings: its window closed, or its page is
-    /// reloading back to the welcome screen.
-    pub fn remove(&self, label: &str) {
+    fn remove(&self, label: &str) {
         if let Ok(mut registry) = self.0.lock() {
             registry.remove(label);
         }
     }
 
-    fn report(&self, label: &str, settings: DeckSettings, focused: bool) {
-        if let Ok(mut registry) = self.0.lock() {
-            registry.report(label, settings, focused);
-        }
+    /// Whether `label` is the front window after the report.
+    fn report(&self, label: &str, settings: DeckSettings, focused: bool) -> bool {
+        self.0.lock().is_ok_and(|mut registry| registry.report(label, settings, focused))
     }
 
     /// The front window's settings, copied out so the lock isn't held
@@ -887,7 +884,7 @@ pub(crate) fn forward_deck_menu(app: &AppHandle, id: &str) -> bool {
     }
     let front = app.state::<DeckMenuState>().front_settings();
     if let Some(pick) = deck_menu::pick_for_click(id, front.as_ref()) {
-        edit_menu::emit_to_focused_with(app, deck_menu::MENU_EVENT, pick);
+        edit_menu::emit_to_focused(app, deck_menu::MENU_EVENT, pick);
     }
     refresh_deck_menu(app);
     true
@@ -900,8 +897,16 @@ pub(crate) fn forward_deck_menu(app: &AppHandle, id: &str) -> bool {
 /// menu.
 #[tauri::command]
 pub fn report_deck_settings(settings: DeckSettings, window: WebviewWindow, state: State<DeckMenuState>) {
-    state.report(window.label(), settings, window.is_focused().unwrap_or(false));
-    refresh_deck_menu(window.app_handle());
+    if state.report(window.label(), settings, window.is_focused().unwrap_or(false)) {
+        refresh_deck_menu(window.app_handle());
+    }
+}
+
+/// Forgets `label`'s Deck menu settings — its window closed, or its page is
+/// reloading back to the welcome screen — and shows the menu without them.
+pub(crate) fn forget_deck_settings(app: &AppHandle, label: &str) {
+    app.state::<DeckMenuState>().remove(label);
+    refresh_deck_menu(app);
 }
 
 #[cfg(test)]

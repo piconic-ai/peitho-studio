@@ -237,7 +237,7 @@ pub fn run() {
             } else if id == settings::MENU_ID {
                 // The settings panel is an in-app modal: open it in the
                 // window the user is looking at.
-                edit_menu::emit_to_focused(app_handle, settings::MENU_EVENT);
+                edit_menu::emit_to_focused(app_handle, settings::MENU_EVENT, ());
             } else if id == "new_deck" {
                 // Needs the in-app name-entry modal, so it's routed back
                 // through the frontend rather than handled here.
@@ -280,8 +280,7 @@ pub fn run() {
             match event {
                 tauri::WindowEvent::Destroyed => {
                     window.state::<PeithoSession>().remove(window.label());
-                    window.state::<DeckMenuState>().remove(window.label());
-                    peitho::refresh_deck_menu(window.app_handle());
+                    peitho::forget_deck_settings(window.app_handle(), window.label());
                 }
                 // The Deck menu shows the focused window's deck, and none
                 // while no window has focus.
@@ -299,8 +298,7 @@ pub fn run() {
             // old page, deck scripts included, is gone by then.
             if payload.event() == tauri::webview::PageLoadEvent::Started {
                 webview.state::<PeithoSession>().remove(webview.label());
-                webview.state::<DeckMenuState>().remove(webview.label());
-                peitho::refresh_deck_menu(webview.app_handle());
+                peitho::forget_deck_settings(webview.app_handle(), webview.label());
             }
         })
         .setup(|app| {

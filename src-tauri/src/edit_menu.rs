@@ -47,20 +47,15 @@ pub(crate) fn focused_label<'a>(windows: impl IntoIterator<Item = (&'a str, bool
 /// matching other ids. With no focused window, the event is dropped.
 pub(crate) fn forward<R: Runtime>(app: &AppHandle<R>, id: &str) -> bool {
     let Some(event) = event_for_menu_id(id) else { return false };
-    emit_to_focused(app, event);
+    emit_to_focused(app, event, ());
     true
 }
 
-/// Sends `event` to the focused window's frontend alone, or drops it when
-/// no window has focus. Also used by the app menu's "Settings…" (see
-/// `settings::MENU_EVENT`).
-pub(crate) fn emit_to_focused<R: Runtime>(app: &AppHandle<R>, event: &str) {
-    emit_to_focused_with(app, event, ());
-}
-
-/// `emit_to_focused` with a payload — the Deck menu's pick (see
+/// Sends `event` with `payload` to the focused window's frontend alone, or
+/// drops it when no window has focus. Also used by the app menu's
+/// "Settings…" (see `settings::MENU_EVENT`) and the Deck menu (see
 /// `deck_menu::MENU_EVENT`).
-pub(crate) fn emit_to_focused_with<R: Runtime, S: Serialize + Clone>(app: &AppHandle<R>, event: &str, payload: S) {
+pub(crate) fn emit_to_focused<R: Runtime, S: Serialize + Clone>(app: &AppHandle<R>, event: &str, payload: S) {
     let windows = app.webview_windows();
     let focused = focused_label(
         windows

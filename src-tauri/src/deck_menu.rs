@@ -258,11 +258,14 @@ impl DeckSettingsRegistry {
     /// Records `label`'s settings. A window reporting while focused is the
     /// front one from now on — so the first window, or a new one, counts
     /// even before any focus event has named it.
-    pub(crate) fn report(&mut self, label: &str, settings: DeckSettings, focused: bool) {
+    /// Returns whether `label` is the front window now, i.e. whether the
+    /// menu has anything new to show.
+    pub(crate) fn report(&mut self, label: &str, settings: DeckSettings, focused: bool) -> bool {
         self.by_window.insert(label.to_string(), settings);
         if focused {
             self.front = Some(label.to_string());
         }
+        self.front.as_deref() == Some(label)
     }
 
     /// `label`'s window came to the front.
@@ -474,9 +477,13 @@ mod tests {
     #[test]
     fn given_a_window_in_the_back_reports_then_the_front_one_stays_shown() {
         let mut registry = DeckSettingsRegistry::default();
-        registry.report("main", defaults(), true);
-        registry.report("deck-2", settings("current", "4:3", "true", "ja"), false);
+        assert!(registry.report("main", defaults(), true));
+        // Nothing for the menu to show, so it needn't be refreshed.
+        assert!(!registry.report("deck-2", settings("current", "4:3", "true", "ja"), false));
         assert_eq!(registry.front_settings(), Some(&defaults()));
+        // The front window reporting while not focused (a focus event
+        // already named it) still counts.
+        assert!(registry.report("main", defaults(), false));
     }
 
     #[test]
