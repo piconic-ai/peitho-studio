@@ -79,6 +79,8 @@ export function readFrontmatterKey(source: string, key: string): string | null {
  * `key: value`. `null` removes the key, along with any indented lines under
  * it. Removing the last key removes the whole block: peitho-core refuses an
  * empty `---`/`---` block, but accepts a deck with no frontmatter at all.
+ * A block left with only blank or `# comment` lines counts as empty too
+ * (peitho reads it as null, not a mapping), so those comments go with it.
  *
  * Setting a key on a deck with no frontmatter adds a block for it. A block
  * that isn't closed is left as it is, since there's no telling where it
@@ -99,7 +101,7 @@ export function setFrontmatterKey(source: string, key: string, value: string | n
     if (location === null) return source
     lines.splice(location.start, location.end - location.start)
     const newCloseIndex = closeIndex - (location.end - location.start)
-    const emptied = lines.slice(1, newCloseIndex).every(l => l.trim() === '')
+    const emptied = lines.slice(1, newCloseIndex).every(l => l.trim() === '' || l.trim().startsWith('#'))
     return (emptied ? lines.slice(newCloseIndex + 1) : lines).join('\n')
   }
   if (location === null) {

@@ -140,6 +140,16 @@ describe('setFrontmatterKey', () => {
     expect(setFrontmatterKey('---\n\npage_numbers: current\n\n---\n# T\n', 'page_numbers', null)).toBe('# T\n')
   })
 
+  test('adversarial: a block left with only comment lines is removed too, since peitho reads a comment-only block as null, not a mapping', () => {
+    expect(setFrontmatterKey('---\n# Deck notes\npage_numbers: current\n---\n# T\n', 'page_numbers', null)).toBe('# T\n')
+    expect(setFrontmatterKey('---\r\n  # indented\r\n\r\npage_numbers: current\r\n---\r\n# T\r\n', 'page_numbers', null)).toBe('# T\r\n')
+  })
+
+  test('adversarial: a comment next to a remaining key keeps the block', () => {
+    expect(setFrontmatterKey('---\n# Deck notes\ntime: 1m\npage_numbers: current\n---\n# T\n', 'page_numbers', null))
+      .toBe('---\n# Deck notes\ntime: 1m\n---\n# T\n')
+  })
+
   test('adversarial: only the first of two same-named keys is replaced or removed', () => {
     const source = '---\na: 1\na: 2\n---\n'
     expect(setFrontmatterKey(source, 'a', '3')).toBe('---\na: 3\na: 2\n---\n')
