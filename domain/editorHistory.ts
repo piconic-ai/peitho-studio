@@ -56,7 +56,7 @@ export interface PageNumbersStep {
   hidden: readonly number[]
 }
 
-export type HistoryStep = StructuralStep | PageNumbersStep | TextStep
+export type HistoryStep = StructuralStep | PageNumbersStep | FrontmatterStep | TextStep
 
 /** Undo and redo stacks, most recent last. Each entry is the step that
  * undoes (or redoes) one operation: a slide operation, or a marker for a

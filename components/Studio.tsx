@@ -13,7 +13,8 @@ import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, indexAfterCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
-import { type HistoryStep, type PageNumbersStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyPageNumbersStep, commandForStep, inversePageNumbersStep, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
+import { type FrontmatterStep, type HistoryStep, type PageNumbersStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inversePageNumbersStep, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
+import { type DeckSettingPick, type DeckSettingsReport, deckSettingsReport, frontmatterValueOf, parseDeckSettingPick, pickChangesNothing, readDeckSettings, sameDeckSettingsReport } from '../domain/deckSettings'
 import { PAGE_NUMBERS_KEY, type PageNumbersChoice, pageNumbersShown, pageNumbersValueOf, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
@@ -426,6 +427,20 @@ export function Studio() {
   // undo writes back), and as the header's control shows it.
   const pageNumbersValue = createMemo(() => readFrontmatterKey(editor.fullSource(), PAGE_NUMBERS_KEY))
   const pageNumbersMode = createMemo(() => parsePageNumbersMode(pageNumbersValue()))
+  // The native Deck menu's settings as this deck's frontmatter holds them
+  // (see `src-tauri/src/deck_menu.rs`). Each change is reported so the
+  // menu can check the right items while this window is in front; a report
+  // equal to the last one sent (a save that left the frontmatter alone) is
+  // skipped. A report that fails is sent again with the next change.
+  const deckSettings = createMemo(() => readDeckSettings(editor.fullSource()))
+  let reportedDeckSettings: DeckSettingsReport | null = null
+  createEffect(() => {
+    if (deck.deckPath() === null) return
+    const report = deckSettingsReport(deckSettings())
+    if (reportedDeckSettings !== null && sameDeckSettingsReport(reportedDeckSettings, report)) return
+    reportedDeckSettings = report
+    deckIpc.reportDeckSettings(report).catch(() => { reportedDeckSettings = null })
+  })
   const currentMenuItems = createMemo(() => computeMenuItems(ui.contextMenu(), {
     slideCount: slideEntries().length,
     hasClipboard: ui.clipboardSlideText() !== null,
@@ -996,6 +1011,32 @@ export function Studio() {
     return ok ? { kind: 'done', inverse } : { kind: 'failed' }
   }
 
+  // Deck menu: writes the picked choice into the deck's frontmatter as one
+  // undoable step, removing the key for peitho-core's default. Page numbers
+  // go through `setPageNumbers`, which also clears the slides' own
+  // `page_number:false` when turning them off. Picking the choice already
+  // in place does nothing.
+  function setDeckSetting(pick: DeckSettingPick): Promise<void> {
+    if (pick.key === 'page_numbers') return setPageNumbers(pick.choice)
+    return performStep(async () => {
+      if (pickChangesNothing(deckSettings(), pick)) return { kind: 'rejected' }
+      return runFrontmatterStep({ kind: 'frontmatter', key: pick.key, value: frontmatterValueOf(pick.key, pick.choice) })
+    })
+  }
+
+  // Writes one frontmatter key through the same `commitChange` path as
+  // every structural operation, the open slide's draft included. A step
+  // that would leave the source as it is (a frontmatter block that isn't
+  // closed, which `setFrontmatterKey` won't touch) records nothing.
+  async function runFrontmatterStep(step: FrontmatterStep): Promise<StepOutcome> {
+    const source = rebuildSource(currentSlideTexts())
+    const nextSource = applyFrontmatterStep(source, step)
+    if (nextSource === source) return { kind: 'rejected' }
+    const inverse = inverseFrontmatterStep(source, step)
+    const ok = await commitChange(nextSource, { kind: 'keep' })
+    return ok ? { kind: 'done', inverse } : { kind: 'failed' }
+  }
+
   // Edit > Undo (`undo`) / Redo (`redo`): the newest step on the timeline,
   // whatever has focus, queued behind any structural operation still
   // saving. A text marker whose group vim's `u` / `Ctrl-R` already moved
@@ -1059,11 +1100,13 @@ export function Studio() {
   // other stack; a failed commit puts the step back so it can be retried; a
   // rejected one means the history no longer matches the deck, so it is
   // dropped whole rather than left to misfire on the next press.
-  async function replayStructuralStep(step: StructuralStep | PageNumbersStep, direction: 'undo' | 'redo'): Promise<void> {
+  async function replayStructuralStep(step: StructuralStep | PageNumbersStep | FrontmatterStep, direction: 'undo' | 'redo'): Promise<void> {
     const isUndo = direction === 'undo'
     const outcome = step.kind === 'page-numbers'
       ? await runPageNumbersStep(step)
-      : await runStep(step, cmd => selectionForReplay(step, cmd, editor.selectedIndex()))
+      : step.kind === 'frontmatter'
+        ? await runFrontmatterStep(step)
+        : await runStep(step, cmd => selectionForReplay(step, cmd, editor.selectedIndex()))
     if (outcome.kind === 'done') {
       pushReplayed(outcome.inverse, direction)
     } else if (outcome.kind === 'failed') {
@@ -1517,6 +1560,15 @@ export function Studio() {
     const unlistenMenuUndo = deckIpc.onMenuUndo(() => { onMenuHistory('undo') })
     const unlistenMenuRedo = deckIpc.onMenuRedo(() => { onMenuHistory('redo') })
 
+    // Deck menu (see `setDeckSetting`), sent to the focused window only.
+    // The menu is disabled while no deck is open, but a pick that still
+    // arrives then, or one that isn't a choice the menu offers, is dropped.
+    const unlistenMenuDeckSetting = deckIpc.onMenuDeckSetting(payload => {
+      const pick = parseDeckSettingPick(payload)
+      if (pick === null || deck.deckPath() === null) return
+      void setDeckSetting(pick)
+    })
+
     const onKeyDown = (event: KeyboardEvent) => {
       // While the settings panel is open, Escape closes it and every other
       // shortcut waits, since Delete or an arrow key would otherwise act on
@@ -1621,6 +1673,7 @@ export function Studio() {
       unlistenClipboard()
       unlistenMenuUndo()
       unlistenMenuRedo()
+      unlistenMenuDeckSetting()
     })
   })
 
