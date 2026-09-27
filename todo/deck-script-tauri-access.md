@@ -74,7 +74,7 @@ tags: [release, security, csp]
 | 呼び出し | できること |
 |---|---|
 | `open_deck(path)` → `read_deck_source()` | **ユーザー権限で読める任意のUTF-8ファイルを読む。** `resolve_deck_path`は「ファイルが存在する」ことしか見ない。ただし`open_deck`は先に`pipeline::render_source`でデッキとして描画し、失敗すればセッションを差し替えない(Markdownとして描画できないファイルが実際にどれだけあるかは未確認) |
-| `open_deck(path)` → `save_deck_source(content)` | **上と同じ条件で、既存の任意のファイルを任意の内容で上書きする**(`~/.zshrc`など)。`save_deck_source`は「開いているデッキのパスにしか書かない」が、そのパス自体をスクリプトが`open_deck`で差し替えられる |
+| `open_deck(path)` → `save_deck_source(content)` | **上と同じ条件で、既存の任意のファイルを任意の内容で上書きする**(`~/.zshrc`など)。`save_deck_source`は「開いているデッキのパスにしか書かない」が、そのパス自体をスクリプトが`open_deck`で差し替えられる。スクリプトが`save_deck_source`を呼ばなくても、差し替えた後にユーザーが編集すれば、エディタの通常の保存が開いていたデッキの本文をそのファイルへ確認なしに書く(コードから辿った推論) |
 | `create_deck(parent_dir, name)` | 任意のディレクトリに固定内容のscaffoldを作る(内容は選べない) |
 | `open_deck_window(path)` | 別のデッキを新しいウィンドウで開き、そのデッキのスクリプトも走らせる |
 | `update_settings(patch)` | Studioの設定を書き換える |
@@ -88,6 +88,10 @@ tags: [release, security, csp]
 
 **未確認**: 実機での動作(下の「完了条件」)。上の結論はtauriのソースと
 Studioのコードから辿ったもので、実機では試していない。
+
+### 調査結果2: どこまで受け入れるか
+
+判断事項なので、選択肢の比較は下の「方針」に置いた。
 
 ### 調査結果3: upstreamの信頼モデル
 
