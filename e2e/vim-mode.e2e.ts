@@ -89,6 +89,37 @@ test.describe('functional', () => {
     await expect.poll(() => editorText(page)).toBe('# Slide One\n\nfirst line\nsecond line')
   })
 
+  test('Given vim mode is on, when the last line is deleted with "dd" and put back with "p", then no empty line is added', async ({ page }) => {
+    const deck: MockDeck = { source: TWO_SLIDES, settings: { vimMode: true } }
+    await openDeck(page, deck)
+
+    await focusBodyTop(page)
+    await page.keyboard.type('Gdd')
+    await expect.poll(() => editorText(page)).toBe('# Slide One\n\nfirst line')
+    // The register holds a plain line, as Vim's does.
+    await expect.poll(() => deck.clipboardText).toBe('second line\n')
+
+    await page.keyboard.type('p')
+    await expect.poll(() => editorText(page)).toBe('# Slide One\n\nfirst line\nsecond line')
+  })
+
+  test('Given vim mode is on, when the last line is deleted with "dd" and put back above with "P", then no empty line is added', async ({ page }) => {
+    await openDeck(page, { source: TWO_SLIDES, settings: { vimMode: true } })
+
+    await focusBodyTop(page)
+    await page.keyboard.type('GddP')
+    await expect.poll(() => editorText(page)).toBe('# Slide One\n\nsecond line\nfirst line')
+  })
+
+  test('Given vim mode is on, when "3dd" deletes an empty line through the last one, then the register keeps its leading empty line', async ({ page }) => {
+    const deck: MockDeck = { source: TWO_SLIDES, settings: { vimMode: true } }
+    await openDeck(page, deck)
+
+    await focusBodyTop(page)
+    await page.keyboard.type('j3dd')
+    await expect.poll(() => deck.clipboardText).toBe('\nfirst line\nsecond line\n')
+  })
+
   test('Given vim mode is on and a line deleted with "dd", when Edit > Undo is chosen, then the same undo history brings it back', async ({ page }) => {
     await openDeck(page, { source: TWO_SLIDES, settings: { vimMode: true } })
 
