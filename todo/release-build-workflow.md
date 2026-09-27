@@ -121,6 +121,12 @@ Releaseは本文だけで、ユーザーはソースからビルドするしか�
 >   `APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、
 >   `APPLE_API_ISSUER`、`APPLE_API_KEY`(Key ID)、`APPLE_API_KEY_P8`(.p8の
 >   中身)。
+> - `v0.1.0-rc.3`は公証まで通った(初回は約51分)が、`--bundles dmg`だと
+>   tauriがdmg作成後に中間の`.app`を消すため検証ステップが失敗した。
+>   dmgをマウントして中のアプリを検証する形に直し、タイムアウトを120分に
+>   延ばした(#105)。同時にbundle identifierを`.app`で終わらない
+>   `ai.piconic.peitho-studio`に変更(#106)。`v0.1.0-rc.4`で全ステップ
+>   成功(2回目の公証は約20秒)。
 
 ## レイヤー配置
 
@@ -141,8 +147,9 @@ Releaseは本文だけで、ユーザーはソースからビルドするしか�
 自動で確認できる項目(ループが自分で判定してよい):
 - [x] プレリリースタグでワークフローが成功し、`gh release view <tag>`
   でdmgがassetsに載っている(`v0.1.0-rc.1`、`v0.1.0-rc.2`)
-- [ ] (署名する場合)`codesign --verify --deep --strict`と`spctl -a`が
-  通る
+- [x] (署名する場合)`codesign --verify --deep --strict`と`spctl -a`が
+  通る(`v0.1.0-rc.4`: dmg内のアプリが`accepted` /
+  `source=Notarized Developer ID`、`stapler validate`も成功)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [x] 署名・公証をするかどうか(Apple Developer Programの加入) — **する**。
