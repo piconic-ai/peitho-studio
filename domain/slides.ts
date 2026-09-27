@@ -169,11 +169,16 @@ export function updatePageComment(raw: string, updates: Partial<PageConfig>): st
 /** `raw` without the first occurrence of `comment`, and without the line
  * break that ended its line. When the comment sat alone between two blank
  * lines, one of them goes too, so its removal never leaves a double blank
- * line behind. */
+ * line behind. A comment that follows text on its own line takes only the
+ * whitespace in front of it: that line's break stays, so the text doesn't
+ * join the next line. */
 function removeComment(raw: string, comment: string): string {
   const at = raw.indexOf(comment)
   if (at === -1) return raw
   const before = raw.slice(0, at)
+  if (before !== '' && !before.endsWith('\n')) {
+    return before.replace(/[ \t]+$/, '') + raw.slice(at + comment.length)
+  }
   let after = raw.slice(at + comment.length).replace(/^[ \t]*\r?\n/, '')
   if (/(^|\n)[ \t]*\r?\n$/.test(before) || before === '') after = after.replace(/^[ \t]*\r?\n/, '')
   return before + after

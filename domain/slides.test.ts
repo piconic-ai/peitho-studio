@@ -235,6 +235,12 @@ describe('updatePageComment', () => {
     expect(updatePageComment('# Title\n\n<!-- {"page_number":false} -->', { page_number: undefined })).toBe('# Title\n\n')
   })
 
+  test('adversarial: a comment after text on the same line keeps that line\'s break', () => {
+    expect(updatePageComment('# Title <!-- {"skip":true} -->\nBody\n', { skip: undefined })).toBe('# Title\nBody\n')
+    expect(updatePageComment('# Title\t<!-- {"skip":true} -->\r\nBody\r\n', { skip: undefined })).toBe('# Title\r\nBody\r\n')
+    expect(updatePageComment('# Title <!-- {"skip":true} -->', { skip: undefined })).toBe('# Title')
+  })
+
   test('adversarial: the speaker note is kept when the PageComment is removed', () => {
     const raw = '<!-- {"page_number":false} -->\n# Title\n\n<!--\nnote\n-->\n'
     expect(updatePageComment(raw, { page_number: undefined })).toBe('# Title\n\n<!--\nnote\n-->\n')
