@@ -69,8 +69,8 @@ impl SettingKey {
     }
 
     /// The choices that get an item of their own. Line breaks is a single
-    /// on/off item standing for `true`; a click on it picks whichever of
-    /// `true`/`false` the deck doesn't hold (`pick_for_click`).
+    /// on/off item standing for `true`; a click on it sends a toggle
+    /// (`pick_for_click`).
     fn item_choices(self) -> &'static [&'static str] {
         match self {
             Self::Breaks => &["true"],
@@ -123,16 +123,19 @@ pub(crate) fn parse_menu_id(id: &str) -> Option<(SettingKey, &'static str)> {
     Some((key, choice))
 }
 
-/// What a click on item `id` asks the front window to write, given that
-/// window's reported settings. `None` for an id that isn't a Deck item, or
-/// with no deck in front (the items are disabled then anyway).
+/// The choice the Line Breaks item sends: the frontend flips whatever the
+/// deck holds when the pick runs (`resolveDeckSettingPick` in
+/// `domain/deckSettings.ts`). Deciding it here, from the last report,
+/// would turn two quick clicks into on-and-on.
+const BREAKS_TOGGLE: &str = "toggle";
+
+/// What a click on item `id` asks the front window to write. `None` for an
+/// id that isn't a Deck item, or with no deck in front (the items are
+/// disabled then anyway).
 pub(crate) fn pick_for_click(id: &str, front: Option<&DeckSettings>) -> Option<DeckSettingPick> {
     let (key, choice) = parse_menu_id(id)?;
-    let front = front?;
-    let choice = match key {
-        SettingKey::Breaks if front.choice(key) == Some("true") => "false",
-        _ => choice,
-    };
+    front?;
+    let choice = if key == SettingKey::Breaks { BREAKS_TOGGLE } else { choice };
     Some(DeckSettingPick { key: key.as_str(), choice })
 }
 
@@ -397,16 +400,13 @@ mod tests {
     }
 
     #[test]
-    fn given_line_breaks_off_or_unknown_when_clicked_then_they_are_turned_on() {
-        assert_eq!(pick_for_click("deck:breaks:true", Some(&defaults())), Some(DeckSettingPick { key: "breaks", choice: "true" }));
-        let unknown = settings("none", "16:9", "", "en");
-        assert_eq!(pick_for_click("deck:breaks:true", Some(&unknown)), Some(DeckSettingPick { key: "breaks", choice: "true" }));
-    }
-
-    #[test]
-    fn given_line_breaks_on_when_clicked_then_they_are_turned_off() {
-        let on = settings("none", "16:9", "true", "en");
-        assert_eq!(pick_for_click("deck:breaks:true", Some(&on)), Some(DeckSettingPick { key: "breaks", choice: "false" }));
+    fn given_line_breaks_in_any_state_when_clicked_then_a_toggle_is_sent() {
+        // The frontend resolves it against the deck when the pick runs, so
+        // a second click before the first is reported back still flips.
+        let toggle = Some(DeckSettingPick { key: "breaks", choice: "toggle" });
+        assert_eq!(pick_for_click("deck:breaks:true", Some(&defaults())), toggle);
+        assert_eq!(pick_for_click("deck:breaks:true", Some(&settings("none", "16:9", "true", "en"))), toggle);
+        assert_eq!(pick_for_click("deck:breaks:true", Some(&settings("none", "16:9", "", "en"))), toggle);
     }
 
     #[test]
