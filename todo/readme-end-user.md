@@ -56,7 +56,7 @@ tags: [release, docs]
   `dom/codeEditor.ts`のkeymapとvim mode、デバッグスナップショットは
   Cmd+Shift+D(CLAUDE.md)。書く前に`lib.rs`のアクセラレータを
   grepして正とする。
-- 設定の保存先は`~/Library/Application Support/studio.peitho.app/`
+- 設定の保存先は`~/Library/Application Support/ai.piconic.peitho-studio/`
   (`settings.json`, `recent_decks.json`)。アンインストール時の案内に
   使える。
 - LICENSE節に商標留保があるので残す。
