@@ -31,12 +31,6 @@ export interface Messages {
   presentOptions: string
   presentRehearsal: string
   presentRehearsalDetail: string
-  pageNumbers: string
-  pageNumbersNone: string
-  pageNumbersCurrent: string
-  pageNumbersCurrentOfTotal: string
-  pageNumbersHint: string
-  pageNumbersUnknown: (value: string) => string
 
   // Status bar
   copyError: string
@@ -133,12 +127,6 @@ const en: Messages = {
   presentOptions: 'Present options',
   presentRehearsal: 'Present (Rehearsal)',
   presentRehearsalDetail: 'Time each section as you go and save it for comparison against the plan.',
-  pageNumbers: 'Page numbers',
-  pageNumbersNone: 'Off',
-  pageNumbersCurrent: '1',
-  pageNumbersCurrentOfTotal: '1/N',
-  pageNumbersHint: 'Show page numbers on slides (the deck\'s page_numbers setting). A deck with its own css/ shows them only if its CSS styles them. Turning them off also clears every slide\'s own Hide Page Number.',
-  pageNumbersUnknown: value => `Unknown page_numbers value in the frontmatter: "${value}". Pick one of these to replace it.`,
 
   copyError: 'Copy',
   errorCopied: 'Copied',
@@ -228,12 +216,6 @@ const ja: Messages = {
   presentOptions: '発表のオプション',
   presentRehearsal: '発表(リハーサル)',
   presentRehearsalDetail: 'セクションごとの所要時間を計って保存し、予定と比べられるようにします。',
-  pageNumbers: 'ページ番号',
-  pageNumbersNone: 'なし',
-  pageNumbersCurrent: '1',
-  pageNumbersCurrentOfTotal: '1/N',
-  pageNumbersHint: 'スライドにページ番号を表示します(デッキの page_numbers 設定)。独自の css/ を持つデッキでは、そのCSSに番号のスタイルがある場合だけ表示されます。「なし」にすると、各スライドの「ページ番号を隠す」も解除されます。',
-  pageNumbersUnknown: value => `frontmatter の page_numbers に不明な値があります: 「${value}」。いずれかを選ぶと置き換えます。`,
 
   copyError: 'コピー',
   errorCopied: 'コピーしました',

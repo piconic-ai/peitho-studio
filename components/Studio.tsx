@@ -424,7 +424,8 @@ export function Studio() {
     })
   })
   // The deck's `page_numbers` setting: its raw frontmatter value (what an
-  // undo writes back), and as the header's control shows it.
+  // undo writes back), and whether it shows numbers at all (for the slide
+  // context menu's Hide Page Number).
   const pageNumbersValue = createMemo(() => readFrontmatterKey(editor.fullSource(), PAGE_NUMBERS_KEY))
   const pageNumbersMode = createMemo(() => parsePageNumbersMode(pageNumbersValue()))
   // The Edit menu's deck settings as this deck's frontmatter holds them
@@ -989,7 +990,7 @@ export function Studio() {
     })
   }
 
-  // Header > Page numbers: sets the deck's `page_numbers` (and, turning
+  // Deck > Page Numbers: sets the deck's `page_numbers` (and, turning
   // them off, clears every slide's `page_number:false`) as one undoable
   // step. The step is built only once earlier operations have landed, so
   // the slides it keeps hidden are the ones hidden by then. Picking the
@@ -1756,8 +1757,6 @@ export function Studio() {
         onTogglePresentMenu={() => ui.setPresentMenuOpen(!ui.presentMenuOpen())}
         onClosePresentMenu={() => ui.setPresentMenuOpen(false)}
         onPresent={rehearsal => void handlePresent(rehearsal)}
-        pageNumbersMode={pageNumbersMode()}
-        onChangePageNumbers={choice => void setPageNumbers(choice)}
       />
 
       {deck.deckPath() === null ? (
