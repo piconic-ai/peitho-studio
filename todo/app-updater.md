@@ -29,4 +29,5 @@ Releasesへのリンクすらない(リンクは`todo/archive/release-app-metada
 1. 自動更新(プラグイン)まで行くか、通知だけにするか。
 2. 起動時にネットワークへ出ることを設定でオフにできるようにするか。
 
-`todo/release-build-workflow.md`の署名方針が決まってからリファインする。
+署名方針は決定済み(`todo/archive/release-build-workflow.md`、Developer ID
+署名・公証)。これを前提にリファインする。
