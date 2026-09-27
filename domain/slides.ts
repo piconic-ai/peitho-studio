@@ -11,6 +11,7 @@
 // blockquote or list continuation line (rare in practice) is not
 // special-cased here.
 
+import { setFrontmatterKey } from './frontmatter'
 import { parsePageComment, configOf, serializePageConfig, type PageConfig } from './pageConfig'
 
 export interface SlideRange {
@@ -393,24 +394,7 @@ export function stabilizeByKey<T extends { key: string }>(previous: T[], next: T
 // in sync automatically instead of asking the user to hunt down and edit
 // the frontmatter by hand.
 export function updateFrontmatterTime(source: string, totalMs: number): string {
-  const value = formatDurationMs(totalMs)
-  const lines = source.split('\n')
-  if (lines[0]?.trim() !== '---') {
-    return `---\ntime: ${value}\n---\n${source}`
-  }
-  const closeIndex = lines.findIndex((line, i) => i > 0 && line.trim() === '---')
-  if (closeIndex === -1) return source
-
-  let replaced = false
-  for (let i = 1; i < closeIndex; i++) {
-    if (/^time\s*:/.test(lines[i])) {
-      lines[i] = `time: ${value}`
-      replaced = true
-      break
-    }
-  }
-  if (!replaced) lines.splice(closeIndex, 0, `time: ${value}`)
-  return lines.join('\n')
+  return setFrontmatterKey(source, 'time', formatDurationMs(totalMs))
 }
 
 /** Picks the index to focus after the slide list changes: `candidate` if
