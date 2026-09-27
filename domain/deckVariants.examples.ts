@@ -80,7 +80,7 @@ export const variantSwitcherExamples = defineExamples<readonly DeckVariant[], 'h
           { path: '/talks/deck.ja.md', label: 'ja', detail: 'deck.ja.md', isCurrent: false },
         ],
       },
-      manual: { reason: 'Opening a second native window (open_deck_window -> take_pending_deck -> open_deck) and how the dropdown paints on WKWebView need a real Tauri window; e2e/deck-variants.e2e.ts only checks that open_deck_window is invoked with the right path.' },
+      manual: { reason: 'Opening a second native window (open_deck_variant -> take_pending_deck -> open_deck) and how the dropdown paints on WKWebView need a real Tauri window; e2e/deck-variants.e2e.ts only checks that open_deck_variant is invoked with the right path.' },
     },
   ],
 )

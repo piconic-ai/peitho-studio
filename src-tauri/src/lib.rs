@@ -270,6 +270,15 @@ pub fn run() {
                 window.state::<PeithoSession>().remove(window.label());
             }
         })
+        .on_page_load(|webview, payload| {
+            // A reload (or dev hot reload) starts the frontend over at the
+            // welcome screen, which must be able to open a deck again —
+            // `open_deck` refuses a window that still has a session. The
+            // old page, deck scripts included, is gone by then.
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                webview.state::<PeithoSession>().remove(webview.label());
+            }
+        })
         .setup(|app| {
             app.handle().plugin(logging::plugin())?;
             logging::install_panic_hook();
@@ -294,7 +303,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             peitho::dev_default_deck,
             peitho::open_deck,
-            peitho::open_deck_window,
+            peitho::open_deck_variant,
             peitho::take_pending_deck,
             peitho::get_recent_decks,
             peitho::create_deck,

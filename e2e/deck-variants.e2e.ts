@@ -4,7 +4,7 @@
 // siblings shows no switcher at all. Each test below is one
 // Given-When-Then example.
 //
-// What this can't show: that `open_deck_window` really opens a second
+// What this can't show: that `open_deck_variant` really opens a second
 // native window with the picked deck, or how the dropdown paints on
 // WKWebView — both need a real Tauri window (see the manual example in
 // domain/deckVariants.examples.ts).
@@ -44,7 +44,7 @@ test('Given deck.md is open next to deck.en.md and deck.ja.md, when the user pic
   const opensBefore = invocations.filter(i => i.cmd === 'open_deck').length
   await menu.getByRole('menuitemradio', { name: /^ja/ }).click()
 
-  await expect.poll(() => invocations.filter(i => i.cmd === 'open_deck_window').map(i => i.args.path)).toEqual(['/fake/deck.ja.md'])
+  await expect.poll(() => invocations.filter(i => i.cmd === 'open_deck_variant').map(i => i.args.path)).toEqual(['/fake/deck.ja.md'])
   await expect(menu).toBeHidden()
   // Still this window's own deck: no in-place re-open, slides still there.
   expect(invocations.filter(i => i.cmd === 'open_deck').length).toBe(opensBefore)
@@ -65,7 +65,7 @@ test('Given deck.ja.md is the open deck, when the switcher menu is opened, then 
   await expect(current).toHaveAttribute('aria-checked', 'true')
   await expect(current).toBeDisabled()
   await expect(page.getByRole('menuitemradio', { name: /deck\.md/ })).toBeEnabled()
-  expect(invocations.some(i => i.cmd === 'open_deck_window')).toBe(false)
+  expect(invocations.some(i => i.cmd === 'open_deck_variant')).toBe(false)
 })
 
 test('Given the switcher menu is open, when the user clicks outside it, then it closes without opening anything', async ({ page }) => {
@@ -79,7 +79,7 @@ test('Given the switcher menu is open, when the user clicks outside it, then it 
   await page.mouse.click(5, 300)
 
   await expect(page.getByRole('menu')).toBeHidden()
-  expect(invocations.some(i => i.cmd === 'open_deck_window')).toBe(false)
+  expect(invocations.some(i => i.cmd === 'open_deck_variant')).toBe(false)
 })
 
 test('Given the open deck has no same-name siblings, when the deck is shown, then no switcher is shown', async ({ page }) => {

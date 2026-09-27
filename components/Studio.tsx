@@ -150,7 +150,7 @@ export function Studio() {
   // new window entirely Rust-side without going through this component.
   async function openDeckInNewWindow(path: string): Promise<void> {
     try {
-      await deckIpc.openDeckWindow(path)
+      await deckIpc.openDeckVariant(path)
     } catch (err) {
       setErrorMessage(String(err))
     }
@@ -1409,8 +1409,8 @@ export function Studio() {
     void loadSettings()
     void loadSystemLocales()
 
-    // A window spawned by `open_deck_window` (native "Open Deck…"/"Open
-    // Recent", or this app's own welcome-screen buttons) has a deck
+    // A window spawned by `open_deck_window_impl` (native "Open Deck…"/
+    // "Open Recent", or the deck header's variant switcher) has a deck
     // waiting for it in Rust-side `PendingDecks` — that takes priority
     // over the dev-convenience env var, which only matters for a window
     // with nothing else assigned to it.
@@ -1439,7 +1439,7 @@ export function Studio() {
     // Native "File > New Deck…" (see `build_menu` in lib.rs) still needs
     // this app's own name-entry modal, so it round-trips through here.
     // "Open Deck…"/"Open Recent" are handled entirely Rust-side now (a
-    // native folder-picker dialog + `open_deck_window`), since neither
+    // native folder-picker dialog + `open_deck_window_impl`), since neither
     // needs anything this webview can do.
     const unlistenMenuNew = deckIpc.onMenuNewDeck(() => { void handleNewDeck() })
 

@@ -1,14 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "enables the default permissions",
+  "description": "Only what the frontend actually calls. A deck's layout <script> runs in the same document with the same access, so nothing broader (core:default would add menu creation, emit, window/webview control) — see todo/deck-script-tauri-access.md.",
   "windows": [
     "*"
   ],
   "permissions": [
-    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "core:window:allow-close",
-    "dialog:default",
+    "dialog:allow-open",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text"
   ]
