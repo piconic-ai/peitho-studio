@@ -41,7 +41,8 @@ permissions:
 jobs:
   build-macos:
     runs-on: macos-latest
-    timeout-minutes: 60
+    # Notarization alone took ~50 minutes on the first submission.
+    timeout-minutes: 120
     env:
       TAG: ${{ inputs.tag }}
       TARGET: aarch64-apple-darwin
@@ -91,9 +92,16 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
         run: bunx tauri build --target "$TARGET" --bundles dmg
+      # tauri deletes the intermediate .app once the dmg is built, so check
+      # the app as users get it: from inside the mounted dmg.
       - name: Verify the signature and notarization
         run: |
-          app="src-tauri/target/$TARGET/release/bundle/macos/Peitho Studio.app"
+          dmg=$(echo src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg)
+          codesign --verify --strict --verbose=2 "$dmg"
+          mnt=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg"
+          trap 'hdiutil detach "$mnt"' EXIT
+          app="$mnt/Peitho Studio.app"
           codesign --verify --deep --strict --verbose=2 "$app"
           spctl --assess --type execute --verbose=2 "$app"
           xcrun stapler validate "$app"
