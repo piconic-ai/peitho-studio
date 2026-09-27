@@ -14,7 +14,7 @@ import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, indexAfterCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
 import { type FrontmatterStep, type HistoryStep, type PageNumbersStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inversePageNumbersStep, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
-import { type DeckSettingPick, type DeckSettingsReport, deckSettingsReport, frontmatterValueOf, parseDeckSettingPick, pickChangesNothing, readDeckSettings, sameDeckSettingsReport } from '../domain/deckSettings'
+import { type DeckSettingsReport, deckSettingsReport, frontmatterValueOf, pickChangesNothing, readDeckSettings, resolveDeckSettingPick, sameDeckSettingsReport } from '../domain/deckSettings'
 import { PAGE_NUMBERS_KEY, type PageNumbersChoice, pageNumbersShown, pageNumbersValueOf, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
@@ -1015,12 +1015,18 @@ export function Studio() {
   // undoable step, removing the key for peitho-core's default. Page numbers
   // go through `setPageNumbers`, which also clears the slides' own
   // `page_number:false` when turning them off. Picking the choice already
-  // in place does nothing.
-  function setDeckSetting(pick: DeckSettingPick): Promise<void> {
+  // in place does nothing. `payload` is the menu event's, read only once
+  // earlier operations have landed, so the Line Breaks toggle flips what
+  // the deck holds by then; one that isn't a pick the menu offers is
+  // dropped.
+  function setDeckSetting(payload: unknown): Promise<void> {
+    const pick = resolveDeckSettingPick(payload, deckSettings())
+    if (pick === null) return Promise.resolve()
     if (pick.key === 'page_numbers') return setPageNumbers(pick.choice)
     return performStep(async () => {
-      if (pickChangesNothing(deckSettings(), pick)) return { kind: 'rejected' }
-      return runFrontmatterStep({ kind: 'frontmatter', key: pick.key, value: frontmatterValueOf(pick.key, pick.choice) })
+      const current = resolveDeckSettingPick(payload, deckSettings())
+      if (current === null || current.key === 'page_numbers' || pickChangesNothing(deckSettings(), current)) return { kind: 'rejected' }
+      return runFrontmatterStep({ kind: 'frontmatter', key: current.key, value: frontmatterValueOf(current.key, current.choice) })
     })
   }
 
@@ -1562,11 +1568,10 @@ export function Studio() {
 
     // Deck menu (see `setDeckSetting`), sent to the focused window only.
     // The menu is disabled while no deck is open, but a pick that still
-    // arrives then, or one that isn't a choice the menu offers, is dropped.
+    // arrives then is dropped.
     const unlistenMenuDeckSetting = deckIpc.onMenuDeckSetting(payload => {
-      const pick = parseDeckSettingPick(payload)
-      if (pick === null || deck.deckPath() === null) return
-      void setDeckSetting(pick)
+      if (deck.deckPath() === null) return
+      void setDeckSetting(payload)
     })
 
     const onKeyDown = (event: KeyboardEvent) => {

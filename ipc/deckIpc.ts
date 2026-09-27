@@ -79,7 +79,7 @@ export interface DeckIpc {
   onMenuRedo(callback: () => void): Unsubscribe
   /** A Deck menu item, sent only to the focused window — see
    * `src-tauri/src/deck_menu.rs`. The payload is unchecked here; read it
-   * with `parseDeckSettingPick`. */
+   * with `resolveDeckSettingPick`. */
   onMenuDeckSetting(callback: (payload: unknown) => void): Unsubscribe
   /** Fires once the `peitho present` subprocess `presentDeck` launched has
    * actually rendered the deck and started serving it — see
