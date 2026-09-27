@@ -1,10 +1,10 @@
 ---
 status: todo
-description: 新規デッキ作成ダイアログで縦横比と言語を選べるようにし、後からDeckメニューで変えられることを案内する
+description: 新規デッキ作成ダイアログで縦横比と言語を選べるようにする
 tags: [deck-settings, frontmatter, new-deck]
 ---
 
-# 新規デッキ作成時に縦横比と言語を案内する
+# 新規デッキ作成時に縦横比と言語を選べるようにする
 
 進捗管理用の作業台帳 — **完了したら削除ないし`todo/archive/`へ移動する**。
 
@@ -17,9 +17,10 @@ tags: [deck-settings, frontmatter, new-deck]
 ## スコープ
 
 - **目的**: 最初に決めることが多い`aspect_ratio`と`lang`を、新規作成
-  ダイアログで選べるようにする。あわせて、後からDeckメニューで変えられる
-  ことをダイアログ内に一文で示す。
+  ダイアログで選べるようにする。
 - **やらないこと**:
+  - 「あとでDeckメニューから変更できます」のような案内文(ユーザー判断:
+    メニューを見ればすぐ分かるので不要)。
   - テーマの選択(雛形は組み込みテーマ固定のまま)。
   - `page_numbers`/`breaks`など、ほかのキーの選択。
   - Deckメニュー側の実装(`todo/deck-settings-menu.md`)。
@@ -28,7 +29,6 @@ tags: [deck-settings, frontmatter, new-deck]
     選択があり、既定値が選ばれた状態で開く。
   - 作成した`deck.md`のfrontmatterに、選んだ値が書かれる。既定値の
     ままならキーを書かない(Deckメニューの「既定値ならキー削除」と同じ)。
-  - ダイアログに「あとでDeckメニューから変更できます」旨の一文がある。
   - 4:3を選んで作ったデッキが開いたとき、サムネイルとプレビューが4:3で
     表示される。
 
@@ -71,7 +71,7 @@ tags: [deck-settings, frontmatter, new-deck]
 - `src-tauri/src/peitho.rs`: `create_deck`の引数追加。frontmatterを
   組み立てる純粋関数(または`engine/`の近くに置く)。
 - `ipc/deckIpc.ts`: `createDeck`の引数追加。
-- `components/NewDeckModal.tsx`: 選択UIと案内文。
+- `components/NewDeckModal.tsx`: 選択UI。
 - `components/Studio.tsx`: `runCreate`への受け渡し。
 - `domain/messages.ts`: 英日の文言。
 
@@ -93,6 +93,6 @@ tags: [deck-settings, frontmatter, new-deck]
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機で4:3のデッキを作り、表示が崩れないこと
 - [ ] 言語の既定値(`en`固定か、UI言語に合わせるか)
-- [ ] ダイアログの見た目と案内文
+- [ ] ダイアログの見た目
 
 ## 先送り事項
