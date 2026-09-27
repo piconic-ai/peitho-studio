@@ -15,7 +15,7 @@ import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCom
 import { type SlideCommand, applyCommand, indexAfterCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
 import { type FrontmatterStep, type HistoryStep, type PageNumbersStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inversePageNumbersStep, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
 import { type DeckSettingsState, frontmatterValueOf, pickChangesNothing, readDeckSettings, resolveDeckSettingPick, sameDeckSettings } from '../domain/deckSettings'
-import { PAGE_NUMBERS_KEY, type PageNumbersChoice, pageNumbersShown, pageNumbersValueOf, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
+import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import { type LayoutVerdict } from '../domain/layoutFit'
@@ -987,18 +987,6 @@ export function Studio() {
       if (outcome.kind !== 'done') return
       history.record(outcome.inverse)
       separateTextHistory()
-    })
-  }
-
-  // Deck > Page Numbers: sets the deck's `page_numbers` (and, turning
-  // them off, clears every slide's `page_number:false`) as one undoable
-  // step. The step is built only once earlier operations have landed, so
-  // the slides it keeps hidden are the ones hidden by then. Picking the
-  // setting already in place does nothing.
-  function setPageNumbers(choice: PageNumbersChoice): Promise<void> {
-    return performStep(async () => {
-      if (pageNumbersMode().kind === choice) return { kind: 'rejected' }
-      return runPageNumbersStep(pageNumbersStepFor(currentSlideTexts(), pageNumbersValueOf(choice)))
     })
   }
 

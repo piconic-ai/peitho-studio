@@ -1,6 +1,6 @@
 // Deck > Page Numbers (Off / 1 / 1/N) writes the deck's frontmatter
 // `page_numbers`, and the slide context menu's Hide Page Number writes a
-// slide's `page_number:false` (see `setPageNumbers` and
+// slide's `page_number:false` (see `setDeckSetting` and
 // `toggleSlidePageNumber` in `components/Studio.tsx`). The native menu
 // can't be clicked from here, so these send the `menu:deck-setting` event
 // Rust would, and read back what the window reports for the menu's check
