@@ -192,33 +192,54 @@ Studioのコードから辿ったもので、実機では試していない。
 
 ## テスト
 
-方針決定後に書く。
+- Rust(`src-tauri/src/peitho.rs`の`mod tests`):
+  - `insert_first_session`: セッションのないウィンドウは登録できる/
+    既存のセッションは差し替えない(同じデッキでも)/空ラベルも普通の
+    キーとして扱う。
+  - `variant_to_open`: 並んでいるvariantは開ける/一覧にないパス・
+    現在のデッキ自身・ファイル名だけ・`..`を含むパス・空は拒否する。
+- e2e(`e2e/deck-variants.e2e.ts`): variantの切り替えが
+  `open_deck_variant`を呼ぶ。
+- capabilities: `cargo build`が`gen/schemas/capabilities.json`に
+  絞った一覧を出すこと(存在しない権限名ならビルドが失敗する)。
 
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
 - [x] 調査結果1(到達できるか)をtauriのソースとStudioのコードで確認して記録した
 - [x] 調査結果3(upstreamの信頼モデル)を記録した
-- [x] `bun test` / `bun run typecheck` グリーン(このタスクではコード変更なし)
+- [x] 「方針」の案を決めた((e')、上の「決定」)
+- [x] `open_deck`がセッションのあるウィンドウでは拒否し、ページの
+  再読み込みでセッションを外す(`lib.rs`の`on_page_load`)
+- [x] `open_deck_window`を`open_deck_variant`(呼び出し元のデッキの
+  variantだけ)に置き換えた
+- [x] `capabilities/default.json`を実際に使う権限だけに絞った
+- [x] READMEに、残る影響(自デッキの書き換え・設定・クリップボード・
+  scaffold作成・Present・ダイアログ)を書いた
+- [x] `cargo test --lib` / `bun test` / `bun run typecheck` /
+  `e2e/deck-variants.e2e.ts` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機で確認する: Studioの「New Deck」で作ったデッキの
+- [ ] 実機で確認する(`tauri.conf.json`の`devtools`を一時的に`true`に
+  して`bunx tauri dev`)。Studioの「New Deck」で作ったデッキの
   `layouts/title-body-code.html`の`</section>`直前に下の`<script>`を
-  足して開き直し、DevToolsのConsoleに`get_recent_decks`の結果(Recentの
-  一覧)と`read_deck_source`の結果(そのデッキ自身の本文)が出ることを
-  見る(読み取りだけの無害なコマンド。ファイルを書くコマンドは試さない):
+  足して開き直し、DevToolsのConsoleで次を見る(存在しないパスしか
+  渡さないので、対策が効いていなくてもファイルには触れない):
+  - `[probe] open_deck`が`a deck is already open in this window`
+    (対策前は`deck file not found`)
+  - `[probe] variant`が`not a variant of the open deck: …`
+  - `[probe] emit`が権限エラー(`core:event:allow-emit`を外したため)
+  - デッキの表示・編集・保存、「Open Recent」、variantの切り替え、
+    New Deck、Cmd+Rでの再読み込み後に開き直せることが今まで通り動く
 
   ```html
     <script>
-      window.__TAURI_INTERNALS__.invoke('get_recent_decks')
-        .then((r) => console.log('[probe] recent', r), (e) => console.log('[probe] error', e))
-      window.__TAURI_INTERNALS__.invoke('read_deck_source')
-        .then((r) => console.log('[probe] source', r.slice(0, 80)), (e) => console.log('[probe] error', e))
+      const probe = (name, p) => p.then((r) => console.log(`[probe] ${name} ok`, r), (e) => console.log(`[probe] ${name}`, e))
+      probe('open_deck', window.__TAURI_INTERNALS__.invoke('open_deck', { path: '/nonexistent/deck.md' }))
+      probe('variant', window.__TAURI_INTERNALS__.invoke('open_deck_variant', { path: '/nonexistent/deck.md' }))
+      probe('emit', window.__TAURI_INTERNALS__.invoke('plugin:event|emit', { event: 'probe', payload: null }))
     </script>
   ```
-  (`devtools: false`なのでInspect Elementは使えない。`tauri.conf.json`
-  の`devtools`を一時的に`true`にして`bunx tauri dev`で確認する)
-- [x] 「方針」の案を決めた((e')、上の「決定」)
 
 ## 先送り事項
 
@@ -230,3 +251,6 @@ Studioのコードから辿ったもので、実機では試していない。
   (既存は上書きしない、`peitho.rs:326`)。影響は小さいので(e')の範囲外。
 - CSP(上の(b2))は、外部フォント・画像を使うデッキとの兼ね合いを含めて
   別タスクで判断する。
+- `runOpen`で`open_deck`が成功した後に`read_deck_source`が失敗すると、
+  画面はwelcomeに戻るがセッションは残るので、そのウィンドウでは再読み
+  込みするまでデッキを開けない(開いた直後の読み込み失敗なので稀)。
