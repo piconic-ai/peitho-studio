@@ -1,4 +1,5 @@
 import { type SelectionPlan } from './editorSession'
+import { readFrontmatterKey, setFrontmatterKey } from './frontmatter'
 import { type PageConfig } from './pageConfig'
 import { type SlideCommand, selectionPlanFor } from './slideCommands'
 import { extractNote, extractPageComment, updatePageComment } from './slides'
@@ -276,4 +277,29 @@ export function applyPageNumbersStep(texts: readonly string[], step: PageNumbers
     if (slideConfigOfText(text).page_number === wanted) return text
     return updatePageComment(text, { page_number: wanted }).trim()
   })
+}
+
+/** One top-level frontmatter key set to `value` (`null`: removed) — a deck
+ * setting that touches nothing but its own line, such as the Deck menu's
+ * aspect ratio, line breaks, or language. `page_numbers` has its own
+ * `PageNumbersStep`, since turning it off also rewrites slides. Like that
+ * step, it holds the key's whole state, so the step that undoes it is
+ * simply the value before (`inverseFrontmatterStep`). */
+export interface FrontmatterStep {
+  kind: 'frontmatter'
+  key: string
+  value: string | null
+}
+
+/** The step that puts back the value `step.key` has in `source` now —
+ * `null` when the key is absent, so undoing an added key removes it again. */
+export function inverseFrontmatterStep(source: string, step: FrontmatterStep): FrontmatterStep {
+  return { kind: 'frontmatter', key: step.key, value: readFrontmatterKey(source, step.key) }
+}
+
+/** `source` with `step` applied (`setFrontmatterKey`). A key put back after
+ * being removed lands at the end of the block rather than where it was,
+ * and without any trailing comment it had; its value is the same. */
+export function applyFrontmatterStep(source: string, step: FrontmatterStep): string {
+  return setFrontmatterKey(source, step.key, step.value)
 }

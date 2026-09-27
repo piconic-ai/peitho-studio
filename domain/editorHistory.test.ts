@@ -3,9 +3,11 @@ import fc from 'fast-check'
 import {
   EMPTY_HISTORY,
   MAX_HISTORY_DEPTH,
+  applyFrontmatterStep,
   applyPageNumbersStep,
   commandForStep,
   hiddenPageNumberSlides,
+  inverseFrontmatterStep,
   inversePageNumbersStep,
   pageNumbersStepFor,
   inverseCommand,
@@ -20,6 +22,7 @@ import {
   takeRedo,
   takeUndo,
   type EditorHistory,
+  type FrontmatterStep,
   type HistoryStep,
   type PageNumbersStep,
   type StructuralStep,
@@ -509,6 +512,84 @@ describe('page-number step: adversarial', () => {
       const step: PageNumbersStep = { kind: 'page-numbers', value: next, hidden: positions }
       const { texts: after, inverse } = performPageNumbers(texts, current, step)
       return JSON.stringify(applyPageNumbersStep(after, inverse)) === JSON.stringify(texts)
+    }))
+  })
+})
+
+/** Runs a frontmatter step against `source` the way Studio.tsx does,
+ * returning the new source and the step that undoes it. */
+function performFrontmatter(source: string, step: FrontmatterStep): { source: string; inverse: FrontmatterStep } {
+  return { source: applyFrontmatterStep(source, step), inverse: inverseFrontmatterStep(source, step) }
+}
+
+describe('frontmatter step: functional requirements', () => {
+  test('spec: Given lang: ja, when it is set to fr and undone, then the source is back byte for byte', () => {
+    const source = '---\ntime: 1m\nlang: ja\n---\n# Title\n'
+    const done = performFrontmatter(source, { kind: 'frontmatter', key: 'lang', value: 'fr' })
+    expect(done.source).toBe('---\ntime: 1m\nlang: fr\n---\n# Title\n')
+    expect(done.inverse).toEqual({ kind: 'frontmatter', key: 'lang', value: 'ja' })
+    expect(applyFrontmatterStep(done.source, done.inverse)).toBe(source)
+  })
+
+  test('spec: Given the undo of a change, when it is redone, then the change is back', () => {
+    const source = '# Title\n'
+    const done = performFrontmatter(source, { kind: 'frontmatter', key: 'aspect_ratio', value: '4:3' })
+    const undone = performFrontmatter(done.source, done.inverse)
+    expect(undone.source).toBe(source)
+    expect(applyFrontmatterStep(undone.source, undone.inverse)).toBe(done.source)
+  })
+})
+
+describe('frontmatter step: adversarial', () => {
+  test('Given no frontmatter, when a key is added and undone, then the added block goes away again', () => {
+    const source = '# Title\n'
+    const done = performFrontmatter(source, { kind: 'frontmatter', key: 'breaks', value: 'true' })
+    expect(done.source).toBe('---\nbreaks: true\n---\n# Title\n')
+    expect(done.inverse).toEqual({ kind: 'frontmatter', key: 'breaks', value: null })
+    expect(applyFrontmatterStep(done.source, done.inverse)).toBe(source)
+  })
+
+  test('Given the deck\'s only key, when it is set to the default (removed) and undone, then the block is rebuilt around it', () => {
+    const source = '---\nlang: ja\n---\n# Title\n'
+    const done = performFrontmatter(source, { kind: 'frontmatter', key: 'lang', value: null })
+    expect(done.source).toBe('# Title\n')
+    expect(applyFrontmatterStep(done.source, done.inverse)).toBe(source)
+  })
+
+  test('Given a removed key among others, when undone, then its value is back (at the end of the block)', () => {
+    const source = '---\nlang: ja\ntime: 1m\n---\n# Title\n'
+    const done = performFrontmatter(source, { kind: 'frontmatter', key: 'lang', value: null })
+    expect(applyFrontmatterStep(done.source, done.inverse)).toBe('---\ntime: 1m\nlang: ja\n---\n# Title\n')
+  })
+
+  test('Given an absent key, when it is removed, then nothing changes and the inverse is a removal too', () => {
+    const source = '---\ntime: 1m\n---\n# Title\n'
+    const done = performFrontmatter(source, { kind: 'frontmatter', key: 'lang', value: null })
+    expect(done.source).toBe(source)
+    expect(done.inverse).toEqual({ kind: 'frontmatter', key: 'lang', value: null })
+  })
+
+  test('Given an unclosed frontmatter block, when a key is set, then the source is left as it is', () => {
+    const source = '---\nlang: ja\n# Title\n'
+    const done = performFrontmatter(source, { kind: 'frontmatter', key: 'lang', value: 'en' })
+    expect(done.source).toBe(source)
+    expect(applyFrontmatterStep(done.source, done.inverse)).toBe(source)
+  })
+
+  test('Given a key with an empty value, when it is replaced and undone, then the empty value comes back', () => {
+    const source = '---\nlang:\n---\n# Title\n'
+    const done = performFrontmatter(source, { kind: 'frontmatter', key: 'lang', value: 'ja' })
+    expect(done.inverse.value).toBe('')
+    expect(applyFrontmatterStep(done.source, done.inverse)).toBe(source)
+  })
+
+  test('property: undoing a step always puts back the key\'s value, whatever it was', () => {
+    const value = fc.option(fc.constantFrom('en', 'ja', '4:3', 'true', 'x'), { nil: null })
+    fc.assert(fc.property(value, value, (before, after) => {
+      const source = applyFrontmatterStep('---\ntime: 1m\n---\n# Title\n', { kind: 'frontmatter', key: 'lang', value: before })
+      const done = performFrontmatter(source, { kind: 'frontmatter', key: 'lang', value: after })
+      const undone = applyFrontmatterStep(done.source, done.inverse)
+      return inverseFrontmatterStep(undone, done.inverse).value === before
     }))
   })
 })
