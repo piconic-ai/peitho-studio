@@ -60,11 +60,6 @@ pub fn app_log_level(debug_build: bool) -> log::LevelFilter {
 
 /// Shows the current log file in Finder, selected in its folder — the file a
 /// bug report attaches.
-///
-/// Not `open_path` on the folder: the log directory is named after the
-/// bundle identifier (`studio.peitho.app`), and its `.app` suffix makes
-/// macOS treat it as an application bundle, so `open` tries to launch it
-/// ("its executable is missing") instead of showing it.
 pub(crate) fn show_log_file<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let dir = app.path().app_log_dir().map_err(|err| err.to_string())?;
     app.opener().reveal_item_in_dir(log_file_path(&dir)).map_err(|err| err.to_string())
@@ -132,7 +127,7 @@ mod tests {
 
     #[test]
     fn given_the_log_directory_when_the_log_file_is_located_then_it_is_the_app_named_log_inside_it() {
-        let dir = Path::new("/Users/someone/Library/Logs/studio.peitho.app");
+        let dir = Path::new("/Users/someone/Library/Logs/ai.piconic.peitho-studio");
         assert_eq!(log_file_path(dir), dir.join("Peitho Studio.log"));
     }
 

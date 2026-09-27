@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Peitho Studio",
   "version": "0.1.0",
-  "identifier": "studio.peitho.app",
+  "identifier": "ai.piconic.peitho-studio",
   "build": {
     "frontendDist": "../dist/app",
     "devUrl": "http://localhost:3003",
