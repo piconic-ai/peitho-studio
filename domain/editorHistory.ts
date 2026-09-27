@@ -39,7 +39,23 @@ export interface TextStep {
   seq: number
 }
 
-export type HistoryStep = StructuralStep | TextStep
+/** The deck's page-number setting and every slide's own `page_number`, set
+ * together as one step — so turning page numbers off (which also has to
+ * clear each slide's `page_number:false`, refused by peitho-core without a
+ * deck setting) undoes in one press.
+ *
+ * `value` is the frontmatter `page_numbers` value to write, `null` for no
+ * key at all. `hidden` lists the slides, by position, left carrying
+ * `page_number:false`; every other slide is left with no `page_number`
+ * field. It is the whole state rather than a change to it, so the step
+ * that undoes it is simply the state before (`inversePageNumbersStep`). */
+export interface PageNumbersStep {
+  kind: 'page-numbers'
+  value: string | null
+  hidden: readonly number[]
+}
+
+export type HistoryStep = StructuralStep | PageNumbersStep | TextStep
 
 /** Undo and redo stacks, most recent last. Each entry is the step that
  * undoes (or redoes) one operation: a slide operation, or a marker for a
@@ -164,8 +180,8 @@ export function slideConfigOfText(text: string): PageConfig {
  * applied to. A text marker is its own inverse: the editor's history
  * undoes or redoes the same group. */
 export function inverseStep(before: readonly string[], step: StructuralStep): StructuralStep
-export function inverseStep(before: readonly string[], step: HistoryStep): HistoryStep
-export function inverseStep(before: readonly string[], step: HistoryStep): HistoryStep {
+export function inverseStep(before: readonly string[], step: StructuralStep | TextStep): StructuralStep | TextStep
+export function inverseStep(before: readonly string[], step: StructuralStep | TextStep): StructuralStep | TextStep {
   switch (step.kind) {
     case 'text':
       return step
@@ -220,4 +236,44 @@ export function selectionForReplay(step: StructuralStep, cmd: SlideCommand, curr
       throw new Error(`Unhandled StructuralStep: ${JSON.stringify(_exhaustive)}`)
     }
   }
+}
+
+/** The positions of the slides that hide their page number
+ * (`page_number:false`). A slide whose PageComment isn't valid JSON counts
+ * as not hiding it. */
+export function hiddenPageNumberSlides(texts: readonly string[]): number[] {
+  const hidden: number[] = []
+  texts.forEach((text, i) => {
+    if (slideConfigOfText(text).page_number === false) hidden.push(i)
+  })
+  return hidden
+}
+
+/** The step that sets the deck's `page_numbers` to `value` (`null`: remove
+ * it). Turning page numbers on, or switching between the two formats,
+ * keeps whichever slides already hide their number. Turning them off
+ * clears every slide's `page_number:false` too, since peitho-core refuses
+ * it without a deck setting. */
+export function pageNumbersStepFor(texts: readonly string[], value: string | null): PageNumbersStep {
+  return { kind: 'page-numbers', value, hidden: value === null ? [] : hiddenPageNumberSlides(texts) }
+}
+
+/** The step that puts back the page-number state `texts` and the deck's
+ * current `page_numbers` value (`currentValue`) hold now. */
+export function inversePageNumbersStep(texts: readonly string[], currentValue: string | null): PageNumbersStep {
+  return { kind: 'page-numbers', value: currentValue, hidden: hiddenPageNumberSlides(texts) }
+}
+
+/** `texts` with `page_number:false` on exactly the slides `step.hidden`
+ * names, and no `page_number` field on any other. Only a slide whose field
+ * has to change is rewritten, so every other slide's text stays byte for
+ * byte as it was. A position past the end, negative, or not an integer
+ * names no slide and is ignored; a repeated one counts once. */
+export function applyPageNumbersStep(texts: readonly string[], step: PageNumbersStep): string[] {
+  const hidden = new Set(step.hidden)
+  return texts.map((text, i) => {
+    const wanted = hidden.has(i) ? false : undefined
+    if (slideConfigOfText(text).page_number === wanted) return text
+    return updatePageComment(text, { page_number: wanted }).trim()
+  })
 }

@@ -3,7 +3,11 @@ import fc from 'fast-check'
 import {
   EMPTY_HISTORY,
   MAX_HISTORY_DEPTH,
+  applyPageNumbersStep,
   commandForStep,
+  hiddenPageNumberSlides,
+  inversePageNumbersStep,
+  pageNumbersStepFor,
   inverseCommand,
   inverseConfigPatch,
   inverseStep,
@@ -17,6 +21,7 @@ import {
   takeUndo,
   type EditorHistory,
   type HistoryStep,
+  type PageNumbersStep,
   type StructuralStep,
   type TextStep,
 } from './editorHistory'
@@ -406,5 +411,104 @@ describe('selectionForReplay: which slide an undo or redo opens', () => {
 
     expect(selectionForReplay(config, commandForStep(['a'], config), null)).toEqual({ kind: 'select', index: 0 })
     expect(selectionForReplay(move, move.cmd, null)).toEqual({ kind: 'select', index: 1 })
+  })
+})
+
+/** Runs a page-number step the way Studio.tsx does (slides only — the
+ * frontmatter half is `setFrontmatterKey`, tested in frontmatter.test.ts),
+ * returning the new slides and the step that undoes it. */
+function performPageNumbers(texts: string[], currentValue: string | null, step: PageNumbersStep) {
+  return { texts: applyPageNumbersStep(texts, step), inverse: inversePageNumbersStep(texts, currentValue) }
+}
+
+const HIDDEN = '<!-- {"page_number":false} -->\n# Cover'
+const KEYED_HIDDEN = '<!-- {"key":"agenda","page_number":false} -->\n# Agenda'
+const PLAIN = '# Body'
+
+describe('page-number step: functional requirements', () => {
+  test('spec: Given a deck showing numbers where the cover hides its own, when the user turns numbers off, then every slide\'s page_number:false is cleared', () => {
+    const step = pageNumbersStepFor([HIDDEN, KEYED_HIDDEN, PLAIN], null)
+
+    expect(step).toEqual({ kind: 'page-numbers', value: null, hidden: [] })
+    expect(applyPageNumbersStep([HIDDEN, KEYED_HIDDEN, PLAIN], step)).toEqual(['# Cover', '<!-- {"key":"agenda"} -->\n# Agenda', PLAIN])
+  })
+
+  test('spec: Given a deck where the cover hides its number, when the user switches to "number / total", then the cover still hides it', () => {
+    const step = pageNumbersStepFor([HIDDEN, PLAIN], 'current_of_total')
+
+    expect(step).toEqual({ kind: 'page-numbers', value: 'current_of_total', hidden: [0] })
+    expect(applyPageNumbersStep([HIDDEN, PLAIN], step)).toEqual([HIDDEN, PLAIN])
+  })
+
+  test('spec: Given numbers turned off (clearing two hidden slides), when that is undone, then the old setting and both slides\' page_number:false come back', () => {
+    const before = [HIDDEN, KEYED_HIDDEN, PLAIN]
+    const off = performPageNumbers(before, 'current', pageNumbersStepFor(before, null))
+
+    const undone = performPageNumbers(off.texts, null, off.inverse)
+
+    expect(off.inverse).toEqual({ kind: 'page-numbers', value: 'current', hidden: [0, 1] })
+    expect(undone.texts).toEqual(before)
+    // ...and redoing turns them off again.
+    expect(undone.inverse).toEqual({ kind: 'page-numbers', value: null, hidden: [] })
+    expect(applyPageNumbersStep(undone.texts, undone.inverse)).toEqual(off.texts)
+  })
+
+  test('spec: Given a deck with an unknown page_numbers value, when the user picks a mode and then undoes it, then the unknown value is what comes back', () => {
+    const texts = [PLAIN]
+    const { inverse } = performPageNumbers(texts, 'both', pageNumbersStepFor(texts, 'current'))
+
+    expect(inverse.value).toBe('both')
+  })
+
+  test('spec: slides whose page_number doesn\'t change keep their text byte for byte', () => {
+    const untouched = '<!--{"layout": "cover"}-->\n# Odd spacing'
+
+    expect(applyPageNumbersStep([untouched, HIDDEN], { kind: 'page-numbers', value: null, hidden: [] })[0]).toBe(untouched)
+  })
+})
+
+describe('page-number step: adversarial', () => {
+  test('adversarial: an empty hidden list on a deck with no hidden slides changes nothing', () => {
+    expect(applyPageNumbersStep([PLAIN, '# Two'], { kind: 'page-numbers', value: 'current', hidden: [] })).toEqual([PLAIN, '# Two'])
+  })
+
+  test('adversarial: out-of-range, negative, and fractional positions name no slide and are ignored', () => {
+    expect(applyPageNumbersStep([PLAIN], { kind: 'page-numbers', value: 'current', hidden: [5, -1, 0.5, Number.NaN] })).toEqual([PLAIN])
+  })
+
+  test('adversarial: a repeated position hides that slide once', () => {
+    expect(applyPageNumbersStep([PLAIN], { kind: 'page-numbers', value: 'current', hidden: [0, 0] }))
+      .toEqual(['<!-- {"page_number":false} -->\n# Body'])
+  })
+
+  test('adversarial: an empty deck and an empty slide don\'t break', () => {
+    expect(applyPageNumbersStep([], { kind: 'page-numbers', value: null, hidden: [0] })).toEqual([])
+    expect(applyPageNumbersStep([''], { kind: 'page-numbers', value: null, hidden: [] })).toEqual([''])
+    expect(hiddenPageNumberSlides([])).toEqual([])
+  })
+
+  test('adversarial: a malformed PageComment counts as not hidden and is left alone when turning numbers off', () => {
+    const malformed = '<!-- {"page_number":false -->\n# Broken'
+
+    expect(hiddenPageNumberSlides([malformed])).toEqual([])
+    expect(applyPageNumbersStep([malformed], { kind: 'page-numbers', value: null, hidden: [] })).toEqual([malformed])
+  })
+
+  test('adversarial: page_number:true (refused by peitho) is cleared, and doesn\'t count as hidden', () => {
+    const shown = '<!-- {"page_number":true} -->\n# Shown'
+
+    expect(hiddenPageNumberSlides([shown])).toEqual([])
+    expect(applyPageNumbersStep([shown], { kind: 'page-numbers', value: 'current', hidden: [] })).toEqual(['# Shown'])
+  })
+
+  test('property: applying a step then its inverse gives back the original slides', () => {
+    const slide = fc.constantFrom(HIDDEN, KEYED_HIDDEN, PLAIN, '<!-- {"key":"k"} -->\n# K')
+    const value = fc.constantFrom(null, 'current', 'current_of_total')
+    const hidden = fc.array(fc.integer({ min: -2, max: 8 }), { maxLength: 6 })
+    fc.assert(fc.property(fc.array(slide, { maxLength: 6 }), value, value, hidden, (texts, current, next, positions) => {
+      const step: PageNumbersStep = { kind: 'page-numbers', value: next, hidden: positions }
+      const { texts: after, inverse } = performPageNumbers(texts, current, step)
+      return JSON.stringify(applyPageNumbersStep(after, inverse)) === JSON.stringify(texts)
+    }))
   })
 })
