@@ -11,6 +11,7 @@
 //! history, and a broadcast `emit` would undo the last operation in every
 //! open deck at once.
 
+use serde::Serialize;
 use tauri::menu::MenuItem;
 use tauri::{AppHandle, Emitter, EventTarget, Manager, Runtime};
 
@@ -54,6 +55,12 @@ pub(crate) fn forward<R: Runtime>(app: &AppHandle<R>, id: &str) -> bool {
 /// no window has focus. Also used by the app menu's "Settings…" (see
 /// `settings::MENU_EVENT`).
 pub(crate) fn emit_to_focused<R: Runtime>(app: &AppHandle<R>, event: &str) {
+    emit_to_focused_with(app, event, ());
+}
+
+/// `emit_to_focused` with a payload — the Deck menu's pick (see
+/// `deck_menu::MENU_EVENT`).
+pub(crate) fn emit_to_focused_with<R: Runtime, S: Serialize + Clone>(app: &AppHandle<R>, event: &str, payload: S) {
     let windows = app.webview_windows();
     let focused = focused_label(
         windows
@@ -61,7 +68,7 @@ pub(crate) fn emit_to_focused<R: Runtime>(app: &AppHandle<R>, event: &str) {
             .map(|(label, window)| (label.as_str(), window.is_focused().unwrap_or(false))),
     );
     if let Some(label) = focused {
-        let _ = app.emit_to(EventTarget::webview_window(label), event, ());
+        let _ = app.emit_to(EventTarget::webview_window(label), event, payload);
     }
 }
 

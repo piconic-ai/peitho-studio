@@ -20,9 +20,12 @@ use std::time::Duration;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
+use tauri::menu::Menu;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
+use crate::deck_menu::{self, DeckSettings, DeckSettingsRegistry};
 use crate::deck_variants;
+use crate::edit_menu;
 use crate::engine::builtin;
 use crate::engine::layout_fit::{self, LayoutVerdict};
 use crate::engine::pipeline::{self, RenderOutput};
@@ -817,6 +820,84 @@ pub fn present_deck(rehearsal: bool, window: WebviewWindow, session: State<Peith
 
     state.present_child = Some(child);
     Ok(())
+}
+
+/// Every window's Deck menu settings, and which window the menu follows
+/// (see `deck_menu::DeckSettingsRegistry`). Keyed by window label, like
+/// `PeithoSession`: each window reports its own deck's values.
+#[derive(Default)]
+pub struct DeckMenuState(Mutex<DeckSettingsRegistry>);
+
+impl DeckMenuState {
+    /// `label`'s window came to the front (`WindowEvent::Focused(true)`).
+    pub fn focus(&self, label: &str) {
+        if let Ok(mut registry) = self.0.lock() {
+            registry.focus(label);
+        }
+    }
+
+    /// Forgets `label`'s settings: its window closed, or its page is
+    /// reloading back to the welcome screen.
+    pub fn remove(&self, label: &str) {
+        if let Ok(mut registry) = self.0.lock() {
+            registry.remove(label);
+        }
+    }
+
+    fn report(&self, label: &str, settings: DeckSettings, focused: bool) {
+        if let Ok(mut registry) = self.0.lock() {
+            registry.report(label, settings, focused);
+        }
+    }
+
+    /// The front window's settings, copied out so the lock isn't held
+    /// while the menu is updated.
+    fn front_settings(&self) -> Option<DeckSettings> {
+        self.0.lock().ok()?.front_settings().cloned()
+    }
+}
+
+/// Shows the front window's settings in `menu`'s Deck menu — for a menu
+/// just built (`build_menu`), before it replaces the old one.
+pub(crate) fn apply_deck_menu(app: &AppHandle, menu: &Menu<tauri::Wry>) {
+    deck_menu::apply(menu, app.state::<DeckMenuState>().front_settings().as_ref());
+}
+
+/// Shows the front window's settings in the menu bar's Deck menu. Called
+/// whenever they may have changed: a report, a focus change, a window
+/// closing or reloading, and every Deck menu click.
+pub(crate) fn refresh_deck_menu(app: &AppHandle) {
+    if let Some(menu) = app.menu() {
+        apply_deck_menu(app, &menu);
+    }
+}
+
+/// Forwards a Deck menu click to the focused window as the choice to
+/// write. Returns `false` when `id` isn't a Deck menu item, so the caller
+/// can keep matching other ids. The menu is re-applied either way, since
+/// muda has already flipped the clicked item's own check mark; the mark
+/// moves once the window writes the change and reports it back.
+pub(crate) fn forward_deck_menu(app: &AppHandle, id: &str) -> bool {
+    if deck_menu::parse_menu_id(id).is_none() {
+        return false;
+    }
+    let front = app.state::<DeckMenuState>().front_settings();
+    if let Some(pick) = deck_menu::pick_for_click(id, front.as_ref()) {
+        edit_menu::emit_to_focused_with(app, deck_menu::MENU_EVENT, pick);
+    }
+    refresh_deck_menu(app);
+    true
+}
+
+/// The calling window's Deck menu settings, as its frontend read them from
+/// the open deck's frontmatter (see `domain/deckSettings.ts`). Sent on
+/// open and after every change. Carries only which items to check, so a
+/// deck's own layout script calling it can do no more than mislabel the
+/// menu.
+#[tauri::command]
+pub fn report_deck_settings(settings: DeckSettings, window: WebviewWindow, state: State<DeckMenuState>) {
+    state.report(window.label(), settings, window.is_focused().unwrap_or(false));
+    refresh_deck_menu(window.app_handle());
 }
 
 #[cfg(test)]

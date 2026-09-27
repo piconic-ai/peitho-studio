@@ -10,7 +10,7 @@ mod peitho;
 mod settings;
 
 use i18n::{Language, MenuLabels};
-use peitho::{PeithoSession, PendingDecks};
+use peitho::{DeckMenuState, PeithoSession, PendingDecks};
 use tauri::menu::{AboutMetadata, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
@@ -48,7 +48,9 @@ const WARM_UP_RECENT_DECKS: usize = 3;
 /// Labelled in the UI language (`settings::ui_language`), so it is also
 /// rebuilt whenever that setting is saved (`settings::update_settings`).
 pub(crate) fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    build_menu_with_recents(app, peitho::read_recent_decks(app), settings::ui_language(app))
+    let menu = build_menu_with_recents(app, peitho::read_recent_decks(app), settings::ui_language(app))?;
+    peitho::apply_deck_menu(app, &menu);
+    Ok(menu)
 }
 
 fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, language: Language) -> tauri::Result<Menu<tauri::Wry>> {
@@ -105,6 +107,10 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
             &PredefinedMenuItem::select_all(app, Some(labels.select_all))?,
         ],
     )?;
+
+    // Built disabled and unchecked; `build_menu` shows the front window's
+    // deck in it.
+    let deck_menu = deck_menu::build(app, labels)?;
 
     let window_menu = Submenu::with_items(
         app,
@@ -166,6 +172,7 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
             &edit_menu,
             #[cfg(target_os = "macos")]
             &Submenu::with_items(app, labels.view, true, &[&PredefinedMenuItem::fullscreen(app, Some(labels.enter_full_screen))?])?,
+            &deck_menu,
             &window_menu,
             &help_menu,
         ],
@@ -219,11 +226,14 @@ pub fn run() {
     builder
         .manage(PeithoSession::default())
         .manage(PendingDecks::default())
+        .manage(DeckMenuState::default())
         .menu(|app| build_menu_with_recents(app, Vec::new(), i18n::system_language(&settings::system_locales())))
         .on_menu_event(|app_handle, event| {
             let id = event.id().as_ref();
             if edit_menu::forward(app_handle, id) {
                 // Undo/Redo: handled by the focused window's frontend.
+            } else if peitho::forward_deck_menu(app_handle, id) {
+                // Deck settings: written by the focused window's frontend.
             } else if id == settings::MENU_ID {
                 // The settings panel is an in-app modal: open it in the
                 // window the user is looking at.
@@ -267,8 +277,18 @@ pub fn run() {
             // Each window owns its own session (deck path, asset server,
             // file watcher) — once the window is gone, so is the point of
             // keeping that state around.
-            if let tauri::WindowEvent::Destroyed = event {
-                window.state::<PeithoSession>().remove(window.label());
+            match event {
+                tauri::WindowEvent::Destroyed => {
+                    window.state::<PeithoSession>().remove(window.label());
+                    window.state::<DeckMenuState>().remove(window.label());
+                    peitho::refresh_deck_menu(window.app_handle());
+                }
+                // The Deck menu shows the front window's deck.
+                tauri::WindowEvent::Focused(true) => {
+                    window.state::<DeckMenuState>().focus(window.label());
+                    peitho::refresh_deck_menu(window.app_handle());
+                }
+                _ => {}
             }
         })
         .on_page_load(|webview, payload| {
@@ -278,6 +298,8 @@ pub fn run() {
             // old page, deck scripts included, is gone by then.
             if payload.event() == tauri::webview::PageLoadEvent::Started {
                 webview.state::<PeithoSession>().remove(webview.label());
+                webview.state::<DeckMenuState>().remove(webview.label());
+                peitho::refresh_deck_menu(webview.app_handle());
             }
         })
         .setup(|app| {
@@ -315,6 +337,7 @@ pub fn run() {
             peitho::preview_layouts,
             peitho::check_slide_layouts,
             peitho::present_deck,
+            peitho::report_deck_settings,
             settings::get_settings,
             settings::update_settings,
             settings::get_system_locales,
