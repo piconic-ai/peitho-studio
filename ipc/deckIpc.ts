@@ -1,7 +1,8 @@
 // Typed boundary around every Tauri command/event Studio.tsx talks to (see
-// src-tauri/src/peitho.rs for the Rust side — 12 #[tauri::command]s + the
-// `deck-file-changed`/`menu:new-deck`/`menu:undo`/`menu:redo`/`present-ready`
-// events emitted from lib.rs/edit_menu.rs/peitho.rs). Per
+// src-tauri/src/peitho.rs for the Rust side — its #[tauri::command]s + the
+// `deck-file-changed`/`menu:new-deck`/`menu:undo`/`menu:redo`/
+// `menu:deck-setting`/`present-ready`
+// events emitted from lib.rs/edit_menu.rs/deck_menu.rs/peitho.rs). Per
 // docs/architecture.md's layering: this is the sanctioned door for
 // `@tauri-apps/api/core`(`invoke`)/`.../event`(`listen`) — enforced by
 // `scripts/arch-check.test.ts`'s `components/` rule — so components/state
@@ -13,6 +14,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
+import type { DeckSettingsReport } from '../domain/deckSettings'
 import type { DeckVariant } from '../domain/deckVariants'
 import type { RenderPayload } from '../domain/render'
 import type { LayoutVerdict } from '../domain/layoutFit'
@@ -63,6 +65,10 @@ export interface DeckIpc {
    * `engine::layout_fit` in src-tauri. */
   checkSlideLayouts(content: string, slideIndex: number): Promise<LayoutVerdict[] | null>
   presentDeck(rehearsal: boolean): Promise<void>
+  /** Tells the native Deck menu which of its items this window's deck
+   * holds — shown while this window is in front. See
+   * `report_deck_settings` in peitho.rs. */
+  reportDeckSettings(settings: DeckSettingsReport): Promise<void>
   onDeckFileChanged(callback: () => void): Unsubscribe
   onMenuNewDeck(callback: () => void): Unsubscribe
   /** Edit > Undo (or its Cmd+Z accelerator), sent only to the focused
@@ -71,6 +77,10 @@ export interface DeckIpc {
   onMenuUndo(callback: () => void): Unsubscribe
   /** Edit > Redo (or Cmd+Shift+Z); see `onMenuUndo`. */
   onMenuRedo(callback: () => void): Unsubscribe
+  /** A Deck menu item, sent only to the focused window — see
+   * `src-tauri/src/deck_menu.rs`. The payload is unchecked here; read it
+   * with `parseDeckSettingPick`. */
+  onMenuDeckSetting(callback: (payload: unknown) => void): Unsubscribe
   /** Fires once the `peitho present` subprocess `presentDeck` launched has
    * actually rendered the deck and started serving it — see
    * `watch_present_readiness` in peitho.rs. Much closer to "the
@@ -96,6 +106,12 @@ export function subscribeToThisWindow(event: string, callback: () => void): Unsu
   return () => { void unlisten.then(stop => { stop() }) }
 }
 
+/** `subscribeToThisWindow` with the event's payload. */
+export function subscribeToThisWindowWithPayload<T>(event: string, callback: (payload: T) => void): Unsubscribe {
+  const unlisten = getCurrentWebviewWindow().listen<T>(event, e => { callback(e.payload) })
+  return () => { void unlisten.then(stop => { stop() }) }
+}
+
 export function subscribeWithPayload<T>(event: string, callback: (payload: T) => void): Unsubscribe {
   const unlisten = listen<T>(event, e => { callback(e.payload) })
   return () => { void unlisten.then(stop => { stop() }) }
@@ -116,10 +132,12 @@ export function createTauriDeckIpc(): DeckIpc {
     previewLayouts: () => invoke('preview_layouts'),
     checkSlideLayouts: (content, slideIndex) => invoke('check_slide_layouts', { content, slideIndex }),
     presentDeck: rehearsal => invoke('present_deck', { rehearsal }),
+    reportDeckSettings: settings => invoke('report_deck_settings', { settings }),
     onDeckFileChanged: callback => subscribe('deck-file-changed', callback),
     onMenuNewDeck: callback => subscribe('menu:new-deck', callback),
     onMenuUndo: callback => subscribeToThisWindow('menu:undo', callback),
     onMenuRedo: callback => subscribeToThisWindow('menu:redo', callback),
+    onMenuDeckSetting: callback => subscribeToThisWindowWithPayload('menu:deck-setting', callback),
     onPresentReady: callback => subscribe('present-ready', callback),
     onPresentFailed: callback => subscribeWithPayload('present-failed', callback),
   }
