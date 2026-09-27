@@ -16,6 +16,7 @@ import { MAX_HISTORY_DEPTH } from '../domain/editorHistory'
 import { editorTextChange, normalizeLineBreaks } from '../domain/editorText'
 import { parseVimMode, type VimMode } from '../domain/vimMode'
 import { canReplayTextGroup, carryTextHistory, trackTextHistory } from './textHistoryTracking'
+import { vimLastLineDelete } from './vimLastLineDelete'
 
 export interface CodeEditorOptions {
   /** Called with the full text after every change the user makes. */
@@ -155,7 +156,7 @@ const vimTab = keymap.of([{
 function vimExtension(options: CodeEditorOptions, on: boolean): Extension {
   // `status` shows the mode (`--INSERT--`) and hosts the `/` and `:`
   // prompts; `drawSelection` draws visual mode's selection.
-  return on ? [vim({ status: true }), drawSelection(), vimEvents(options), vimTab] : []
+  return on ? [vim({ status: true }), drawSelection(), vimEvents(options), vimTab, vimLastLineDelete()] : []
 }
 
 function editorExtensions(options: CodeEditorOptions, vimOn: boolean): Extension[] {
