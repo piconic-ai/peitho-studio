@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: デッキ全体の設定(page_numbers / aspect_ratio / breaks / lang)をネイティブの「Deck」メニューに集約し、ヘッダーのページ番号コントロールを外す
 tags: [deck-settings, frontmatter, native-menu]
 ---
@@ -171,15 +171,64 @@ Rust側で決める。
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `cargo test` グリーン
-- [ ] `bun run test:e2e` グリーン(書き換え・追加分を含む)
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `cargo test` グリーン
+- [x] `bun run test:e2e` グリーン(書き換え・追加分を含む)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機(`run-peitho-studio` skill)で、各項目のチェックが前面ウィンドウ
   のデッキに合わせて切り替わること(2ウィンドウで確認)
 - [ ] 実機で、4:3に切り替えたときサムネイルとプレビューの比率が変わること
 - [ ] メニュー名・項目名(特に`breaks`と`lang`の表記)の最終確認
+- [ ] 実機で、Cmd+`・Dockからの切り替え・新規ウィンドウを開いた直後の
+  それぞれでDeckメニューのチェックが前面ウィンドウに追従すること(要調査2)
+
+## 実装メモ
+
+- **要調査1(`set_checked`の即時反映)**: muda 0.19.3のmacOS実装を読んだ
+  結論として、`set_checked`/`set_enabled`は生成済みの各`NSMenuItem`に
+  `setState`/`setEnabled`を直接呼び、メニューは`setAutoenablesItems(false)`
+  なので、作り直し(`set_menu`)なしで次にメニューを開いたときから反映される
+  はず。実機での目視は上の人間の項目に残す。
+- **muda はクリックされたCheck項目のチェックを自分で反転してから
+  イベントを送る**(`fire_menu_item_click`)。そのため Deck メニューの
+  クリックごとに、報告済みの値からメニュー全体を当て直す
+  (`peitho::forward_deck_menu`)。チェックが動くのは、フロントが書き込んで
+  報告し直したとき。
+- **要調査2(`Focused(true)`の到達)**: コードからは確かめられないため、
+  2つの経路を持たせた。(1) `WindowEvent::Focused(true)`で前面を切り替える、
+  (2) フォーカス中のウィンドウが報告したら、それを前面とみなす(最初の
+  ウィンドウや新規ウィンドウが、フォーカスイベントより先に報告しても
+  拾える)。実機確認は人間の項目に残す。
+- **フォーカスを失ったとき**(`Focused(false)`)も前面から外し、メニューを
+  無効にする。最小化中などフォーカスのあるウィンドウがないのにメニューが
+  有効に見え、クリックが黙って捨てられるのを避けるため。
+- **Line Breaks as Written** は1項目のチェック。クリック時にRustは
+  `choice: "toggle"`を送り、フロントが直列化されたキューの中で、その時点の
+  値を反転する(`resolveDeckSettingPick`)。Rust側で最後の報告値から決めると、
+  書き込みの報告前に2回クリックしたとき両方「オン」になるため。
+- **イベントのペイロード**は計画の`{ key, value | null }`ではなく
+  `{ key, choice }`(候補そのもの。`page_numbers`は`none`を含む)にした。
+  「既定値ならキー削除」の判定をフロントの`frontmatterValueOf`1か所に
+  置くため。
+- **Undo**: `aspect_ratio`/`breaks`/`lang`は新しい汎用`FrontmatterStep`、
+  `page_numbers`は既存の`PageNumbersStep`のまま。削除したキーをUndoで戻すと
+  ブロックの末尾に入る(値は同じ。行末コメントは戻らない)。
+- **既知の制約(`resolution`との組み合わせ)**: frontmatterに`resolution`が
+  明示されたデッキでAspect Ratioを変えると、peitho-coreが
+  「resolution ... does not match aspect_ratio ...」で拒否し、エラーバナーが
+  出て保存されない(デッキは壊れない)。`resolution`はこのtodoのスコープ外
+  (`todo/pdf-export.md`)なので、あわせて書き換える・項目を無効にする等の
+  対応はそちらで判断する。
+- **未知の値**: `breaks: True`/`yes`のようにpeitho-core(YAML)は真と読むが
+  候補と完全一致しない値は、未知扱い(チェックなし)。選べば`true`に
+  置き換わる。
+- 報告コマンド`report_deck_settings`はメニューのチェック表示しか変えない
+  ので、デッキのレイアウトスクリプトから呼ばれても影響はメニューの表示に
+  限られる(`todo/deck-script-tauri-access.md`の観点)。
+- mock e2eのキャンバス寸法は、frontmatterの`aspect_ratio`から決めるように
+  した(peitho-coreと同じ規則)。4:3でプレビューのキャンバス幅が960に
+  なることまでは自動で確かめている。
 
 ## 先送り事項
 
