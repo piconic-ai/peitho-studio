@@ -21,7 +21,7 @@ Releaseは本文だけで、ユーザーはソースからビルドするしか�
   - Windows/Linuxビルド(Studioは今のところmacOSでしか実機検証していない。
     CLAUDE.mdのWKWebView前提)。
   - 自動アップデート(`todo/app-updater.md`、inbox)。
-  - テストCI(`todo/release-ci-tests.md`)。ただしこのワークフローは
+  - テストCI(`todo/archive/release-ci-tests.md`)。ただしこのワークフローは
     テストCIが通った`main`から切られるタグでのみ動く前提。
 - **受け入れ条件**:
   - `v0.1.0`のようなタグを押すと(またはtagprのReleaseが作られると)、

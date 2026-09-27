@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: PRとmainでフロント/Rustのテストと型検査を走らせるGitHub Actionsを追加する(リリース前)
 tags: [release, ci]
 ---
@@ -90,7 +90,11 @@ tags: [release, ci]
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [x] `rust`ジョブのランナー(macOS vs ubuntu)の最終決定(コスト) — macos-latest(公開リポジトリなので標準ランナーは無料)
-- [ ] ブランチ保護で必須チェックにするか
+- [x] ブランチ保護で必須チェックにするか — 今はしない(赤いままマージして
+  困った実績がなく、人がCIを見てからマージしている)。再検討するなら先に:
+  `test.yml`の`paths-ignore`をジョブ内の`if:`に移す(docsのみのPRで必須
+  チェックが永久にpendingになるため)、tagprのリリースPRの実行が
+  `action_required`で止まる件を手動承認かApp/PATトークンで解決する。
 
 ## 先送り事項
 
