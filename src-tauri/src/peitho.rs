@@ -152,6 +152,12 @@ impl PeithoSession {
         }
     }
 
+    /// Whether `label`'s window already has a deck open — `open_deck`
+    /// checks this before paying for a render it would refuse anyway.
+    fn has_session(&self, label: &str) -> bool {
+        self.0.lock().map(|guard| guard.contains_key(label)).unwrap_or(false)
+    }
+
     /// The label of a window that already has `target` open, if any — see
     /// `matching_window_label`. `open_deck_window` uses this to bring an
     /// already-open deck's window to the front instead of opening a
@@ -177,6 +183,28 @@ fn matching_window_label<'a>(mut open_decks: impl Iterator<Item = (&'a str, &'a 
         .find(|(_, path)| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()) == canonical_target)
         .map(|(label, _)| label.to_string())
 }
+
+/// Registers `state` as `label`'s session, refusing if that window already
+/// has one. A window's session is set exactly once: the app itself never
+/// re-opens a deck in a window that has one (`domain/deckLifecycle.ts`
+/// opens it in a new window instead), and a deck's own layout `<script>`
+/// runs in this window's document with the same `invoke` access as the
+/// app. Letting a second `open_deck` swap the session would let that
+/// script point `read_deck_source`/`save_deck_source` — and the editor's
+/// own autosave — at any file on disk (see
+/// `todo/deck-script-tauri-access.md`). A page reload clears the session
+/// first (`lib.rs`'s `on_page_load`), which also discards the script.
+/// Generic over the session value so it's testable without a real
+/// `SessionState`.
+fn insert_first_session<S>(sessions: &mut HashMap<String, S>, label: &str, state: S) -> Result<(), String> {
+    if sessions.contains_key(label) {
+        return Err(ALREADY_OPEN_ERROR.to_string());
+    }
+    sessions.insert(label.to_string(), state);
+    Ok(())
+}
+
+const ALREADY_OPEN_ERROR: &str = "a deck is already open in this window";
 
 /// A `path` argument normalized just enough to compare against an open
 /// window's own (already-resolved) `deck_path` — the same directory-to-
@@ -503,6 +531,9 @@ pub fn open_deck(
     window: WebviewWindow,
     session: State<PeithoSession>,
 ) -> Result<DeckSessionInfo, String> {
+    if session.has_session(window.label()) {
+        return Err(ALREADY_OPEN_ERROR.to_string());
+    }
     let deck_path = resolve_deck_path(&path)?;
     let deck_dir = deck_path
         .parent()
@@ -527,16 +558,14 @@ pub fn open_deck(
     };
 
     {
+        // Checked again under the lock: `open_deck` is async, so two calls
+        // can race past the early check above.
         let mut guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
-        if let Some(mut previous) = guard.remove(window.label()) {
-            if let Some(mut present) = previous.present_child.take() {
-                let _ = present.kill();
-            }
-        }
-        guard.insert(
-            window.label().to_string(),
+        insert_first_session(
+            &mut *guard,
+            window.label(),
             SessionState { deck_path, deck_dir, asset_server, present_child: None, _watcher: watcher },
-        );
+        )?;
     }
 
     remember_recent_deck(&app, &info.deck_path);
@@ -780,6 +809,44 @@ mod tests {
         // Case-sensitive, and no match on a mere substring occurring mid-line.
         assert!(!is_present_ready_line("Serving presentation at http://x"));
         assert!(!is_present_ready_line("now serving presentation at http://x"));
+    }
+
+    #[test]
+    fn insert_first_session_spec_registers_a_window_with_no_session() {
+        let mut sessions: HashMap<String, &str> = HashMap::new();
+        sessions.insert("deck-0".to_string(), "other window's deck");
+
+        assert!(insert_first_session(&mut sessions, "main", "deck.md").is_ok());
+        assert_eq!(sessions.get("main"), Some(&"deck.md"));
+        assert_eq!(sessions.get("deck-0"), Some(&"other window's deck"));
+    }
+
+    #[test]
+    fn insert_first_session_adversarial_refuses_to_swap_an_existing_session() {
+        let mut sessions: HashMap<String, &str> = HashMap::new();
+        sessions.insert("main".to_string(), "deck.md");
+
+        let err = insert_first_session(&mut sessions, "main", "/Users/me/.zshrc").unwrap_err();
+        assert_eq!(err, ALREADY_OPEN_ERROR);
+        assert_eq!(sessions.get("main"), Some(&"deck.md"));
+        assert_eq!(sessions.len(), 1);
+    }
+
+    #[test]
+    fn insert_first_session_adversarial_refuses_even_the_same_deck_again() {
+        let mut sessions: HashMap<String, &str> = HashMap::new();
+        sessions.insert("main".to_string(), "deck.md");
+
+        assert!(insert_first_session(&mut sessions, "main", "deck.md").is_err());
+    }
+
+    #[test]
+    fn insert_first_session_adversarial_empty_label_is_just_another_key() {
+        let mut sessions: HashMap<String, &str> = HashMap::new();
+
+        assert!(insert_first_session(&mut sessions, "", "deck.md").is_ok());
+        assert!(insert_first_session(&mut sessions, "", "deck.md").is_err());
+        assert!(insert_first_session(&mut sessions, "main", "deck.md").is_ok());
     }
 
     #[test]
