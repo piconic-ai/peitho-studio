@@ -422,8 +422,10 @@ export function Studio() {
       if (start !== null) toggleSectionAt(start)
     })
   })
-  // The deck's `page_numbers` setting, as the header's control shows it.
-  const pageNumbersMode = createMemo(() => parsePageNumbersMode(readFrontmatterKey(editor.fullSource(), PAGE_NUMBERS_KEY)))
+  // The deck's `page_numbers` setting: its raw frontmatter value (what an
+  // undo writes back), and as the header's control shows it.
+  const pageNumbersValue = createMemo(() => readFrontmatterKey(editor.fullSource(), PAGE_NUMBERS_KEY))
+  const pageNumbersMode = createMemo(() => parsePageNumbersMode(pageNumbersValue()))
   const currentMenuItems = createMemo(() => computeMenuItems(ui.contextMenu(), {
     slideCount: slideEntries().length,
     hasClipboard: ui.clipboardSlideText() !== null,
@@ -988,7 +990,7 @@ export function Studio() {
   // slide stays open: the step never moves or removes a slide.
   async function runPageNumbersStep(step: PageNumbersStep): Promise<StepOutcome> {
     const texts = currentSlideTexts()
-    const inverse = inversePageNumbersStep(texts, readFrontmatterKey(editor.fullSource(), PAGE_NUMBERS_KEY))
+    const inverse = inversePageNumbersStep(texts, pageNumbersValue())
     const nextSource = setFrontmatterKey(rebuildSource(applyPageNumbersStep(texts, step)), PAGE_NUMBERS_KEY, step.value)
     const ok = await commitChange(nextSource, { kind: 'keep' })
     return ok ? { kind: 'done', inverse } : { kind: 'failed' }

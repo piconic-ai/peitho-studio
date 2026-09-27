@@ -98,11 +98,9 @@ export function setFrontmatterKey(source: string, key: string, value: string | n
   if (line === null) {
     if (location === null) return source
     lines.splice(location.start, location.end - location.start)
-    const remaining = lines.slice(1, closeIndex - (location.end - location.start))
-    if (remaining.every(l => l.trim() === '')) {
-      return lines.slice(closeIndex - (location.end - location.start) + 1).join('\n')
-    }
-    return lines.join('\n')
+    const newCloseIndex = closeIndex - (location.end - location.start)
+    const emptied = lines.slice(1, newCloseIndex).every(l => l.trim() === '')
+    return (emptied ? lines.slice(newCloseIndex + 1) : lines).join('\n')
   }
   if (location === null) {
     const cr = lines[closeIndex].endsWith('\r') ? '\r' : ''
