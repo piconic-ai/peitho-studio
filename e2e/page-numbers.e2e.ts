@@ -1,12 +1,12 @@
-// Deck > Page Numbers (Off / 1 / 1/N) writes the deck's frontmatter
+// Edit > Page Numbers (Off / 1 / 1/N) writes the deck's frontmatter
 // `page_numbers`, and the slide context menu's Hide Page Number writes a
 // slide's `page_number:false` (see `setDeckSetting` and
 // `toggleSlidePageNumber` in `components/Studio.tsx`). The native menu
 // can't be clicked from here, so these send the `menu:deck-setting` event
 // Rust would, and read back what the window reports for the menu's check
-// marks. The mock stands in for peitho-core, so this checks what gets
-// saved, not how the number looks on a slide — that comes from the theme
-// CSS and needs a real device.
+// marks and label. The mock stands in for peitho-core, so this checks what
+// gets saved, not how the number looks on a slide — that comes from the
+// theme CSS and needs a real device.
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 
@@ -15,13 +15,17 @@ const NUMBERED_DECK = `---\npage_numbers: current\n---\n<!-- {"key":"one","page_
 
 type Choice = 'none' | 'current' | 'current_of_total'
 
+type Reported = { kind: 'known'; choice: string } | { kind: 'unknown'; raw: string }
+
 /** Opens `deck`, returning the `page_numbers` value of every settings
- * report the window sends the Deck menu (`null`: a value it doesn't
- * offer). */
-async function openDeck(page: Page, deck: MockDeck): Promise<(string | null)[]> {
-  const reported: (string | null)[] = []
+ * report the window sends the Edit menu: the choice, or `raw:<text>` for a
+ * value it doesn't offer (shown as is in the menu's label). */
+async function openDeck(page: Page, deck: MockDeck): Promise<string[]> {
+  const reported: string[] = []
   deck.onInvoke = (cmd, args) => {
-    if (cmd === 'report_deck_settings') reported.push((args.settings as { page_numbers: string | null }).page_numbers)
+    if (cmd !== 'report_deck_settings') return
+    const value = (args.settings as { page_numbers: Reported }).page_numbers
+    reported.push(value.kind === 'known' ? value.choice : `raw:${value.raw}`)
   }
   await mockTauri(page, deck)
   await page.goto('/')
@@ -36,7 +40,7 @@ async function emit(page: Page, event: string, payload: unknown): Promise<void> 
   }, { event, payload })
 }
 
-/** Deck > Page Numbers > `choice`. */
+/** Edit > Page Numbers > `choice`. */
 function pickPageNumbers(page: Page, choice: Choice): Promise<void> {
   return emit(page, 'menu:deck-setting', { key: 'page_numbers', choice })
 }
@@ -119,10 +123,10 @@ test('Given a deck with numbers off, when a slide is right-clicked, then "Hide P
   await expect(await contextMenuItem(page, 0, 'Hide Page Number')).toBeDisabled()
 })
 
-test('Given a deck with an unknown page_numbers value, when it is opened, then the menu is told it is none of its choices; picking one replaces it', async ({ page }) => {
+test('Given a deck with an unknown page_numbers value, when it is opened, then the menu is told its raw value, none of its choices; picking one replaces it', async ({ page }) => {
   const deck: MockDeck = { source: `---\npage_numbers: both\n---\n${PLAIN_DECK}` }
   const reported = await openDeck(page, deck)
-  await expect.poll(() => reported.at(-1)).toBeNull()
+  await expect.poll(() => reported.at(-1)).toBe('raw:both')
 
   await pickPageNumbers(page, 'current')
 
