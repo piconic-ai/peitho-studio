@@ -30,6 +30,16 @@ export interface MockDeck {
    * driven. Set a fake directory path for a test that needs "Open Deck…"/
    * "New Deck…" to proceed past the picker. */
   dialogPath?: string | null
+  /** What `take_pending_deck` answers, consumed exactly once — defaults to
+   * `null` (nothing waiting), matching a plain launch. Stands in for
+   * Rust-side `PendingDecks`: a `deck-N` window `open_deck_window_impl`
+   * spawned (Open Deck…/Open Recent/variant switch), or — since
+   * `finder_open_target` in peitho.rs — the `main` window itself, reused
+   * for Finder's first double-click since launch instead of opening a
+   * redundant second window. This mock always plays `main` (see
+   * `currentWindow` below), so setting this is how a test exercises that
+   * second case. */
+  pendingDeck?: string | null
   /** When this returns non-null for a given command + args, that
    * `invoke()` call rejects with the message instead of succeeding — lets
    * a test simulate any backend failure (a peitho-core build error on
@@ -225,7 +235,13 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
     if (error !== null && error !== undefined) throw new Error(error)
     switch (cmd) {
       case 'dev_default_deck': return deck.devDefaultDeck === undefined ? '/fake/deck.md' : deck.devDefaultDeck
-      case 'take_pending_deck': return null
+      case 'take_pending_deck': {
+        // Real `take_pending_deck` removes the entry it hands back —
+        // consumed exactly once, same as `PendingDecks` in peitho.rs.
+        const pending = deck.pendingDeck ?? null
+        deck.pendingDeck = null
+        return pending
+      }
       case 'get_recent_decks': return deck.recentDecks ?? []
       case 'open_deck':
         return { deckPath: deck.source, deckDir: '/fake', trusted: deck.trusted ?? false, render: renderPayloadFor(deck.source, deck) }

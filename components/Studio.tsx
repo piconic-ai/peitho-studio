@@ -1537,7 +1537,16 @@ export function Studio() {
       const pending = await deckIpc.takePendingDeck()
       if (pending) {
         await dispatch({ type: 'open-requested', path: pending })
-        if (deck.deckLifecycle().kind !== 'open') {
+        // `main` (the app's own launch/welcome window) can now also
+        // receive a `pending` path directly — Finder's first double-click
+        // since launch reuses it instead of opening a redundant second
+        // window (see `finder_open_target` in peitho.rs) — and unlike a
+        // `deck-N` window spawned solely to show one pending deck, `main`
+        // isn't disposable: closing it on a bad path (a moved/deleted
+        // file) would leave the app with no window and no visible error
+        // at all, which `todo/finder-file-association.md`'s acceptance
+        // criteria rule out.
+        if (deck.deckLifecycle().kind !== 'open' && getCurrentWindow().label !== 'main') {
           // This window exists solely to show `pending` (e.g. a Recent
           // entry that pointed at a folder deleted/moved since it was
           // remembered) — closing it returns focus to whichever window
