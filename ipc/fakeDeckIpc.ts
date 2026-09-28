@@ -65,6 +65,7 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
       return payload
     },
     checkSlideLayouts: async (content, slideIndex) => { record('checkSlideLayouts', [content, slideIndex]); return null },
+    addImageLayout: async (content, slideIndex) => { record('addImageLayout', [content, slideIndex]); return [] },
     presentDeck: async rehearsal => { record('presentDeck', [rehearsal]) },
     reportDeckSettings: async settings => { record('reportDeckSettings', [settings]) },
     trustOpenDeck: async () => { record('trustOpenDeck', []) },

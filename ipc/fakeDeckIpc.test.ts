@@ -34,6 +34,12 @@ describe('createFakeDeckIpc', () => {
     expect(ipc.calls).toEqual([{ method: 'checkSlideLayouts', args: ['# One\n', 0] }])
   })
 
+  test('spec: addImageLayout defaults to writing nothing and records both args', async () => {
+    const ipc = createFakeDeckIpc()
+    expect(await ipc.addImageLayout('# One\n', 0)).toEqual([])
+    expect(ipc.calls).toEqual([{ method: 'addImageLayout', args: ['# One\n', 0] }])
+  })
+
   test('spec: an override replaces the default behavior and is not auto-recorded', async () => {
     const ipc = createFakeDeckIpc({ getRecentDecks: async () => ['/a/deck.md', '/b/deck.md'] })
     expect(await ipc.getRecentDecks()).toEqual(['/a/deck.md', '/b/deck.md'])
