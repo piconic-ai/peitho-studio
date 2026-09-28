@@ -114,6 +114,15 @@ export interface Messages {
   presenting: string
   presentingRehearsal: string
   externalChangeConfirm: string
+
+  // About window
+  aboutDescription: string
+  aboutVersion: string
+  aboutBuild: string
+  aboutCommit: string
+  aboutOpenCommit: string
+  aboutWebsite: string
+  aboutLicense: string
 }
 
 const en: Messages = {
@@ -209,6 +218,15 @@ const en: Messages = {
   presenting: 'Presenting…',
   presentingRehearsal: 'Presenting (rehearsal)…',
   externalChangeConfirm: 'This deck changed outside Peitho Studio (e.g. another editor). Reload it and discard your unsaved edits here?',
+
+  // Same words as the site's (site/index.html).
+  aboutDescription: 'Write slides with Peitho. Plain Markdown and HTML, so AI can help you.',
+  aboutVersion: 'Version',
+  aboutBuild: 'Build',
+  aboutCommit: 'Commit',
+  aboutOpenCommit: 'Open this commit on GitHub',
+  aboutWebsite: 'Website',
+  aboutLicense: 'License',
 }
 
 const ja: Messages = {
@@ -304,6 +322,14 @@ const ja: Messages = {
   presenting: '発表中…',
   presentingRehearsal: '発表中(リハーサル)…',
   externalChangeConfirm: 'このデッキはPeitho Studioの外(ほかのエディタなど)で変更されました。読み込み直して、ここでの未保存の編集を破棄しますか?',
+
+  aboutDescription: 'Peithoでスライドを書く。素のMarkdownとHTMLなので、AIに手伝ってもらえます。',
+  aboutVersion: 'バージョン',
+  aboutBuild: 'ビルド',
+  aboutCommit: 'コミット',
+  aboutOpenCommit: 'このコミットをGitHubで開く',
+  aboutWebsite: 'Webサイト',
+  aboutLicense: 'ライセンス',
 }
 
 const MESSAGES: Readonly<Record<Language, Messages>> = { en, ja }
