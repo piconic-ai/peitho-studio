@@ -7,22 +7,21 @@
 // peitho-core; like it, it sizes the canvas from `aspect_ratio`.
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
+import type { DeckSettingsState } from '../domain/deckSettings'
 
 const PLAIN_DECK = '<!-- {"key":"one"} -->\n# Slide One\n\n---\n\n<!-- {"key":"two"} -->\n# Slide Two\n'
 const DEFAULTS = { page_numbers: 'none', aspect_ratio: '16:9', breaks: 'false', lang: 'en' }
 
-type Report = Record<string, { kind: 'known'; choice: string } | { kind: 'unknown'; raw: string }>
-
 /** A report with each known choice as its string, and an unknown value as
  * `raw:<text>` — the text the menu shows next to the setting's name. */
-function compact(report: Report): Record<string, string> {
+function compact(report: DeckSettingsState): Record<string, string> {
   return Object.fromEntries(Object.entries(report).map(([key, s]) => [key, s.kind === 'known' ? s.choice : `raw:${s.raw}`]))
 }
 
 /** Opens `deck`, collecting every settings report the window sends. */
 async function openDeck(page: Page, deck: MockDeck): Promise<unknown[]> {
   const reports: unknown[] = []
-  deck.onInvoke = (cmd, args) => { if (cmd === 'report_deck_settings') reports.push(compact(args.settings as Report)) }
+  deck.onInvoke = (cmd, args) => { if (cmd === 'report_deck_settings') reports.push(compact(args.settings as DeckSettingsState)) }
   await mockTauri(page, deck)
   await page.goto('/')
   await expect(page.locator('[data-slide-row]')).toHaveCount(2, { timeout: 10_000 })
