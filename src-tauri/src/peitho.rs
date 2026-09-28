@@ -23,7 +23,7 @@ use serde::Serialize;
 use tauri::menu::Menu;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
-use crate::deck_menu::{self, DeckSettings, DeckSettingsRegistry};
+use crate::deck_menu::{self, DeckSettings, DeckSettingsRegistry, SettingKey};
 use crate::deck_variants;
 use crate::edit_menu;
 use crate::i18n::{self, Language, MenuLabels};
@@ -304,10 +304,54 @@ pub fn dev_default_deck() -> Option<String> {
     std::env::var("PEITHO_STUDIO_DEV_DECK").ok()
 }
 
-const STARTER_DECK: &str = "---\ntime: 1m\n---\n\
-<!-- {\"key\":\"cover\",\"section\":\"Intro\",\"time\":\"1m\"} -->\n\
+/// The starter `deck.md` after its frontmatter (see `starter_deck`).
+const STARTER_BODY: &str = "<!-- {\"key\":\"cover\",\"section\":\"Intro\",\"time\":\"1m\"} -->\n\
 # New Presentation\n\n\
 Start writing your slides here.\n";
+
+/// The deck settings the New Deck dialog picks, each one of its key's
+/// choices in `deck_menu::SettingKey`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct NewDeckSettings {
+    aspect_ratio: &'static str,
+    lang: &'static str,
+}
+
+impl NewDeckSettings {
+    /// Reads `create_deck`'s arguments: an absent one is its key's default,
+    /// and anything that isn't one of the key's choices, spelled exactly,
+    /// is an error — the same values the Edit menu offers.
+    fn parse(aspect_ratio: Option<&str>, lang: Option<&str>) -> Result<Self, String> {
+        Ok(Self {
+            aspect_ratio: parse_new_deck_choice(SettingKey::AspectRatio, aspect_ratio)?,
+            lang: parse_new_deck_choice(SettingKey::Lang, lang)?,
+        })
+    }
+}
+
+/// `value` as one of `key`'s choices, the default when absent.
+fn parse_new_deck_choice(key: SettingKey, value: Option<&str>) -> Result<&'static str, String> {
+    let Some(value) = value else { return Ok(key.default_choice()) };
+    key.choice_of(value)
+        .ok_or_else(|| format!("unknown {} '{value}'; use one of: {}", key.as_str(), key.choices().join(", ")))
+}
+
+/// The frontmatter line setting `key` to `choice`, or `None` for the
+/// default, which is left to peitho-core by not writing the key — as the
+/// Edit menu does when the default is picked.
+fn frontmatter_line(key: SettingKey, choice: &str) -> Option<String> {
+    (choice != key.default_choice()).then(|| format!("{}: {choice}", key.as_str()))
+}
+
+/// The starter `deck.md`: a frontmatter holding `time: 1m` and each
+/// setting that isn't its default, then the one-slide body.
+fn starter_deck(settings: NewDeckSettings) -> String {
+    let lines: Vec<String> = std::iter::once("time: 1m".to_string())
+        .chain(frontmatter_line(SettingKey::AspectRatio, settings.aspect_ratio))
+        .chain(frontmatter_line(SettingKey::Lang, settings.lang))
+        .collect();
+    format!("---\n{}\n---\n{STARTER_BODY}", lines.join("\n"))
+}
 
 /// Mirrors the header `peitho new` prepends to its scaffolded
 /// `css/base.css` (see `crates/peitho/src/new_cmd.rs::BASE_CSS_HEADER` in
@@ -339,9 +383,9 @@ fn validate_deck_name(name: &str) -> Result<&str, String> {
 /// directories `peitho build`/`preview`/`present` write into. Split out
 /// of `create_deck` as its own pure function so the scaffold's shape is
 /// unit-testable without touching the filesystem.
-fn scaffold_deck_files() -> Vec<(&'static str, String)> {
+fn scaffold_deck_files(settings: NewDeckSettings) -> Vec<(&'static str, String)> {
     vec![
-        ("deck.md", STARTER_DECK.to_string()),
+        ("deck.md", starter_deck(settings)),
         ("layouts/title-body-code.html", builtin::LAYOUT_HTML.to_string()),
         ("css/base.css", format!("{BASE_CSS_HEADER}{}", builtin::BASE_CSS)),
         (".gitignore", builtin::GITIGNORE.to_string()),
@@ -350,17 +394,21 @@ fn scaffold_deck_files() -> Vec<(&'static str, String)> {
 
 /// Creates `<parent_dir>/<name>` scaffolded the way `peitho new` would
 /// (see `scaffold_deck_files`) and returns the new `deck.md`'s path (for
-/// the frontend to hand straight to `open_deck_window`).
+/// the frontend to hand straight to `open_deck_window`). `aspect_ratio`
+/// and `lang` are the New Deck dialog's picks: an absent one is its key's
+/// default, and a value that isn't one of the key's choices creates
+/// nothing.
 #[tauri::command]
-pub fn create_deck(parent_dir: String, name: String) -> Result<String, String> {
+pub fn create_deck(parent_dir: String, name: String, aspect_ratio: Option<String>, lang: Option<String>) -> Result<String, String> {
     let trimmed = validate_deck_name(&name)?;
+    let settings = NewDeckSettings::parse(aspect_ratio.as_deref(), lang.as_deref())?;
     let dir = PathBuf::from(&parent_dir).join(trimmed);
     if dir.exists() {
         return Err(format!("{} already exists", dir.display()));
     }
     std::fs::create_dir_all(&dir).map_err(|err| format!("failed to create {}: {err}", dir.display()))?;
 
-    for (relative_path, content) in scaffold_deck_files() {
+    for (relative_path, content) in scaffold_deck_files(settings) {
         let path = dir.join(relative_path);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
@@ -1018,9 +1066,71 @@ mod tests {
         assert_eq!(validate_deck_name("v1.2").unwrap(), "v1.2");
     }
 
+    fn default_new_deck_settings() -> NewDeckSettings {
+        NewDeckSettings::parse(None, None).unwrap()
+    }
+
+    /// The frontmatter lines of a starter deck, between its `---` fences.
+    fn starter_frontmatter(deck: &str) -> Vec<&str> {
+        let rest = deck.strip_prefix("---\n").expect("opens with a frontmatter fence");
+        let (frontmatter, _) = rest.split_once("\n---\n").expect("closes its frontmatter");
+        frontmatter.lines().collect()
+    }
+
+    #[test]
+    fn given_no_settings_when_parsed_then_each_is_peitho_cores_default() {
+        assert_eq!(default_new_deck_settings(), NewDeckSettings { aspect_ratio: "16:9", lang: "en" });
+    }
+
+    #[test]
+    fn given_each_choice_when_parsed_then_it_is_kept() {
+        assert_eq!(NewDeckSettings::parse(Some("4:3"), Some("ja")), Ok(NewDeckSettings { aspect_ratio: "4:3", lang: "ja" }));
+        assert_eq!(NewDeckSettings::parse(Some("16:9"), Some("en")), Ok(NewDeckSettings { aspect_ratio: "16:9", lang: "en" }));
+    }
+
+    #[test]
+    fn given_a_value_that_is_not_a_choice_when_parsed_then_it_is_an_error_naming_the_key_and_its_choices() {
+        let err = NewDeckSettings::parse(Some("21:9"), None).unwrap_err();
+        assert_eq!(err, "unknown aspect_ratio '21:9'; use one of: 16:9, 4:3");
+        let err = NewDeckSettings::parse(None, Some("fr")).unwrap_err();
+        assert_eq!(err, "unknown lang 'fr'; use one of: en, ja");
+    }
+
+    #[test]
+    fn given_an_empty_or_misspelled_value_when_parsed_then_it_is_an_error_not_the_default() {
+        for value in ["", " ", "4:3 ", "4：3", "JA", "ja\n"] {
+            assert!(NewDeckSettings::parse(Some(value), None).is_err(), "aspect_ratio {value:?}");
+            assert!(NewDeckSettings::parse(None, Some(value)).is_err(), "lang {value:?}");
+        }
+    }
+
+    #[test]
+    fn given_each_combination_when_the_starter_deck_is_built_then_only_non_defaults_are_written() {
+        let cases = [
+            ("16:9", "en", vec!["time: 1m"]),
+            ("4:3", "en", vec!["time: 1m", "aspect_ratio: 4:3"]),
+            ("16:9", "ja", vec!["time: 1m", "lang: ja"]),
+            ("4:3", "ja", vec!["time: 1m", "aspect_ratio: 4:3", "lang: ja"]),
+        ];
+        for (aspect_ratio, lang, expected) in cases {
+            let deck = starter_deck(NewDeckSettings { aspect_ratio, lang });
+            assert_eq!(starter_frontmatter(&deck), expected, "{aspect_ratio} {lang}");
+            assert!(deck.ends_with(STARTER_BODY), "{aspect_ratio} {lang}");
+        }
+    }
+
+    #[test]
+    fn given_the_defaults_when_the_starter_deck_is_built_then_it_is_the_same_as_before_settings_existed() {
+        let before = "---\ntime: 1m\n---\n\
+<!-- {\"key\":\"cover\",\"section\":\"Intro\",\"time\":\"1m\"} -->\n\
+# New Presentation\n\n\
+Start writing your slides here.\n";
+        assert_eq!(starter_deck(default_new_deck_settings()), before);
+    }
+
     #[test]
     fn scaffold_deck_files_spec_matches_peitho_news_default_scaffold_shape() {
-        let files = scaffold_deck_files();
+        let files = scaffold_deck_files(default_new_deck_settings());
         let paths: Vec<&str> = files.iter().map(|(path, _)| *path).collect();
         assert_eq!(
             paths,
@@ -1040,7 +1150,7 @@ mod tests {
 
     #[test]
     fn scaffold_deck_files_adversarial_every_file_has_nonempty_content() {
-        for (path, content) in scaffold_deck_files() {
+        for (path, content) in scaffold_deck_files(default_new_deck_settings()) {
             assert!(!content.is_empty(), "{path} scaffolded with empty content");
         }
     }
@@ -1048,7 +1158,7 @@ mod tests {
     #[test]
     fn create_deck_spec_writes_the_full_scaffold_and_returns_the_deck_md_path() {
         let parent = tempfile::tempdir().unwrap();
-        let deck_path = create_deck(parent.path().to_str().unwrap().to_string(), "my-talk".to_string()).unwrap();
+        let deck_path = create_deck(parent.path().to_str().unwrap().to_string(), "my-talk".to_string(), None, None).unwrap();
 
         let dir = parent.path().join("my-talk");
         assert_eq!(deck_path, dir.join("deck.md").display().to_string());
@@ -1063,8 +1173,48 @@ mod tests {
         let parent = tempfile::tempdir().unwrap();
         std::fs::create_dir(parent.path().join("my-talk")).unwrap();
 
-        let err = create_deck(parent.path().to_str().unwrap().to_string(), "my-talk".to_string()).unwrap_err();
+        let err = create_deck(parent.path().to_str().unwrap().to_string(), "my-talk".to_string(), None, None).unwrap_err();
         assert!(err.contains("already exists"));
+    }
+
+    fn create_deck_with(parent: &Path, aspect_ratio: &str, lang: &str) -> Result<String, String> {
+        create_deck(parent.to_str().unwrap().to_string(), "my-talk".to_string(), Some(aspect_ratio.to_string()), Some(lang.to_string()))
+    }
+
+    #[test]
+    fn given_4_3_and_ja_when_a_deck_is_created_then_its_deck_md_holds_both() {
+        let parent = tempfile::tempdir().unwrap();
+        let deck_path = create_deck_with(parent.path(), "4:3", "ja").unwrap();
+
+        let deck = std::fs::read_to_string(deck_path).unwrap();
+        assert_eq!(starter_frontmatter(&deck), ["time: 1m", "aspect_ratio: 4:3", "lang: ja"]);
+    }
+
+    #[test]
+    fn given_an_unknown_setting_when_a_deck_is_created_then_nothing_is_written() {
+        let parent = tempfile::tempdir().unwrap();
+        let err = create_deck_with(parent.path(), "21:9", "en").unwrap_err();
+
+        assert!(err.contains("aspect_ratio"), "{err}");
+        assert!(!parent.path().join("my-talk").exists());
+    }
+
+    #[test]
+    fn given_every_combination_when_a_created_deck_is_rendered_then_peitho_core_accepts_it_at_that_ratio() {
+        for (aspect_ratio, lang) in [("16:9", "en"), ("4:3", "en"), ("16:9", "ja"), ("4:3", "ja")] {
+            let parent = tempfile::tempdir().unwrap();
+            let deck_path = PathBuf::from(create_deck_with(parent.path(), aspect_ratio, lang).unwrap());
+            let source = std::fs::read_to_string(&deck_path).unwrap();
+
+            let output = pipeline::render_source(&deck_path, &source)
+                .unwrap_or_else(|err| panic!("{aspect_ratio} {lang}: {err}"));
+            let manifest: serde_json::Value = serde_json::from_str(&output.manifest_json).unwrap();
+            assert_eq!(manifest["aspectRatio"], aspect_ratio, "{aspect_ratio} {lang}");
+            let (ratio_w, ratio_h) = aspect_ratio.split_once(':').unwrap();
+            let (width, height) = (manifest["canvasWidth"].as_u64().unwrap(), manifest["canvasHeight"].as_u64().unwrap());
+            assert_eq!(width * ratio_h.parse::<u64>().unwrap(), height * ratio_w.parse::<u64>().unwrap(), "{aspect_ratio}: {width}x{height}");
+            assert_eq!(output.fragments.len(), 1, "{aspect_ratio} {lang}");
+        }
     }
 
     #[test]

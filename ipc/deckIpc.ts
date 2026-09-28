@@ -16,6 +16,7 @@ import { listen } from '@tauri-apps/api/event'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import type { DeckSettingsState } from '../domain/deckSettings'
 import type { DeckVariant } from '../domain/deckVariants'
+import type { NewDeckSettings } from '../domain/newDeckSettings'
 import type { RenderPayload } from '../domain/render'
 import type { LayoutVerdict } from '../domain/layoutFit'
 
@@ -47,7 +48,9 @@ export type Unsubscribe = () => void
 
 export interface DeckIpc {
   devDefaultDeck(): Promise<string | null>
-  createDeck(parentDir: string, name: string): Promise<string>
+  /** Creates `<parentDir>/<name>` with `settings` in its frontmatter (only
+   * the ones that aren't the default) and returns its `deck.md`'s path. */
+  createDeck(parentDir: string, name: string, settings: NewDeckSettings): Promise<string>
   openDeckVariant(path: string): Promise<void>
   takePendingDeck(): Promise<string | null>
   getRecentDecks(): Promise<string[]>
@@ -119,7 +122,8 @@ export function subscribeWithPayload<T>(event: string, callback: (payload: T) =>
 export function createTauriDeckIpc(): DeckIpc {
   return {
     devDefaultDeck: () => invoke('dev_default_deck'),
-    createDeck: (parentDir, name) => invoke('create_deck', { parentDir, name }),
+    createDeck: (parentDir, name, settings) =>
+      invoke('create_deck', { parentDir, name, aspectRatio: settings.aspect_ratio, lang: settings.lang }),
     openDeckVariant: path => invoke('open_deck_variant', { path }),
     takePendingDeck: () => invoke('take_pending_deck'),
     getRecentDecks: () => invoke('get_recent_decks'),

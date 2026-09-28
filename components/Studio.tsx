@@ -63,6 +63,7 @@ import {
 } from '../domain/slides'
 import { WelcomeScreen } from './WelcomeScreen'
 import { NewDeckModal } from './NewDeckModal'
+import type { NewDeckSettings } from '../domain/newDeckSettings'
 import { SettingsPanel } from './SettingsPanel'
 import { DeckHeader } from './DeckHeader'
 import { StatusBar } from './StatusBar'
@@ -103,7 +104,7 @@ export function Studio() {
     if (decision.effect === 'invoke-open' && next.kind === 'opening') {
       await runOpen(next.path)
     } else if (decision.effect === 'invoke-create' && next.kind === 'creating') {
-      await runCreate(next.parentDir, next.name)
+      await runCreate(next.parentDir, next.name, next.settings)
     } else if (decision.effect === 'spawn-window' && event.type === 'open-requested') {
       await openDeckInNewWindow(event.path)
     }
@@ -134,10 +135,10 @@ export function Studio() {
       await dispatch({ type: 'failed', message: String(err) })
     }
   }
-  async function runCreate(parentDir: string, name: string): Promise<void> {
+  async function runCreate(parentDir: string, name: string, settings: NewDeckSettings): Promise<void> {
     setErrorMessage(null)
     try {
-      const path = await deckIpc.createDeck(parentDir, name)
+      const path = await deckIpc.createDeck(parentDir, name, settings)
       await dispatch({ type: 'created', path })
     } catch (err) {
       setErrorMessage(String(err))
@@ -1882,9 +1883,11 @@ export function Studio() {
         isOpen={deck.newDeckModalOpen()}
         name={deck.newDeckName()}
         parentDir={deck.newDeckParentDir()}
+        settings={deck.newDeckSettings()}
         isBusy={deck.isBusy()}
         errorMessage={errorMessage()}
         onNameChange={name => void dispatch({ type: 'name-changed', name })}
+        onSettingChange={pick => void dispatch({ type: 'setting-changed', pick })}
         onCancel={() => { setErrorMessage(null); void dispatch({ type: 'create-cancelled' }) }}
         onConfirm={() => void dispatch({ type: 'create-confirmed' })}
       />

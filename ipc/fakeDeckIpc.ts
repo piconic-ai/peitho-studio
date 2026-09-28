@@ -46,7 +46,7 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
 
   const base: DeckIpc = {
     devDefaultDeck: async () => { record('devDefaultDeck', []); return null },
-    createDeck: async (parentDir, name) => { record('createDeck', [parentDir, name]); return `${parentDir}/${name}/deck.md` },
+    createDeck: async (parentDir, name, settings) => { record('createDeck', [parentDir, name, settings]); return `${parentDir}/${name}/deck.md` },
     openDeckVariant: async path => { record('openDeckVariant', [path]) },
     takePendingDeck: async () => { record('takePendingDeck', []); return null },
     getRecentDecks: async () => { record('getRecentDecks', []); return [] },

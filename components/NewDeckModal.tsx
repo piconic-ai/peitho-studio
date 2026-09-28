@@ -2,6 +2,8 @@
 
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
+import { DECK_SETTING_CHOICES } from '../domain/deckSettings'
+import { newDeckChoiceLabel, type NewDeckSettingPick, type NewDeckSettings } from '../domain/newDeckSettings'
 // Props here are values (`isBusy={isBusy()}`), not signal getters — see
 // `components/WelcomeScreen.tsx` for why (BF044). `isOpen` gates rendering
 // inside this component (a single sibling condition, not a nested
@@ -14,9 +16,12 @@ export interface NewDeckModalProps {
   isOpen: boolean
   name: string
   parentDir: string | null
+  /** The aspect ratio and language the deck will be created with. */
+  settings: NewDeckSettings
   isBusy: boolean
   errorMessage: string | null
   onNameChange: (name: string) => void
+  onSettingChange: (pick: NewDeckSettingPick) => void
   onCancel: () => void
   onConfirm: () => void
 }
@@ -59,6 +64,47 @@ export function NewDeckModal(props: NewDeckModalProps) {
                 while this modal stays open is exactly the null-to-string,
                 well-after-mount transition that pattern silently drops). */}
             <div hidden={props.errorMessage === null} className="text-xs text-destructive">{props.errorMessage}</div>
+          </div>
+          {/* Buttons rather than a `<select>`, as in SettingsPanel's language
+              picker: with two choices each, both stay in view, and the
+              choices are the Edit menu's own (`DECK_SETTING_CHOICES`). */}
+          <div className="mb-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <span id="new-deck-aspect-ratio-label" className="text-xs text-muted-foreground">{messagesFor(props.language).newDeckAspectRatio}</span>
+              <div role="radiogroup" aria-labelledby="new-deck-aspect-ratio-label" className="flex rounded-md border border-border overflow-hidden">
+                {DECK_SETTING_CHOICES.aspect_ratio.map(choice => (
+                  <button
+                    type="button"
+                    key={choice}
+                    role="radio"
+                    aria-checked={props.settings.aspect_ratio === choice ? 'true' : 'false'}
+                    disabled={props.isBusy}
+                    onClick={() => props.onSettingChange({ key: 'aspect_ratio', choice })}
+                    className={(props.settings.aspect_ratio === choice ? 'bg-primary text-primary-foreground ' : 'hover:bg-accent ') + 'px-3 py-1 text-xs disabled:opacity-50'}
+                  >
+                    {newDeckChoiceLabel('aspect_ratio', choice)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span id="new-deck-language-label" className="text-xs text-muted-foreground">{messagesFor(props.language).newDeckLanguage}</span>
+              <div role="radiogroup" aria-labelledby="new-deck-language-label" className="flex rounded-md border border-border overflow-hidden">
+                {DECK_SETTING_CHOICES.lang.map(choice => (
+                  <button
+                    type="button"
+                    key={choice}
+                    role="radio"
+                    aria-checked={props.settings.lang === choice ? 'true' : 'false'}
+                    disabled={props.isBusy}
+                    onClick={() => props.onSettingChange({ key: 'lang', choice })}
+                    className={(props.settings.lang === choice ? 'bg-primary text-primary-foreground ' : 'hover:bg-accent ') + 'px-3 py-1 text-xs disabled:opacity-50'}
+                  >
+                    {newDeckChoiceLabel('lang', choice)}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <button

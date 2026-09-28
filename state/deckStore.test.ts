@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { createRoot } from '@barefootjs/client'
 import { createDeckStore } from './deckStore'
+import { defaultNewDeckSettings } from '../domain/newDeckSettings'
+
+const DEFAULTS = defaultNewDeckSettings()
 
 describe('showEditor', () => {
   test('spec: true for opening and open, so the editor shell appears the instant a click is handled — before deckPath() has any value', () => {
@@ -21,11 +24,46 @@ describe('showEditor', () => {
       const store = createDeckStore()
       expect(store.showEditor()).toBe(false)
 
-      store.setDeckLifecycle({ kind: 'naming-new-deck', parentDir: '/a', name: '' })
+      store.setDeckLifecycle({ kind: 'naming-new-deck', parentDir: '/a', name: '', settings: DEFAULTS })
       expect(store.showEditor()).toBe(false)
 
-      store.setDeckLifecycle({ kind: 'creating', parentDir: '/a', name: 'talk' })
+      store.setDeckLifecycle({ kind: 'creating', parentDir: '/a', name: 'talk', settings: DEFAULTS })
       expect(store.showEditor()).toBe(false)
+    })
+  })
+})
+
+describe('newDeckSettings', () => {
+  test('spec: given the dialog holds 4:3 and 日本語, then it shows them while naming and while creating', () => {
+    createRoot(() => {
+      const store = createDeckStore()
+      const picked = { aspect_ratio: '4:3', lang: 'ja' } as const
+      store.setDeckLifecycle({ kind: 'naming-new-deck', parentDir: '/a', name: 'talk', settings: picked })
+      expect(store.newDeckSettings()).toEqual(picked)
+
+      store.setDeckLifecycle({ kind: 'creating', parentDir: '/a', name: 'talk', settings: picked })
+      expect(store.newDeckSettings()).toEqual(picked)
+    })
+  })
+
+  test('adversarial: given no dialog is open, then it reads as the defaults, not a leftover pick', () => {
+    createRoot(() => {
+      const store = createDeckStore()
+      expect(store.newDeckSettings()).toEqual(DEFAULTS)
+
+      store.setDeckLifecycle({ kind: 'naming-new-deck', parentDir: '/a', name: '', settings: { aspect_ratio: '4:3', lang: 'ja' } })
+      store.setDeckLifecycle({ kind: 'opening', path: '/a/talk/deck.md' })
+      expect(store.newDeckSettings()).toEqual(DEFAULTS)
+    })
+  })
+
+  test('adversarial: given the lifecycle moves on outside the dialog, then it keeps handing back the same object', () => {
+    createRoot(() => {
+      const store = createDeckStore()
+      const closed = store.newDeckSettings()
+      store.setDeckLifecycle({ kind: 'opening', path: '/a/deck.md' })
+      store.setDeckLifecycle({ kind: 'open', deckPath: '/a/deck.md' })
+      expect(store.newDeckSettings()).toBe(closed)
     })
   })
 })

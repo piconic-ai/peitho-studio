@@ -20,6 +20,10 @@ export interface Messages {
   // New Deck modal
   newDeckTitle: string
   deckNamePlaceholder: string
+  /** The New Deck dialog's aspect ratio and language pickers, named as in
+   * the Edit menu's deck settings. */
+  newDeckAspectRatio: string
+  newDeckLanguage: string
   cancel: string
   create: string
   creating: string
@@ -117,6 +121,8 @@ const en: Messages = {
 
   newDeckTitle: 'New Deck',
   deckNamePlaceholder: 'Deck name',
+  newDeckAspectRatio: 'Aspect Ratio',
+  newDeckLanguage: 'Language',
   cancel: 'Cancel',
   create: 'Create',
   creating: 'Creating…',
@@ -206,6 +212,8 @@ const ja: Messages = {
 
   newDeckTitle: '新規デッキ',
   deckNamePlaceholder: 'デッキ名',
+  newDeckAspectRatio: '縦横比',
+  newDeckLanguage: '言語',
   cancel: 'キャンセル',
   create: '作成',
   creating: '作成しています…',
