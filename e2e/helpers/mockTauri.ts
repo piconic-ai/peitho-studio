@@ -14,6 +14,8 @@ import type { DeckVariant } from '../../domain/deckVariants'
 import type { LayoutVerdict } from '../../domain/layoutFit'
 import type { Size } from '../../domain/geometry'
 import { readFrontmatterKey } from '../../domain/frontmatter'
+import type { NewReviewComment, NewReviewReply } from '../../domain/critReview'
+import type { FakeCritIpc } from '../../ipc/fakeCritIpc'
 
 export interface MockDeck {
   source: string
@@ -163,6 +165,16 @@ export interface MockDeck {
    * a CI build with a commit. Passed as is, so a test can hand over a
    * malformed value too. */
   aboutInfo?: unknown
+  /** Renders each slide as peitho-core's `EditAnnotations::On` would —
+   * `data-peitho-src`/`data-peitho-md` on its headings, list items and
+   * paragraphs (see `annotatedFragment`) — instead of `fragmentFor`. */
+  editAnnotations?: boolean
+  /** The path `open_deck` reports — defaults to the source itself (which
+   * the header then shows; most tests never read it). */
+  deckPath?: string
+  /** Answers the `crit_*` commands, and forwards its `crit-review` events
+   * to the page. Without it they answer `null` (no crit at all). */
+  crit?: FakeCritIpc
 }
 
 const DEFAULT_ABOUT_INFO = {
@@ -179,7 +191,47 @@ function canvasFor(source: string): Size {
   return readFrontmatterKey(source, 'aspect_ratio') === '4:3' ? { width: 960, height: 720 } : { width: 1280, height: 720 }
 }
 
-function buildManifest(source: string, fragmentFor: (title: string) => string, canvas: Size): { manifest: Manifest; fragments: Record<string, string> } {
+const utf8Bytes = (text: string): number => new TextEncoder().encode(text).length
+
+/** `markdown` as peitho-core writes it into `data-peitho-md`
+ * (`encode_edit_markdown_attribute`). */
+function encodeEditMarkdown(markdown: string): string {
+  return markdown.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/\r/g, '&#13;').replace(/\n/g, '&#10;')
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+}
+
+/** A slide fragment carrying edit annotations the way peitho-core's
+ * `EditAnnotations::On` does (UTF-8 byte spans into the whole `source`),
+ * one element per line of the slide at `start`: `# x` a heading (annotated
+ * through an inner `<span>`), `- x` a list item, `![…](…)` an image (not
+ * annotated), anything else a paragraph. Comment lines are skipped. */
+function annotatedFragment(source: string, start: number, text: string): string {
+  const parts: string[] = []
+  let offset = start
+  for (const line of text.split('\n')) {
+    const lineStart = offset
+    offset += line.length + 1
+    const heading = /^(#{1,6}) (.*)$/.exec(line)
+    const item = /^- (.*)$/.exec(line)
+    const content = heading?.[2] ?? item?.[1] ?? line
+    if (line.trim() === '' || line.startsWith('<!--')) continue
+    if (/^!\[/.test(line)) {
+      parts.push('<p><img alt="" width="320" height="180" style="display: block; background: gray" src="data:,"></p>')
+      continue
+    }
+    const at = lineStart + line.length - content.length
+    const attrs = `data-peitho-src="${String(utf8Bytes(source.slice(0, at)))}-${String(utf8Bytes(source.slice(0, at + content.length)))}" data-peitho-md="${encodeEditMarkdown(content)}"`
+    if (heading) parts.push(`<h${String(heading[1].length)}><span ${attrs}>${escapeHtml(content)}</span></h${String(heading[1].length)}>`)
+    else if (item) parts.push(`<ul><li ${attrs}>${escapeHtml(content)}</li></ul>`)
+    else parts.push(`<p ${attrs}>${escapeHtml(content)}</p>`)
+  }
+  return `<section class="peitho-slide" style="width: var(--peitho-canvas-width); height: var(--peitho-canvas-height); padding: 40px; box-sizing: border-box; background: white">${parts.join('')}</section>`
+}
+
+function buildManifest(source: string, fragmentFor: (title: string) => string, canvas: Size, annotate = false): { manifest: Manifest; fragments: Record<string, string> } {
   const ranges = splitSlides(source)
   const keys: string[] = []
   const slides: ManifestSlide[] = []
@@ -218,7 +270,10 @@ function buildManifest(source: string, fragmentFor: (title: string) => string, c
     })
   }
   const fragments: Record<string, string> = {}
-  for (const s of slides) fragments[s.key] = fragmentFor(s.text.title)
+  for (const s of slides) {
+    const range = ranges.find(r => r.text === s.src)
+    fragments[s.key] = annotate && range ? annotatedFragment(source, range.start, range.text) : fragmentFor(s.text.title)
+  }
   const manifest: Manifest = {
     title: 'Fake Deck', slideCount: slides.length, canvasWidth: canvas.width, canvasHeight: canvas.height, sections, slides,
   }
@@ -230,7 +285,7 @@ const DEFAULT_FRAGMENT_FOR = (title: string): string => `<section class="peitho-
 const DEFAULT_CSS = '.peitho-slide { color: black; }'
 
 function renderPayloadFor(source: string, deck: MockDeck): RenderPayload {
-  const { manifest, fragments } = buildManifest(source, deck.fragmentFor ?? DEFAULT_FRAGMENT_FOR, deck.canvas ?? canvasFor(source))
+  const { manifest, fragments } = buildManifest(source, deck.fragmentFor ?? DEFAULT_FRAGMENT_FOR, deck.canvas ?? canvasFor(source), deck.editAnnotations ?? false)
   return { manifest, fragments, assetBaseUrl: 'http://localhost:9/', css: deck.css ?? DEFAULT_CSS }
 }
 
@@ -239,6 +294,12 @@ function renderPayloadFor(source: string, deck: MockDeck): RenderPayload {
  * read it back afterward to assert on the persisted content. Call before
  * `page.goto('/')`. */
 export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
+  // Mirrors `sync_crit_watch` in peitho.rs: crit's events reach this window.
+  deck.crit?.onReviewEvent(event => {
+    void page.evaluate(payload => {
+      (window as unknown as { __mockEmitTauriEvent?: (event: string, payload: unknown, toWindow?: string) => void }).__mockEmitTauriEvent?.('crit-review', payload, 'main')
+    }, event)
+  })
   await page.exposeFunction('__mockInvoke', async (cmd: string, args: Record<string, unknown>) => {
     deck.invokedCommands?.push(cmd)
     const error = deck.commandError?.(cmd, args)
@@ -260,7 +321,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       }
       case 'get_recent_decks': return deck.recentDecks ?? []
       case 'open_deck':
-        return { deckPath: deck.source, deckDir: '/fake', trusted: deck.trusted ?? false, render: renderPayloadFor(deck.source, deck) }
+        return { deckPath: deck.deckPath ?? deck.source, deckDir: '/fake', trusted: deck.trusted ?? false, render: renderPayloadFor(deck.source, deck) }
       case 'render_draft':
         return renderPayloadFor(args.content as string, deck)
       case 'read_deck_source': return deck.source
@@ -312,6 +373,13 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         deck.clipboardText = args.text as string
         return null
       case 'get_about_info': return deck.aboutInfo ?? DEFAULT_ABOUT_INFO
+      case 'crit_session_status': return deck.crit?.sessionStatus() ?? null
+      case 'crit_start_session': return deck.crit?.startSession() ?? null
+      case 'crit_add_comments': return deck.crit?.addComments(args.comments as NewReviewComment[]) ?? null
+      case 'crit_add_replies': return deck.crit?.addReplies(args.replies as NewReviewReply[]) ?? null
+      case 'crit_resolve_comment': return deck.crit?.resolveComment(args.id as string) ?? null
+      case 'crit_finish': return deck.crit?.finish() ?? null
+      case 'crit_list_comments': return deck.crit?.listComments() ?? null
       case 'import_deck_image_file':
         return deck.importImage?.(cmd, args) ?? `img/${String(args.path).split('/').pop() ?? ''}`
       case 'import_deck_image_bytes':
