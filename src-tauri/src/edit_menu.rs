@@ -11,6 +11,7 @@
 //! history, and a broadcast `emit` would undo the last operation in every
 //! open deck at once.
 
+use serde::Serialize;
 use tauri::menu::MenuItem;
 use tauri::{AppHandle, Emitter, EventTarget, Manager, Runtime};
 
@@ -46,14 +47,15 @@ pub(crate) fn focused_label<'a>(windows: impl IntoIterator<Item = (&'a str, bool
 /// matching other ids. With no focused window, the event is dropped.
 pub(crate) fn forward<R: Runtime>(app: &AppHandle<R>, id: &str) -> bool {
     let Some(event) = event_for_menu_id(id) else { return false };
-    emit_to_focused(app, event);
+    emit_to_focused(app, event, ());
     true
 }
 
-/// Sends `event` to the focused window's frontend alone, or drops it when
-/// no window has focus. Also used by the app menu's "Settings…" (see
-/// `settings::MENU_EVENT`).
-pub(crate) fn emit_to_focused<R: Runtime>(app: &AppHandle<R>, event: &str) {
+/// Sends `event` with `payload` to the focused window's frontend alone, or
+/// drops it when no window has focus. Also used by the app menu's
+/// "Settings…" (see `settings::MENU_EVENT`) and the deck settings (see
+/// `deck_menu::MENU_EVENT`).
+pub(crate) fn emit_to_focused<R: Runtime, S: Serialize + Clone>(app: &AppHandle<R>, event: &str, payload: S) {
     let windows = app.webview_windows();
     let focused = focused_label(
         windows
@@ -61,7 +63,7 @@ pub(crate) fn emit_to_focused<R: Runtime>(app: &AppHandle<R>, event: &str) {
             .map(|(label, window)| (label.as_str(), window.is_focused().unwrap_or(false))),
     );
     if let Some(label) = focused {
-        let _ = app.emit_to(EventTarget::webview_window(label), event, ());
+        let _ = app.emit_to(EventTarget::webview_window(label), event, payload);
     }
 }
 
