@@ -806,12 +806,14 @@ export function Studio() {
   })
 
   // One key can match two hosts: a thumbnail row and the "selected slide"
-  // pane both carry `data-slide-canvas-key`. Fed the *absolutized*
-  // fragment, not the raw one — a shadow root has no `<base href>` to
-  // resolve `src="assets/…"` against, and a spelling other than the one
-  // mounted would defeat `patchSlideCanvas`'s unchanged-fragment check.
-  function patchSlideCanvases(key: string, fragmentHtml: string): void {
-    const selector = `[data-slide-canvas-key="${CSS.escape(key)}"]`
+  // pane both carry `data-slide-canvas-key`. The thumbnails get the
+  // fragment without peitho-core's edit annotations, the preview with them
+  // (its comment UI reads them) — see `state/renderStore.ts`. Fed the
+  // *absolutized* fragment, not the raw one — a shadow root has no
+  // `<base href>` to resolve `src="assets/…"` against, and a spelling other
+  // than the one mounted would defeat `patchSlideCanvas`'s
+  // unchanged-fragment check.
+  function patchSlideCanvases(selector: string, fragmentHtml: string): void {
     for (const host of document.querySelectorAll<HTMLElement>(selector)) {
       patchSlideCanvas(host, fragmentHtml)
     }
@@ -819,8 +821,13 @@ export function Studio() {
 
   createEffect(() => {
     for (const slide of render.manifest()?.slides ?? []) {
-      patchSlideCanvases(slide.key, render.canvasFragmentOf(slide.key))
+      patchSlideCanvases(`[data-slide-canvas-key="${CSS.escape(slide.key)}"]:not([data-preview-host])`, render.canvasFragmentOf(slide.key))
     }
+  })
+
+  createEffect(() => {
+    const key = selectedSlideKey()
+    if (key !== null) patchSlideCanvases(`[data-preview-host][data-slide-canvas-key="${CSS.escape(key)}"]`, render.previewFragmentOf(key))
   })
 
   // `renderPayload`, when given, is applied together with the exact
@@ -2053,7 +2060,7 @@ export function Studio() {
           language={settings.language()}
           selectedSlideKey={selectedSlideKey()}
           hasDeck={Boolean(render.assetBaseUrl())}
-          canvasFragmentOf={render.canvasFragmentOf}
+          canvasFragmentOf={render.previewFragmentOf}
           slideStylesheet={getSlideStylesheet}
           viewportMode={ui.viewportMode()}
           onToggleViewportMode={ui.toggleViewportMode}

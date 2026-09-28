@@ -1,7 +1,7 @@
 import { createSignal, createMemo, batch } from '@barefootjs/client'
 import { type Manifest, type ManifestSection, type SectionDraft, type RenderPayload, savedSectionDraft, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
 import { absolutizeCssUrls, scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
-import { absolutizeFragmentUrls } from '../domain/slideFragment'
+import { absolutizeFragmentUrls, stripEditAnnotations } from '../domain/slideFragment'
 import { stabilizeByKey } from '../domain/slides'
 
 /** The deck's last-rendered state: manifest, per-slide fragment HTML, canvas
@@ -85,10 +85,26 @@ export function createRenderStore() {
     }
     return entry
   }
-  /** A slide's fragment HTML exactly as rendered ('' for a key never
-   * rendered) — for readers that only inspect its markup, not display it. */
+  /** A slide's fragment HTML as rendered, without peitho-core's edit
+   * annotations ('' for a key never rendered) — for readers that only
+   * inspect its markup, not display it. The annotations' byte spans shift
+   * with every edit above a slide, so keeping them here would notify every
+   * later slide's reader on each keystroke (see `stripEditAnnotations`). */
   function fragmentOf(key: string): string {
     return fragmentSignal(key)[0]()
+  }
+
+  // The fragments as rendered, annotations included, for the one canvas
+  // that reads them: the preview's (its comment UI takes a click's target
+  // from them). Per key, like `fragmentSignals`.
+  const annotatedSignals = new Map<string, [() => string, (value: string) => void]>()
+  function annotatedSignal(key: string): [() => string, (value: string) => void] {
+    let entry = annotatedSignals.get(key)
+    if (!entry) {
+      entry = createSignal('')
+      annotatedSignals.set(key, entry)
+    }
+    return entry
   }
   /** The fragment HTML a Shadow DOM canvas needs: read-only (the setter
    * never crosses the component boundary, per docs/architecture.md's
@@ -97,6 +113,12 @@ export function createRenderStore() {
    * — those would otherwise resolve against the app's own document URL. */
   function canvasFragmentOf(key: string): string {
     return absolutizeFragmentUrls(fragmentOf(key), assetBaseUrl() ?? '')
+  }
+
+  /** `canvasFragmentOf` with peitho-core's edit annotations kept — what the
+   * preview canvas mounts. */
+  function previewFragmentOf(key: string): string {
+    return absolutizeFragmentUrls(annotatedSignal(key)[0](), assetBaseUrl() ?? '')
   }
 
   // `slide` (edited or not) arrives as a freshly-deserialized object on every
@@ -127,7 +149,10 @@ export function createRenderStore() {
     batch(() => {
       for (const [key, html] of Object.entries(payload.fragments)) {
         const [get, set] = fragmentSignal(key)
-        if (get() !== html) set(html)
+        const stripped = stripEditAnnotations(html)
+        if (get() !== stripped) set(stripped)
+        const [getAnnotated, setAnnotated] = annotatedSignal(key)
+        if (getAnnotated() !== html) setAnnotated(html)
       }
       setAssetBaseUrl(payload.assetBaseUrl)
       if (css() !== payload.css) setCss(payload.css)
@@ -147,7 +172,7 @@ export function createRenderStore() {
   return {
     assetBaseUrl, canvasWidth, canvasHeight, manifest, renderedSource, sectionStartByIndex,
     sectionDrafts, setSectionDrafts, sectionDraftOf,
-    fragmentSignal, fragmentOf, canvasFragmentOf, applyRenderPayload,
+    fragmentSignal, fragmentOf, canvasFragmentOf, previewFragmentOf, applyRenderPayload,
     slideStylesheetText, fontFaceCss,
   }
 }
