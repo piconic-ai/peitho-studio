@@ -64,7 +64,8 @@ tags: [deck-settings, frontmatter, native-menu]
   - frontmatterに候補にない値(例: `lang: fr`、`page_numbers: both`)が
     あるとき、その生の値を親項目のラベルに出し(`ページ番号: both`)、
     どの候補にもチェックを付けない。例外は出さない。候補を選べばその値に
-    置き換わる。
+    置き換わる。`breaks`はサブメニューを持たないので、未知の値のときだけ
+    チェック項目のラベルに付ける(`改行をそのまま反映: True`)。
   - ヘッダーのページ番号コントロール(`[data-page-numbers]`と
     `[data-page-numbers-unknown]`)がなくなっている。
 
@@ -259,9 +260,10 @@ Studioの表示には効かない(present・ビルド・PDFで使われる)。�
   (`todo/pdf-export.md`)なので、あわせて書き換える・項目を無効にする等の
   対応はそちらで判断する。
 - **未知の値**: `breaks: True`/`yes`のようにpeitho-core(YAML)は真と読むが
-  候補と完全一致しない値は、未知扱い(チェックなし)。選べば`true`に
+  候補と完全一致しない値は、未知扱い(チェックなし、ラベルに生の値)。
+  クリックすると、未知の値は「オフ」とみなして`true`に
   置き換わる。
-- 報告コマンド`report_deck_settings`はメニューのチェック表示しか変えない
+- 報告コマンド`report_deck_settings`はメニューの表示(チェックとラベル)しか変えない
   ので、デッキのレイアウトスクリプトから呼ばれても影響はメニューの表示に
   限られる(`todo/deck-script-tauri-access.md`の観点)。
 - mock e2eのキャンバス寸法は、frontmatterの`aspect_ratio`から決めるように
