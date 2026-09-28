@@ -18,7 +18,7 @@ function fragmentWithMountPoint(title: string): string {
 type Detail = { root: ShadowRoot; key: string; index: number }
 
 test('Given a slide fragment with a data-bf marker, when its canvas mounts, then a light-DOM listener receives the event with that shadow root and slide identity', async ({ page }) => {
-  const deck: MockDeck = { source: '<!-- {"key":"marked"} -->\n# Marked Slide\n', fragmentFor: fragmentWithMountPoint }
+  const deck: MockDeck = { source: '<!-- {"key":"marked"} -->\n# Marked Slide\n', fragmentFor: fragmentWithMountPoint, trusted: true }
   await mockTauri(page, deck)
   await page.addInitScript(() => {
     document.addEventListener('peitho:shadow-mounted', event => {
@@ -38,7 +38,7 @@ test('Given a slide fragment with a data-bf marker, when its canvas mounts, then
 })
 
 test('Given canvases have mounted, when a script loads later, then the backlog holds one entry per live shadow root', async ({ page }) => {
-  const deck: MockDeck = { source: '<!-- {"key":"marked"} -->\n# Marked Slide\n', fragmentFor: fragmentWithMountPoint }
+  const deck: MockDeck = { source: '<!-- {"key":"marked"} -->\n# Marked Slide\n', fragmentFor: fragmentWithMountPoint, trusted: true }
   await mockTauri(page, deck)
 
   await page.goto('/')
@@ -59,7 +59,7 @@ test('Given canvases have mounted, when a script loads later, then the backlog h
 })
 
 test('Given that same listener, when the slide is edited (re-patching its canvas), then the event fires again with the new shadow content', async ({ page }) => {
-  const deck: MockDeck = { source: '<!-- {"key":"marked"} -->\n# Marked Slide\n', fragmentFor: fragmentWithMountPoint }
+  const deck: MockDeck = { source: '<!-- {"key":"marked"} -->\n# Marked Slide\n', fragmentFor: fragmentWithMountPoint, trusted: true }
   await mockTauri(page, deck)
   await page.addInitScript(() => {
     (window as unknown as { __shadowMountedCount: number }).__shadowMountedCount = 0

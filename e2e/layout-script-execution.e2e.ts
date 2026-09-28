@@ -16,7 +16,7 @@ function fragmentWithCountingScript(title: string): string {
 }
 
 test('Given a slide whose fragment embeds a <script>, when its thumbnail is mounted, then the script actually executes', async ({ page }) => {
-  const deck: MockDeck = { source: '# Scripted Slide\n', fragmentFor: fragmentWithCountingScript }
+  const deck: MockDeck = { source: '# Scripted Slide\n', fragmentFor: fragmentWithCountingScript, trusted: true }
   await mockTauri(page, deck)
 
   await page.goto('/')
@@ -27,7 +27,7 @@ test('Given a slide whose fragment embeds a <script>, when its thumbnail is moun
 })
 
 test('Given a slide whose script declares a top-level `let`, when the slide is edited twice (re-executing its script each time), then it does not throw "already declared"', async ({ page }) => {
-  const deck: MockDeck = { source: '# Scripted Slide\n', fragmentFor: fragmentWithCountingScript }
+  const deck: MockDeck = { source: '# Scripted Slide\n', fragmentFor: fragmentWithCountingScript, trusted: true }
   const pageErrors: string[] = []
   page.on('pageerror', err => pageErrors.push(err.message))
   await mockTauri(page, deck)
