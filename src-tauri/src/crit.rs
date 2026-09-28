@@ -193,7 +193,7 @@ fn open_first_round(cli: &CritCli, deck_path: &Path, child: &mut Child) -> Resul
         }
         std::thread::sleep(Duration::from_millis(100));
     };
-    take_first_round(port, &file, child).map_err(|err| {
+    take_first_round(port, &file, child, deadline).map_err(|err| {
         // The session is Studio's own and half set up (its placeholder
         // comment may still be in it): stop its daemon rather than leave
         // it for the agent's `crit` to join, where the placeholder would
@@ -215,8 +215,9 @@ fn stop_session(cli: &CritCli, deck_path: &Path) {
 
 /// Finishes the session's first round with a placeholder comment until
 /// Studio's own `crit` (`child`) takes it, then deletes the placeholder.
-fn take_first_round(port: u16, file: &str, child: &mut Child) -> Result<(), String> {
-    let deadline = Instant::now() + START_TIMEOUT;
+/// `deadline` is what's left of `START_TIMEOUT` after the session came up:
+/// one budget for both.
+fn take_first_round(port: u16, file: &str, child: &mut Child, deadline: Instant) -> Result<(), String> {
     let opener = NewReviewComment {
         start_line: 1,
         end_line: 1,
