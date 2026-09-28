@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: プレビューの要素をクリックしてコメントを付け、まとめてCoding Agentに送り、返信をスレッドで見る
 tags: [agent, crit, preview, ui]
 ---
@@ -108,6 +108,73 @@ tags: [agent, crit, preview, ui]
    面倒と評価した**ので、切替ボタンは最後の手段にする。
 3. `data-peitho-md`のデコード方法(`encode_edit_markdown_attribute`の逆)。
 
+### 要調査の結論(2026-09-29、crit 0.21.0・peitho-core v1.34.0で確認)
+
+0. **(c)のセッション起動と「エージェントが待っているか」。**
+   - critのソース(v0.21.0の`internal/server/server.go`)を読んで確かめた。
+     `crit --no-open deck.md`も`crit --session <id>`も、クライアントは
+     `POST /api/review-cycle`で完了を待つ。**セッションの最初の巡では
+     何も通知せずに待つだけ**で、2巡目以降は呼んだ瞬間に巡を進める
+     (`review_round`が1増え、SSEで`file-changed`が届く)。待っている
+     クライアントの数を返すAPIはない(`/api/health`の`browser_clients`は
+     ブラウザのSSEの数)。
+   - そこでStudioは、同梱のcritで`crit --no-open <deckのファイル名>`を
+     起動したら、**最初の巡を自分で終わらせる**(`crit::start_deck_session`)。
+     コメントなしの完了は承認扱いでデーモンが止まるので、仮のコメントを
+     1件足して完了し、自分のcritが巡を受け取って終わったのを見てから
+     そのコメントを削除する(削除はデーモンが200ms後に書き出すので
+     500ms待つ。待たずに次の巡が始まると、削除したコメントが持ち越されて
+     エージェントに渡るのを実際に確認した)。これで、あとからエージェントが
+     `crit --no-open deck.md`で繋ぐと巡が進み、Studioにはイベントが届く。
+   - Studioは自分が最後に完了した巡(`FinishedRound`、ウィンドウごとに
+     `peitho.rs`の`CritReviewState`)を覚え、セッションの`review_round`が
+     それを超えていれば「エージェントが待っている」とする
+     (`engine::crit::with_finished_round`)。Studioが一度も完了していない
+     セッション(エージェントが自分で起動したもの)は、起動したクライアント
+     自身が最初の巡を待っているので「待っている」とみなす。
+   - Studioが起動したcritのプロセスは、仮の巡を受け取った時点で役目を終える
+     ので、その場で`kill`(SIGKILL)する。SIGINT/SIGTERMだとcritのシグナル
+     ハンドラがデーモンごと止めるため。
+   - 同梱のcritでの往復は結合テスト
+     (`crit::tests::round_trip::a_session_studio_starts_waits_for_the_agent_then_hands_it_only_studios_comments`)
+     で確かめている。
+   - 制約: Studioを再起動すると`FinishedRound`を忘れるため、Studioが
+     起動してまだエージェントが繋いでいないセッションも「待っている」と
+     判定される(送っても届かない)。
+1. **`EditAnnotations::On`の影響。** 常に`On`で描くことにした
+   (`engine/pipeline.rs`)。`find_edit_annotation_attribute`は
+   `peitho publish`が配布物を検査するときだけ使われ、描画では何も拒まない
+   (peitho本体の`peitho preview`も`On`で描いている)。属性のバイト位置は
+   編集のたびに後ろのスライドでずれるので、そのままではサムネイルが毎打鍵
+   すべて差し替わる。サムネイルには属性を取り除いた断片を渡し
+   (`stripEditAnnotations`、`state/renderStore.ts`)、プレビューだけ
+   属性つきの断片を使う。見た目への影響はない(既存のe2e 265件と
+   `engine::image_layout`のテストが、属性を除けば同じ出力であることを
+   確かめている)。バイト位置がfrontmatterを含む元のソースのUTF-8の
+   位置であることは`engine::pipeline`のテストで固定した。includeを使う
+   デッキでは位置が合わないので、引用(`data-peitho-md`)でスライドの中を
+   探し直す(`commentTargetOf`)。
+2. **モード切替なしのクリック。** 切替ボタンも修飾キーも入れていない。
+   押してから離すまでに4px以上動いたもの(ドラッグ)、クリック後に文字が
+   選択されているもの、ボタン・入力欄・`<summary>`・`<video>`などレイアウト
+   自身の操作部品へのクリックはコメントにしない(`dom/previewComments.ts`)。
+   それ以外の、属性のない場所(画像・コードブロック・レイアウトのJSが
+   描いたグラフなど)はスライド全体へのコメントになる。グラフのツール
+   チップはホバーなので干渉しない想定だが、クリックで操作するグラフは
+   コメントの入力欄も開く。実機での確認が要る(人間の判断が必要な項目)。
+3. **`data-peitho-md`のデコード。** 不要だった。peitho-coreがエンコード
+   するのは`&` `"` `<` と CR・LF(`&#13;` `&#10;`)だけで、どれもHTMLの
+   パーサーが元に戻すので、DOMの`getAttribute`がそのまま元のMarkdownを
+   返す。e2eのモック(`annotatedFragment`)は同じエンコードで属性を書き、
+   送った引用が元のMarkdownと一致することを確かめている。
+
+実装して分かったこと:
+
+- BarefootJS: `ReviewPanel.tsx`で`{props.sending ? a : b}`という条件つきの
+  テキストを置いたところ、`Studio.tsx`のデッキ表示の分岐が入りきらず
+  「Loading deck…」が残った(既存のe2eも一緒に落ちた)。1つの式
+  (`messages[props.sending ? 'x' : 'y']`)にすると直った。
+
 ## 方針
 
 - プレビューだけ`EditAnnotations::On`で描く(Rust側で描画時に切り替える
@@ -162,18 +229,32 @@ tags: [agent, crit, preview, ui]
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `cargo test` グリーン
-- [ ] 上記e2eがグリーン(`E2E_PORT=<空きポート> bun run test:e2e`)
-- [ ] 要調査1〜3の結論をこのファイルに書いた
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `cargo test` グリーン(同梱のcritでの結合テストを含む)
+- [x] 上記e2eがグリーン(`E2E_PORT=<空きポート> bun run test:e2e`、
+  `e2e/review-comments.e2e.ts`)
+- [x] 要調査1〜3の結論をこのファイルに書いた(0も)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機での確認(ユーザー自身に依頼する): クリックでピンが立つ、テキスト
-  選択やレイアウトのJSとぶつからない、実際のエージェントとの往復
+  選択やレイアウトのJSとぶつからない、実際のエージェントとの往復。
+  e2eはChromeで動かしているので、WKWebViewでしか確かめられないもの:
+  Shadow DOMの`<slot>`越しのピンの位置(`calc(1 / var(...))`の縮尺)、
+  Shadow DOMの中の文字選択を`document.getSelection()`が拾えるか、
+  Tauriコマンド経由の`crit_start_session`(同梱のcritの起動に2〜3秒)
 - [ ] ピン・入力欄・一覧の見た目と置き場所
 - [ ] 要調査2で切替ボタンや修飾キーが必要になった場合、その操作の最終決定
+  (今回は不要と判断して入れていない。実機で要ると分かったときに決める)
 
 ## 先送り事項
+
+- Studioが起動したcritのデーモンは、デッキやアプリを閉じても残る(crit
+  自身がエージェントの起動したデーモンを残すのと同じ)。止める契機を
+  作るか。
+- ピンの位置はこのウィンドウで送ったコメントの分しか覚えていない。
+  開き直したあとの送信済みコメントは、一覧には出るがピンは出ない。
+- 送信が返信の追加のあと完了の通知で失敗すると、再送で返信が二重になる
+  (コメントは`unsent_comments`で重複を避けているが、返信にはない)。
 
 - 範囲をドラッグして囲むコメント(余白や位置関係への指摘向け)。
 - ピンを描き込んだスクリーンショットをエージェントに渡す。
