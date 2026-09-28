@@ -403,13 +403,16 @@ fn scaffold_deck_files(settings: NewDeckSettings) -> Vec<(&'static str, String)>
 /// default, and a value that isn't one of the key's choices creates
 /// nothing. The new folder is trusted to run scripts from the start: the
 /// app wrote every file in it. It never overwrites an existing folder, so
-/// this can't be used to trust one somebody else wrote.
+/// this can't be used to trust one somebody else wrote. Failing to record
+/// that trust doesn't fail the command: the deck is already on disk (a
+/// retry would hit "already exists"), and it just opens untrusted, with
+/// the banner to trust it.
 #[tauri::command]
 pub fn create_deck(app: AppHandle, parent_dir: String, name: String, aspect_ratio: Option<String>, lang: Option<String>) -> Result<String, String> {
     let settings = NewDeckSettings::parse(aspect_ratio.as_deref(), lang.as_deref())?;
     let deck_path = scaffold_deck(&parent_dir, &name, settings)?;
     if let Some(dir) = deck_path.parent() {
-        trust_deck_dir(&app, dir)?;
+        let _ = trust_deck_dir(&app, dir);
     }
     Ok(deck_path.display().to_string())
 }
