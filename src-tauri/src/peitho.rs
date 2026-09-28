@@ -1190,9 +1190,20 @@ fn sync_crit_watch(session: &PeithoSession, window: &WebviewWindow, found: &Deck
 /// asks each running session's daemon what it reviews.
 #[tauri::command(async)]
 pub fn crit_session_status(window: WebviewWindow, session: State<PeithoSession>) -> Result<DeckSession, String> {
-    let found = crit::find_deck_session(&CritCli::bundled()?, &session_deck_path(&session, window.label())?)?;
-    sync_crit_watch(&session, &window, &found)?;
-    Ok(found)
+    let found = session_deck_path(&session, window.label())
+        .and_then(|deck_path| crit::find_deck_session(&CritCli::bundled()?, &deck_path));
+    match found {
+        Ok(found) => {
+            sync_crit_watch(&session, &window, &found)?;
+            Ok(found)
+        }
+        Err(err) => {
+            // No session could be resolved, so stop following whichever one
+            // this window followed before, as for `DeckSession::None`.
+            let _ = sync_crit_watch(&session, &window, &DeckSession::None);
+            Err(err)
+        }
+    }
 }
 
 /// This window's deck's crit session, as `found_crit_session` has it.
