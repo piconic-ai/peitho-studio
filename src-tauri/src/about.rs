@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
 
+use crate::help_links::REPOSITORY_URL;
 use crate::{i18n, settings};
 
 /// The menu item's id.
@@ -25,7 +26,6 @@ const WINDOW_WIDTH: f64 = 360.0;
 const WINDOW_HEIGHT: f64 = 480.0;
 
 const WEBSITE_URL: &str = "https://peitho-studio.piconic.ai/";
-const REPOSITORY_URL: &str = "https://github.com/piconic-ai/peitho-studio";
 
 /// The CI run number, or `dev` (see `build_info::build_label`).
 const BUILD: &str = env!("PEITHO_STUDIO_BUILD");
