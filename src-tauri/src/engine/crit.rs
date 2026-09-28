@@ -476,6 +476,22 @@ fn is_same_comment(comment: &NewReviewComment, sent: &ReviewComment) -> bool {
         && sent.quote.as_deref().unwrap_or("") == comment.quote
 }
 
+/// Those of `replies` not yet in the session: the comment they answer
+/// already has a reply with the same body and author, sent by an earlier
+/// attempt that failed partway (or whose finish failed afterwards). Like
+/// `unsent_comments`, lets a send be retried whole.
+pub fn unsent_replies<'a>(replies: &'a [NewReviewReply], existing: &[ReviewComment]) -> Vec<&'a NewReviewReply> {
+    replies
+        .iter()
+        .filter(|reply| {
+            !existing.iter().any(|comment| {
+                comment.id == reply.comment_id
+                    && comment.replies.iter().any(|sent| sent.body == reply.body && sent.author == reply.author)
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -926,5 +942,49 @@ mod tests {
     #[test]
     fn given_an_empty_batch_when_checked_then_nothing_is_unsent() {
         assert!(unsent_comments(&[], &[]).is_empty());
+    }
+
+    // --- unsent_replies ---
+
+    fn thread(id: &str, replies: &[(&str, &str)]) -> ReviewComment {
+        ReviewComment {
+            id: id.into(),
+            lines: Some(LineRange { start: 1, end: 1 }),
+            body: "b".into(),
+            quote: None,
+            author: "Peitho Studio".into(),
+            resolved: false,
+            replies: replies
+                .iter()
+                .enumerate()
+                .map(|(i, (author, body))| ReviewReply { id: format!("rp_{i}"), body: (*body).into(), author: (*author).into() })
+                .collect(),
+        }
+    }
+
+    fn new_reply(comment_id: &str, body: &str) -> NewReviewReply {
+        NewReviewReply { comment_id: comment_id.into(), body: body.into(), author: "Peitho Studio".into() }
+    }
+
+    #[test]
+    fn given_replies_sent_by_an_attempt_whose_finish_failed_when_retried_then_only_the_rest_are_unsent() {
+        let batch = [new_reply("c_1", "Still too long"), new_reply("c_2", "Thanks")];
+        let existing = [thread("c_1", &[("Agent", "Shortened"), ("Peitho Studio", "Still too long")]), thread("c_2", &[])];
+        assert_eq!(unsent_replies(&batch, &existing), vec![&batch[1]]);
+    }
+
+    #[test]
+    fn given_the_same_text_from_another_author_or_under_another_comment_when_checked_then_it_is_still_unsent() {
+        let batch = [new_reply("c_1", "OK")];
+        for existing in [[thread("c_1", &[("Agent", "OK")])], [thread("c_2", &[("Peitho Studio", "OK")])]] {
+            assert_eq!(unsent_replies(&batch, &existing), vec![&batch[0]]);
+        }
+    }
+
+    #[test]
+    fn given_no_comments_or_no_replies_when_checked_then_every_reply_is_unsent_and_an_empty_batch_stays_empty() {
+        let batch = [new_reply("c_1", "a")];
+        assert_eq!(unsent_replies(&batch, &[]), vec![&batch[0]]);
+        assert!(unsent_replies(&[], &[thread("c_1", &[])]).is_empty());
     }
 }

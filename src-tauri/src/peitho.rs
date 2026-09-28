@@ -1313,7 +1313,10 @@ pub fn crit_add_replies(
         crit_shapes::new_reply_body(reply)?;
     }
     let target = deck_crit_session(&session, window.label())?;
-    for reply in &replies {
+    // Replies already there (`crit_shapes::unsent_replies`) are skipped, so
+    // retrying a send whose finish failed doesn't post them twice.
+    let existing = crit::list_comments(target.port, &target.file)?;
+    for reply in crit_shapes::unsent_replies(&replies, &existing) {
         crit::add_reply(target.port, &target.file, reply)?;
     }
     crit::list_comments(target.port, &target.file)
