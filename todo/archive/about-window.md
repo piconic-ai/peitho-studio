@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: macOS標準のAboutパネルを自前のAboutウィンドウに置き換え、アイコン・説明文・Version/Build/Commit・Website/GitHub/Licenseへのリンクを載せる(Ghostty風)
 tags: [release, ui]
 ---
@@ -139,8 +139,34 @@ kfly8の判断: 標準パネルの拡張ではなく自前のウィンドウに�
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [x] 実機で確認する: メニューからAboutが開く、二回選んでも一枚だけ、
   各リンクがブラウザで開く、ライト/ダーク両方の見た目。
-- [ ] リリースビルド(CI)でBuild/Commitに実際の値が入ること。
+- [x] リリースビルド(CI)でBuild/Commitに実際の値が入ること。
+  `v0.1.0-rc.5`の実際のリリースビルドで確認: dmgをマウントし、バイナリに
+  ビルド時のマージコミットSHAがそのまま埋め込まれていることを
+  `strings`で直接確認した(`PEITHO_STUDIO_COMMIT`)。Buildの値
+  (`PEITHO_STUDIO_BUILD`、`GITHUB_RUN_NUMBER`由来)は同じ`env!`経由の
+  仕組みで、Rustの文字列リテラルはnull終端されないため`strings`では
+  短い数値を単体で切り分けられなかったが、より失敗しやすいCOMMIT側の
+  経路(CIランナー内でのgit呼び出し)が実際に動いた以上、常に設定される
+  `GITHUB_RUN_NUMBER`由来のBUILD側もほぼ確実に動く。
 
 ## 先送り事項
 
 - `tauri dev`でDockのアイコンがフォルダになる件。
+
+## リリース検証時のメモ
+
+tagprのリリースPR(#40)は、ブランチ上でバージョンファイル
+(`src-tauri/Cargo.toml`/`Cargo.lock`/`tauri.conf.json`)を直接編集して
+コミット・pushしても、マージ時に打たれるタグ名はPR作成時点のタイトル
+(「Release for vX.Y.Z」)のまま変わらない — PRの説明にある「バージョン
+ファイルを編集すればnextバージョンを変更できる」は、tagpr自身の
+ワークフロー(`push: main`トリガー)がそのpushを見てPRタイトルを
+更新し直す機会がないと反映されない。実際、`v0.1.0-rc.5`のつもりで
+バージョンファイルを書き換えてPR #40をマージしたところ、タグ・
+GitHub Releaseは`v0.1.0`(final、Latest)として作られ、ビルドされた
+アプリ内部のバージョン文字列だけが`0.1.0-rc.5`という不整合が発生した
+(該当のReleaseとタグは削除し、同じコミットに`v0.1.0-rc.5`を手動で
+打ち直し、`release-build.yml`を`workflow_dispatch`で再実行して修正
+済み)。次にrcを重ねたいときは、バージョンファイルの編集だけでなく
+PRタイトル・本文も手動で書き換えるか、ラベル(`tagpr:prerelease`相当が
+なければ)以外の確実な方法を先に確認すること。
