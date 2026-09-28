@@ -16,6 +16,7 @@ const EVERY_STATUS: StatusMessage[] = [
   { kind: 'importing-images', count: 2 },
   { kind: 'imported-images', count: 1 },
   { kind: 'imported-images', count: 3 },
+  { kind: 'image-layout-added' },
 ]
 
 describe('statusText', () => {
@@ -42,6 +43,12 @@ describe('statusText', () => {
     expect(statusText(en, { kind: 'imported-images', count: 1 })).toBe('Image added to img/')
     expect(statusText(en, { kind: 'imported-images', count: 2 })).toBe('2 images added to img/')
     expect(statusText(messagesFor('ja'), { kind: 'imported-images', count: 2 })).toContain('2')
+  })
+
+  test('spec: Given the image layout was added from the error bar, when worded, then the status names the layout and where it went', () => {
+    const text = statusText(messagesFor('en'), { kind: 'image-layout-added' })
+    expect(text).toContain('title-body-image')
+    expect(text).toContain('layouts/')
   })
 
   test('spec: Given nothing to report, when worded, then the status bar is empty', () => {

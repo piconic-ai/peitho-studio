@@ -15,6 +15,7 @@ export type StatusMessage =
   | { kind: 'presenting'; rehearsal: boolean }
   | { kind: 'importing-images'; count: number }
   | { kind: 'imported-images'; count: number }
+  | { kind: 'image-layout-added' }
 
 /** `status` worded with `messages` — empty for `none`. */
 export function statusText(messages: Messages, status: StatusMessage): string {
@@ -30,6 +31,7 @@ export function statusText(messages: Messages, status: StatusMessage): string {
     case 'presenting': return status.rehearsal ? messages.presentingRehearsal : messages.presenting
     case 'importing-images': return messages.importingImages(status.count)
     case 'imported-images': return messages.importedImages(status.count)
+    case 'image-layout-added': return messages.imageLayoutAdded
     default: {
       const _exhaustive: never = status
       return _exhaustive
