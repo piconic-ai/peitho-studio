@@ -14,7 +14,7 @@ tags: [deck-settings, frontmatter, native-menu]
 
 - 選択肢から選ぶだけのデッキ設定はネイティブメニュー**だけ**に置く。
   アプリ内の「Deck Settings…」画面は当面作らない。
-- `todo/page-numbers-toggle.md`(PR #112、マージ済み)でヘッダーに置いた
+- `todo/archive/page-numbers-toggle.md`(PR #112、マージ済み)でヘッダーに置いた
   ページ番号の3択は、このメニューへ移してヘッダーから外す(ユーザー了承
   済み)。ヘッダーには言語バリアント切替とPresentだけが残る。
 - 「新規作成時にだけ設定できる」は避ける。新規作成時の案内は

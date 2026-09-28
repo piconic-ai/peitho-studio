@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: デッキのページ番号(なし / 番号 / 番号+総数)をUIから切り替え、スライド単位の非表示もコンテキストメニューから切り替える
 tags: [deck-settings, frontmatter, context-menu]
 ---
@@ -194,14 +194,17 @@ index, { page_number: hidden ? undefined : false })`。`MenuContext`に
   (静的解析の`no tracked deps`だけで断定しない — CLAUDE.md参照)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機で、組み込みテーマのデッキに番号が
+- [x] 実機で、組み込みテーマのデッキに番号が
   出る/消えること、サムネイルとプレビューの両方で反映されること
+  (kfly8が実機確認、2026-09-28)
 - [x] ~~コントロールの見た目と置き場所の最終確認~~ — ヘッダーの
   コントロールは削除し、ネイティブの編集メニュー(`ページ番号: <現在値>`)へ移した
   (`todo/deck-settings-menu.md`)。メニューの表記の確認はそちらの人間の
   項目で扱う
-- [ ] 「なし」に切り替えたときに各スライドの`page_number:false`を黙って
+- [x] 「なし」に切り替えたときに各スライドの`page_number:false`を黙って
   取り除く挙動でよいか(代案: 取り除かずにトグルを無効化して理由を表示)
+  — 実機で触ったうえで、黙って取り除く挙動のままでよいとkfly8が判断
+  (2026-09-28)
 
 ## 実装メモ(PR #112)
 
@@ -229,7 +232,7 @@ index, { page_number: hidden ? undefined : false })`。`MenuContext`に
   そのままfragmentにする。`patchSlideCanvas`は`.peitho-slide`要素ごと
   差し替えるので属性の変化も反映される。実際に番号が描画されるか
   (テーマCSSの`::after`がShadow DOMのサムネイル/プレビューで効くか)は
-  実機WKWebView依存で、未確認のまま下の人間の項目に残す。
+  実機WKWebView依存 — 上の人間の項目で実機確認済み。
 
 ## 先送り事項
 
