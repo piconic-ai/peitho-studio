@@ -36,6 +36,11 @@ export interface Messages {
   presentRehearsal: string
   presentRehearsalDetail: string
 
+  // Script trust banner
+  scriptsDisabled: string
+  trustAndRun: string
+  trustingDeck: string
+
   // Status bar
   copyError: string
   errorCopied: string
@@ -134,6 +139,10 @@ const en: Messages = {
   presentRehearsal: 'Present (Rehearsal)',
   presentRehearsalDetail: 'Time each section as you go and save it for comparison against the plan.',
 
+  scriptsDisabled: 'Scripts in this deck are turned off. Don\'t run them unless you trust whoever made this deck.',
+  trustAndRun: 'Trust and Run',
+  trustingDeck: 'Trusting…',
+
   copyError: 'Copy',
   errorCopied: 'Copied',
 
@@ -224,6 +233,10 @@ const ja: Messages = {
   presentOptions: '発表のオプション',
   presentRehearsal: '発表(リハーサル)',
   presentRehearsalDetail: 'セクションごとの所要時間を計って保存し、予定と比べられるようにします。',
+
+  scriptsDisabled: 'このデッキのスクリプトは無効になっています。信頼できる作成者のデッキでなければ実行しないでください。',
+  trustAndRun: '信頼して実行',
+  trustingDeck: '信頼しています…',
 
   copyError: 'コピー',
   errorCopied: 'コピーしました',

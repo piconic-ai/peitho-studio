@@ -52,7 +52,7 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
     getRecentDecks: async () => { record('getRecentDecks', []); return [] },
     openDeck: async path => {
       record('openDeck', [path])
-      const info: DeckSessionInfo = { deckPath: path, deckDir: path, render: emptyRenderPayload }
+      const info: DeckSessionInfo = { deckPath: path, deckDir: path, trusted: false, render: emptyRenderPayload }
       return info
     },
     renderDraft: async content => { record('renderDraft', [content]); return emptyRenderPayload },
@@ -67,6 +67,7 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
     checkSlideLayouts: async (content, slideIndex) => { record('checkSlideLayouts', [content, slideIndex]); return null },
     presentDeck: async rehearsal => { record('presentDeck', [rehearsal]) },
     reportDeckSettings: async settings => { record('reportDeckSettings', [settings]) },
+    trustOpenDeck: async () => { record('trustOpenDeck', []) },
     onDeckFileChanged: callback => {
       deckFileChangedListeners.add(callback)
       return () => { deckFileChangedListeners.delete(callback) }
