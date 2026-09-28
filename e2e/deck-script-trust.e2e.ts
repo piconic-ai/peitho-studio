@@ -1,7 +1,7 @@
 // A deck nobody has trusted yet is shown with nothing of its own running —
 // no layout <script>, no `on*` handler, no `<iframe srcdoc>` — on every
 // surface a slide is drawn on, and a banner offers to trust it. See
-// todo/deck-script-trust.md.
+// todo/archive/deck-script-trust.md.
 //
 // Every vector below records itself in `window.__ran` when it runs, so
 // "nothing ran" is checked against the same markup that, once the deck is
@@ -150,5 +150,24 @@ test('Given an untrusted deck styled with <style>, class, style and data-* attri
     }
   })
   expect(rendered).toEqual({ color: 'rgb(1, 2, 3)', marginLeft: '7px', note: 'kept', circle: true })
+  await expect(page.locator(BANNER)).toBeHidden()
+})
+
+test('Given an untrusted deck whose CSS targets ids named like document properties, when it is sanitized, then the ids survive and still apply', async ({ page }) => {
+  const withIds = (title: string): string => '<section class="peitho-slide">'
+    + '<style>#title { color: rgb(4, 5, 6); } #location { color: rgb(7, 8, 9); }</style>'
+    + `<h1 id="title">${title}</h1><p id="location" name="forms">here</p>`
+    + '</section>'
+  await openDeck(page, { source: '# Ids\n', fragmentFor: withIds })
+
+  const rendered = await page.locator('[data-slide-row="0"] [data-slide-canvas-key]').evaluate(host => {
+    const h1 = host.shadowRoot?.querySelector('h1')
+    const p = host.shadowRoot?.querySelector('p')
+    return {
+      h1: h1 ? [h1.id, getComputedStyle(h1).color] : null,
+      p: p ? [p.id, p.getAttribute('name'), getComputedStyle(p).color] : null,
+    }
+  })
+  expect(rendered).toEqual({ h1: ['title', 'rgb(4, 5, 6)'], p: ['location', 'forms', 'rgb(7, 8, 9)'] })
   await expect(page.locator(BANNER)).toBeHidden()
 })

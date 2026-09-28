@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: 信頼していないデッキはスクリプト・イベントハンドラを無害化して表示し、帯で「信頼して実行」を選ばせる(Workspace Trust風、デッキのフォルダ単位)
 tags: [release, security]
 ---
@@ -8,7 +8,7 @@ tags: [release, security]
 
 進捗管理用の作業台帳 — **完了したら削除ないし`todo/archive/`へ移動する**。
 
-発端: `todo/deck-script-tauri-access.md`の対策((e'))で、デッキの
+発端: `todo/archive/deck-script-tauri-access.md`の対策((e'))で、デッキの
 スクリプトが開いているデッキの外のファイルに届く経路は塞いだ。ただし
 他人のデッキを開いた瞬間にスクリプトが走ることは変わらない。事故が
 起きたときに「危険を告げられたうえで、ユーザーが実行を選んだ」と言える
@@ -141,10 +141,10 @@ tags: [release, security]
 - [x] READMEの「Layout scripts」節を、信頼確認の説明に合わせて更新した
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機で確認する: スクリプト入りのデッキを信頼せずに開くと帯が出て
+- [x] 実機で確認する: スクリプト入りのデッキを信頼せずに開くと帯が出て
   スクリプトが動かない。「信頼して実行」で動く。再起動後も信頼済み。
   New Deckで作ったデッキでは帯が出ない。
-- [ ] 帯の文言と見た目の確認
+- [x] 帯の文言と見た目の確認
 
 ## 先送り事項
 
@@ -162,5 +162,5 @@ tags: [release, security]
   リクエストは出る(`background: url(...)`、`@font-face`の`src`など。
   スクリプトは要らない)。IPアドレスや開いた時刻が作成者に伝わりうるが、
   ブラウザで普通のWebページを開くのと同じ範囲なのでこのタスクの対象外。
-  止めるならCSP(`todo/deck-script-tauri-access.md`の(b2)、別タスク)で
+  止めるならCSP(`todo/archive/deck-script-tauri-access.md`の(b2)、別タスク)で
   扱う。

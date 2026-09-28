@@ -19,7 +19,7 @@ GitHub Releaseも存在しない(初回リリース前)。
 - **やらないこと**:
   - 署名・公証・ビルドワークフロー(`todo/release-build-workflow.md`)
   - README(`todo/readme-end-user.md`)
-  - CSPの決定(`todo/deck-script-tauri-access.md`)
+  - CSPの決定(`todo/archive/deck-script-tauri-access.md`)
   - `.md`のファイル関連付け(`RunEvent::Opened`の処理が別途必要なので
     リリース後の別タスク)
   - アプリのアイコンそのもの(`brand/`で完了済み)

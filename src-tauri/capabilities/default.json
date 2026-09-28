@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Only what the frontend actually calls. A deck's layout <script> runs in the same document with the same access, so nothing broader (core:default would add menu creation, emit, window/webview control) — see todo/deck-script-tauri-access.md.",
+  "description": "Only what the frontend actually calls. A deck's layout <script> runs in the same document with the same access, so nothing broader (core:default would add menu creation, emit, window/webview control) — see todo/archive/deck-script-tauri-access.md.",
   "windows": [
     "*"
   ],

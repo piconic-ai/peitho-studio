@@ -1,5 +1,5 @@
 // Strips everything that could run code out of an untrusted deck's slide
-// HTML before it reaches the DOM — see `todo/deck-script-trust.md`.
+// HTML before it reaches the DOM — see `todo/archive/deck-script-trust.md`.
 // Stopping `<script>` alone isn't enough: `innerHTML` never runs a parsed
 // `<script>`, but an `<img onerror>` fires as soon as it's inserted, and an
 // `<iframe srcdoc>` shares this document's origin (and so the app's IPC).
@@ -19,6 +19,12 @@ const SANITIZE_CONFIG = {
   // HTML parser moves a leading `<style>` into `<head>`, which DOMPurify
   // doesn't return.
   FORCE_BODY: true,
+  // On by default, it drops an `id`/`name` that matches a `document`
+  // property (`title`, `location`, ...) so the element can't clobber it.
+  // A slide lives in a shadow root, whose elements never become named
+  // properties of `document`, so all that would do here is break the
+  // slide's own `#title { ... }`.
+  SANITIZE_DOM: false,
 }
 
 function describeRemoval(entry: RemovedElement | RemovedAttribute): RemovedContent | null {

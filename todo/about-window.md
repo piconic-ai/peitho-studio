@@ -12,7 +12,7 @@ tags: [release, ui]
 `tauri dev`で開くとアイコンがフォルダになり、名前とバージョンしか
 出ない。Ghosttyのように、アイコン・サイトと同じ説明文・Version/Build/
 Commit・GitHubなどへのリンクを載せたい。あわせて、無保証・免責を
-書いたLICENSEへの導線にする(`todo/deck-script-trust.md`と同じく、事故
+書いたLICENSEへの導線にする(`todo/archive/deck-script-trust.md`と同じく、事故
 のときに自己責任と言える線引きの一部。kfly8、2026-09-28)。
 kfly8の判断: 標準パネルの拡張ではなく自前のウィンドウにする。Docs
 ボタンのリンク先はStudioのサイト。
@@ -64,7 +64,7 @@ kfly8の判断: 標準パネルの拡張ではなく自前のウィンドウに�
   返せるか確認する)。
 - 外部リンクの開き方: Helpメニューは`src-tauri/src/help_links.rs`で
   URLをRust側に固定し、`lib.rs`で`opener().open_url`している。JSから
-  任意のURLを開けるようにはしない(`todo/deck-script-tauri-access.md`で
+  任意のURLを開けるようにはしない(`todo/archive/deck-script-tauri-access.md`で
   capabilitiesを絞った方針と同じ)。
 - Build/Commitは今どこにも埋め込まれていない。`src-tauri/build.rs`は
   `cargo:rustc-env`で`PEITHO_STUDIO_TARGET`を渡しているので、同じ形で
@@ -137,7 +137,7 @@ kfly8の判断: 標準パネルの拡張ではなく自前のウィンドウに�
 - [x] `bun run test:e2e` グリーン(上の新しいe2eを含む)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機で確認する: メニューからAboutが開く、二回選んでも一枚だけ、
+- [x] 実機で確認する: メニューからAboutが開く、二回選んでも一枚だけ、
   各リンクがブラウザで開く、ライト/ダーク両方の見た目。
 - [ ] リリースビルド(CI)でBuild/Commitに実際の値が入ること。
 

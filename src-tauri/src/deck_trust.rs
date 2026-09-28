@@ -4,7 +4,7 @@
 //! user trusts it from the banner that appears, and that choice is kept in
 //! a JSON list of folders under the app's data directory — Rust-side, so a
 //! deck's own script can't add its folder to it (`update_settings` would
-//! let it). See `todo/deck-script-trust.md`.
+//! let it). See `todo/archive/deck-script-trust.md`.
 //!
 //! Trust is per folder, not per file: a folder's decks (`deck.md`,
 //! `deck.ja.md`, ...) share its `layouts/`, which is where scripts live.
@@ -67,6 +67,11 @@ pub fn read_trusted_dirs(file: &Path) -> Vec<String> {
 
 /// Adds `dir` to the list stored in `file`.
 pub fn add_trusted_dir(file: &Path, dir: &Path) -> Result<(), String> {
+    // `with_trusted` skips such a folder silently; saying so here keeps
+    // "Trust and Run" from looking like it worked when nothing was saved.
+    if trust_key(dir).is_none() {
+        return Err(format!("can't trust {}: not an absolute or existing folder", dir.display()));
+    }
     let json = serde_json::to_string(&with_trusted(read_trusted_dirs(file), dir)).map_err(|err| err.to_string())?;
     std::fs::write(file, json).map_err(|err| format!("failed to write {}: {err}", file.display()))
 }
@@ -161,6 +166,26 @@ mod tests {
     fn with_trusted_adversarial_a_relative_missing_path_is_not_added() {
         assert_eq!(with_trusted(Vec::new(), Path::new("no-such-relative-folder")), Vec::<String>::new());
         assert_eq!(with_trusted(Vec::new(), Path::new("")), Vec::<String>::new());
+    }
+
+    #[test]
+    fn add_trusted_dir_spec_saves_the_folder() {
+        let data = tempfile::tempdir().unwrap();
+        let deck = tempfile::tempdir().unwrap();
+        let file = data.path().join("trusted_deck_dirs.json");
+
+        add_trusted_dir(&file, deck.path()).unwrap();
+        assert!(is_trusted(&read_trusted_dirs(&file), deck.path()));
+    }
+
+    #[test]
+    fn add_trusted_dir_adversarial_a_folder_it_cannot_key_is_an_error_and_saves_nothing() {
+        let data = tempfile::tempdir().unwrap();
+        let file = data.path().join("trusted_deck_dirs.json");
+
+        assert!(add_trusted_dir(&file, Path::new("")).is_err());
+        assert!(add_trusted_dir(&file, Path::new("no-such-relative-folder")).is_err());
+        assert!(!file.exists());
     }
 
     #[test]

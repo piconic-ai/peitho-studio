@@ -1,5 +1,5 @@
 // Whether the open deck may run its own scripts, and whether the banner
-// offering to trust it is shown — see `todo/deck-script-trust.md`. An
+// offering to trust it is shown — see `todo/archive/deck-script-trust.md`. An
 // untrusted deck's slide HTML is sanitized before it reaches the DOM
 // (`dom/slideSanitizer.ts`); the banner appears only once that actually
 // took something executable out, so a deck with no scripts never shows it.

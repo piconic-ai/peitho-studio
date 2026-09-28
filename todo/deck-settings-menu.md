@@ -265,7 +265,7 @@ Studioの表示には効かない(present・ビルド・PDFで使われる)。�
   置き換わる。
 - 報告コマンド`report_deck_settings`はメニューの表示(チェックとラベル)しか変えない
   ので、デッキのレイアウトスクリプトから呼ばれても影響はメニューの表示に
-  限られる(`todo/deck-script-tauri-access.md`の観点)。
+  限られる(`todo/archive/deck-script-tauri-access.md`の観点)。
 - mock e2eのキャンバス寸法は、frontmatterの`aspect_ratio`から決めるように
   した(peitho-coreと同じ規則)。4:3でプレビューのキャンバス幅が960に
   なることまでは自動で確かめている。
