@@ -19,6 +19,12 @@ const SANITIZE_CONFIG = {
   // HTML parser moves a leading `<style>` into `<head>`, which DOMPurify
   // doesn't return.
   FORCE_BODY: true,
+  // On by default, it drops an `id`/`name` that matches a `document`
+  // property (`title`, `location`, ...) so the element can't clobber it.
+  // A slide lives in a shadow root, whose elements never become named
+  // properties of `document`, so all that would do here is break the
+  // slide's own `#title { ... }`.
+  SANITIZE_DOM: false,
 }
 
 function describeRemoval(entry: RemovedElement | RemovedAttribute): RemovedContent | null {
