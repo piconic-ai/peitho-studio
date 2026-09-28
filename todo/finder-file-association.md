@@ -165,12 +165,22 @@ UTI宣言は、Bearなど先行アプリと同じ`net.daringfireball.markdown`�
   Info.plistで`CFBundleDocumentTypes`に反映されることを確認済み。
 - `lib.rs`の`.run()`に`RunEvent::Opened { urls }`を追加(配線のみ)。実際の
   判断ロジックは`peitho.rs`の`open_finder_urls`/`finder_open_target`
-  (純粋関数、テストあり)に切り出した。`main_claimed`という呼び出しループ
-  内のローカルフラグで「同一バッチ内で`main`を使い切ったか」を追跡している
-  — `PeithoSession`自体はフロント側の非同期`open_deck`往復が終わるまで
-  更新されないため、複数URL一括オープン時に2件目以降が`PeithoSession`の
-  状態だけからは`main`が埋まったと判定できない(方針の「2件目以降は
-  新規ウィンドウ行きになる」を、この意味で実現している)。
+  (純粋関数、テストあり)に切り出した。
+- Pullfrogの初回レビューで実バグをもう1件検出:
+  「`main`をどこにも使っていない」判定を呼び出しループ内のローカルフラグ
+  (`main_claimed`)だけで行っていたため、同一`RunEvent::Opened`バッチ内の
+  2件目以降は正しく新規ウィンドウへ回せても、**別々の`RunEvent::Opened`が
+  短時間に連続して届いた場合**(例: Finderで立て続けに2回ダブルクリック)は
+  検出できなかった — `PeithoSession`はどちらの呼び出し時点でもまだ空
+  (フロント側の非同期`open_deck`往復が終わっていない)なので、2回とも
+  独立に`MainWindow`と判定し、`PendingDecks`の`main`エントリを2件目が
+  黙って上書きしてしまい、1件目のファイルが永遠に開かれずエラーも出ない
+  (受け入れ条件違反)。修正: ローカルフラグをやめ、`PendingDecks`に
+  `has_pending(label)`(消費せず覗き見るだけのメソッド)を追加し、
+  `finder_open_target`の第2引数を「`main`にまだ消費されていない
+  pendingがあるか」に差し替えた。これは同一バッチ内2件目以降のケースも
+  自動的にカバーする(1件目の`assign_to_main_window`が書き込んだ時点で
+  `has_pending`が真になるため、専用のローカルフラグが不要になった)。
 - 本番経路のトレース(1節参照)で見つけた実バグ: `components/Studio.tsx`の
   `onMount`は「`take_pending_deck`で何か受け取ったウィンドウは、その
   デッキを見せる専用に生成された使い捨てウィンドウ(`open_deck_window_impl`
@@ -185,10 +195,10 @@ UTI宣言は、Bearなど先行アプリと同じ`net.daringfireball.markdown`�
   `e2e/helpers/mockTauri.ts`の`take_pending_deck`は常に`null`を返していた
   ため、`MockDeck.pendingDeck`を追加してこのケースを再現できるようにした。
 - Rust側のURL→パス変換(`finder_url_to_path`)は`http(s)://`等の非file
-  URLを無視するアドバーサリアルテストを追加。`PeithoSession::is_empty`は
-  他の状態アクセサ(`has_session`など)と同様、既存の慣習に合わせて
-  直接のユニットテストは書いていない(呼び出し元の`finder_open_target`側で
-  決定ロジックをテスト済み)。
+  URLを無視するアドバーサリアルテストを追加。`PeithoSession::is_empty`/
+  `PendingDecks::has_pending`は、他の状態アクセサ(`has_session`など)と
+  同様、既存の慣習に合わせて直接のユニットテストは書いていない(呼び出し元の
+  `finder_open_target`側で決定ロジックをテスト済み)。
 - 実機WKWebView依存の項目(上の「人間の判断が必要な項目」)に加え、
   `RunEvent::Opened`が実機でいつ発火するか(`setup()`より前か後か)は
   静的なコードトレースだけでは確定できない — `main`ウィンドウの
