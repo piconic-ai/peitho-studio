@@ -144,6 +144,16 @@ export interface MockDeck {
    * `trust_open_deck` sets it to `true` (so a reload opens it trusted, as a
    * restart would). */
   trusted?: boolean
+  /** What `import_deck_image_file` / `import_deck_image_bytes` answer —
+   * the deck-relative path of the saved image. Defaults to
+   * `img/<file name>` (the dropped file's, or the pasted image's
+   * `x-image-name` header), as `engine::images` names a plain name. For
+   * `import_deck_image_bytes`, `args` is `{ bytes, headers }` (the raw body
+   * as a number array). Nothing is written anywhere. */
+  importImage?: (cmd: string, args: Record<string, unknown>) => string
+  /** Milliseconds `import_deck_image_file`/`_bytes` wait before answering —
+   * defaults to 0. Set it to act while an image is still being saved. */
+  importImageDelayMs?: number
   /** What `get_about_info` answers (the About window's page) — defaults to
    * a CI build with a commit. Passed as is, so a test can hand over a
    * malformed value too. */
@@ -231,6 +241,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
     if (cmd === 'open_deck' && deck.openDeckDelayMs) await sleep(deck.openDeckDelayMs)
     if (cmd === 'check_slide_layouts' && deck.checkSlideLayoutsDelayMs) await sleep(deck.checkSlideLayoutsDelayMs)
     if (cmd === 'render_draft' && deck.renderDraftDelayMs) await sleep(deck.renderDraftDelayMs)
+    if (cmd.startsWith('import_deck_image_') && deck.importImageDelayMs) await sleep(deck.importImageDelayMs)
     deck.onInvoke?.(cmd, args)
     if (error !== null && error !== undefined) throw new Error(error)
     switch (cmd) {
@@ -294,6 +305,10 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         deck.clipboardText = args.text as string
         return null
       case 'get_about_info': return deck.aboutInfo ?? DEFAULT_ABOUT_INFO
+      case 'import_deck_image_file':
+        return deck.importImage?.(cmd, args) ?? `img/${String(args.path).split('/').pop() ?? ''}`
+      case 'import_deck_image_bytes':
+        return deck.importImage?.(cmd, args) ?? `img/${String((args.headers as Record<string, string> | undefined)?.['x-image-name'])}`
       default: return null
     }
   })
@@ -362,7 +377,13 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       }
     }
 
-    w.__TAURI_INTERNALS__.invoke = async (cmd: string, args: Record<string, unknown> = {}) => {
+    w.__TAURI_INTERNALS__.invoke = async (cmd: string, rawArgs: unknown = {}, options?: { headers?: Record<string, string> }) => {
+      // A raw-body invoke (`import_deck_image_bytes`) can't cross
+      // `exposeFunction` as bytes: it reaches the mock as a number array,
+      // with the request's headers beside it.
+      const args = rawArgs instanceof Uint8Array || rawArgs instanceof ArrayBuffer
+        ? { bytes: Array.from(new Uint8Array(rawArgs)), headers: options?.headers ?? {} }
+        : rawArgs as Record<string, unknown>
       if (cmd === 'plugin:event|listen') {
         const event = args.event as string
         const handlerId = args.handler as number
