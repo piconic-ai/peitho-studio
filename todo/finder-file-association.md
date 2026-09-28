@@ -147,7 +147,7 @@ UTI宣言は、Bearなど先行アプリと同じ`net.daringfireball.markdown`�
 - [ ] 未信頼のデッキをFinder越しに開いた場合、信頼ダイアログが正しく機能する
   こと
 
-## 実装メモ(PR #TBD)
+## 実装メモ(PR #125)
 
 - `tauri.conf.json`の`bundle.fileAssociations`に`ext: ["md"]` +
   `contentTypes: ["net.daringfireball.markdown"]`(方針どおり、独自
