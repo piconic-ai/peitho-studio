@@ -1,0 +1,27 @@
+/* The image of a `title-body-image` slide fills the space the title and
+   body leave, scaled down to fit without cropping. */
+.image {
+  flex: 1 1 0;
+  min-height: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* peitho-core wraps the slotted <img> in a `.slot-image` div; give it the
+   figure's full box so the image's percentage limits have something to
+   resolve against. */
+.image .slot-image {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}

@@ -337,6 +337,8 @@ pub fn run() {
             peitho::present_deck,
             peitho::report_deck_settings,
             peitho::trust_open_deck,
+            peitho::import_deck_image_file,
+            peitho::import_deck_image_bytes,
             settings::get_settings,
             settings::update_settings,
             settings::get_system_locales,

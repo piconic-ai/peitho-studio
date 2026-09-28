@@ -29,6 +29,7 @@ use crate::deck_variants;
 use crate::edit_menu;
 use crate::i18n::{self, Language, MenuLabels};
 use crate::engine::builtin;
+use crate::engine::images;
 use crate::engine::layout_fit::{self, LayoutVerdict};
 use crate::engine::pipeline::{self, RenderOutput};
 use crate::engine::serve::AssetServer;
@@ -407,14 +408,19 @@ fn validate_deck_name(name: &str) -> Result<&str, String> {
 /// (default layout, light theme): a starter `deck.md` plus its own
 /// `layouts/`/`css/base.css` to customize instead of silently depending
 /// on peitho-core's built-in fallback, and a `.gitignore` for the
-/// directories `peitho build`/`preview`/`present` write into. Split out
-/// of `create_deck` as its own pure function so the scaffold's shape is
-/// unit-testable without touching the filesystem.
+/// directories `peitho build`/`preview`/`present` write into. Beyond
+/// `peitho new`'s shape, Studio adds a layout (and its CSS) for a slide
+/// holding an image, so an image dropped or pasted into the new deck shows
+/// up (see `builtin::IMAGE_LAYOUT_HTML`). Split out of `create_deck` as its
+/// own pure function so the scaffold's shape is unit-testable without
+/// touching the filesystem.
 fn scaffold_deck_files(settings: NewDeckSettings) -> Vec<(&'static str, String)> {
     vec![
         ("deck.md", starter_deck(settings)),
         ("layouts/title-body-code.html", builtin::LAYOUT_HTML.to_string()),
+        ("layouts/title-body-image.html", builtin::IMAGE_LAYOUT_HTML.to_string()),
         ("css/base.css", format!("{BASE_CSS_HEADER}{}", builtin::BASE_CSS)),
+        ("css/title-body-image.css", builtin::IMAGE_LAYOUT_CSS.to_string()),
         (".gitignore", builtin::GITIGNORE.to_string()),
     ]
 }
@@ -926,6 +932,41 @@ fn session_deck_path(session: &PeithoSession, label: &str) -> Result<PathBuf, St
     Ok(state.deck_path.clone())
 }
 
+fn session_deck_dir(session: &PeithoSession, label: &str) -> Result<PathBuf, String> {
+    let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+    let state = guard.get(label).ok_or_else(|| "no deck is open".to_string())?;
+    Ok(state.deck_dir.clone())
+}
+
+/// Copies an image file dropped on the body editor into this window's
+/// deck, under `img/`, and returns its deck-relative path for the Markdown
+/// (see `engine::images`). Only a PNG, JPEG, GIF or WebP file is ever read.
+/// `async`: the file can be large, or on a slow volume.
+#[tauri::command(async)]
+pub fn import_deck_image_file(path: String, window: WebviewWindow, session: State<PeithoSession>) -> Result<String, String> {
+    images::import_image_file(&session_deck_dir(&session, window.label())?, Path::new(&path))
+}
+
+/// The header naming a pasted image (`screenshot-20260925-143012.png`).
+const IMAGE_NAME_HEADER: &str = "x-image-name";
+
+/// Saves an image pasted into the body editor into this window's deck,
+/// under `img/`, and returns its deck-relative path for the Markdown (see
+/// `engine::images`). The image's bytes come as the raw request body, not
+/// base64 in JSON, and its name in the `x-image-name` header.
+#[tauri::command(async)]
+pub fn import_deck_image_bytes(request: tauri::ipc::Request<'_>, window: WebviewWindow, session: State<PeithoSession>) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("the image must be sent as raw bytes".to_string());
+    };
+    let name = request
+        .headers()
+        .get(IMAGE_NAME_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| format!("the image has no {IMAGE_NAME_HEADER} header"))?;
+    images::import_image(&session_deck_dir(&session, window.label())?, name, bytes)
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LayoutPreview {
@@ -1328,7 +1369,14 @@ Start writing your slides here.\n";
         let paths: Vec<&str> = files.iter().map(|(path, _)| *path).collect();
         assert_eq!(
             paths,
-            vec!["deck.md", "layouts/title-body-code.html", "css/base.css", ".gitignore"]
+            vec![
+                "deck.md",
+                "layouts/title-body-code.html",
+                "layouts/title-body-image.html",
+                "css/base.css",
+                "css/title-body-image.css",
+                ".gitignore"
+            ]
         );
 
         let base_css = &files.iter().find(|(path, _)| *path == "css/base.css").unwrap().1;
@@ -1358,7 +1406,9 @@ Start writing your slides here.\n";
         assert_eq!(deck_path, dir.join("deck.md"));
         assert!(dir.join("deck.md").is_file());
         assert!(dir.join("layouts/title-body-code.html").is_file());
+        assert!(dir.join("layouts/title-body-image.html").is_file());
         assert!(dir.join("css/base.css").is_file());
+        assert!(dir.join("css/title-body-image.css").is_file());
         assert!(dir.join(".gitignore").is_file());
     }
 
@@ -1410,6 +1460,74 @@ Start writing your slides here.\n";
             assert_eq!(width * ratio_h.parse::<u64>().unwrap(), height * ratio_w.parse::<u64>().unwrap(), "{aspect_ratio}: {width}x{height}");
             assert_eq!(output.fragments.len(), 1, "{aspect_ratio} {lang}");
         }
+    }
+
+    const TINY_PNG: &[u8] = &[
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41,
+        0x54, 0x78, 0x9c, 0x63, 0x60, 0x00, 0x02, 0x00, 0x00, 0x05, 0x00, 0x01, 0xe9, 0xfa, 0xdc, 0xd8, 0x00, 0x00, 0x00, 0x00,
+        0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+
+    /// A deck `create_deck` scaffolded, with an image imported the way a
+    /// drop or paste does (`engine::images`) — its path and the image's
+    /// deck-relative path.
+    fn created_deck_with_image(parent: &Path) -> (PathBuf, String) {
+        let deck_path = PathBuf::from(create_deck_with(parent, "16:9", "en").unwrap());
+        let image = crate::engine::images::import_image(deck_path.parent().unwrap(), "screenshot.png", TINY_PNG).unwrap();
+        (deck_path, image)
+    }
+
+    #[test]
+    fn given_a_created_deck_when_an_image_only_paragraph_is_added_then_it_renders_with_the_image_layout() {
+        let parent = tempfile::tempdir().unwrap();
+        let (deck_path, image) = created_deck_with_image(parent.path());
+        let source = format!("{}\n![]({image})\n", std::fs::read_to_string(&deck_path).unwrap());
+
+        let output = pipeline::render_source(&deck_path, &source).unwrap_or_else(|err| panic!("{err}"));
+        let fragment = output.fragments.get("cover").unwrap();
+        assert!(fragment.contains("<img"), "{fragment}");
+        assert!(output.image_assets.keys().any(|asset| asset.ends_with("-screenshot.png")), "{:?}", output.image_assets);
+        assert!(output.css.contains("object-fit: contain"), "the image layout's own CSS is loaded");
+    }
+
+    #[test]
+    fn given_a_created_deck_when_slides_with_and_without_an_image_sit_side_by_side_then_each_finds_exactly_one_layout() {
+        let parent = tempfile::tempdir().unwrap();
+        let (deck_path, image) = created_deck_with_image(parent.path());
+        let source = format!(
+            "{}\n---\n\n# Just text\n\n- a point\n\n---\n\n# With code\n\n```rust\nfn main() {{}}\n```\n\n---\n\n# Only an image\n\n![]({image})\n",
+            std::fs::read_to_string(&deck_path).unwrap()
+        );
+
+        let output = pipeline::render_source(&deck_path, &source).unwrap_or_else(|err| panic!("{err}"));
+        let uses_image_layout = |key: &str| output.fragments.get(key).unwrap_or_else(|| panic!("{key}")).contains("<figure class=\"image");
+        assert_eq!(output.fragments.len(), 4);
+        assert!(!uses_image_layout("cover"));
+        assert!(!uses_image_layout("just-text"));
+        assert!(!uses_image_layout("with-code"));
+        assert!(uses_image_layout("only-an-image"));
+    }
+
+    #[test]
+    fn given_a_created_deck_when_the_image_shares_its_paragraph_with_text_then_peitho_core_refuses_it() {
+        let parent = tempfile::tempdir().unwrap();
+        let (deck_path, image) = created_deck_with_image(parent.path());
+        let source = format!("{}\n![]({image}) and some text\n", std::fs::read_to_string(&deck_path).unwrap());
+
+        assert!(pipeline::render_source(&deck_path, &source).is_err());
+    }
+
+    #[test]
+    fn given_a_deck_without_an_image_slot_when_an_image_is_added_then_the_error_names_the_missing_slot() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let image = crate::engine::images::import_image(dir.path(), "photo.png", TINY_PNG).unwrap();
+        let source = format!("# Old deck\n\n![]({image})\n");
+        std::fs::write(&deck_path, &source).unwrap();
+
+        let err = pipeline::render_source(&deck_path, &source).err().expect("the built-in layout has no image slot");
+        assert!(err.contains("no slot accepts image"), "{err}");
     }
 
     #[test]

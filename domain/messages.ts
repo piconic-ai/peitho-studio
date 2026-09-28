@@ -115,6 +115,13 @@ export interface Messages {
   presentingRehearsal: string
   externalChangeConfirm: string
 
+  // Images dropped or pasted into the slide body
+  importingImages: (count: number) => string
+  importedImages: (count: number) => string
+  /** `names`: the refused files' names, already joined. */
+  unsupportedImageFiles: (names: string) => string
+  imageImportFailed: (error: string) => string
+
   // About window
   aboutDescription: string
   aboutVersion: string
@@ -219,6 +226,11 @@ const en: Messages = {
   presentingRehearsal: 'Presenting (rehearsal)…',
   externalChangeConfirm: 'This deck changed outside Peitho Studio (e.g. another editor). Reload it and discard your unsaved edits here?',
 
+  importingImages: count => (count === 1 ? 'Importing image…' : `Importing ${String(count)} images…`),
+  importedImages: count => (count === 1 ? 'Image added to img/' : `${String(count)} images added to img/`),
+  unsupportedImageFiles: names => `Not added — only PNG, JPEG, GIF and WebP images can be used: ${names}`,
+  imageImportFailed: error => `Could not add the image: ${error}`,
+
   // Same words as the site's (site/index.html).
   aboutDescription: 'Write slides with Peitho. Plain Markdown and HTML, so AI can help you.',
   aboutVersion: 'Version',
@@ -322,6 +334,11 @@ const ja: Messages = {
   presenting: '発表中…',
   presentingRehearsal: '発表中(リハーサル)…',
   externalChangeConfirm: 'このデッキはPeitho Studioの外(ほかのエディタなど)で変更されました。読み込み直して、ここでの未保存の編集を破棄しますか?',
+
+  importingImages: count => (count === 1 ? '画像を取り込み中…' : `${String(count)} 枚の画像を取り込み中…`),
+  importedImages: count => (count === 1 ? '画像を img/ に取り込みました' : `${String(count)} 枚の画像を img/ に取り込みました`),
+  unsupportedImageFiles: names => `追加しませんでした — 使える画像は PNG・JPEG・GIF・WebP だけです: ${names}`,
+  imageImportFailed: error => `画像を追加できませんでした: ${error}`,
 
   aboutDescription: 'Peithoでスライドを書く。素のMarkdownとHTMLなので、AIに手伝ってもらえます。',
   aboutVersion: 'バージョン',

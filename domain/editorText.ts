@@ -48,3 +48,68 @@ export function editorTextChange(current: string, next: string): TextChange | nu
 export function applyTextChange(text: string, change: TextChange): string {
   return text.slice(0, change.from) + change.insert + text.slice(change.to)
 }
+
+/** A `TextChange` plus where the cursor goes once it is applied. */
+export interface TextInsertion extends TextChange {
+  cursor: number
+}
+
+/** The Markdown for an image at `relativePath` (deck-relative, as
+ * `import_deck_image_*` returns it). No alt text. */
+export function imageMarkdown(relativePath: string): string {
+  return `![](${relativePath})`
+}
+
+// Line breaks at the end of `text` (`\r\n` counts as one), up to 2.
+function trailingBreaks(text: string): number {
+  const match = /(?:\r\n|\r|\n){0,2}$/.exec(text)
+  return match === null ? 0 : (match[0].match(/\r\n|\r|\n/g) ?? []).length
+}
+
+// Line breaks at the start of `text`, up to 2.
+function leadingBreaks(text: string): number {
+  const match = /^(?:\r\n|\r|\n){0,2}/.exec(text)
+  return match === null ? 0 : (match[0].match(/\r\n|\r|\n/g) ?? []).length
+}
+
+/** Replaces `doc[from, to)` (the selection, or a caret where `from ===
+ * to`) with an image paragraph for each of `relativePaths`, each its own
+ * paragraph: peitho-core refuses an image sharing a paragraph with text
+ * (`![](a.png) text`). A blank line is added before and after only where
+ * one isn't already there, and none at the very start or end of `doc`.
+ * The cursor lands right after the last image. Positions past either end
+ * are clamped, and a reversed range is put in order. `null` when there is
+ * no image to insert. */
+export function imageParagraphInsertion(doc: string, from: number, to: number, relativePaths: readonly string[]): TextInsertion | null {
+  if (relativePaths.length === 0) return null
+  const clamp = (n: number) => Math.min(Math.max(Number.isFinite(n) ? Math.trunc(n) : 0, 0), doc.length)
+  let start = Math.min(clamp(from), clamp(to))
+  let end = Math.max(clamp(from), clamp(to))
+  // Never between the two halves of a `\r\n` or of a surrogate pair:
+  // such a position moves back to before the pair, which stays whole.
+  const splitsPair = (at: number) => at > 0 && at < doc.length && (
+    (doc[at - 1] === '\r' && doc[at] === '\n') ||
+    (isHighSurrogate(doc.charCodeAt(at - 1)) && isLowSurrogate(doc.charCodeAt(at)))
+  )
+  if (splitsPair(start)) start--
+  if (splitsPair(end)) end--
+  const before = doc.slice(0, start)
+  const after = doc.slice(end)
+  const images = relativePaths.map(imageMarkdown).join('\n\n')
+  const lead = before === '' ? '' : '\n'.repeat(2 - trailingBreaks(before))
+  const trail = after === '' ? '' : '\n'.repeat(2 - leadingBreaks(after))
+  const insert = lead + images + trail
+  return { from: start, to: end, insert, cursor: start + lead.length + images.length }
+}
+
+/** Where to insert once an image import that started at `saved` (the text
+ * and selection then) has finished: the same place if the text is still
+ * the same, or else the selection as it is `now` — the user typed, or the
+ * text was replaced, meanwhile, and a position in the old text no longer
+ * means anything. */
+export function insertionRangeAfterWait(
+  saved: { doc: string; from: number; to: number },
+  now: { doc: string; from: number; to: number },
+): { from: number; to: number } {
+  return saved.doc === now.doc ? { from: saved.from, to: saved.to } : { from: now.from, to: now.to }
+}

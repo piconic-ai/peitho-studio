@@ -6,8 +6,11 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
 import { createTauriSettingsIpc } from '../ipc/settingsIpc'
 import { createTauriEditorIpc } from '../ipc/editorIpc'
+import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
 import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
-import { clampMenuPosition, type Size } from '../domain/geometry'
+import { clampMenuPosition, physicalToCssPoint, type Size } from '../domain/geometry'
+import { imageParagraphInsertion, insertionRangeAfterWait } from '../domain/editorText'
+import { fileNameOf, partitionDroppedPaths } from '../domain/images'
 import { deviceForShape, effectiveCanvas } from '../domain/viewport'
 import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
@@ -31,9 +34,10 @@ import { takesCommandKeys, type VimMode } from '../domain/vimMode'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
 import { blurEditorFieldOnRowPress, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
-import { canReplayCodeEditorGroup, createCodeEditor, isolateCodeEditorHistory, replayCodeEditorGroup, replayFocusedCodeEditorHistory, restoreCodeEditor, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, snapshotCodeEditor, type CodeEditorOptions, type CodeEditorSnapshot } from '../dom/codeEditor'
+import { canReplayCodeEditorGroup, codeEditorPositionAt, codeEditorSelection, createCodeEditor, insertIntoCodeEditor, isolateCodeEditorHistory, replayCodeEditorGroup, replayFocusedCodeEditorHistory, restoreCodeEditor, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, snapshotCodeEditor, type CodeEditorOptions, type CodeEditorSnapshot } from '../dom/codeEditor'
 import { createEditorSlideStates } from '../dom/editorSlideStates'
 import { createVimClipboardBridge, onClipboardMayHaveChanged } from '../dom/vimClipboard'
+import { readPastedImage } from '../dom/imagePaste'
 import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
 import { focusSettingsPanel, restoreFocusAfterSettingsPanel } from '../dom/settingsPanel'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, remountSlideCanvases, setManifestKeysSource, setScriptsBlockedListener, setSlideScriptsTrusted } from '../dom/slideCanvas'
@@ -217,6 +221,8 @@ export function Studio() {
   // vim takes command keys, and the unnamed register follows the system
   // clipboard (`dom/vimClipboard.ts`).
   const editorIpc = createTauriEditorIpc()
+  // Images dropped or pasted into the body, saved into the deck's `img/`.
+  const imageIpc = createTauriImageIpc()
   const vimClipboard = createVimClipboardBridge({
     readText: () => editorIpc.readClipboardText(),
     writeText: text => editorIpc.writeClipboardText(text),
@@ -382,7 +388,82 @@ export function Studio() {
       spellcheck: false,
       onChange: text => editor.setEditorSession(session => withDraftBody(session, text)),
       onHistoryGroup: seq => { recordTextGroup('body', seq) },
+      onPasteImages: files => { void pasteImages(files) },
     })
+  }
+
+  // Images pasted or dropped into the body: each is saved under the deck's
+  // `img/` first (`engine::images` — the draft render reads it from disk),
+  // then its Markdown goes in as its own paragraph, one undo step for the
+  // whole batch. The file stays on disk if that step is undone. The render
+  // that follows reports a deck whose layouts have no image slot, like any
+  // other build error; the text stays so the layouts can be fixed.
+  //
+  // Saving takes a moment; if the user left the slide meanwhile (or the
+  // deck was re-read), the images are saved but not inserted anywhere.
+  async function importImagesIntoBody(
+    view: NonNullable<typeof bodyEditor>,
+    at: { doc: string; from: number; to: number },
+    count: number,
+    importAll: () => Promise<string[]>,
+    userEvent: 'input.paste' | 'input.drop',
+  ): Promise<void> {
+    const index = editor.selectedIndex()
+    const epoch = slidePositionsEpoch
+    setStatusMessage({ kind: 'importing-images', count })
+    let paths: string[]
+    try {
+      paths = await importAll()
+    } catch (err) {
+      setStatusMessage({ kind: 'none' })
+      setErrorMessage(settings.messages().imageImportFailed(String(err)))
+      return
+    }
+    setStatusMessage({ kind: 'imported-images', count: paths.length })
+    if (bodyEditor !== view || editor.selectedIndex() !== index || index === null || slidePositionsEpoch !== epoch) return
+    const now = codeEditorSelection(view)
+    const range = insertionRangeAfterWait(at, now)
+    const insertion = imageParagraphInsertion(now.doc, range.from, range.to, paths)
+    if (insertion !== null) insertIntoCodeEditor(view, insertion, userEvent)
+  }
+
+  async function pasteImages(files: File[]): Promise<void> {
+    const view = bodyEditor
+    if (!view) return
+    const at = new Date()
+    await importImagesIntoBody(view, codeEditorSelection(view), files.length, async () => {
+      const paths: string[] = []
+      for (const file of files) {
+        const image = await readPastedImage(file, at)
+        paths.push(await imageIpc.importImageBytes(image.name, image.bytes))
+      }
+      return paths
+    }, 'input.paste')
+  }
+
+  // Files dropped from Finder, anywhere on the window: only a drop on the
+  // body editor counts, at the text position under the pointer. A drop
+  // holding any file that isn't an image Peitho can show is refused whole,
+  // naming those files in the error bar: nothing is written. (Importing the
+  // rest would re-render the draft, whose success clears the error bar
+  // before the user could read which files were left out.)
+  async function dropFiles(drop: FileDrop): Promise<void> {
+    const view = bodyEditor
+    if (!view || editor.selectedIndex() === null || settings.panelOpen()) return
+    const pos = codeEditorPositionAt(view, physicalToCssPoint(drop.position, window.devicePixelRatio))
+    if (pos === null) return
+    const { images, rejected } = partitionDroppedPaths(drop.paths)
+    if (rejected.length > 0) {
+      setErrorMessage(settings.messages().unsupportedImageFiles(rejected.map(fileNameOf).join(', ')))
+      return
+    }
+    if (images.length === 0) return
+    view.focus()
+    await importImagesIntoBody(view, { doc: codeEditorSelection(view).doc, from: pos, to: pos }, images.length, async () => {
+      const paths: string[] = []
+      for (const path of images) paths.push(await imageIpc.importImageFile(path))
+      return paths
+    }, 'input.drop')
   }
 
   function onNoteEditorHost(el: HTMLElement): void {
@@ -1599,6 +1680,7 @@ export function Studio() {
       }
       void replayHistory(direction)
     }
+    const unlistenFileDrop = imageIpc.onFileDrop(drop => { void dropFiles(drop) })
     const unlistenMenuUndo = deckIpc.onMenuUndo(() => { onMenuHistory('undo') })
     const unlistenMenuRedo = deckIpc.onMenuRedo(() => { onMenuHistory('redo') })
 
@@ -1712,6 +1794,7 @@ export function Studio() {
       unlistenMenuSettings()
       unlistenSettingsChanged()
       unlistenClipboard()
+      unlistenFileDrop()
       unlistenMenuUndo()
       unlistenMenuRedo()
       unlistenMenuDeckSetting()

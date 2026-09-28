@@ -11,6 +11,23 @@
 pub const LAYOUT_HTML: &str = include_str!("builtin/title-body-code.html");
 pub const BASE_CSS: &str = include_str!("builtin/base.css");
 
+/// Studio's own layout for a slide holding one image (a title, optional
+/// body text, and the image below), scaffolded next to `LAYOUT_HTML` by
+/// `create_deck` so an image dropped or pasted into a new deck shows up
+/// (see `engine::images`). Not part of the no-`layouts/` fallback: peitho's
+/// CLI has only `title-body-code` built in, and a deck without its own
+/// layouts should build the same in both.
+///
+/// Its image slot is required (`arity="1"`), so with both layouts in a deck
+/// a slide without an image fits only `title-body-code` and a slide with
+/// one fits only this — peitho-core needs exactly one structural match.
+pub const IMAGE_LAYOUT_HTML: &str = include_str!("builtin/title-body-image.html");
+
+/// Sizes `IMAGE_LAYOUT_HTML`'s image to the space left under the title and
+/// body, scaffolded as its own `css/` file so `css/base.css` stays a plain
+/// copy of peitho's theme.
+pub const IMAGE_LAYOUT_CSS: &str = include_str!("builtin/title-body-image.css");
+
 /// Matches `crates/peitho/templates/new/gitignore` in the peitho repo —
 /// `dist/` and `.peitho/` are directories `peitho build`/`preview`/`present`
 /// write into, so a scaffolded deck should ignore them from the start.
