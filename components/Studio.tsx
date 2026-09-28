@@ -14,7 +14,7 @@ import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, indexAfterCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
 import { type FrontmatterStep, type HistoryStep, type PageNumbersStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inversePageNumbersStep, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
-import { type DeckSettingsReport, deckSettingsReport, frontmatterValueOf, pickChangesNothing, readDeckSettings, resolveDeckSettingPick, sameDeckSettingsReport } from '../domain/deckSettings'
+import { type DeckSettingsState, frontmatterValueOf, pickChangesNothing, readDeckSettings, resolveDeckSettingPick, sameDeckSettings } from '../domain/deckSettings'
 import { PAGE_NUMBERS_KEY, type PageNumbersChoice, pageNumbersShown, pageNumbersValueOf, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
@@ -427,17 +427,18 @@ export function Studio() {
   // undo writes back), and as the header's control shows it.
   const pageNumbersValue = createMemo(() => readFrontmatterKey(editor.fullSource(), PAGE_NUMBERS_KEY))
   const pageNumbersMode = createMemo(() => parsePageNumbersMode(pageNumbersValue()))
-  // The native Deck menu's settings as this deck's frontmatter holds them
+  // The Edit menu's deck settings as this deck's frontmatter holds them
   // (see `src-tauri/src/deck_menu.rs`). Each change is reported so the
-  // menu can check the right items while this window is in front; a report
-  // equal to the last one sent (a save that left the frontmatter alone) is
-  // skipped. A report that fails is sent again with the next change.
+  // menu can show them (checks and current-value labels) while this window
+  // is in front; a report equal to the last one sent (a save that left the
+  // frontmatter alone) is skipped. A report that fails is sent again with
+  // the next change.
   const deckSettings = createMemo(() => readDeckSettings(editor.fullSource()))
-  let reportedDeckSettings: DeckSettingsReport | null = null
+  let reportedDeckSettings: DeckSettingsState | null = null
   createEffect(() => {
     if (deck.deckPath() === null) return
-    const report = deckSettingsReport(deckSettings())
-    if (reportedDeckSettings !== null && sameDeckSettingsReport(reportedDeckSettings, report)) return
+    const report = deckSettings()
+    if (reportedDeckSettings !== null && sameDeckSettings(reportedDeckSettings, report)) return
     reportedDeckSettings = report
     deckIpc.reportDeckSettings(report).catch(() => { reportedDeckSettings = null })
   })
@@ -1011,8 +1012,9 @@ export function Studio() {
     return ok ? { kind: 'done', inverse } : { kind: 'failed' }
   }
 
-  // Deck menu: writes the picked choice into the deck's frontmatter as one
-  // undoable step, removing the key for peitho-core's default. Page numbers
+  // Edit menu's deck settings: writes the picked choice into the deck's
+  // frontmatter as one undoable step, removing the key for peitho-core's
+  // default. Page numbers
   // go through a `PageNumbersStep`, which also clears the slides' own
   // `page_number:false` when turning them off. Picking the choice already
   // in place does nothing. `payload` is the menu event's, read only once
@@ -1572,9 +1574,9 @@ export function Studio() {
     const unlistenMenuUndo = deckIpc.onMenuUndo(() => { onMenuHistory('undo') })
     const unlistenMenuRedo = deckIpc.onMenuRedo(() => { onMenuHistory('redo') })
 
-    // Deck menu (see `setDeckSetting`), sent to the focused window only.
-    // The menu is disabled while no deck is open, but a pick that still
-    // arrives then is dropped.
+    // Edit menu's deck settings (see `setDeckSetting`), sent to the focused
+    // window only. The items are disabled while no deck is open, but a pick
+    // that still arrives then is dropped.
     const unlistenMenuDeckSetting = deckIpc.onMenuDeckSetting(payload => {
       if (deck.deckPath() === null) return
       void setDeckSetting(payload)

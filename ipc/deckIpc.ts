@@ -14,7 +14,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
-import type { DeckSettingsReport } from '../domain/deckSettings'
+import type { DeckSettingsState } from '../domain/deckSettings'
 import type { DeckVariant } from '../domain/deckVariants'
 import type { RenderPayload } from '../domain/render'
 import type { LayoutVerdict } from '../domain/layoutFit'
@@ -65,10 +65,10 @@ export interface DeckIpc {
    * `engine::layout_fit` in src-tauri. */
   checkSlideLayouts(content: string, slideIndex: number): Promise<LayoutVerdict[] | null>
   presentDeck(rehearsal: boolean): Promise<void>
-  /** Tells the native Deck menu which of its items this window's deck
-   * holds — shown while this window is in front. See
-   * `report_deck_settings` in peitho.rs. */
-  reportDeckSettings(settings: DeckSettingsReport): Promise<void>
+  /** Tells the Edit menu's deck settings what this window's deck holds
+   * (checks and current-value labels), shown while this window is in
+   * front. See `report_deck_settings` in peitho.rs. */
+  reportDeckSettings(settings: DeckSettingsState): Promise<void>
   onDeckFileChanged(callback: () => void): Unsubscribe
   onMenuNewDeck(callback: () => void): Unsubscribe
   /** Edit > Undo (or its Cmd+Z accelerator), sent only to the focused
@@ -77,9 +77,9 @@ export interface DeckIpc {
   onMenuUndo(callback: () => void): Unsubscribe
   /** Edit > Redo (or Cmd+Shift+Z); see `onMenuUndo`. */
   onMenuRedo(callback: () => void): Unsubscribe
-  /** A Deck menu item, sent only to the focused window — see
-   * `src-tauri/src/deck_menu.rs`. The payload is unchecked here; read it
-   * with `resolveDeckSettingPick`. */
+  /** A deck-setting item of the Edit menu, sent only to the focused window
+   * — see `src-tauri/src/deck_menu.rs`. The payload is unchecked here;
+   * read it with `resolveDeckSettingPick`. */
   onMenuDeckSetting(callback: (payload: unknown) => void): Unsubscribe
   /** Fires once the `peitho present` subprocess `presentDeck` launched has
    * actually rendered the deck and started serving it — see

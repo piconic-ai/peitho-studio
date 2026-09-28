@@ -1,20 +1,28 @@
-// The native Deck menu (`src-tauri/src/deck_menu.rs`) can't be clicked
-// from here, so these send the `menu:deck-setting` event Rust would send
-// the focused window, and read back what gets saved and what the window
-// reports for the menu's check marks (`report_deck_settings`). The marks
-// themselves, and which window's values they follow, are Rust's job and
-// need a real device. The mock stands in for peitho-core; like it, it
-// sizes the canvas from `aspect_ratio`.
+// The Edit menu's deck settings (`src-tauri/src/deck_menu.rs`) can't be
+// clicked from here, so these send the `menu:deck-setting` event Rust
+// would send the focused window, and read back what gets saved and what the
+// window reports for the menu's check marks and current-value labels
+// (`report_deck_settings`). The menu itself, and which window's values it
+// follows, are Rust's job and need a real device. The mock stands in for
+// peitho-core; like it, it sizes the canvas from `aspect_ratio`.
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 
 const PLAIN_DECK = '<!-- {"key":"one"} -->\n# Slide One\n\n---\n\n<!-- {"key":"two"} -->\n# Slide Two\n'
 const DEFAULTS = { page_numbers: 'none', aspect_ratio: '16:9', breaks: 'false', lang: 'en' }
 
+type Report = Record<string, { kind: 'known'; choice: string } | { kind: 'unknown'; raw: string }>
+
+/** A report with each known choice as its string, and an unknown value as
+ * `raw:<text>` — the text the menu shows next to the setting's name. */
+function compact(report: Report): Record<string, string> {
+  return Object.fromEntries(Object.entries(report).map(([key, s]) => [key, s.kind === 'known' ? s.choice : `raw:${s.raw}`]))
+}
+
 /** Opens `deck`, collecting every settings report the window sends. */
 async function openDeck(page: Page, deck: MockDeck): Promise<unknown[]> {
   const reports: unknown[] = []
-  deck.onInvoke = (cmd, args) => { if (cmd === 'report_deck_settings') reports.push(args.settings) }
+  deck.onInvoke = (cmd, args) => { if (cmd === 'report_deck_settings') reports.push(compact(args.settings as Report)) }
   await mockTauri(page, deck)
   await page.goto('/')
   await expect(page.locator('[data-slide-row]')).toHaveCount(2, { timeout: 10_000 })
@@ -40,7 +48,7 @@ function previewCanvasWidth(page: Page): Promise<number> {
   return page.locator('[data-preview-host]').evaluate(el => parseFloat((el as HTMLElement).style.getPropertyValue('--peitho-canvas-width')))
 }
 
-test('Given a deck with no frontmatter, when it is opened, then the Deck menu is told every setting is at its default', async ({ page }) => {
+test('Given a deck with no frontmatter, when it is opened, then the Edit menu is told every setting is at its default', async ({ page }) => {
   const reports = await openDeck(page, { source: PLAIN_DECK })
 
   await expect.poll(() => reports.at(-1)).toEqual(DEFAULTS)
@@ -130,16 +138,16 @@ test('Given page numbers off, when Page Numbers > 1/N is picked and undone, then
   await expect.poll(() => deck.source).toBe(PLAIN_DECK)
 })
 
-test('Given values the menu does not offer, when the deck is opened, then those settings are reported as unknown; picking a choice replaces the value', async ({ page }) => {
+test('Given values the menu does not offer, when the deck is opened, then those settings are reported as unknown with their raw text; picking a choice replaces the value', async ({ page }) => {
   const deck: MockDeck = { source: `---\nlang: fr\npage_numbers: both\n---\n${PLAIN_DECK}` }
   const reports = await openDeck(page, deck)
-  await expect.poll(() => reports.at(-1)).toEqual({ ...DEFAULTS, lang: null, page_numbers: null })
+  await expect.poll(() => reports.at(-1)).toEqual({ ...DEFAULTS, lang: 'raw:fr', page_numbers: 'raw:both' })
 
   await pick(page, { key: 'lang', choice: 'ja' })
 
   await expect.poll(() => deck.source).toContain('lang: ja\n')
   expect(deck.source).not.toContain('fr')
-  await expect.poll(() => reports.at(-1)).toEqual({ ...DEFAULTS, lang: 'ja', page_numbers: null })
+  await expect.poll(() => reports.at(-1)).toEqual({ ...DEFAULTS, lang: 'ja', page_numbers: 'raw:both' })
 })
 
 test.describe('robustness', () => {
