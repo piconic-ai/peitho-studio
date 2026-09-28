@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { clampMenuPosition, containScale, isPointInRect, physicalToCssPoint } from './geometry'
+import { clampMenuPosition, containScale, isPointInRect, dropPointToCss } from './geometry'
 
 describe('clampMenuPosition', () => {
   test('spec: a point that already fits within the viewport is left unchanged', () => {
@@ -80,22 +80,27 @@ describe('isPointInRect', () => {
   })
 })
 
-describe('physicalToCssPoint', () => {
-  test('spec: Given a Retina display, when a drop position is converted, then it is halved', () => {
-    expect(physicalToCssPoint({ x: 400, y: 300 }, 2)).toEqual({ x: 200, y: 150 })
+describe('dropPointToCss', () => {
+  test('spec: Given macOS on a Retina display, when a drop position is converted, then it is already in CSS pixels and unchanged', () => {
+    expect(dropPointToCss({ x: 400, y: 300 }, 2, true)).toEqual({ x: 400, y: 300 })
   })
 
-  test('spec: Given a standard display, when converted, then it is unchanged', () => {
-    expect(physicalToCssPoint({ x: 400, y: 300 }, 1)).toEqual({ x: 400, y: 300 })
+  test('spec: Given another platform on a scaled display, when converted, then it is divided by the scale', () => {
+    expect(dropPointToCss({ x: 400, y: 300 }, 2, false)).toEqual({ x: 200, y: 150 })
   })
 
-  test('adversarial: Given a fractional scale, when converted, then the division is exact', () => {
-    expect(physicalToCssPoint({ x: 300, y: 150 }, 1.5)).toEqual({ x: 200, y: 100 })
+  test('spec: Given another platform on a standard display, when converted, then it is unchanged', () => {
+    expect(dropPointToCss({ x: 400, y: 300 }, 1, false)).toEqual({ x: 400, y: 300 })
   })
 
-  test('adversarial: Given a zero, negative, NaN or infinite scale, when converted, then the point is left as is', () => {
+  test('adversarial: Given a fractional scale, when converted off macOS, then the division is exact', () => {
+    expect(dropPointToCss({ x: 300, y: 150 }, 1.5, false)).toEqual({ x: 200, y: 100 })
+  })
+
+  test('adversarial: Given a zero, negative, NaN or infinite scale, when converted, then the point is left as is on every platform', () => {
     for (const scale of [0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(physicalToCssPoint({ x: 4, y: 6 }, scale)).toEqual({ x: 4, y: 6 })
+      expect(dropPointToCss({ x: 4, y: 6 }, scale, false)).toEqual({ x: 4, y: 6 })
+      expect(dropPointToCss({ x: 4, y: 6 }, scale, true)).toEqual({ x: 4, y: 6 })
     }
   })
 })

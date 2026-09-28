@@ -8,7 +8,7 @@ import { createTauriSettingsIpc } from '../ipc/settingsIpc'
 import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
 import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
-import { clampMenuPosition, physicalToCssPoint, type Size } from '../domain/geometry'
+import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
 import { imageParagraphInsertion, insertionRangeAfterWait } from '../domain/editorText'
 import { fileNameOf, partitionDroppedPaths } from '../domain/images'
 import { deviceForShape, effectiveCanvas } from '../domain/viewport'
@@ -452,7 +452,7 @@ export function Studio() {
   async function dropFiles(drop: FileDrop): Promise<void> {
     const view = bodyEditor
     if (!view || editor.selectedIndex() === null || settings.panelOpen()) return
-    const pos = codeEditorPositionAt(view, physicalToCssPoint(drop.position, window.devicePixelRatio))
+    const pos = codeEditorPositionAt(view, dropPointToCss(drop.position, window.devicePixelRatio, /Mac/.test(navigator.userAgent)))
     if (pos === null) return
     const { images, rejected } = partitionDroppedPaths(drop.paths)
     if (rejected.length > 0) {

@@ -31,11 +31,14 @@ export function isPointInRect(point: Point, rect: Rect): boolean {
   return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom
 }
 
-/** A point in physical (device) pixels, as Tauri reports a file drop's
- * position, in CSS pixels — `scale` is the page's `devicePixelRatio`. A
- * scale that isn't a positive number (never a real one) leaves the point
+/** A file drop's position as Tauri reports it, in CSS pixels. Tauri calls
+ * it a `PhysicalPosition`, but on macOS wry passes AppKit's
+ * `draggingLocation` through unscaled (wry 0.55
+ * `wkwebview/drag_drop.rs`), which is already in points — CSS pixels — so
+ * only elsewhere is it divided by `scale`, the page's `devicePixelRatio`.
+ * A scale that isn't a positive number (never a real one) leaves the point
  * as is rather than producing `Infinity`/`NaN`. */
-export function physicalToCssPoint(point: Point, scale: number): Point {
-  if (!(scale > 0) || !Number.isFinite(scale)) return point
+export function dropPointToCss(point: Point, scale: number, macOS: boolean): Point {
+  if (macOS || !(scale > 0) || !Number.isFinite(scale)) return point
   return { x: point.x / scale, y: point.y / scale }
 }
