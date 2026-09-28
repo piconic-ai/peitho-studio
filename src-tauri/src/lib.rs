@@ -1,4 +1,8 @@
+mod about;
+#[cfg(test)]
+mod build_info;
 mod deck_menu;
+mod deck_trust;
 mod deck_variants;
 mod edit_menu;
 mod engine;
@@ -11,7 +15,7 @@ mod settings;
 
 use i18n::{Language, MenuLabels};
 use peitho::{DeckMenuState, PeithoSession, PendingDecks};
-use tauri::menu::{AboutMetadata, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
@@ -26,7 +30,7 @@ const WARM_UP_RECENT_DECKS: usize = 3;
 /// top of File, "Settings…" (Cmd+,) to the app menu, links to the
 /// project's GitHub pages (`help_links`) and "Show Log File in Finder" to Help, with Edit's Undo/Redo
 /// swapped for `edit_menu`'s own items and the deck-wide settings
-/// (`deck_menu`) at the end of Edit.
+/// (`deck_menu`) at the end of Edit, and About for `about`'s own window.
 /// Kept as an explicit rebuild rather than mutating
 /// `Menu::default()`'s output, since that method doesn't hand back the
 /// File submenu separately to prepend into.
@@ -59,14 +63,9 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
     let labels = i18n::menu_labels(language);
     let pkg_info = app.package_info();
     let app_name = pkg_info.name.as_str();
-    let config = app.config();
-    let about_metadata = AboutMetadata {
-        name: Some(pkg_info.name.clone()),
-        version: Some(pkg_info.version.to_string()),
-        copyright: config.bundle.copyright.clone(),
-        authors: config.bundle.publisher.clone().map(|p| vec![p]),
-        ..Default::default()
-    };
+    // Not `PredefinedMenuItem::about`: its native panel can't hold links,
+    // so this opens `about`'s own window instead.
+    let about_item = MenuItem::with_id(app, about::MENU_ID, labels.about(app_name), true, None::<&str>)?;
 
     let new_deck = MenuItem::with_id(app, "new_deck", labels.new_deck, true, Some("CmdOrCtrl+N"))?;
     let open_deck = MenuItem::with_id(app, "open_deck", labels.open_deck, true, Some("CmdOrCtrl+O"))?;
@@ -129,21 +128,19 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
         .map(|link| MenuItem::with_id(app, link.menu_id(), link.label(labels), true, None::<&str>))
         .collect::<tauri::Result<_>>()?;
     // macOS has About in the app menu instead.
-    #[cfg(not(target_os = "macos"))]
-    let about_items = [
-        PredefinedMenuItem::separator(app)?,
-        PredefinedMenuItem::about(app, Some(&labels.about(app_name)), Some(about_metadata.clone()))?,
-    ];
-    #[cfg(target_os = "macos")]
-    let about_items: [PredefinedMenuItem<tauri::Wry>; 0] = [];
     let log_file_separator = PredefinedMenuItem::separator(app)?;
     let log_file = MenuItem::with_id(app, logging::LOG_FILE_MENU_ID, labels.show_log_file, true, None::<&str>)?;
-    let help_items: Vec<&dyn IsMenuItem<tauri::Wry>> = help_link_items
+    #[cfg_attr(target_os = "macos", allow(unused_mut))]
+    let mut help_items: Vec<&dyn IsMenuItem<tauri::Wry>> = help_link_items
         .iter()
         .map(|item| item as &dyn IsMenuItem<tauri::Wry>)
         .chain([&log_file_separator as &dyn IsMenuItem<tauri::Wry>, &log_file])
-        .chain(about_items.iter().map(|item| item as &dyn IsMenuItem<tauri::Wry>))
         .collect();
+    // macOS has About in the app menu instead.
+    #[cfg(not(target_os = "macos"))]
+    let about_separator = PredefinedMenuItem::separator(app)?;
+    #[cfg(not(target_os = "macos"))]
+    help_items.extend([&about_separator as &dyn IsMenuItem<tauri::Wry>, &about_item]);
     let help_menu = Submenu::with_items(app, labels.help, true, &help_items)?;
 
     Menu::with_items(
@@ -155,7 +152,7 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
                 app_name,
                 true,
                 &[
-                    &PredefinedMenuItem::about(app, Some(&labels.about(app_name)), Some(about_metadata))?,
+                    &about_item,
                     &PredefinedMenuItem::separator(app)?,
                     &settings::menu_item(app, labels.settings)?,
                     &PredefinedMenuItem::separator(app)?,
@@ -236,6 +233,10 @@ pub fn run() {
                 // The settings panel is an in-app modal: open it in the
                 // window the user is looking at.
                 edit_menu::emit_to_focused(app_handle, settings::MENU_EVENT, ());
+            } else if id == about::MENU_ID {
+                if let Err(err) = about::open_window(app_handle) {
+                    log::error!("failed to open the About window: {err}");
+                }
             } else if id == "new_deck" {
                 // Needs the in-app name-entry modal, so it's routed back
                 // through the frontend rather than handled here.
@@ -335,10 +336,13 @@ pub fn run() {
             peitho::check_slide_layouts,
             peitho::present_deck,
             peitho::report_deck_settings,
+            peitho::trust_open_deck,
             settings::get_settings,
             settings::update_settings,
             settings::get_system_locales,
             input_source::select_ascii_input_source,
+            about::get_about_info,
+            about::open_about_link,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -7,7 +7,7 @@
 
 use crate::i18n::MenuLabels;
 
-const REPOSITORY_URL: &str = "https://github.com/piconic-ai/peitho-studio";
+pub(crate) const REPOSITORY_URL: &str = "https://github.com/piconic-ai/peitho-studio";
 
 /// Which Help link a menu item is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: 信頼していないデッキはスクリプト・イベントハンドラを無害化して表示し、帯で「信頼して実行」を選ばせる(Workspace Trust風、デッキのフォルダ単位)
 tags: [release, security]
 ---
@@ -135,10 +135,10 @@ tags: [release, security]
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `cargo test` グリーン
-- [ ] `bun run test:e2e` グリーン(上の新しいe2eを含む)
-- [ ] READMEの「Layout scripts」節を、信頼確認の説明に合わせて更新した
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `cargo test` グリーン
+- [x] `bun run test:e2e` グリーン(上の新しいe2eを含む)
+- [x] READMEの「Layout scripts」節を、信頼確認の説明に合わせて更新した
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機で確認する: スクリプト入りのデッキを信頼せずに開くと帯が出て
@@ -149,6 +149,11 @@ tags: [release, security]
 ## 先送り事項
 
 - 信頼を取り消すUI(設定画面に信頼済みフォルダの一覧を出す)。
+- 同じフォルダのvariant(`deck.ja.md`など)を別ウィンドウで開いたまま、
+  もう一方のウィンドウで「信頼して実行」を押しても、開いている方には
+  伝わらない(信頼状態は`open_deck`で決まり、ウィンドウごとに持つ)。
+  そのウィンドウは開き直すまで無害化したまま。伝えるならRustから
+  同じ`deck_dir`のウィンドウへイベントを送る。
 - スライドのCSSが`position: fixed`などでアプリの画面(帯を含む)の上に
   かぶさり、ユーザーを誘導して「信頼して実行」を押させる可能性。
   無害化はスクリプトを消すだけでCSSは残すので、帯をスライドより手前に

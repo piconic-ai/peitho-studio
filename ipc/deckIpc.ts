@@ -27,6 +27,9 @@ export type { LayoutVerdict } from '../domain/layoutFit'
 export interface DeckSessionInfo {
   deckPath: string
   deckDir: string
+  /** Whether the deck's folder is trusted to run its scripts — see
+   * `trust_open_deck` in peitho.rs. */
+  trusted: boolean
   render: RenderPayload
 }
 
@@ -72,6 +75,10 @@ export interface DeckIpc {
    * (checks and current-value labels), shown while this window is in
    * front. See `report_deck_settings` in peitho.rs. */
   reportDeckSettings(settings: DeckSettingsState): Promise<void>
+  /** Trusts this window's open deck folder to run scripts, from now on
+   * and after a restart. Takes no path: it can only trust the deck
+   * already open here. */
+  trustOpenDeck(): Promise<void>
   onDeckFileChanged(callback: () => void): Unsubscribe
   onMenuNewDeck(callback: () => void): Unsubscribe
   /** Edit > Undo (or its Cmd+Z accelerator), sent only to the focused
@@ -136,6 +143,7 @@ export function createTauriDeckIpc(): DeckIpc {
     checkSlideLayouts: (content, slideIndex) => invoke('check_slide_layouts', { content, slideIndex }),
     presentDeck: rehearsal => invoke('present_deck', { rehearsal }),
     reportDeckSettings: settings => invoke('report_deck_settings', { settings }),
+    trustOpenDeck: () => invoke('trust_open_deck'),
     onDeckFileChanged: callback => subscribe('deck-file-changed', callback),
     onMenuNewDeck: callback => subscribe('menu:new-deck', callback),
     onMenuUndo: callback => subscribeToThisWindow('menu:undo', callback),

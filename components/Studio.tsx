@@ -26,6 +26,7 @@ import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOpti
 import { racePresentOutcome } from '../domain/eventRace'
 import { type Language } from '../domain/language'
 import { type StatusMessage, statusText } from '../domain/statusMessage'
+import { type ScriptTrust, type ScriptTrustEvent, nextScriptTrust, scriptTrustOnOpen, trustBannerShown } from '../domain/scriptTrust'
 import { takesCommandKeys, type VimMode } from '../domain/vimMode'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
@@ -35,7 +36,7 @@ import { createEditorSlideStates } from '../dom/editorSlideStates'
 import { createVimClipboardBridge, onClipboardMayHaveChanged } from '../dom/vimClipboard'
 import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
 import { focusSettingsPanel, restoreFocusAfterSettingsPanel } from '../dom/settingsPanel'
-import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, setManifestKeysSource } from '../dom/slideCanvas'
+import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, remountSlideCanvases, setManifestKeysSource, setScriptsBlockedListener, setSlideScriptsTrusted } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
 import { createRenderStore } from '../state/renderStore'
 import { createEditorStore } from '../state/editorStore'
@@ -66,6 +67,7 @@ import { NewDeckModal } from './NewDeckModal'
 import type { NewDeckSettings } from '../domain/newDeckSettings'
 import { SettingsPanel } from './SettingsPanel'
 import { DeckHeader } from './DeckHeader'
+import { ScriptTrustBanner } from './ScriptTrustBanner'
 import { StatusBar } from './StatusBar'
 import { SlidePreview } from './SlidePreview'
 import { SlideEditor } from './SlideEditor'
@@ -118,6 +120,9 @@ export function Studio() {
     setErrorMessage(null)
     try {
       const info = await deckIpc.openDeck(path)
+      // Before any slide mounts, so none of them goes in with the wrong trust.
+      setSlideScriptsTrusted(info.trusted)
+      setScriptTrust(scriptTrustOnOpen(info.trusted))
       await refreshSource(false, info.render)
       setStatusMessage({ kind: 'opened', deckPath: info.deckPath })
       await dispatch({ type: 'opened', deckPath: info.deckPath })
@@ -143,6 +148,21 @@ export function Studio() {
     } catch (err) {
       setErrorMessage(String(err))
       await dispatch({ type: 'failed', message: String(err) })
+    }
+  }
+  // The banner's "Trust and Run": saves the trust Rust-side first, then
+  // re-inserts every slide unsanitized so its scripts run.
+  async function trustDeckScripts(): Promise<void> {
+    if (scriptTrust().kind !== 'untrusted') return
+    applyScriptTrustEvent('trust-requested')
+    try {
+      await deckIpc.trustOpenDeck()
+      setSlideScriptsTrusted(true)
+      remountSlideCanvases()
+      applyScriptTrustEvent('trust-succeeded')
+    } catch (err) {
+      setErrorMessage(String(err))
+      applyScriptTrustEvent('trust-failed')
     }
   }
   // The `spawn-window` effect: an `open` window that receives another
@@ -215,6 +235,15 @@ export function Studio() {
   const [statusMessage, setStatusMessage] = createSignal<StatusMessage>({ kind: 'none' })
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null)
   const [errorMessageCopied, setErrorMessageCopied] = createSignal(false)
+  // Whether the open deck may run its scripts, and so whether the "scripts
+  // are turned off" banner is up — see `domain/scriptTrust.ts`. Until the
+  // deck is trusted, `dom/slideCanvas.ts` sanitizes every slide and calls
+  // back here when that took a script out.
+  const [scriptTrust, setScriptTrust] = createSignal<ScriptTrust>(scriptTrustOnOpen(false))
+  function applyScriptTrustEvent(event: ScriptTrustEvent): void {
+    setScriptTrust(prev => nextScriptTrust(prev, event))
+  }
+  setScriptsBlockedListener(() => applyScriptTrustEvent('blocked'))
   // Shown centered in place of the whole 3-pane layout until a deck is
   // open. `recentDecks` (full deck.md paths) is persisted Rust-side (see
   // `get_recent_decks`/`remember_recent_deck` in peitho.rs) rather than in
@@ -1746,6 +1775,13 @@ export function Studio() {
         onTogglePresentMenu={() => ui.setPresentMenuOpen(!ui.presentMenuOpen())}
         onClosePresentMenu={() => ui.setPresentMenuOpen(false)}
         onPresent={rehearsal => void handlePresent(rehearsal)}
+      />
+
+      <ScriptTrustBanner
+        language={settings.language()}
+        shown={trustBannerShown(scriptTrust())}
+        pending={scriptTrust().kind === 'trusting'}
+        onTrust={() => void trustDeckScripts()}
       />
 
       {deck.deckPath() === null ? (

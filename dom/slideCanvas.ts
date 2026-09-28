@@ -5,6 +5,7 @@
 
 import { containScale, type Size } from '../domain/geometry'
 import { nextShadowMountedBacklog, SHADOW_MOUNTED_EVENT, slideIdentity, type ShadowMountedDetail } from '../domain/shadowMounted'
+import { sanitizeSlideHtml } from './slideSanitizer'
 
 // Adopted by every mounted canvas alongside its theme sheet — one shared
 // `CSSStyleSheet` rather than a `<style>` re-parsed per thumbnail
@@ -156,6 +157,35 @@ function executeInlineScripts(root: ParentNode): void {
   }
 }
 
+// Whether the open deck may run its scripts. Starts untrusted: until
+// `open_deck` says otherwise, nothing a deck wrote gets to run. See
+// `todo/deck-script-trust.md`.
+let scriptsTrusted = false
+let onScriptsBlocked: () => void = () => {}
+
+/** Sets whether slide HTML is inserted as is (scripts run) or sanitized
+ * first (`dom/slideSanitizer.ts`). Applies to mounts and patches from now
+ * on; `remountSlideCanvases` redoes the ones already on screen. */
+export function setSlideScriptsTrusted(trusted: boolean): void {
+  scriptsTrusted = trusted
+}
+
+/** Called whenever sanitizing an untrusted slide took something executable
+ * out — the cue to offer trusting the deck. Set once by the component that
+ * owns the trust state. */
+export function setScriptsBlockedListener(listener: () => void): void {
+  onScriptsBlocked = listener
+}
+
+/** The HTML to actually insert for `fragmentHtml`: as is when trusted,
+ * sanitized otherwise. */
+function insertableHtml(fragmentHtml: string): string {
+  if (scriptsTrusted) return fragmentHtml
+  const { html, blockedScripts } = sanitizeSlideHtml(fragmentHtml)
+  if (blockedScripts) onScriptsBlocked()
+  return html
+}
+
 type MountedDetail = ShadowMountedDetail<ShadowRoot>
 
 let manifestKeys: () => readonly string[] = () => []
@@ -188,6 +218,19 @@ function announceShadowMounted(host: HTMLElement, root: ShadowRoot): void {
   backlog.splice(0, backlog.length, ...nextShadowMountedBacklog(backlog, detail, r => r.host.isConnected))
   host.dispatchEvent(new CustomEvent(SHADOW_MOUNTED_EVENT, { bubbles: true, composed: true, detail }))
 }
+
+/** Makes `root`'s inline scripts run — only for a trusted deck, since an
+ * untrusted one's HTML was already sanitized of them anyway. */
+function runScriptsIfTrusted(root: ParentNode): void {
+  if (!scriptsTrusted) return
+  shadowMountedBacklog() // exists before any layout script below reads it
+  executeInlineScripts(root)
+}
+
+// Marks every host `mountSlideCanvas` has mounted, so
+// `remountSlideCanvases` can find them all — thumbnails, the preview pane
+// and the layout picker alike.
+const CANVAS_HOST_ATTR = 'data-peitho-canvas-host'
 
 // Shadow roots that already have the interactive-mode link guard attached
 // — `mountSlideCanvas` re-runs on every selection change for the same
@@ -258,11 +301,25 @@ export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragme
   shadow.adoptedStyleSheets = sheets
   host.style.setProperty('--peitho-canvas-width', `${String(canvas.width)}px`)
   host.style.setProperty('--peitho-canvas-height', `${String(canvas.height)}px`)
-  shadow.innerHTML = fragmentHtml
-  shadowMountedBacklog() // exists before any layout script below reads it
-  executeInlineScripts(shadow)
+  host.setAttribute(CANVAS_HOST_ATTR, '')
+  fillShadow(host, shadow, fragmentHtml)
+}
+
+function fillShadow(host: HTMLElement, shadow: ShadowRoot, fragmentHtml: string): void {
+  shadow.innerHTML = insertableHtml(fragmentHtml)
+  runScriptsIfTrusted(shadow)
   announceShadowMounted(host, shadow)
   appliedFragments.set(host, fragmentHtml)
+}
+
+/** Re-inserts every mounted canvas's latest fragment from scratch — after
+ * the deck was trusted, so HTML that went in sanitized goes in again with
+ * its scripts, which then run. */
+export function remountSlideCanvases(): void {
+  for (const host of document.querySelectorAll<HTMLElement>(`[${CANVAS_HOST_ATTR}]`)) {
+    const fragmentHtml = appliedFragments.get(host)
+    if (host.shadowRoot && fragmentHtml !== undefined) fillShadow(host, host.shadowRoot, fragmentHtml)
+  }
 }
 
 /** Swaps fresh fragment HTML into an already-mounted canvas, and reports
@@ -277,11 +334,10 @@ export function patchSlideCanvas(host: HTMLElement, fragmentHtml: string): boole
   const current = shadow?.querySelector('.peitho-slide')
   if (!shadow || !current) return false
   const wrapper = document.createElement('div')
-  wrapper.innerHTML = fragmentHtml
+  wrapper.innerHTML = insertableHtml(fragmentHtml)
   const next = wrapper.firstElementChild
   if (!next) return false
-  shadowMountedBacklog() // exists before any layout script below reads it
-  executeInlineScripts(next)
+  runScriptsIfTrusted(next)
   current.replaceWith(next)
   announceShadowMounted(host, shadow)
   appliedFragments.set(host, fragmentHtml)

@@ -18,6 +18,6 @@ Fixes go into the latest release only. Please update to it before reporting.
 
 ## Decks and layout scripts
 
-A deck's layout HTML can contain `<script>`, and Peitho Studio runs it. What such a script can and can't do is described under [Layout scripts](README.md#layout-scripts) in the README. A report that a script can do something listed there as allowed isn't a vulnerability. A way around the limits described there is one.
+A deck's layout HTML can contain `<script>`, and Peitho Studio runs it once the user trusts the deck's folder. What such a script can and can't do is described under [Layout scripts](README.md#layout-scripts) in the README. A report that a script can do something listed there as allowed isn't a vulnerability. A way around the limits described there is one.
 
 Peitho Studio is provided "as is", without warranty of any kind; see [LICENSE](LICENSE).
