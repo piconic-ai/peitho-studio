@@ -394,6 +394,11 @@ don't bundle everything into one giant commit.
   was gone from the DOM. Expanding it after the previews had loaded
   rendered normally. Enter such a branch only once the inner value has
   settled (see `openLayoutPickerOn` in `Studio.tsx`).
+- **A `? :` text child in a component mounted inside a branch can leave that
+  branch half-entered.** `ReviewPanel.tsx`'s `{props.sending ? a : b}`
+  kept `Studio.tsx`'s "Loading deck…" on screen after the deck opened
+  (every mocked e2e failed). One expression that picks the text
+  (`messages[props.sending ? 'x' : 'y']`) rendered normally.
 - **In a `.map()` row's JSX text child, an object literal can't have a key
   named like the row's parameter.** `{items.map(choice => (<b>{f({ key:
   'x', choice })}</b>))}` — or `{ choice: 1 }` — fails the build with
