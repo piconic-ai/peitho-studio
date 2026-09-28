@@ -1158,18 +1158,28 @@ fn crit_watch_action(current: Option<(u16, bool)>, found: &DeckSession) -> CritW
 /// Starts or stops following the window's crit session to match `found`.
 fn sync_crit_watch(session: &PeithoSession, window: &WebviewWindow, found: &DeckSession) -> Result<(), String> {
     let label = window.label().to_string();
-    let mut guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
-    let state = guard.get_mut(&label).ok_or_else(|| "no deck is open".to_string())?;
-    let current = state.crit_watch.as_ref().map(|watch| (watch.port, watch.is_open()));
-    match crit_watch_action(current, found) {
-        CritWatchAction::Keep => {}
-        CritWatchAction::Stop => state.crit_watch = None,
+    let current = {
+        let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+        let state = guard.get(&label).ok_or_else(|| "no deck is open".to_string())?;
+        state.crit_watch.as_ref().map(|watch| (watch.port, watch.is_open()))
+    };
+    // Opening the stream connects to the daemon, so it runs without the
+    // lock every window shares; the lock is taken again only to store it.
+    let watch = match crit_watch_action(current, found) {
+        CritWatchAction::Keep => return Ok(()),
+        CritWatchAction::Stop => None,
         CritWatchAction::Follow(port) => {
             let window = window.clone();
-            state.crit_watch = Some(crit::watch_events(port, move |signal| {
-                let _ = window.emit_to(EventTarget::webview_window(&label), CRIT_REVIEW_EVENT, crit_event_payload(signal));
-            })?);
+            let target = label.clone();
+            Some(crit::watch_events(port, move |signal| {
+                let _ = window.emit_to(EventTarget::webview_window(&target), CRIT_REVIEW_EVENT, crit_event_payload(signal));
+            })?)
         }
+    };
+    let mut guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+    // The window may have closed meanwhile; then the new watch just drops.
+    if let Some(state) = guard.get_mut(&label) {
+        state.crit_watch = watch;
     }
     Ok(())
 }
