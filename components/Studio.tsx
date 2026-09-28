@@ -2241,24 +2241,24 @@ export function Studio() {
           className="shrink-0 flex flex-col min-h-0 border-l border-border"
           style={`width: ${ui.reviewPanelWidth()}px`}
         >
-            <ReviewPanel
-              language={settings.language()}
-              shown={Boolean(render.assetBaseUrl())}
-              status={reviewStatus()}
-              canSend={review.availability().kind === 'ready'}
-              sending={review.busy() === 'sending'}
-              error={review.error()}
-              rows={reviewPanelRows()}
-              replyingTo={review.replyDraft()?.commentId ?? null}
-              replyText={review.replyDraft()?.text ?? ''}
-              onSend={() => void sendReview()}
-              onDiscard={review.discard}
-              onStartReply={commentId => review.editReply(commentId, '')}
-              onReplyInput={review.setReplyText}
-              onReplyAdd={review.commitReply}
-              onReplyCancel={review.cancelReply}
-              onResolve={id => void resolveReviewComment(id)}
-            />
+          <ReviewPanel
+            language={settings.language()}
+            shown={Boolean(render.assetBaseUrl())}
+            status={reviewStatus()}
+            canSend={review.availability().kind === 'ready'}
+            sending={review.busy() === 'sending'}
+            error={review.error()}
+            rows={reviewPanelRows()}
+            replyingTo={review.replyDraft()?.commentId ?? null}
+            replyText={review.replyDraft()?.text ?? ''}
+            onSend={() => void sendReview()}
+            onDiscard={review.discard}
+            onStartReply={commentId => review.editReply(commentId, '')}
+            onReplyInput={review.setReplyText}
+            onReplyAdd={review.commitReply}
+            onReplyCancel={review.cancelReply}
+            onResolve={id => void resolveReviewComment(id)}
+          />
         </div>
       </div>
       )}
