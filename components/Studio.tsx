@@ -404,12 +404,13 @@ export function Studio() {
   async function importImagesIntoBody(
     view: NonNullable<typeof bodyEditor>,
     at: { doc: string; from: number; to: number },
+    count: number,
     importAll: () => Promise<string[]>,
     userEvent: 'input.paste' | 'input.drop',
   ): Promise<void> {
     const index = editor.selectedIndex()
     const epoch = slidePositionsEpoch
-    setStatusMessage({ kind: 'importing-images' })
+    setStatusMessage({ kind: 'importing-images', count })
     let paths: string[]
     try {
       paths = await importAll()
@@ -430,7 +431,7 @@ export function Studio() {
     const view = bodyEditor
     if (!view) return
     const at = new Date()
-    await importImagesIntoBody(view, codeEditorSelection(view), async () => {
+    await importImagesIntoBody(view, codeEditorSelection(view), files.length, async () => {
       const paths: string[] = []
       for (const file of files) {
         const image = await readPastedImage(file, at)
@@ -459,7 +460,7 @@ export function Studio() {
     if (images.length === 0) return
     view.focus()
     const doc = view.state.doc.toString()
-    await importImagesIntoBody(view, { doc, from: pos, to: pos }, async () => {
+    await importImagesIntoBody(view, { doc, from: pos, to: pos }, images.length, async () => {
       const paths: string[] = []
       for (const path of images) paths.push(await imageIpc.importImageFile(path))
       return paths

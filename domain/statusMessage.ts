@@ -13,7 +13,7 @@ export type StatusMessage =
   | { kind: 'merged-external-change' }
   | { kind: 'reloaded-external-change' }
   | { kind: 'presenting'; rehearsal: boolean }
-  | { kind: 'importing-images' }
+  | { kind: 'importing-images'; count: number }
   | { kind: 'imported-images'; count: number }
 
 /** `status` worded with `messages` — empty for `none`. */
@@ -28,7 +28,7 @@ export function statusText(messages: Messages, status: StatusMessage): string {
     case 'merged-external-change': return messages.mergedExternalChange
     case 'reloaded-external-change': return messages.reloadedExternalChange
     case 'presenting': return status.rehearsal ? messages.presentingRehearsal : messages.presenting
-    case 'importing-images': return messages.importingImages
+    case 'importing-images': return messages.importingImages(status.count)
     case 'imported-images': return messages.importedImages(status.count)
     default: {
       const _exhaustive: never = status

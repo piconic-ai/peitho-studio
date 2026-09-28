@@ -12,7 +12,8 @@ const EVERY_STATUS: StatusMessage[] = [
   { kind: 'reloaded-external-change' },
   { kind: 'presenting', rehearsal: false },
   { kind: 'presenting', rehearsal: true },
-  { kind: 'importing-images' },
+  { kind: 'importing-images', count: 1 },
+  { kind: 'importing-images', count: 2 },
   { kind: 'imported-images', count: 1 },
   { kind: 'imported-images', count: 3 },
 ]
@@ -36,7 +37,8 @@ describe('statusText', () => {
 
   test('spec: Given images dropped or pasted into the body, when worded, then the status says while they are imported and how many were added', () => {
     const en = messagesFor('en')
-    expect(statusText(en, { kind: 'importing-images' })).toBe('Importing image…')
+    expect(statusText(en, { kind: 'importing-images', count: 1 })).toBe('Importing image…')
+    expect(statusText(en, { kind: 'importing-images', count: 3 })).toBe('Importing 3 images…')
     expect(statusText(en, { kind: 'imported-images', count: 1 })).toBe('Image added to img/')
     expect(statusText(en, { kind: 'imported-images', count: 2 })).toBe('2 images added to img/')
     expect(statusText(messagesFor('ja'), { kind: 'imported-images', count: 2 })).toContain('2')
