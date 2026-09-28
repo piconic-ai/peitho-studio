@@ -1,4 +1,5 @@
 mod about;
+mod crit;
 #[cfg(test)]
 mod build_info;
 mod deck_menu;
