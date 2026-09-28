@@ -351,6 +351,15 @@ pub fn run() {
             // running headless in the background.
             if let tauri::RunEvent::Exit = event {
                 app_handle.state::<PeithoSession>().shutdown();
+            } else if let tauri::RunEvent::Opened { urls } = event {
+                // Finder's `.md` double-click / "Open With" (see
+                // `bundle.fileAssociations` in tauri.conf.json), or a file
+                // dropped on the Dock icon. Deciding what to do with each
+                // URL is `peitho::open_finder_urls`'s job, not this thin
+                // wiring layer's.
+                let pending = app_handle.state::<PendingDecks>();
+                let session = app_handle.state::<PeithoSession>();
+                peitho::open_finder_urls(app_handle, &pending, &session, urls);
             }
         });
 }
