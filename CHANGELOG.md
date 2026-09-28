@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.1.0](https://github.com/piconic-ai/peitho-studio/compare/v0.1.0-rc.4...v0.1.0) - 2026-09-28
+## [v0.1.0-rc.5](https://github.com/piconic-ai/peitho-studio/compare/v0.1.0-rc.4...v0.1.0-rc.5) - 2026-09-28
 
 - Check off release-build's signing verification item by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/107
 - Archive release-build-workflow by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/108
