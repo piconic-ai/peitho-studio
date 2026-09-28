@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import type { ReviewComment } from './critReview'
+import type { CritDeckSession, ReviewComment } from './critReview'
+import type { ManifestSlide } from './render'
 import {
-  agentCommentBody, annotatedSpan, charSpanOfByteSpan, commentCountsBySlide, excerpt, lineRangeOf, locateQuote,
-  newReviewComment, parseSourceSpan, relocateTarget, slideIndexOfLine, targetKindOf, targetLabel, utf8OffsetToIndex,
-  type CommentTarget, type PendingComment,
+  agentCommentBody, annotatedSpan, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
+  newReviewComment, parseSourceSpan, relocateTarget, sendAvailability, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
+  utf8OffsetToIndex, type CommentTarget, type PendingComment,
 } from './reviewComment'
 
 const bytes = (text: string) => new TextEncoder().encode(text).length
@@ -347,5 +348,91 @@ describe('slideIndexOfLine / commentCountsBySlide', () => {
 
   test('adversarial: Given no slides at all, Then only unsent comments are counted', () => {
     expect(commentCountsBySlide('', [], [{ slideKey: 'x' }], [sent(1)])).toEqual({ x: 1 })
+  })
+})
+
+const manifestSlide = (key: string, index: number): ManifestSlide => ({
+  index, key, src: '', hasNotes: false, skip: false, revealSteps: 1, text: { title: key, body: '', code: '' },
+})
+
+describe('slideSpans', () => {
+  test('spec: Given two rendered slides, Then each has its manifest key and its text\'s span', () => {
+    const source = '---\nlang: en\n---\n# One\n\n---\n\n# Two\n'
+    const spans = slideSpans(source, [manifestSlide('one', 0), manifestSlide('two', 1)])
+    expect(spans.map(s => s.key)).toEqual(['one', 'two'])
+    expect(source.slice(spans[0].span.start, spans[0].span.end)).toBe('# One\n\n')
+    expect(source.slice(spans[1].span.start, spans[1].span.end)).toBe('\n# Two\n')
+  })
+
+  test('adversarial: Given a draft slide between rendered ones, Then it keeps its own key and the next slide keeps its manifest key', () => {
+    const source = '# One\n\n---\n\n<!-- {"key":"wip","draft":true} -->\n# Draft\n\n---\n\n# Two\n'
+    expect(slideSpans(source, [manifestSlide('one', 0), manifestSlide('two', 1)]).map(s => s.key)).toEqual(['one', 'wip', 'two'])
+  })
+
+  test('adversarial: Given a draft slide without a key, Then it is filed under its placeholder key', () => {
+    const source = '# One\n\n---\n\n<!-- {"draft":true} -->\n# Draft\n'
+    expect(slideSpans(source, [manifestSlide('one', 0)]).map(s => s.key)).toEqual(['one', 'placeholder:1'])
+  })
+
+  test('adversarial: Given an empty deck, Then there are no slides', () => {
+    expect(slideSpans('', [])).toEqual([])
+  })
+})
+
+describe('commentTargetOf', () => {
+  const source = '# Title\n\n- same\n\n---\n\n# Next\n\n- same\n'
+  const second = { start: source.indexOf('# Next'), end: source.length }
+
+  test('spec: Given a click on an annotated list item, Then the target is that item, placed within its slide', () => {
+    const hit = { kind: 'listItem' as const, text: 'same', byteSpan: byteSpanOf(source.slice(second.start), 'same'), quote: 'same' }
+    hit.byteSpan = { start: hit.byteSpan.start + second.start, end: hit.byteSpan.end + second.start }
+    expect(commentTargetOf(source, second, hit)).toEqual({ kind: 'listItem', text: 'same', quote: 'same', offsetInSlide: '# Next\n\n- '.length })
+  })
+
+  test('spec: Given a click on nothing annotated, Then the target is the whole slide', () => {
+    expect(commentTargetOf(source, second, null)).toEqual({ kind: 'slide', text: '', quote: '', offsetInSlide: 0 })
+  })
+
+  test('adversarial: Given byte spans that don\'t match the source (an included deck), Then the item is found by its Markdown in its slide', () => {
+    const hit = { kind: 'listItem' as const, text: 'same', byteSpan: { start: 0, end: 4 }, quote: 'same' }
+    expect(commentTargetOf(source, second, hit)).toMatchObject({ kind: 'listItem', offsetInSlide: '# Next\n\n- '.length })
+  })
+
+  test('adversarial: Given a Markdown that is nowhere in the source, Then the target is the whole slide', () => {
+    const hit = { kind: 'paragraph' as const, text: 'x', byteSpan: null, quote: 'nowhere' }
+    expect(commentTargetOf(source, second, hit).kind).toBe('slide')
+  })
+
+  test('adversarial: Given an annotated element with an empty Markdown, Then the target is the whole slide', () => {
+    expect(commentTargetOf(source, second, { kind: 'paragraph', text: '', byteSpan: { start: 0, end: 0 }, quote: '' }).kind).toBe('slide')
+  })
+
+  test('adversarial: Given no slide span, Then the element is placed from the start of the source', () => {
+    const hit = { kind: 'heading' as const, text: 'Title', byteSpan: { start: 2, end: 7 }, quote: 'Title' }
+    expect(commentTargetOf(source, null, hit)).toMatchObject({ kind: 'heading', offsetInSlide: 2 })
+  })
+})
+
+describe('sendAvailability', () => {
+  const found = (agentWaiting: boolean): CritDeckSession => ({ kind: 'found', id: 's', port: 1, file: 'deck.md', reviewRound: 1, agentWaiting })
+
+  test('spec: Given an agent waiting and unsent comments, Then they can be sent', () => {
+    expect(sendAvailability(found(true), 2, false)).toEqual({ kind: 'ready' })
+  })
+
+  test('spec: Given the agent is not waiting, Then sending waits for it, whatever is unsent', () => {
+    expect(sendAvailability(found(false), 2, false)).toEqual({ kind: 'agent-not-waiting' })
+    expect(sendAvailability(found(false), 0, false)).toEqual({ kind: 'agent-not-waiting' })
+  })
+
+  test.each([
+    ['nothing unsent', found(true), 0, false, 'nothing-to-send'],
+    ['a send in flight', found(true), 3, true, 'sending'],
+    ['no session', { kind: 'none' } as CritDeckSession, 1, false, 'no-session'],
+    ['a session not yet asked for', null, 1, false, 'no-session'],
+    ['several sessions', { kind: 'ambiguous', ids: ['a', 'b'] } as CritDeckSession, 1, false, 'several-sessions'],
+    ['a send in flight with no session', null, 1, true, 'sending'],
+  ])('adversarial: Given %s, Then it is %s', (_label, session, unsent, sending, kind) => {
+    expect(sendAvailability(session, unsent, sending).kind as string).toBe(kind)
   })
 })

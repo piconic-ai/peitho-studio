@@ -13,7 +13,10 @@
 // only `&`, `"`, `<`, CR and LF, all as entities the HTML parser resolves),
 // so no decoding happens here.
 
-import type { LineRange, NewReviewComment, ReviewComment } from './critReview'
+import type { CritDeckSession, LineRange, NewReviewComment, ReviewComment } from './critReview'
+import type { ManifestSlide } from './render'
+import { buildSlideList } from './slideList'
+import { splitSlides } from './slides'
 
 /** A half-open `[start, end)` range of UTF-16 indices into a string. */
 export interface CharSpan {
@@ -202,6 +205,65 @@ export function newReviewComment(pending: PendingComment, source: string, slideS
     quote: found === null ? '' : pending.target.quote,
     author: REVIEW_AUTHOR,
   }
+}
+
+/** Each slide of `source` (the deck's text) with the key its comments are
+ * filed under and where its text is — the manifest's key for a rendered
+ * slide; for one the manifest doesn't list (a draft), the key it last
+ * rendered under, or its `placeholder:` key. In source order, so index + 1
+ * is the slide's number in the slide list. `manifestSlides` must be the
+ * manifest rendered from `source`. */
+export function slideSpans(source: string, manifestSlides: readonly ManifestSlide[]): { key: string; span: CharSpan }[] {
+  const ranges = splitSlides(source)
+  return buildSlideList(source, manifestSlides).map((entry, i) => ({
+    key: entry.kind === 'rendered' ? entry.slide.key : entry.lastRenderedKey ?? entry.key,
+    span: { start: ranges[i].start, end: ranges[i].end },
+  }))
+}
+
+/** What a click on the preview hit, as `dom/previewComments.ts` reads it:
+ * an annotated element (`byteSpan`/`quote` from its `data-peitho-src`/
+ * `data-peitho-md`) or `null` for anything else. */
+export interface PreviewHit {
+  kind: TargetKind
+  text: string
+  byteSpan: CharSpan | null
+  quote: string
+}
+
+/** The comment target for `hit` on the slide at `slideSpan` of
+ * `renderedSource` (the source the preview was rendered from). An
+ * element whose span can't be trusted (an `include`d deck) is located by
+ * its Markdown instead; one that can't be found at all, or no element,
+ * targets the whole slide. */
+export function commentTargetOf(renderedSource: string, slideSpan: CharSpan | null, hit: PreviewHit | null): CommentTarget {
+  const whole: CommentTarget = { kind: 'slide', text: '', quote: '', offsetInSlide: 0 }
+  if (hit === null || hit.kind === 'slide' || hit.quote === '') return whole
+  const slideStart = slideSpan?.start ?? 0
+  const span = (hit.byteSpan && annotatedSpan(renderedSource, hit.byteSpan, hit.quote))
+    ?? locateQuote(renderedSource, hit.quote, slideSpan ?? { start: 0, end: renderedSource.length }, slideStart)
+  if (span === null) return whole
+  return { kind: hit.kind, text: hit.text, quote: hit.quote, offsetInSlide: span.start - slideStart }
+}
+
+/** Whether the unsent comments can go to the agent now, and if not why. */
+export type SendAvailability =
+  | { kind: 'ready' }
+  | { kind: 'sending' }
+  | { kind: 'nothing-to-send' }
+  /** No session yet (Studio starts one with the first comment). */
+  | { kind: 'no-session' }
+  /** A session, but no agent waits in it — the agent must run `crit`. */
+  | { kind: 'agent-not-waiting' }
+  | { kind: 'several-sessions' }
+
+/** `session` is `null` until Studio has asked crit. */
+export function sendAvailability(session: CritDeckSession | null, unsent: number, sending: boolean): SendAvailability {
+  if (sending) return { kind: 'sending' }
+  if (session === null || session.kind === 'none') return { kind: 'no-session' }
+  if (session.kind === 'ambiguous') return { kind: 'several-sessions' }
+  if (!session.agentWaiting) return { kind: 'agent-not-waiting' }
+  return unsent > 0 ? { kind: 'ready' } : { kind: 'nothing-to-send' }
 }
 
 /** Which of `slides` (each with its span in `source`) line `line` of
