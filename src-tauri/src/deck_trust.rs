@@ -41,18 +41,20 @@ pub fn parse_trusted_dirs(json: &str) -> Vec<String> {
 
 /// Whether `dir` is one of the `trusted` folders.
 pub fn is_trusted(trusted: &[String], dir: &Path) -> bool {
-    let Some(key) = trust_key(dir) else { return false };
+    trust_key(dir).is_some_and(|key| contains_key(trusted, &key))
+}
+
+fn contains_key(trusted: &[String], key: &Path) -> bool {
     trusted.iter().any(|entry| Path::new(entry) == key)
 }
 
 /// `trusted` with `dir` added, unless it's already there (or has no
 /// usable key — see `trust_key`).
 pub fn with_trusted(mut trusted: Vec<String>, dir: &Path) -> Vec<String> {
-    if is_trusted(&trusted, dir) {
-        return trusted;
-    }
     if let Some(key) = trust_key(dir) {
-        trusted.push(key.display().to_string());
+        if !contains_key(&trusted, &key) {
+            trusted.push(key.display().to_string());
+        }
     }
     trusted
 }

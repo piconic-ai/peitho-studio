@@ -219,6 +219,19 @@ function announceShadowMounted(host: HTMLElement, root: ShadowRoot): void {
   host.dispatchEvent(new CustomEvent(SHADOW_MOUNTED_EVENT, { bubbles: true, composed: true, detail }))
 }
 
+/** Makes `root`'s inline scripts run — only for a trusted deck, since an
+ * untrusted one's HTML was already sanitized of them anyway. */
+function runScriptsIfTrusted(root: ParentNode): void {
+  if (!scriptsTrusted) return
+  shadowMountedBacklog() // exists before any layout script below reads it
+  executeInlineScripts(root)
+}
+
+// Marks every host `mountSlideCanvas` has mounted, so
+// `remountSlideCanvases` can find them all — thumbnails, the preview pane
+// and the layout picker alike.
+const CANVAS_HOST_ATTR = 'data-peitho-canvas-host'
+
 // Shadow roots that already have the interactive-mode link guard attached
 // — `mountSlideCanvas` re-runs on every selection change for the same
 // preview-pane host (a fresh `srcdoc`-style remount, not a `patchSlideCanvas`
@@ -292,17 +305,9 @@ export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragme
   fillShadow(host, shadow, fragmentHtml)
 }
 
-// Marks every host `mountSlideCanvas` has mounted, so
-// `remountSlideCanvases` can find them all — thumbnails, the preview pane
-// and the layout picker alike.
-const CANVAS_HOST_ATTR = 'data-peitho-canvas-host'
-
 function fillShadow(host: HTMLElement, shadow: ShadowRoot, fragmentHtml: string): void {
   shadow.innerHTML = insertableHtml(fragmentHtml)
-  if (scriptsTrusted) {
-    shadowMountedBacklog() // exists before any layout script below reads it
-    executeInlineScripts(shadow)
-  }
+  runScriptsIfTrusted(shadow)
   announceShadowMounted(host, shadow)
   appliedFragments.set(host, fragmentHtml)
 }
@@ -332,10 +337,7 @@ export function patchSlideCanvas(host: HTMLElement, fragmentHtml: string): boole
   wrapper.innerHTML = insertableHtml(fragmentHtml)
   const next = wrapper.firstElementChild
   if (!next) return false
-  if (scriptsTrusted) {
-    shadowMountedBacklog() // exists before any layout script below reads it
-    executeInlineScripts(next)
-  }
+  runScriptsIfTrusted(next)
   current.replaceWith(next)
   announceShadowMounted(host, shadow)
   appliedFragments.set(host, fragmentHtml)

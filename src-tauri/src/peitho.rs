@@ -532,10 +532,15 @@ pub fn take_pending_deck(window: WebviewWindow, pending: State<PendingDecks>) ->
 
 const MAX_RECENT_DECKS: usize = 8;
 
-fn recent_decks_path(app: &AppHandle) -> Result<PathBuf, String> {
+/// `file_name` inside the app data dir, which is created if missing.
+fn app_data_file(app: &AppHandle, file_name: &str) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|err| format!("failed to create {}: {err}", dir.display()))?;
-    Ok(dir.join("recent_decks.json"))
+    Ok(dir.join(file_name))
+}
+
+fn recent_decks_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app_data_file(app, "recent_decks.json")
 }
 
 /// The persisted recent-deck list is the single source of truth for both
@@ -594,9 +599,7 @@ pub fn get_recent_decks(app: AppHandle) -> Vec<String> {
 static TRUSTED_DECK_DIRS_LOCK: Mutex<()> = Mutex::new(());
 
 fn trusted_deck_dirs_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|err| format!("failed to create {}: {err}", dir.display()))?;
-    Ok(dir.join("trusted_deck_dirs.json"))
+    app_data_file(app, "trusted_deck_dirs.json")
 }
 
 fn is_deck_dir_trusted(app: &AppHandle, deck_dir: &Path) -> bool {
