@@ -63,10 +63,6 @@ pub(crate) enum SettingKey {
 impl SettingKey {
     pub(crate) const ALL: [SettingKey; 4] = [Self::PageNumbers, Self::AspectRatio, Self::Breaks, Self::Lang];
 
-    /// The settings shown as a submenu of choices. Line breaks is a single
-    /// check item instead.
-    const WITH_SUBMENU: [SettingKey; 3] = [Self::PageNumbers, Self::AspectRatio, Self::Lang];
-
     /// The frontmatter key, as the frontend names it.
     pub(crate) fn as_str(self) -> &'static str {
         match self {
@@ -242,32 +238,45 @@ fn raw_value_label(raw: &str) -> String {
     shown.replace('&', "&&")
 }
 
-/// The label of `key`'s submenu: its name and the front window's current
+/// The label of `key`'s item: its name and the front window's current
 /// value (`Page Numbers: 1/N`), a value the menu doesn't offer shown as
-/// written. With no deck in front, just the name.
+/// written. With no deck in front, just the name. Line breaks, a single
+/// check item, shows its value by its check mark, so its label adds one
+/// only for a value the menu doesn't offer (`Line Breaks as Written: True`).
 pub(crate) fn setting_label(key: SettingKey, front: Option<&DeckSettings>, labels: &MenuLabels) -> String {
     let title = key.title(labels);
     let Some(settings) = front else { return title.to_string() };
     let value = match settings.setting(key) {
+        ReportedSetting::Known { .. } if key == SettingKey::Breaks => return title.to_string(),
         ReportedSetting::Known { choice } => choice_label(key, choice, labels),
         ReportedSetting::Unknown { raw } => raw_value_label(raw),
     };
     format!("{title}: {value}")
 }
 
-/// How one submenu should look.
+/// The label one setting's item should show.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct SubmenuState {
+pub(crate) struct LabelState {
     pub id: String,
     pub text: String,
 }
 
-/// Every deck-setting submenu's label for the front window's settings.
-pub(crate) fn submenu_states(front: Option<&DeckSettings>, labels: &MenuLabels) -> Vec<SubmenuState> {
-    SettingKey::WITH_SUBMENU
+/// Every deck setting's label for the front window's settings: each
+/// submenu's, and the Line Breaks check item's.
+pub(crate) fn label_states(front: Option<&DeckSettings>, labels: &MenuLabels) -> Vec<LabelState> {
+    SettingKey::ALL
         .into_iter()
-        .map(|key| SubmenuState { id: submenu_id(key), text: setting_label(key, front, labels) })
+        .map(|key| LabelState { id: labelled_item_id(key), text: setting_label(key, front, labels) })
         .collect()
+}
+
+/// The id of the item carrying `key`'s label: its submenu, or for line
+/// breaks its one check item.
+fn labelled_item_id(key: SettingKey) -> String {
+    match key {
+        SettingKey::Breaks => menu_id(key, "true"),
+        _ => submenu_id(key),
+    }
 }
 
 fn submenu_id(key: SettingKey) -> String {
@@ -353,10 +362,12 @@ pub(crate) fn apply<R: Runtime>(menu: &Menu<R>, front: Option<&DeckSettings>, la
             let _ = item.set_enabled(enabled);
         }
     }
-    for state in submenu_states(front, labels) {
+    for state in label_states(front, labels) {
         if let Some(submenu) = submenus.get(&state.id) {
             let _ = submenu.set_text(&state.text);
             let _ = submenu.set_enabled(enabled);
+        } else if let Some(item) = checks.get(&state.id) {
+            let _ = item.set_text(&state.text);
         }
     }
 }
@@ -466,15 +477,26 @@ mod tests {
         }
     }
 
+    const SUBMENU_KEYS: [SettingKey; 3] = [SettingKey::PageNumbers, SettingKey::AspectRatio, SettingKey::Lang];
+
     #[test]
     fn given_the_ids_of_the_items_and_submenus_when_listed_then_each_is_distinct() {
         let mut ids: Vec<String> = item_states(Some(&defaults())).into_iter().map(|state| state.id).collect();
-        ids.extend(submenu_states(Some(&defaults()), en()).into_iter().map(|state| state.id));
+        ids.extend(SUBMENU_KEYS.into_iter().map(submenu_id));
         let total = ids.len();
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), total);
         assert_eq!(total, (3 + 2 + 1 + 2) + 3);
+    }
+
+    #[test]
+    fn given_every_setting_when_labelled_then_its_label_sits_on_an_item_the_menu_has() {
+        let items: Vec<String> = item_states(None).into_iter().map(|state| state.id).collect();
+        for state in label_states(None, en()) {
+            let is_submenu = SUBMENU_KEYS.into_iter().any(|key| submenu_id(key) == state.id);
+            assert!(is_submenu || items.contains(&state.id), "{}", state.id);
+        }
     }
 
     #[test]
@@ -538,11 +560,21 @@ mod tests {
     }
 
     #[test]
-    fn given_the_deck_values_when_labelled_then_each_submenu_shows_its_name_and_value() {
+    fn given_the_deck_values_when_labelled_then_each_setting_shows_its_name_and_value() {
         let front = settings("current_of_total", "4:3", "true", "ja");
-        let texts = |labels| -> Vec<String> { submenu_states(Some(&front), labels).into_iter().map(|state| state.text).collect() };
-        assert_eq!(texts(en()), ["Page Numbers: 1/N", "Aspect Ratio: 4:3", "Language: 日本語"]);
-        assert_eq!(texts(ja()), ["ページ番号: 1/N", "縦横比: 4:3", "言語: 日本語"]);
+        let texts = |labels| -> Vec<String> { label_states(Some(&front), labels).into_iter().map(|state| state.text).collect() };
+        assert_eq!(texts(en()), ["Page Numbers: 1/N", "Aspect Ratio: 4:3", "Line Breaks as Written", "Language: 日本語"]);
+        assert_eq!(texts(ja()), ["ページ番号: 1/N", "縦横比: 4:3", "改行をそのまま反映", "言語: 日本語"]);
+    }
+
+    #[test]
+    fn given_an_unknown_line_breaks_value_when_labelled_then_the_check_item_shows_it() {
+        // `breaks: True` is on for peitho-core but none of the menu's
+        // choices, so the unchecked item says what the deck holds.
+        let front = settings("none", "16:9", "raw:True", "en");
+        assert_eq!(setting_label(SettingKey::Breaks, Some(&front), ja()), "改行をそのまま反映: True");
+        assert_eq!(setting_label(SettingKey::Breaks, Some(&defaults()), ja()), "改行をそのまま反映");
+        assert_eq!(setting_label(SettingKey::Breaks, None, en()), "Line Breaks as Written");
     }
 
     #[test]
@@ -554,8 +586,8 @@ mod tests {
 
     #[test]
     fn given_no_deck_in_front_when_labelled_then_only_the_names_are_shown() {
-        let texts: Vec<String> = submenu_states(None, ja()).into_iter().map(|state| state.text).collect();
-        assert_eq!(texts, ["ページ番号", "縦横比", "言語"]);
+        let texts: Vec<String> = label_states(None, ja()).into_iter().map(|state| state.text).collect();
+        assert_eq!(texts, ["ページ番号", "縦横比", "改行をそのまま反映", "言語"]);
     }
 
     #[test]
