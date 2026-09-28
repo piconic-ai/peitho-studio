@@ -56,7 +56,7 @@ pub fn check_slide_layouts(deck_path: &Path, source: &str, slide_index: usize) -
     verdicts_for(slide, &parsed.assets.layouts).map(Some)
 }
 
-fn verdicts_for(slide: &ParsedSlide, layouts: &Layouts) -> Result<Vec<LayoutVerdict>, String> {
+pub(crate) fn verdicts_for(slide: &ParsedSlide, layouts: &Layouts) -> Result<Vec<LayoutVerdict>, String> {
     let probe = probe_layouts(layouts)?;
     let DispatchTrace::StructuralMatch { candidates, .. } = explain_dispatch(&unpinned(slide), &probe) else {
         return Err("peitho-core didn't probe the slide against each layout".to_string());

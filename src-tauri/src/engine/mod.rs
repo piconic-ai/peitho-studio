@@ -24,6 +24,7 @@
 
 pub mod assets;
 pub mod builtin;
+pub mod image_layout;
 pub mod images;
 pub mod layout_fit;
 pub mod pipeline;

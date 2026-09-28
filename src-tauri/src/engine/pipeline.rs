@@ -50,7 +50,7 @@ pub struct ParsedSource {
     pub assets: ResolvedAssets,
 }
 
-fn deck_dir_of(deck_path: &Path) -> &Path {
+pub(crate) fn deck_dir_of(deck_path: &Path) -> &Path {
     deck_path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
