@@ -70,6 +70,13 @@ export interface DeckIpc {
    * draft). Rejects when `content` doesn't parse. See
    * `engine::layout_fit` in src-tauri. */
   checkSlideLayouts(content: string, slideIndex: number): Promise<LayoutVerdict[] | null>
+  /** Adds the built-in `title-body-image` layout (and its CSS) to the
+   * deck's folder so the slide at `slideIndex` of `content` builds —
+   * `content` already re-pins that slide when it was pinned to another
+   * layout. Resolves with the deck-relative paths written; rejects, having
+   * written nothing, when one of them exists or another slide would stop
+   * building. See `engine::image_layout` in src-tauri. */
+  addImageLayout(content: string, slideIndex: number): Promise<string[]>
   presentDeck(rehearsal: boolean): Promise<void>
   /** Tells the Edit menu's deck settings what this window's deck holds
    * (checks and current-value labels), shown while this window is in
@@ -141,6 +148,7 @@ export function createTauriDeckIpc(): DeckIpc {
     listDeckVariants: () => invoke('list_deck_variants'),
     previewLayouts: () => invoke('preview_layouts'),
     checkSlideLayouts: (content, slideIndex) => invoke('check_slide_layouts', { content, slideIndex }),
+    addImageLayout: (content, slideIndex) => invoke('add_image_layout', { content, slideIndex }),
     presentDeck: rehearsal => invoke('present_deck', { rehearsal }),
     reportDeckSettings: settings => invoke('report_deck_settings', { settings }),
     trustOpenDeck: () => invoke('trust_open_deck'),

@@ -95,6 +95,11 @@ export interface MockDeck {
    * defaults to `null` (nothing to judge, every layout stays choosable).
    * Stands in for `engine::layout_fit`'s real peitho-core verdicts. */
   layoutVerdicts?: (content: string, slideIndex: number) => LayoutVerdict[] | null
+  /** What `add_image_layout` resolves with for the given source/slide
+   * index — defaults to no files written. Stands in for
+   * `engine::image_layout`; make it throw (or use `commandError`) to
+   * refuse, or return a promise to hold the command in flight. */
+  addImageLayout?: (content: string, slideIndex: number) => string[] | Promise<string[]>
   /** Milliseconds `check_slide_layouts` waits before answering — defaults
    * to 0. Set this to observe the picker while the check is in flight. */
   checkSlideLayoutsDelayMs?: number
@@ -266,6 +271,8 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'list_deck_variants': return deck.deckVariants ?? []
       case 'check_slide_layouts':
         return deck.layoutVerdicts?.(args.content as string, args.slideIndex as number) ?? null
+      case 'add_image_layout':
+        return deck.addImageLayout?.(args.content as string, args.slideIndex as number) ?? []
       case 'present_deck':
         // Fires after the spawn itself resolves, matching real timing —
         // `watch_present_readiness`/`watch_present_failure` (peitho.rs)

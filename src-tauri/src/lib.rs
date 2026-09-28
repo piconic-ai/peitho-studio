@@ -334,6 +334,7 @@ pub fn run() {
             peitho::list_deck_variants,
             peitho::preview_layouts,
             peitho::check_slide_layouts,
+            peitho::add_image_layout,
             peitho::present_deck,
             peitho::report_deck_settings,
             peitho::trust_open_deck,

@@ -22,6 +22,7 @@ import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatt
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import { type LayoutVerdict } from '../domain/layoutFit'
+import { type ImageSlotFix, imageLayoutPin, imageSlotFixFor, parseImageSlotError, shownImageSlotFix } from '../domain/imageSlot'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
 import { buildSlideList, manifestIndexAt, sectionStartBySourceIndex } from '../domain/slideList'
 import { collapseKeyAt, collapsedSectionContaining, collapsedSectionStarts, lastVisibleRow, rowVisibilities, sectionSpans } from '../domain/sectionCollapse'
@@ -40,6 +41,7 @@ import { createVimClipboardBridge, onClipboardMayHaveChanged } from '../dom/vimC
 import { readPastedImage } from '../dom/imagePaste'
 import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
 import { focusSettingsPanel, restoreFocusAfterSettingsPanel } from '../dom/settingsPanel'
+import { slideRowMenuAnchor } from '../dom/slideRow'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, remountSlideCanvases, setManifestKeysSource, setScriptsBlockedListener, setSlideScriptsTrusted } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
 import { createRenderStore } from '../state/renderStore'
@@ -639,14 +641,88 @@ export function Studio() {
     layoutPreviewStylesheet.replaceSync(ui.layoutPreviewStylesheetText())
   })
 
+  // The error bar's way out of peitho-core's "no slot accepts image" (see
+  // `domain/imageSlot.ts`), whichever path the failing build came from — a
+  // draft render or a save. Each such error asks which layouts that slide
+  // fits; a slower answer for an earlier error is dropped.
+  const imageSlotError = createMemo(() => parseImageSlotError(errorMessage(), editor.slideRanges().length))
+  const [imageSlotFix, setImageSlotFix] = createSignal<ImageSlotFix>({ kind: 'none' })
+  const shownFix = createMemo(() => shownImageSlotFix(imageSlotError(), imageSlotFix()))
+  let imageSlotFixRequest = 0
+  createEffect(() => {
+    const error = imageSlotError()
+    if (error === null) return
+    untrack(() => { void findImageSlotFix(error.index) })
+  })
+  async function findImageSlotFix(index: number): Promise<void> {
+    const request = ++imageSlotFixRequest
+    const pinned = slideConfigOf(index).layout
+    let verdicts: LayoutVerdict[] | null = null
+    try {
+      verdicts = await deckIpc.checkSlideLayouts(liveSource(), index)
+    } catch {
+      // Nothing to go on: no fix is offered.
+    }
+    if (request !== imageSlotFixRequest) return
+    setImageSlotFix(imageSlotFixFor(index, pinned, verdicts))
+  }
+
+  // `event`: the button's click, where the picker opens when the slide's
+  // own row isn't showing.
+  function applyImageSlotFix(event: MouseEvent): void {
+    const fix = shownFix()
+    if (fix.kind === 'pick-layout') {
+      void selectSlide(fix.index)
+      const at = slideRowMenuAnchor(fix.index) ?? { x: event.clientX, y: event.clientY }
+      void openLayoutPickerOn(fix.index, at)
+    } else if (fix.kind === 'add-image-layout') {
+      void addImageLayout(fix.index)
+    }
+  }
+
+  // Adds the built-in image layout's files to the deck (never Undo-able,
+  // like an imported image), then brings the slide onto it: a slide pinned
+  // to another layout is re-pinned through the usual Undo-able config
+  // change; an unpinned one finds it by its content, so its pending draft
+  // is saved (which re-renders) or the deck just re-rendered. Rust checks
+  // the result against the source this sends — the draft included, the pin
+  // already changed — so nothing is written when another slide would stop
+  // building.
+  async function addImageLayout(index: number): Promise<void> {
+    if (ui.imageLayoutAdding()) return
+    ui.setImageLayoutAdding(true)
+    try {
+      const pin = imageLayoutPin(slideConfigOf(index).layout)
+      const texts = currentSlideTexts()
+      const source = pin === null ? liveSource() : rebuildSource(texts.map((text, i) => (i === index ? updatePageComment(text, pin) : text)))
+      try {
+        await deckIpc.addImageLayout(source, index)
+      } catch (err) {
+        setErrorMessage(settings.messages().imageLayoutAddFailed(String(err)))
+        return
+      }
+      // The picker's layout list is cached per deck; it has a new one now.
+      ui.setLayoutPreviews(null)
+      if (pin !== null) await updateSlideConfig(index, pin)
+      else if (editor.isDirty()) await handleSave()
+      else await renderPreview(editor.fullSource())
+      // After the save above, whose own "Saved" would otherwise hide it.
+      setStatusMessage({ kind: 'image-layout-added' })
+    } finally {
+      ui.setImageLayoutAdding(false)
+    }
+  }
+
   // Skipped while the New Deck modal is open: this timer was designed for
   // WelcomeScreen/StatusBar's transient toast-style banner, but the same
   // signal now also drives the modal's persistent inline error — an error
   // shown there should stay until the user dismisses the modal or retries
   // (both already clear it explicitly), not vanish on a fixed timer while
   // still unread.
+  // Also skipped while the error bar offers a fix: the error stays until
+  // it's acted on or goes away by itself (the next successful render).
   createEffect(() => {
-    if (errorMessage() === null || deck.newDeckModalOpen()) return
+    if (errorMessage() === null || deck.newDeckModalOpen() || shownFix().kind !== 'none') return
     const timer = window.setTimeout(() => setErrorMessage(null), 6000)
     return () => window.clearTimeout(timer)
   })
@@ -1307,11 +1383,37 @@ export function Studio() {
     event.stopPropagation()
     if (index === null) {
       ui.setContextMenu({ kind: 'on-empty-space', x: event.clientX, y: event.clientY })
+      void loadLayoutPreviews()
     } else {
       void selectSlide(index)
-      void checkLayoutFit(index, ui.openSlideContextMenu(index, event.clientX, event.clientY))
+      void openSlideMenu(index, event.clientX, event.clientY)
     }
-    void loadLayoutPreviews()
+  }
+
+  // Opens the context menu on slide `index` at (`x`, `y`) and starts its
+  // fit check — from a right-click, or from the error bar. Resolves once
+  // the layout picker's previews are in.
+  function openSlideMenu(index: number, x: number, y: number): Promise<void> {
+    void checkLayoutFit(index, ui.openSlideContextMenu(index, x, y))
+    return loadLayoutPreviews()
+  }
+
+  // The error bar's "choose a layout that fits": the context menu on slide
+  // `index`, its picker expanded. Expanded only once the previews are in —
+  // entered while it still shows "loading", the picker's branch never
+  // renders the list that replaces it (confirmed with Playwright), so
+  // this waits the way a user's own click on Change Layout usually does.
+  // Skipped if the menu was closed or moved to another slide meanwhile.
+  async function openLayoutPickerOn(index: number, at: { x: number; y: number }): Promise<void> {
+    await openSlideMenu(index, at.x, at.y)
+    const menu = ui.contextMenu()
+    if (menu.kind === 'on-slide' && menu.index === index && !menu.layoutPickerOpen) ui.toggleLayoutPicker()
+  }
+
+  // The deck source as the user sees it: the open slide's unsaved draft
+  // included.
+  function liveSource(): string {
+    return editor.isDirty() ? (currentDraftSource() ?? editor.fullSource()) : editor.fullSource()
   }
 
   // Asks peitho-core which layouts slide `index` fits, against the source
@@ -1323,7 +1425,7 @@ export function Studio() {
   // every layout choosable — `commitChange` renders before it saves, so a
   // mismatch that gets past this still never reaches disk.
   async function checkLayoutFit(index: number, requestId: number): Promise<void> {
-    const source = editor.isDirty() ? (currentDraftSource() ?? editor.fullSource()) : editor.fullSource()
+    const source = liveSource()
     let verdicts: LayoutVerdict[] | null = null
     try {
       verdicts = await deckIpc.checkSlideLayouts(source, index)
@@ -1970,8 +2072,11 @@ export function Studio() {
         language={settings.language()}
         errorMessage={errorMessage()}
         errorMessageCopied={errorMessageCopied()}
+        imageSlotFix={shownFix().kind}
+        imageLayoutAdding={ui.imageLayoutAdding()}
         statusMessage={statusText(settings.messages(), statusMessage())}
         onCopyErrorMessage={() => void copyErrorMessage()}
+        onImageSlotFix={applyImageSlotFix}
       />
 
       <SlideContextMenu

@@ -29,6 +29,7 @@ use crate::deck_variants;
 use crate::edit_menu;
 use crate::i18n::{self, Language, MenuLabels};
 use crate::engine::builtin;
+use crate::engine::image_layout;
 use crate::engine::images;
 use crate::engine::layout_fit::{self, LayoutVerdict};
 use crate::engine::pipeline::{self, RenderOutput};
@@ -381,12 +382,6 @@ fn starter_deck(settings: NewDeckSettings) -> String {
     format!("---\n{}\n---\n{STARTER_BODY}", lines.join("\n"))
 }
 
-/// Mirrors the header `peitho new` prepends to its scaffolded
-/// `css/base.css` (see `crates/peitho/src/new_cmd.rs::BASE_CSS_HEADER` in
-/// the peitho repo) — explains why the file exists before the copied
-/// built-in rules.
-const BASE_CSS_HEADER: &str = "/*\n  This file replaces peitho's embedded themes/base.css for this deck.\n  Edit it as your deck's complete theme.\n*/\n\n";
-
 /// `name` becomes a directory name picked by the user in a plain text
 /// field, not a path — rejected outright if it could act like one, rather
 /// than trying to sanitize it into something safe. Split out of
@@ -419,7 +414,7 @@ fn scaffold_deck_files(settings: NewDeckSettings) -> Vec<(&'static str, String)>
         ("deck.md", starter_deck(settings)),
         ("layouts/title-body-code.html", builtin::LAYOUT_HTML.to_string()),
         ("layouts/title-body-image.html", builtin::IMAGE_LAYOUT_HTML.to_string()),
-        ("css/base.css", format!("{BASE_CSS_HEADER}{}", builtin::BASE_CSS)),
+        ("css/base.css", builtin::scaffolded_base_css()),
         ("css/title-body-image.css", builtin::IMAGE_LAYOUT_CSS.to_string()),
         (".gitignore", builtin::GITIGNORE.to_string()),
     ]
@@ -1048,6 +1043,25 @@ pub fn check_slide_layouts(
     layout_fit::check_slide_layouts(&deck_path, &content, slide_index)
 }
 
+/// Adds Studio's built-in image layout to this window's deck, for the slide
+/// at `slide_index` of `content` (the deck source as the frontend has it,
+/// the slide already re-pinned to the new layout if it was pinned to
+/// another) — the fix the error bar offers when no layout of the deck fits
+/// a slide holding an image. Returns the deck-relative paths written;
+/// writes nothing when any of them exists or the addition would change how
+/// another slide builds. See `engine::image_layout`. `async` like
+/// `check_slide_layouts`: it parses the whole deck and touches no shared
+/// state.
+#[tauri::command(async)]
+pub fn add_image_layout(
+    content: String,
+    slide_index: usize,
+    window: WebviewWindow,
+    session: State<PeithoSession>,
+) -> Result<Vec<&'static str>, String> {
+    image_layout::add_image_layout(&session_deck_path(&session, window.label())?, &content, slide_index)
+}
+
 #[tauri::command]
 pub fn present_deck(rehearsal: bool, window: WebviewWindow, session: State<PeithoSession>) -> Result<(), String> {
     let mut guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
@@ -1380,7 +1394,7 @@ Start writing your slides here.\n";
         );
 
         let base_css = &files.iter().find(|(path, _)| *path == "css/base.css").unwrap().1;
-        assert!(base_css.starts_with(BASE_CSS_HEADER));
+        assert!(base_css.starts_with(builtin::BASE_CSS_HEADER));
         assert!(base_css.contains(builtin::BASE_CSS));
 
         let layout = &files.iter().find(|(path, _)| *path == "layouts/title-body-code.html").unwrap().1;

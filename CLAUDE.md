@@ -386,6 +386,14 @@ don't bundle everything into one giant commit.
   already shown (`000` or `-1` into a number input that shows `0`) stays on
   screen. When an input normalizes what's typed, also rewrite the field
   from `onChange` (see `dom/sectionHeader.ts`'s `showCanonicalValue`).
+- **A conditional nested inside a branch renders nothing if it switches
+  right after the outer branch is entered.** `SlideContextMenu.tsx`'s
+  picker (`layoutPickerOpen ? <div>{view === 'loading' ? … : <list/>}</div>
+  : null`) opened already expanded while `view` was still `'loading'`
+  stayed empty once `view` turned `'ready'` — the inner region's end marker
+  was gone from the DOM. Expanding it after the previews had loaded
+  rendered normally. Enter such a branch only once the inner value has
+  settled (see `openLayoutPickerOn` in `Studio.tsx`).
 - **In a `.map()` row's JSX text child, an object literal can't have a key
   named like the row's parameter.** `{items.map(choice => (<b>{f({ key:
   'x', choice })}</b>))}` — or `{ choice: 1 }` — fails the build with

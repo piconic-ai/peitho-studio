@@ -117,6 +117,9 @@ export function createUiStore() {
   // A plain boolean is enough here (no illegal combination it could express)
   // unlike `dragState`/`contextMenu` above, which need a real ADT.
   const [presentPending, setPresentPending] = createSignal(false)
+  // True while `add_image_layout` runs: the error bar's button is disabled
+  // and says so, like `presentPending` above.
+  const [imageLayoutAdding, setImageLayoutAdding] = createSignal(false)
 
   const [slideListWidth, setSlideListWidth] = createSignal(SLIDE_LIST_WIDTH)
   const [editorWidth, setEditorWidth] = createSignal(EDITOR_WIDTH)
@@ -188,6 +191,7 @@ export function createUiStore() {
     layoutPreviews, setLayoutPreviews, layoutPreviewStylesheetText, setLayoutPreviewCss,
     clipboardSlideText, setClipboardSlideText,
     presentMenuOpen, setPresentMenuOpen, presentPending, setPresentPending,
+    imageLayoutAdding, setImageLayoutAdding,
     variantMenuOpen, setVariantMenuOpen,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth,
     editingSectionIndex, setEditingSectionIndex,

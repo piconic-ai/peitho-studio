@@ -1,5 +1,6 @@
 'use client'
 
+import { type ImageSlotFix, imageSlotFixLabel } from '../domain/imageSlot'
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
 // Props here are values, not signal getters — see `components/
@@ -9,8 +10,14 @@ export interface StatusBarProps {
   language: Language
   errorMessage: string | null
   errorMessageCopied: boolean
+  /** The way out of the error shown, if the app has one — see
+   * `domain/imageSlot.ts`. */
+  imageSlotFix: ImageSlotFix['kind']
+  /** The image layout is being added: the button is disabled meanwhile. */
+  imageLayoutAdding: boolean
   statusMessage: string
   onCopyErrorMessage: () => void
+  onImageSlotFix: (event: MouseEvent) => void
 }
 
 export function StatusBar(props: StatusBarProps) {
@@ -30,6 +37,17 @@ export function StatusBar(props: StatusBarProps) {
         className="px-3 py-1.5 bg-destructive/10 text-destructive text-xs shrink-0 border-t border-destructive/30 flex items-start gap-2"
       >
         <span className="flex-1 select-text">{props.errorMessage}</span>
+        {/* Always mounted too, for the same reason as the bar itself. */}
+        <button
+          type="button"
+          data-image-slot-fix={props.imageSlotFix}
+          hidden={props.imageSlotFix === 'none'}
+          disabled={props.imageLayoutAdding}
+          onClick={e => props.onImageSlotFix(e)}
+          className="shrink-0 px-1.5 py-0.5 rounded border border-destructive bg-destructive/20 font-medium hover:bg-destructive/30 disabled:opacity-50"
+        >
+          {imageSlotFixLabel(messagesFor(props.language), props.imageSlotFix, props.imageLayoutAdding)}
+        </button>
         <button
           type="button"
           onClick={() => props.onCopyErrorMessage()}

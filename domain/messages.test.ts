@@ -27,6 +27,7 @@ describe('messagesFor', () => {
       expect(messages.slideFallbackTitle(3)).toContain('3')
       expect(messages.unsupportedImageFiles('diagram.svg, notes.txt')).toContain('diagram.svg, notes.txt')
       expect(messages.imageImportFailed('permission denied')).toContain('permission denied')
+      expect(messages.imageLayoutAddFailed('already exists')).toContain('already exists')
       const mismatch = messages.layoutMismatch('cover', "missing 'body' slot")
       expect(mismatch).toContain('cover')
       expect(mismatch).toContain("missing 'body' slot")
