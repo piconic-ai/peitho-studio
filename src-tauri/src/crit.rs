@@ -193,6 +193,30 @@ fn open_first_round(cli: &CritCli, deck_path: &Path, child: &mut Child) -> Resul
         }
         std::thread::sleep(Duration::from_millis(100));
     };
+    take_first_round(port, &file, child).map_err(|err| {
+        // The session is Studio's own and half set up (its placeholder
+        // comment may still be in it): stop its daemon rather than leave
+        // it for the agent's `crit` to join, where the placeholder would
+        // arrive as a real comment and no finished round would be on
+        // record for Studio to tell a waiting agent by.
+        stop_session(cli, deck_path);
+        err
+    })?;
+    let finished = FinishedRound { session_id: id.clone(), review_round };
+    Ok((DeckSession::Found { id, port, file, review_round, agent_waiting: false }, finished))
+}
+
+/// Stops the daemon reviewing `deck_path` (`crit stop <file>` in its
+/// folder). Best effort: there's nothing more to do when it fails.
+fn stop_session(cli: &CritCli, deck_path: &Path) {
+    let (Some(dir), Some(name)) = (deck_path.parent(), deck_path.file_name()) else { return };
+    let _ = cli.command().arg("stop").arg(name).current_dir(dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+}
+
+/// Finishes the session's first round with a placeholder comment until
+/// Studio's own `crit` (`child`) takes it, then deletes the placeholder.
+fn take_first_round(port: u16, file: &str, child: &mut Child) -> Result<(), String> {
+    let deadline = Instant::now() + START_TIMEOUT;
     let opener = NewReviewComment {
         start_line: 1,
         end_line: 1,
@@ -200,7 +224,7 @@ fn open_first_round(cli: &CritCli, deck_path: &Path, child: &mut Child) -> Resul
         quote: String::new(),
         author: STUDIO_AUTHOR.into(),
     };
-    add_comment(port, &file, &opener)?;
+    add_comment(port, file, &opener)?;
     // The daemon lists the session a moment before Studio's `crit` starts
     // waiting on it, and a round finished before then never reaches that
     // `crit`: finish again until it takes the round and exits.
@@ -209,12 +233,11 @@ fn open_first_round(cli: &CritCli, deck_path: &Path, child: &mut Child) -> Resul
             return Err("crit never took the review session's first round".to_string());
         }
     }
-    if let Some(opener) = shapes::session_opener_id(&list_comments(port, &file)?) {
-        delete_comment(port, &file, &opener)?;
+    if let Some(opener) = shapes::session_opener_id(&list_comments(port, file)?) {
+        delete_comment(port, file, &opener)?;
     }
     std::thread::sleep(REVIEW_FILE_SETTLE);
-    let finished = FinishedRound { session_id: id.clone(), review_round };
-    Ok((DeckSession::Found { id, port, file, review_round, agent_waiting: false }, finished))
+    Ok(())
 }
 
 /// Finishes the round, and whether `child` took it (exited) within `wait`.
