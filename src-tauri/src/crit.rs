@@ -186,7 +186,14 @@ pub enum WatchSignal {
 pub struct CritWatch {
     pub port: u16,
     stop: Arc<AtomicBool>,
-    _thread: JoinHandle<()>,
+    thread: JoinHandle<()>,
+}
+
+impl CritWatch {
+    /// Whether the stream is still being read (it hasn't ended).
+    pub fn is_open(&self) -> bool {
+        !self.thread.is_finished()
+    }
 }
 
 impl Drop for CritWatch {
@@ -209,7 +216,7 @@ pub fn watch_events(port: u16, on_signal: impl Fn(WatchSignal) + Send + 'static)
             on_signal(WatchSignal::Ended);
         }
     });
-    Ok(CritWatch { port, stop, _thread: thread })
+    Ok(CritWatch { port, stop, thread })
 }
 
 /// Reads the stream until it ends (`true`) or `stop` is set (`false`).
