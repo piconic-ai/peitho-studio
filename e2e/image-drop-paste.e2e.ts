@@ -44,10 +44,10 @@ async function paste(page: Page, files: { name: string; type: string; bytes: num
 }
 
 /** Drops `paths` onto the window at `point` (CSS pixels), as Tauri reports
- * it: in physical pixels. */
+ * it: unscaled on macOS, in physical pixels elsewhere (`dropPointToCss`). */
 async function drop(page: Page, paths: string[], point: { x: number; y: number }): Promise<void> {
   await page.evaluate(({ paths, point }) => {
-    const scale = window.devicePixelRatio
+    const scale = /Mac/.test(navigator.userAgent) ? 1 : window.devicePixelRatio
     ;(window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown) => void })
       .__mockEmitTauriEvent('tauri://drag-drop', { paths, position: { x: point.x * scale, y: point.y * scale } })
   }, { paths, point })
@@ -180,6 +180,22 @@ test.describe('functional', () => {
 
     await expect(page.getByText(noSlot)).toBeVisible()
     expect(await editorText(page)).toBe('# Slide One\n\nSome text\n\n![](img/photo.png)')
+  })
+})
+
+test.describe('functional: on a Retina display', () => {
+  test.use({ deviceScaleFactor: 2 })
+
+  test('Given a display scaled 2x, when images are dropped on two different lines one after another, then each lands on the line it was dropped on', async ({ page }) => {
+    const deck: MockDeck = { source: TWO_SLIDES }
+    const invocations = await openDeck(page, deck)
+
+    await drop(page, ['/d/first.png'], await endOfLine(page, 3))
+    await expect.poll(() => editorText(page)).toBe('# Slide One\n\nSome text\n\n![](img/first.png)')
+    await drop(page, ['/d/second.png'], await endOfLine(page, 1))
+
+    await expect.poll(() => editorText(page)).toBe('# Slide One\n\n![](img/second.png)\n\nSome text\n\n![](img/first.png)')
+    expect(imports(invocations).map(call => call.args)).toEqual([{ path: '/d/first.png' }, { path: '/d/second.png' }])
   })
 })
 

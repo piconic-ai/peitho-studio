@@ -11,8 +11,8 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import type { Point } from '../domain/geometry'
 import type { Unsubscribe } from './deckIpc'
 
-/** Files dropped on this window: their paths, and where, in physical
- * pixels from the webview's top left. */
+/** Files dropped on this window: their paths, and where from the webview's
+ * top left, as Tauri reports it — see `dropPointToCss` for its units. */
 export interface FileDrop {
   paths: string[]
   position: Point
