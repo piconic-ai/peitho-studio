@@ -688,10 +688,9 @@ export function Studio() {
   // the result against the source this sends — the draft included, the pin
   // already changed — so nothing is written when another slide would stop
   // building.
-  let addingImageLayout = false
   async function addImageLayout(index: number): Promise<void> {
-    if (addingImageLayout) return
-    addingImageLayout = true
+    if (ui.imageLayoutAdding()) return
+    ui.setImageLayoutAdding(true)
     try {
       const pin = imageLayoutPin(slideConfigOf(index).layout)
       const texts = currentSlideTexts()
@@ -710,7 +709,7 @@ export function Studio() {
       // After the save above, whose own "Saved" would otherwise hide it.
       setStatusMessage({ kind: 'image-layout-added' })
     } finally {
-      addingImageLayout = false
+      ui.setImageLayoutAdding(false)
     }
   }
 
@@ -2074,6 +2073,7 @@ export function Studio() {
         errorMessage={errorMessage()}
         errorMessageCopied={errorMessageCopied()}
         imageSlotFix={shownFix().kind}
+        imageLayoutAdding={ui.imageLayoutAdding()}
         statusMessage={statusText(settings.messages(), statusMessage())}
         onCopyErrorMessage={() => void copyErrorMessage()}
         onImageSlotFix={applyImageSlotFix}

@@ -124,6 +124,7 @@ export interface Messages {
   // The error bar's way out of "no slot accepts image" (domain/imageSlot.ts)
   imageSlotPickLayout: string
   imageSlotAddLayout: string
+  imageSlotAddingLayout: string
   imageLayoutAdded: string
   imageLayoutAddFailed: (error: string) => string
 
@@ -237,6 +238,7 @@ const en: Messages = {
   imageImportFailed: error => `Could not add the image: ${error}`,
   imageSlotPickLayout: 'Choose a Layout That Fits…',
   imageSlotAddLayout: 'Add an Image Layout',
+  imageSlotAddingLayout: 'Adding the Image Layout…',
   imageLayoutAdded: 'Added the title-body-image layout to layouts/',
   imageLayoutAddFailed: error => `Could not add the image layout: ${error}`,
 
@@ -350,6 +352,7 @@ const ja: Messages = {
   imageImportFailed: error => `画像を追加できませんでした: ${error}`,
   imageSlotPickLayout: '合うレイアウトを選ぶ…',
   imageSlotAddLayout: '画像用レイアウトを追加',
+  imageSlotAddingLayout: '画像用レイアウトを追加しています…',
   imageLayoutAdded: '画像用レイアウト title-body-image を layouts/ に追加しました',
   imageLayoutAddFailed: error => `画像用レイアウトを追加できませんでした: ${error}`,
 

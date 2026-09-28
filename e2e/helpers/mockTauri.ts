@@ -98,8 +98,8 @@ export interface MockDeck {
   /** What `add_image_layout` resolves with for the given source/slide
    * index — defaults to no files written. Stands in for
    * `engine::image_layout`; make it throw (or use `commandError`) to
-   * refuse. */
-  addImageLayout?: (content: string, slideIndex: number) => string[]
+   * refuse, or return a promise to hold the command in flight. */
+  addImageLayout?: (content: string, slideIndex: number) => string[] | Promise<string[]>
   /** Milliseconds `check_slide_layouts` waits before answering — defaults
    * to 0. Set this to observe the picker while the check is in flight. */
   checkSlideLayoutsDelayMs?: number

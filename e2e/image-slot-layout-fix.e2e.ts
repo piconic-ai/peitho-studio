@@ -163,6 +163,31 @@ test.describe('functional', () => {
     await expect(errorBar(page)).toBeHidden()
   })
 
+  test('Given the image layout being added, when the command has not answered yet, then the button is disabled and says so until it does', async ({ page }) => {
+    const engine: FakeEngine = { layouts: ['title-body-code'] }
+    let finish = () => {}
+    const { invocations } = await openDeck(page, PINNED, engine, {
+      addImageLayout: () => new Promise<string[]>(resolve => {
+        finish = () => {
+          engine.layouts.push('title-body-image')
+          resolve(['layouts/title-body-image.html', 'css/title-body-image.css'])
+        }
+      }),
+    })
+
+    await pasteImage(page)
+    await fixButton(page).click()
+
+    await expect(fixButton(page)).toBeDisabled()
+    await expect(fixButton(page)).toHaveText('Adding the Image Layout…')
+    await fixButton(page).click({ force: true })
+    expect(invocations.filter(invocation => invocation.cmd === 'add_image_layout')).toHaveLength(1)
+
+    finish()
+    await expect(errorBar(page)).toBeHidden()
+    await expect(page.getByText('Added the title-body-image layout to layouts/')).toBeVisible()
+  })
+
   test('Given the image layout would break another slide, when it is added from the error bar, then the reason is shown and the slide keeps its pin', async ({ page }) => {
     const { deck } = await openDeck(page, PINNED, { layouts: ['title-body-code'] }, {
       commandError: (cmd, args) => {

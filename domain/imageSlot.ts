@@ -78,11 +78,12 @@ export function imageLayoutPin(pinnedLayout: string | undefined): Partial<PageCo
   return pinnedLayout === undefined || pinnedLayout === IMAGE_LAYOUT ? null : { layout: IMAGE_LAYOUT }
 }
 
-/** The error bar button's label for `kind`, or `null` when there's none. */
-export function imageSlotFixLabel(messages: Messages, kind: ImageSlotFix['kind']): string | null {
+/** The error bar button's label for `kind`, or `null` when there's none.
+ * `adding`: the image layout is being added right now. */
+export function imageSlotFixLabel(messages: Messages, kind: ImageSlotFix['kind'], adding: boolean): string | null {
   switch (kind) {
     case 'pick-layout': return messages.imageSlotPickLayout
-    case 'add-image-layout': return messages.imageSlotAddLayout
+    case 'add-image-layout': return adding ? messages.imageSlotAddingLayout : messages.imageSlotAddLayout
     case 'none': return null
     default: {
       const _exhaustive: never = kind

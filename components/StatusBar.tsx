@@ -13,6 +13,8 @@ export interface StatusBarProps {
   /** The way out of the error shown, if the app has one — see
    * `domain/imageSlot.ts`. */
   imageSlotFix: ImageSlotFix['kind']
+  /** The image layout is being added: the button is disabled meanwhile. */
+  imageLayoutAdding: boolean
   statusMessage: string
   onCopyErrorMessage: () => void
   onImageSlotFix: (event: MouseEvent) => void
@@ -40,10 +42,11 @@ export function StatusBar(props: StatusBarProps) {
           type="button"
           data-image-slot-fix={props.imageSlotFix}
           hidden={props.imageSlotFix === 'none'}
+          disabled={props.imageLayoutAdding}
           onClick={e => props.onImageSlotFix(e)}
-          className="shrink-0 px-1.5 py-0.5 rounded border border-destructive bg-destructive/20 font-medium hover:bg-destructive/30"
+          className="shrink-0 px-1.5 py-0.5 rounded border border-destructive bg-destructive/20 font-medium hover:bg-destructive/30 disabled:opacity-50"
         >
-          {imageSlotFixLabel(messagesFor(props.language), props.imageSlotFix)}
+          {imageSlotFixLabel(messagesFor(props.language), props.imageSlotFix, props.imageLayoutAdding)}
         </button>
         <button
           type="button"

@@ -119,12 +119,21 @@ describe('imageSlotFixLabel', () => {
   test('spec: Given each fix, when labelled in each language, then the button says what it does', () => {
     for (const language of ['en', 'ja'] as const) {
       const messages = messagesFor(language)
-      expect(imageSlotFixLabel(messages, 'pick-layout')).toBe(messages.imageSlotPickLayout)
-      expect(imageSlotFixLabel(messages, 'add-image-layout')).toBe(messages.imageSlotAddLayout)
+      expect(imageSlotFixLabel(messages, 'pick-layout', false)).toBe(messages.imageSlotPickLayout)
+      expect(imageSlotFixLabel(messages, 'add-image-layout', false)).toBe(messages.imageSlotAddLayout)
     }
   })
 
-  test('adversarial: Given no fix, when labelled, then there is no button', () => {
-    expect(imageSlotFixLabel(messagesFor('en'), 'none')).toBeNull()
+  test('spec: Given the image layout being added, when labelled, then the button says so', () => {
+    for (const language of ['en', 'ja'] as const) {
+      const messages = messagesFor(language)
+      expect(imageSlotFixLabel(messages, 'add-image-layout', true)).toBe(messages.imageSlotAddingLayout)
+    }
+  })
+
+  test('adversarial: Given no fix, or a pick while adding, when labelled, then adding changes nothing it does not name', () => {
+    expect(imageSlotFixLabel(messagesFor('en'), 'none', false)).toBeNull()
+    expect(imageSlotFixLabel(messagesFor('en'), 'none', true)).toBeNull()
+    expect(imageSlotFixLabel(messagesFor('en'), 'pick-layout', true)).toBe(messagesFor('en').imageSlotPickLayout)
   })
 })
