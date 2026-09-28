@@ -25,7 +25,8 @@ const WARM_UP_RECENT_DECKS: usize = 3;
 /// automatically) and adds "New Deck…"/"Open Deck…"/"Open Recent" at the
 /// top of File, "Settings…" (Cmd+,) to the app menu, links to the
 /// project's GitHub pages (`help_links`) and "Show Log File in Finder" to Help, with Edit's Undo/Redo
-/// swapped for `edit_menu`'s own items.
+/// swapped for `edit_menu`'s own items and the deck-wide settings
+/// (`deck_menu`) at the end of Edit.
 /// Kept as an explicit rebuild rather than mutating
 /// `Menu::default()`'s output, since that method doesn't hand back the
 /// File submenu separately to prepend into.
@@ -48,8 +49,9 @@ const WARM_UP_RECENT_DECKS: usize = 3;
 /// Labelled in the UI language (`settings::ui_language`), so it is also
 /// rebuilt whenever that setting is saved (`settings::update_settings`).
 pub(crate) fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let menu = build_menu_with_recents(app, peitho::read_recent_decks(app), settings::ui_language(app))?;
-    peitho::apply_deck_menu(app, &menu);
+    let language = settings::ui_language(app);
+    let menu = build_menu_with_recents(app, peitho::read_recent_decks(app), language)?;
+    peitho::apply_deck_menu(app, &menu, language);
     Ok(menu)
 }
 
@@ -90,27 +92,24 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
         ],
     )?;
 
-    let edit_menu = Submenu::with_items(
-        app,
-        labels.edit,
-        true,
-        &[
-            // Not `PredefinedMenuItem::undo`/`redo`: those run only the
-            // webview's text undo, never the slide operations' (see
-            // `edit_menu`).
-            &edit_menu::undo_item(app, labels.undo)?,
-            &edit_menu::redo_item(app, labels.redo)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::cut(app, Some(labels.cut))?,
-            &PredefinedMenuItem::copy(app, Some(labels.copy))?,
-            &PredefinedMenuItem::paste(app, Some(labels.paste))?,
-            &PredefinedMenuItem::select_all(app, Some(labels.select_all))?,
-        ],
-    )?;
-
-    // Built disabled and unchecked; `build_menu` shows the front window's
-    // deck in it.
-    let deck_menu = deck_menu::build(app, labels)?;
+    // Not `PredefinedMenuItem::undo`/`redo`: those run only the webview's
+    // text undo, never the slide operations' (see `edit_menu`).
+    let undo = edit_menu::undo_item(app, labels.undo)?;
+    let redo = edit_menu::redo_item(app, labels.redo)?;
+    let clipboard_separator = PredefinedMenuItem::separator(app)?;
+    let cut = PredefinedMenuItem::cut(app, Some(labels.cut))?;
+    let copy = PredefinedMenuItem::copy(app, Some(labels.copy))?;
+    let paste = PredefinedMenuItem::paste(app, Some(labels.paste))?;
+    let select_all = PredefinedMenuItem::select_all(app, Some(labels.select_all))?;
+    let deck_separator = PredefinedMenuItem::separator(app)?;
+    // The deck-wide settings, built disabled and without values;
+    // `build_menu` shows the front window's deck in them.
+    let deck_items = deck_menu::build(app, labels)?;
+    let edit_items: Vec<&dyn IsMenuItem<tauri::Wry>> = [&undo as &dyn IsMenuItem<tauri::Wry>, &redo, &clipboard_separator, &cut, &copy, &paste, &select_all, &deck_separator]
+        .into_iter()
+        .chain(deck_items.refs())
+        .collect();
+    let edit_menu = Submenu::with_id_and_items(app, deck_menu::EDIT_MENU_ID, labels.edit, true, &edit_items)?;
 
     let window_menu = Submenu::with_items(
         app,
@@ -172,7 +171,6 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
             &edit_menu,
             #[cfg(target_os = "macos")]
             &Submenu::with_items(app, labels.view, true, &[&PredefinedMenuItem::fullscreen(app, Some(labels.enter_full_screen))?])?,
-            &deck_menu,
             &window_menu,
             &help_menu,
         ],
@@ -282,7 +280,7 @@ pub fn run() {
                     window.state::<PeithoSession>().remove(window.label());
                     peitho::forget_deck_settings(window.app_handle(), window.label());
                 }
-                // The Deck menu shows the focused window's deck, and none
+                // The deck-setting items show the focused window's deck, and none
                 // while no window has focus.
                 tauri::WindowEvent::Focused(focused) => {
                     window.state::<DeckMenuState>().set_focused(window.label(), *focused);

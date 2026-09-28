@@ -53,7 +53,7 @@ pub(crate) fn forward<R: Runtime>(app: &AppHandle<R>, id: &str) -> bool {
 
 /// Sends `event` with `payload` to the focused window's frontend alone, or
 /// drops it when no window has focus. Also used by the app menu's
-/// "Settings…" (see `settings::MENU_EVENT`) and the Deck menu (see
+/// "Settings…" (see `settings::MENU_EVENT`) and the deck settings (see
 /// `deck_menu::MENU_EVENT`).
 pub(crate) fn emit_to_focused<R: Runtime, S: Serialize + Clone>(app: &AppHandle<R>, event: &str, payload: S) {
     let windows = app.webview_windows();
