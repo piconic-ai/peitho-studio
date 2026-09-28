@@ -8,11 +8,12 @@
 // only ever transitions `creating` -> `opening` (never straight to
 // `open` or back to `welcome`) on a `created` event, so nothing short
 // of an explicit `opened`/`failed` event can leave `creating`.
+import { applyNewDeckSettingPick, defaultNewDeckSettings, type NewDeckSettingPick, type NewDeckSettings } from './newDeckSettings'
 
 export type DeckLifecycle =
   | { kind: 'welcome' }
-  | { kind: 'naming-new-deck'; parentDir: string; name: string }
-  | { kind: 'creating'; parentDir: string; name: string }
+  | { kind: 'naming-new-deck'; parentDir: string; name: string; settings: NewDeckSettings }
+  | { kind: 'creating'; parentDir: string; name: string; settings: NewDeckSettings }
   | { kind: 'opening'; path: string }
   | { kind: 'open'; deckPath: string }
 
@@ -20,6 +21,7 @@ export type DeckEvent =
   | { type: 'open-requested'; path: string }
   | { type: 'new-deck-requested'; parentDir: string }
   | { type: 'name-changed'; name: string }
+  | { type: 'setting-changed'; pick: NewDeckSettingPick }
   | { type: 'create-confirmed' }
   | { type: 'create-cancelled' }
   | { type: 'created'; path: string }
@@ -53,7 +55,10 @@ export function decide(state: DeckLifecycle, event: DeckEvent): Decision {
         case 'open-requested':
           return { kind: 'transition', next: { kind: 'opening', path: event.path }, effect: 'invoke-open' }
         case 'new-deck-requested':
-          return { kind: 'transition', next: { kind: 'naming-new-deck', parentDir: event.parentDir, name: '' } }
+          return {
+            kind: 'transition',
+            next: { kind: 'naming-new-deck', parentDir: event.parentDir, name: '', settings: defaultNewDeckSettings() },
+          }
         default:
           return { kind: 'rejected', reason: 'not-applicable' }
       }
@@ -61,11 +66,13 @@ export function decide(state: DeckLifecycle, event: DeckEvent): Decision {
       switch (event.type) {
         case 'name-changed':
           return { kind: 'transition', next: { ...state, name: event.name } }
+        case 'setting-changed':
+          return { kind: 'transition', next: { ...state, settings: applyNewDeckSettingPick(state.settings, event.pick) } }
         case 'create-confirmed':
           if (state.name.trim() === '') return { kind: 'rejected', reason: 'invalid-name' }
           return {
             kind: 'transition',
-            next: { kind: 'creating', parentDir: state.parentDir, name: state.name },
+            next: { kind: 'creating', parentDir: state.parentDir, name: state.name, settings: state.settings },
             effect: 'invoke-create',
           }
         case 'create-cancelled':
@@ -84,9 +91,13 @@ export function decide(state: DeckLifecycle, event: DeckEvent): Decision {
           return { kind: 'transition', next: { kind: 'opening', path: event.path }, effect: 'invoke-open' }
         case 'failed':
           // Back to naming (not `welcome`) — the modal stays open with
-          // the same parentDir/name so the user can see the error and
-          // retry without re-picking the folder or retyping the name.
-          return { kind: 'transition', next: { kind: 'naming-new-deck', parentDir: state.parentDir, name: state.name } }
+          // the same parentDir/name/settings so the user can see the error
+          // and retry without re-picking the folder, retyping the name, or
+          // picking the settings again.
+          return {
+            kind: 'transition',
+            next: { kind: 'naming-new-deck', parentDir: state.parentDir, name: state.name, settings: state.settings },
+          }
         default:
           return { kind: 'rejected', reason: 'busy' }
       }
