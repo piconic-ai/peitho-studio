@@ -17,7 +17,9 @@ export interface CritIpc {
   sessionStatus(): Promise<CritDeckSession>
   /** Adds the comments and resolves with every comment in the session.
    * Rejects, having sent none, when one is malformed (no body, bad lines),
-   * and rejects when no single session waits on the deck. */
+   * and rejects when no single session waits on the deck. A send that
+   * fails partway may have sent some; retrying the same batch sends only
+   * the rest. */
   addComments(comments: NewReviewComment[]): Promise<ReviewComment[]>
   /** Hands the round to the agent waiting in crit. */
   finish(): Promise<void>

@@ -1202,7 +1202,10 @@ fn deck_crit_session(session: &PeithoSession, label: &str) -> Result<(u16, Strin
 
 /// Adds `comments` to the deck's crit session and returns every comment in
 /// it afterwards. All of them are checked before the first is sent, so a
-/// bad one doesn't leave the others half-sent.
+/// bad one doesn't leave the others half-sent. Ones already in the session
+/// (`crit_shapes::unsent_comments`) are skipped, so after a send that failed
+/// partway — the daemon gone, a timeout — retrying the whole batch doesn't
+/// hand the agent its first comments twice.
 #[tauri::command(async)]
 pub fn crit_add_comments(
     comments: Vec<NewReviewComment>,
@@ -1213,7 +1216,8 @@ pub fn crit_add_comments(
         crit_shapes::new_comment_body(comment)?;
     }
     let (port, file) = deck_crit_session(&session, window.label())?;
-    for comment in &comments {
+    let existing = crit::list_comments(port, &file)?;
+    for comment in crit_shapes::unsent_comments(&comments, &existing) {
         crit::add_comment(port, &file, comment)?;
     }
     crit::list_comments(port, &file)

@@ -363,6 +363,22 @@ pub fn review_update_of(event: &SseEvent) -> Option<ReviewUpdate> {
     }
 }
 
+/// Those of `comments` not yet in the session: an unresolved comment there
+/// with the same lines, body, quote and author is taken to be the same one,
+/// sent by an earlier attempt that failed partway. Lets a batch be retried
+/// whole without the agent seeing its first comments twice.
+pub fn unsent_comments<'a>(comments: &'a [NewReviewComment], existing: &[ReviewComment]) -> Vec<&'a NewReviewComment> {
+    comments.iter().filter(|comment| !existing.iter().any(|sent| is_same_comment(comment, sent))).collect()
+}
+
+fn is_same_comment(comment: &NewReviewComment, sent: &ReviewComment) -> bool {
+    !sent.resolved
+        && sent.lines == Some(LineRange { start: comment.start_line, end: comment.end_line })
+        && sent.body == comment.body
+        && sent.author == comment.author
+        && sent.quote.as_deref().unwrap_or("") == comment.quote
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -652,5 +668,58 @@ mod tests {
         assert_eq!(review_update_of(&event("finish")), Some(ReviewUpdate::Finished));
         assert_eq!(review_update_of(&event("base-changed")), None);
         assert_eq!(review_update_of(&event("")), None);
+    }
+
+    // --- unsent_comments ---
+
+    fn sent(new: &NewReviewComment, resolved: bool) -> ReviewComment {
+        ReviewComment {
+            id: "c_1".into(),
+            lines: Some(LineRange { start: new.start_line, end: new.end_line }),
+            body: new.body.clone(),
+            quote: (!new.quote.is_empty()).then(|| new.quote.clone()),
+            author: new.author.clone(),
+            resolved,
+            replies: vec![],
+        }
+    }
+
+    #[test]
+    fn given_a_batch_partly_sent_before_when_retried_then_only_the_rest_is_unsent() {
+        let batch = [comment(1, 1, "a"), comment(2, 3, "b"), comment(5, 5, "c")];
+        let existing = [sent(&batch[0], false), sent(&batch[1], false)];
+        assert_eq!(unsent_comments(&batch, &existing), vec![&batch[2]]);
+    }
+
+    #[test]
+    fn given_an_empty_session_when_checked_then_the_whole_batch_is_unsent() {
+        let batch = [comment(1, 1, "a"), comment(2, 2, "b")];
+        assert_eq!(unsent_comments(&batch, &[]), vec![&batch[0], &batch[1]]);
+    }
+
+    #[test]
+    fn given_a_resolved_or_different_comment_in_the_session_when_checked_then_it_does_not_count_as_sent() {
+        let batch = [comment(1, 1, "a")];
+        let mut other_lines = sent(&batch[0], false);
+        other_lines.lines = Some(LineRange { start: 1, end: 2 });
+        let mut other_quote = sent(&batch[0], false);
+        other_quote.quote = None;
+        let mut other_author = sent(&batch[0], false);
+        other_author.author = "Agent".into();
+        for existing in [sent(&batch[0], true), other_lines, other_quote, other_author] {
+            assert_eq!(unsent_comments(&batch, &[existing]), vec![&batch[0]]);
+        }
+    }
+
+    #[test]
+    fn given_an_empty_quote_when_matched_against_crits_missing_quote_then_they_are_the_same() {
+        let mut new = comment(1, 1, "a");
+        new.quote = String::new();
+        assert!(unsent_comments(std::slice::from_ref(&new), &[sent(&new, false)]).is_empty());
+    }
+
+    #[test]
+    fn given_an_empty_batch_when_checked_then_nothing_is_unsent() {
+        assert!(unsent_comments(&[], &[]).is_empty());
     }
 }
