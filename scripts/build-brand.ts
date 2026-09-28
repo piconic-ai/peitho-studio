@@ -47,22 +47,31 @@ function markDocument(body: string, pad: number): string {
   return svgDocument(v.w * scale, v.h * scale, body, `${v.x} ${v.y} ${v.w} ${v.h}`)
 }
 
-/** "Peitho Studio" set in Charis SIL (OFL), converted to one path so the file needs no font. */
-function wordmarkDocument(ink: string, mark: string): string {
-  const font = opentype.loadSync(out('node_modules/@fontsource/charis-sil/files/charis-sil-latin-400-normal.woff'))
-  const size = 100
-  const tracking = -0.03 * size // the letter-spacing Peitho's own wordmark uses
+const CHARIS_SIL = 'node_modules/@fontsource/charis-sil/files/charis-sil-latin-400-normal.woff'
+
+/**
+ * `text` set in Charis SIL (OFL) on a baseline at y=0, converted to one path
+ * so the file needs no font. `tracking` is in ems.
+ */
+function textPath(text: string, size: number, tracking = 0): { d: string; width: number; capHeight: number } {
+  const font = opentype.loadSync(out(CHARIS_SIL))
   const unit = size / font.unitsPerEm
-  const glyphs = font.stringToGlyphs('Peitho Studio')
+  const glyphs = font.stringToGlyphs(text)
   let x = 0
   const parts: string[] = []
   glyphs.forEach((glyph, i) => {
     parts.push(glyph.getPath(x, 0, size).toPathData(2))
-    x += (glyph.advanceWidth ?? 0) * unit + tracking
+    x += (glyph.advanceWidth ?? 0) * unit + tracking * size
     if (i + 1 < glyphs.length) x += font.getKerningValue(glyph, glyphs[i + 1]) * unit
   })
-  const textWidth = x - tracking
-  const capHeight = font.tables.os2.sCapHeight * unit
+  return { d: parts.join(''), width: x - tracking * size, capHeight: font.tables.os2.sCapHeight * unit }
+}
+
+/** "Peitho Studio" set in Charis SIL, beside the mark. */
+function wordmarkDocument(ink: string, mark: string): string {
+  const size = 100
+  // -0.03em: the letter-spacing Peitho's own wordmark uses
+  const { d, width: textWidth, capHeight } = textPath('Peitho Studio', size, -0.03)
 
   const pad = 1
   const v = markViewBox(pad)
@@ -76,7 +85,7 @@ function wordmarkDocument(ink: string, mark: string): string {
   const width = margin + markWidth + gap + textWidth + margin
   const body =
     `<g transform="translate(${(margin - v.x * markScale).toFixed(2)} ${(margin - v.y * markScale).toFixed(2)}) scale(${markScale.toFixed(4)})">${mark}</g>` +
-    `<path transform="translate(${(margin + markWidth + gap).toFixed(2)} ${baseline.toFixed(2)})" fill="${ink}" d="${parts.join('')}"/>`
+    `<path transform="translate(${(margin + markWidth + gap).toFixed(2)} ${baseline.toFixed(2)})" fill="${ink}" d="${d}"/>`
   return svgDocument(Math.ceil(width), Math.ceil(height), body)
 }
 
