@@ -124,26 +124,67 @@ pub struct DeckSessionMatch {
 pub enum DeckSession {
     /// No running session reviews the deck.
     None,
+    /// `agent_waiting`: whether an agent's `crit` is waiting for the next
+    /// round, so that finishing it now would reach the agent — see
+    /// `with_finished_round`.
     #[serde(rename_all = "camelCase")]
-    Found { id: String, port: u16, file: String, review_round: u32 },
+    Found { id: String, port: u16, file: String, review_round: u32, agent_waiting: bool },
     /// More than one does, and which one the agent is waiting on can't be
     /// told apart — Studio won't guess where to send comments.
     #[serde(rename_all = "camelCase")]
     Ambiguous { ids: Vec<String> },
 }
 
+/// A session found here is taken to have an agent waiting in it (see
+/// `with_finished_round` for when Studio knows better).
 pub fn select_deck_session(mut matches: Vec<DeckSessionMatch>) -> DeckSession {
     match matches.len() {
         0 => DeckSession::None,
         1 => {
             let found = matches.remove(0);
-            DeckSession::Found { id: found.session.id, port: found.session.port, file: found.file, review_round: found.review_round }
+            DeckSession::Found {
+                id: found.session.id,
+                port: found.session.port,
+                file: found.file,
+                review_round: found.review_round,
+                agent_waiting: true,
+            }
         }
         _ => {
             let mut ids: Vec<String> = matches.into_iter().map(|found| found.session.id).collect();
             ids.sort();
             DeckSession::Ambiguous { ids }
         }
+    }
+}
+
+/// The round of a session that Studio last finished.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FinishedRound {
+    pub session_id: String,
+    pub review_round: u32,
+}
+
+/// `session` with whether an agent waits in it, given the round Studio last
+/// finished there. An agent's `crit` waits on `POST /api/review-cycle`, and
+/// every call after a session's first finished round starts the next round
+/// (`review_round` goes up) — so once Studio has finished round `n`, an
+/// agent waits again exactly when the session is past `n`. crit exposes no
+/// count of waiting clients, so a session Studio never finished a round of
+/// is taken to have its agent waiting: whoever started it runs the `crit`
+/// that waits on its first round. (Studio's own sessions are finished once
+/// right after they start, `crate::crit::start_deck_session`, so they
+/// don't count as waiting until an agent connects.)
+pub fn with_finished_round(session: DeckSession, finished: Option<&FinishedRound>) -> DeckSession {
+    match session {
+        DeckSession::Found { id, port, file, review_round, .. } => {
+            let agent_waiting = match finished {
+                Some(finished) if finished.session_id == id => review_round > finished.review_round,
+                _ => true,
+            };
+            DeckSession::Found { id, port, file, review_round, agent_waiting }
+        }
+        other => other,
     }
 }
 
@@ -286,17 +327,73 @@ pub fn new_comment_body(comment: &NewReviewComment) -> Result<String, String> {
     .map_err(|err| err.to_string())
 }
 
-/// `/api/file/comments?path=<file>`, with `file` percent-encoded.
-pub fn comments_endpoint(file: &str) -> String {
+/// `value` percent-encoded, leaving unreserved characters and `keep` as is.
+fn percent_encode(value: &str, keep: &[u8]) -> String {
     let mut encoded = String::new();
-    for byte in file.bytes() {
-        if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) || keep.contains(&byte) {
             encoded.push(byte as char);
         } else {
             encoded.push_str(&format!("%{byte:02X}"));
         }
     }
-    format!("/api/file/comments?path={encoded}")
+    encoded
+}
+
+/// `/api/file/comments?path=<file>`, with `file` percent-encoded.
+pub fn comments_endpoint(file: &str) -> String {
+    format!("/api/file/comments?path={}", percent_encode(file, b"/"))
+}
+
+/// `/api/comment/<id><action>?path=<file>` — one comment of `file`
+/// (`action` ""), its replies ("/replies") or its resolved flag
+/// ("/resolve"). The id is encoded as one path segment.
+pub fn comment_endpoint(id: &str, action: &str, file: &str) -> String {
+    format!("/api/comment/{}{action}?path={}", percent_encode(id, b""), percent_encode(file, b"/"))
+}
+
+/// The author Studio's comments carry (`REVIEW_AUTHOR` in
+/// `domain/reviewComment.ts`).
+pub const STUDIO_AUTHOR: &str = "Peitho Studio";
+
+/// The body Studio's own first comment carries: `crate::crit::start_deck_session`
+/// finishes a new session's first round with it (an empty round would be an
+/// approval, which stops crit), then deletes it.
+pub const SESSION_OPENER_BODY: &str = "Peitho Studio opened this review session.";
+
+/// The id of Studio's session-opening comment among `comments`.
+pub fn session_opener_id(comments: &[ReviewComment]) -> Option<String> {
+    comments.iter().find(|comment| comment.body == SESSION_OPENER_BODY && comment.author == STUDIO_AUTHOR).map(|comment| comment.id.clone())
+}
+
+/// A reply Studio adds under a comment in the session.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewReviewReply {
+    pub comment_id: String,
+    pub body: String,
+    pub author: String,
+}
+
+#[derive(Serialize)]
+struct NewReplyJson<'a> {
+    body: &'a str,
+    author: &'a str,
+}
+
+/// The JSON body of `POST /api/comment/<id>/replies?path=…` for `reply`, or
+/// why it can't be sent.
+pub fn new_reply_body(reply: &NewReviewReply) -> Result<String, String> {
+    if reply.comment_id.trim().is_empty() {
+        return Err("a reply needs the comment it answers".to_string());
+    }
+    if reply.body.trim().is_empty() {
+        return Err("a reply needs a body".to_string());
+    }
+    if reply.author.trim().is_empty() {
+        return Err("a reply needs an author".to_string());
+    }
+    serde_json::to_string(&NewReplyJson { body: &reply.body, author: &reply.author }).map_err(|err| err.to_string())
 }
 
 /// One server-sent event.
@@ -490,7 +587,7 @@ mod tests {
     fn one_matching_session_is_found() {
         assert_eq!(
             select_deck_session(vec![found("a", 5000)]),
-            DeckSession::Found { id: "a".into(), port: 5000, file: "deck.md".into(), review_round: 1 }
+            DeckSession::Found { id: "a".into(), port: 5000, file: "deck.md".into(), review_round: 1, agent_waiting: true }
         );
     }
 
@@ -511,8 +608,8 @@ mod tests {
     fn deck_session_serializes_as_a_tagged_union_for_the_frontend() {
         assert_eq!(serde_json::to_string(&DeckSession::None).unwrap(), r#"{"kind":"none"}"#);
         assert_eq!(
-            serde_json::to_string(&DeckSession::Found { id: "a".into(), port: 1, file: "deck.md".into(), review_round: 2 }).unwrap(),
-            r#"{"kind":"found","id":"a","port":1,"file":"deck.md","reviewRound":2}"#
+            serde_json::to_string(&DeckSession::Found { id: "a".into(), port: 1, file: "deck.md".into(), review_round: 2, agent_waiting: false }).unwrap(),
+            r#"{"kind":"found","id":"a","port":1,"file":"deck.md","reviewRound":2,"agentWaiting":false}"#
         );
         assert_eq!(serde_json::to_string(&DeckSession::Ambiguous { ids: vec!["a".into()] }).unwrap(), r#"{"kind":"ambiguous","ids":["a"]}"#);
     }
@@ -629,6 +726,114 @@ mod tests {
         assert_eq!(comments_endpoint("my deck&x=1#.md"), "/api/file/comments?path=my%20deck%26x%3D1%23.md");
         assert_eq!(comments_endpoint("発表.md"), "/api/file/comments?path=%E7%99%BA%E8%A1%A8.md");
         assert_eq!(comments_endpoint(""), "/api/file/comments?path=");
+    }
+
+    // --- comment_endpoint ---
+
+    #[test]
+    fn comment_endpoint_addresses_a_comment_its_replies_or_its_resolved_flag() {
+        assert_eq!(comment_endpoint("c_e4b825", "", "deck.md"), "/api/comment/c_e4b825?path=deck.md");
+        assert_eq!(comment_endpoint("c_e4b825", "/replies", "talks/a/deck.md"), "/api/comment/c_e4b825/replies?path=talks/a/deck.md");
+        assert_eq!(comment_endpoint("c_e4b825", "/resolve", "deck.md"), "/api/comment/c_e4b825/resolve?path=deck.md");
+    }
+
+    #[test]
+    fn comment_endpoint_keeps_an_odd_id_inside_its_path_segment() {
+        // A slash or query character in an id can't reach another route.
+        assert_eq!(comment_endpoint("a/replies?x", "", "deck.md"), "/api/comment/a%2Freplies%3Fx?path=deck.md");
+        assert_eq!(comment_endpoint("", "/resolve", "my deck.md"), "/api/comment//resolve?path=my%20deck.md");
+    }
+
+    // --- with_finished_round ---
+
+    fn found_session(id: &str, review_round: u32) -> DeckSession {
+        DeckSession::Found { id: id.into(), port: 1, file: "deck.md".into(), review_round, agent_waiting: true }
+    }
+
+    fn waiting(session: DeckSession) -> Option<bool> {
+        match session {
+            DeckSession::Found { agent_waiting, .. } => Some(agent_waiting),
+            _ => None,
+        }
+    }
+
+    fn finished(id: &str, review_round: u32) -> FinishedRound {
+        FinishedRound { session_id: id.into(), review_round }
+    }
+
+    #[test]
+    fn given_studio_finished_the_current_round_then_no_agent_waits_until_the_next_round() {
+        // Given Studio finished round 2, When the session is still in round
+        // 2, Then the agent is busy; When it moved on to round 3, it waits.
+        assert_eq!(waiting(with_finished_round(found_session("a", 2), Some(&finished("a", 2)))), Some(false));
+        assert_eq!(waiting(with_finished_round(found_session("a", 3), Some(&finished("a", 2)))), Some(true));
+    }
+
+    #[test]
+    fn given_a_session_studio_never_finished_a_round_of_then_its_agent_is_taken_to_wait() {
+        assert_eq!(waiting(with_finished_round(found_session("a", 1), None)), Some(true));
+        // A round finished in another session says nothing about this one.
+        assert_eq!(waiting(with_finished_round(found_session("b", 1), Some(&finished("a", 5)))), Some(true));
+    }
+
+    #[test]
+    fn given_a_round_counter_behind_the_finished_one_then_no_agent_waits() {
+        // A restarted daemon reusing the id would count from 1 again.
+        assert_eq!(waiting(with_finished_round(found_session("a", 1), Some(&finished("a", 4)))), Some(false));
+    }
+
+    #[test]
+    fn given_no_single_session_then_there_is_nothing_to_mark() {
+        assert_eq!(with_finished_round(DeckSession::None, Some(&finished("a", 1))), DeckSession::None);
+        let ambiguous = DeckSession::Ambiguous { ids: vec!["a".into(), "b".into()] };
+        assert_eq!(with_finished_round(ambiguous.clone(), None), ambiguous);
+    }
+
+    // --- session_opener_id ---
+
+    fn review_comment(id: &str, body: &str, author: &str) -> ReviewComment {
+        ReviewComment { id: id.into(), lines: None, body: body.into(), quote: None, author: author.into(), resolved: false, replies: vec![] }
+    }
+
+    #[test]
+    fn studios_session_opener_is_found_among_the_comments() {
+        let comments = [review_comment("c1", "Fix this", "Peitho Studio"), review_comment("c2", SESSION_OPENER_BODY, "Peitho Studio")];
+        assert_eq!(session_opener_id(&comments), Some("c2".into()));
+    }
+
+    #[test]
+    fn the_same_words_from_someone_else_or_no_comments_are_not_the_opener() {
+        assert_eq!(session_opener_id(&[review_comment("c1", SESSION_OPENER_BODY, "Agent")]), None);
+        assert_eq!(session_opener_id(&[]), None);
+    }
+
+    // --- new_reply_body ---
+
+    fn reply(comment_id: &str, body: &str, author: &str) -> NewReviewReply {
+        NewReviewReply { comment_id: comment_id.into(), body: body.into(), author: author.into() }
+    }
+
+    #[test]
+    fn reply_body_carries_the_text_and_author() {
+        assert_eq!(new_reply_body(&reply("c1", "Still too small", "Peitho Studio")).unwrap(), r#"{"body":"Still too small","author":"Peitho Studio"}"#);
+    }
+
+    #[test]
+    fn reply_body_escapes_quotes_and_keeps_non_ascii() {
+        assert_eq!(new_reply_body(&reply("c1", "\"大きく\"\n", "A")).unwrap(), r#"{"body":"\"大きく\"\n","author":"A"}"#);
+    }
+
+    #[test]
+    fn a_reply_without_a_comment_body_or_author_is_refused() {
+        assert!(new_reply_body(&reply("", "x", "A")).unwrap_err().contains("comment"));
+        assert!(new_reply_body(&reply("c1", "  \n", "A")).unwrap_err().contains("body"));
+        assert!(new_reply_body(&reply("c1", "x", " ")).unwrap_err().contains("author"));
+    }
+
+    #[test]
+    fn a_reply_arrives_from_the_frontend_in_camel_case() {
+        let parsed: NewReviewReply = serde_json::from_str(r#"{"commentId":"c1","body":"b","author":"a"}"#).unwrap();
+        assert_eq!(parsed, reply("c1", "b", "a"));
     }
 
     // --- SseParser / review_update_of ---

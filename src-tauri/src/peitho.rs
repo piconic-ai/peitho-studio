@@ -30,7 +30,7 @@ use crate::deck_variants;
 use crate::edit_menu;
 use crate::i18n::{self, Language, MenuLabels};
 use crate::engine::builtin;
-use crate::engine::crit::{self as crit_shapes, DeckSession, NewReviewComment, ReviewComment, ReviewUpdate};
+use crate::engine::crit::{self as crit_shapes, DeckSession, FinishedRound, NewReviewComment, NewReviewReply, ReviewComment, ReviewUpdate};
 use crate::engine::image_layout;
 use crate::engine::images;
 use crate::engine::layout_fit::{self, LayoutVerdict};
@@ -119,6 +119,18 @@ fn watch_present_failure(stderr: Option<ChildStderr>, emitted: Arc<AtomicBool>, 
     });
 }
 
+/// What a window knows about its deck's crit review beyond what crit
+/// reports.
+#[derive(Default)]
+struct CritReviewState {
+    /// The round Studio last finished, which tells whether an agent waits
+    /// again (`crit_shapes::with_finished_round`).
+    finished: Option<FinishedRound>,
+    /// Set while `crit_start_session` starts a session, so a second call
+    /// can't start another one beside it.
+    starting: bool,
+}
+
 /// Live session state for every open window with a deck loaded, keyed by
 /// that window's label. Absent entries mean "no deck open in this window"
 /// (the welcome screen).
@@ -133,6 +145,7 @@ struct SessionState {
     /// The deck's crit session's event stream, followed since
     /// `crit_session_status` last found one. Dropped with the session.
     crit_watch: Option<CritWatch>,
+    crit_review: CritReviewState,
     // Held only to keep the watch alive — dropping it (e.g. when a window
     // closes and its whole session entry is removed) stops the background
     // thread below.
@@ -825,7 +838,7 @@ pub fn open_deck(
         insert_first_session(
             &mut *guard,
             window.label(),
-            SessionState { deck_path, deck_dir, asset_server, present_child: None, crit_watch: None, _watcher: watcher },
+            SessionState { deck_path, deck_dir, asset_server, present_child: None, crit_watch: None, crit_review: CritReviewState::default(), _watcher: watcher },
         )?;
     }
 
@@ -1124,11 +1137,21 @@ fn crit_event_payload(signal: WatchSignal) -> &'static str {
     }
 }
 
-/// The port and deck file of the session a crit command should talk to,
-/// or why there's none to talk to.
-fn found_crit_session(session: DeckSession) -> Result<(u16, String), String> {
+/// The session a crit command talks to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CritTarget {
+    id: String,
+    port: u16,
+    /// The deck's path as the session knows it.
+    file: String,
+    review_round: u32,
+}
+
+/// The session a crit command should talk to, or why there's none to talk
+/// to.
+fn found_crit_session(session: DeckSession) -> Result<CritTarget, String> {
     match session {
-        DeckSession::Found { port, file, .. } => Ok((port, file)),
+        DeckSession::Found { id, port, file, review_round, .. } => Ok(CritTarget { id, port, file, review_round }),
         DeckSession::None => Err("no crit review session is waiting on this deck".to_string()),
         DeckSession::Ambiguous { ids } => {
             Err(format!("several crit review sessions are waiting on this deck ({}); stop all but one", ids.join(", ")))
@@ -1191,23 +1214,66 @@ fn sync_crit_watch(session: &PeithoSession, window: &WebviewWindow, found: &Deck
 #[tauri::command(async)]
 pub fn crit_session_status(window: WebviewWindow, session: State<PeithoSession>) -> Result<DeckSession, String> {
     let found = session_deck_path(&session, window.label())
-        .and_then(|deck_path| crit::find_deck_session(&CritCli::bundled()?, &deck_path));
+        .and_then(|deck_path| crit::find_deck_session(&CritCli::bundled()?, &deck_path))
+        .and_then(|found| with_crit_review(&session, window.label(), |review| crit_shapes::with_finished_round(found, review.finished.as_ref())));
+    follow_found_session(&session, &window, found)
+}
+
+/// Follows `found`'s events, or stops following any when no session could
+/// be resolved (as for `DeckSession::None`).
+fn follow_found_session(session: &PeithoSession, window: &WebviewWindow, found: Result<DeckSession, String>) -> Result<DeckSession, String> {
     match found {
         Ok(found) => {
-            sync_crit_watch(&session, &window, &found)?;
+            sync_crit_watch(session, window, &found)?;
             Ok(found)
         }
         Err(err) => {
-            // No session could be resolved, so stop following whichever one
-            // this window followed before, as for `DeckSession::None`.
-            let _ = sync_crit_watch(&session, &window, &DeckSession::None);
+            let _ = sync_crit_watch(session, window, &DeckSession::None);
             Err(err)
         }
     }
 }
 
+/// Runs `f` on the window's crit review state.
+fn with_crit_review<T>(session: &PeithoSession, label: &str, f: impl FnOnce(&mut CritReviewState) -> T) -> Result<T, String> {
+    let mut guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+    let state = guard.get_mut(label).ok_or_else(|| "no deck is open".to_string())?;
+    Ok(f(&mut state.crit_review))
+}
+
+/// Starts a review session on this window's deck with the bundled crit —
+/// unless one already reviews it — and returns it, followed like
+/// `crit_session_status`'s. An agent that then runs `crit --no-open
+/// deck.md` in the deck's folder, with whichever crit it has, connects to
+/// this session's daemon, so Studio always talks to the bundled version
+/// (option (c) in todo/crit-review-bridge.md). See
+/// `crit::start_deck_session` for how a new session is opened.
+#[tauri::command(async)]
+pub fn crit_start_session(window: WebviewWindow, session: State<PeithoSession>) -> Result<DeckSession, String> {
+    let label = window.label();
+    let already_starting = with_crit_review(&session, label, |review| std::mem::replace(&mut review.starting, true))?;
+    if already_starting {
+        return Err("a crit review session is already starting for this deck".to_string());
+    }
+    let started = start_or_find_session(&session, label);
+    let _ = with_crit_review(&session, label, |review| review.starting = false);
+    follow_found_session(&session, &window, started)
+}
+
+fn start_or_find_session(session: &PeithoSession, label: &str) -> Result<DeckSession, String> {
+    let cli = CritCli::bundled()?;
+    let deck_path = session_deck_path(session, label)?;
+    let existing = crit::find_deck_session(&cli, &deck_path)?;
+    if existing != DeckSession::None {
+        return with_crit_review(session, label, |review| crit_shapes::with_finished_round(existing, review.finished.as_ref()));
+    }
+    let (started, finished) = crit::start_deck_session(&cli, &deck_path)?;
+    with_crit_review(session, label, |review| review.finished = Some(finished))?;
+    Ok(started)
+}
+
 /// This window's deck's crit session, as `found_crit_session` has it.
-fn deck_crit_session(session: &PeithoSession, label: &str) -> Result<(u16, String), String> {
+fn deck_crit_session(session: &PeithoSession, label: &str) -> Result<CritTarget, String> {
     found_crit_session(crit::find_deck_session(&CritCli::bundled()?, &session_deck_path(session, label)?)?)
 }
 
@@ -1226,28 +1292,61 @@ pub fn crit_add_comments(
     for comment in &comments {
         crit_shapes::new_comment_body(comment)?;
     }
-    let (port, file) = deck_crit_session(&session, window.label())?;
-    let existing = crit::list_comments(port, &file)?;
+    let target = deck_crit_session(&session, window.label())?;
+    let existing = crit::list_comments(target.port, &target.file)?;
     for comment in crit_shapes::unsent_comments(&comments, &existing) {
-        crit::add_comment(port, &file, comment)?;
+        crit::add_comment(target.port, &target.file, comment)?;
     }
-    crit::list_comments(port, &file)
+    crit::list_comments(target.port, &target.file)
+}
+
+/// Adds `replies` under their comments in the deck's crit session and
+/// returns every comment afterwards. All of them are checked before the
+/// first is sent.
+#[tauri::command(async)]
+pub fn crit_add_replies(
+    replies: Vec<NewReviewReply>,
+    window: WebviewWindow,
+    session: State<PeithoSession>,
+) -> Result<Vec<ReviewComment>, String> {
+    for reply in &replies {
+        crit_shapes::new_reply_body(reply)?;
+    }
+    let target = deck_crit_session(&session, window.label())?;
+    for reply in &replies {
+        crit::add_reply(target.port, &target.file, reply)?;
+    }
+    crit::list_comments(target.port, &target.file)
+}
+
+/// Marks comment `id` resolved and returns every comment afterwards. crit
+/// hands the agent only unresolved comments, so a resolved one stops coming
+/// back to it each round.
+#[tauri::command(async)]
+pub fn crit_resolve_comment(id: String, window: WebviewWindow, session: State<PeithoSession>) -> Result<Vec<ReviewComment>, String> {
+    let target = deck_crit_session(&session, window.label())?;
+    crit::resolve_comment(target.port, &target.file, &id)?;
+    crit::list_comments(target.port, &target.file)
 }
 
 /// Finishes the review round: the agent waiting in crit gets the comments.
 /// Only an agent's crit that is waiting at that moment gets them — crit
-/// doesn't hold a finished round for one that connects later.
+/// doesn't hold a finished round for one that connects later — so
+/// `crit_session_status` reports no agent waiting from here until the
+/// agent's next round starts.
 #[tauri::command(async)]
 pub fn crit_finish(window: WebviewWindow, session: State<PeithoSession>) -> Result<(), String> {
-    let (port, _) = deck_crit_session(&session, window.label())?;
-    crit::finish(port)
+    let target = deck_crit_session(&session, window.label())?;
+    crit::finish(target.port)?;
+    let finished = FinishedRound { session_id: target.id, review_round: target.review_round };
+    with_crit_review(&session, window.label(), |review| review.finished = Some(finished))
 }
 
 /// The comments in the deck's crit session, with their replies.
 #[tauri::command(async)]
 pub fn crit_list_comments(window: WebviewWindow, session: State<PeithoSession>) -> Result<Vec<ReviewComment>, String> {
-    let (port, file) = deck_crit_session(&session, window.label())?;
-    crit::list_comments(port, &file)
+    let target = deck_crit_session(&session, window.label())?;
+    crit::list_comments(target.port, &target.file)
 }
 
 /// Every window's deck settings, and which window the Edit menu's
@@ -1371,12 +1470,15 @@ mod tests {
     }
 
     fn found_session(port: u16) -> DeckSession {
-        DeckSession::Found { id: "s".into(), port, file: "deck.md".into(), review_round: 1 }
+        DeckSession::Found { id: "s".into(), port, file: "deck.md".into(), review_round: 1, agent_waiting: true }
     }
 
     #[test]
     fn a_found_session_is_talked_to_on_its_port_and_file() {
-        assert_eq!(found_crit_session(found_session(5000)), Ok((5000, "deck.md".to_string())));
+        assert_eq!(
+            found_crit_session(found_session(5000)),
+            Ok(CritTarget { id: "s".into(), port: 5000, file: "deck.md".into(), review_round: 1 })
+        );
     }
 
     #[test]

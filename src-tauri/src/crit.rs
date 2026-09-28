@@ -14,14 +14,15 @@
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::engine::crit::{
-    self as shapes, CritSession, DeckSession, DeckSessionMatch, NewReviewComment, ReviewComment, ReviewUpdate, SseParser,
+    self as shapes, CritSession, DeckSession, DeckSessionMatch, FinishedRound, NewReviewComment, NewReviewReply, ReviewComment,
+    ReviewUpdate, SseParser, SESSION_OPENER_BODY, STUDIO_AUTHOR,
 };
 
 /// How long a request (and each read of the event stream) may take. The
@@ -115,6 +116,118 @@ pub fn finish(port: u16) -> Result<(), String> {
 /// The comments on `file` and their replies.
 pub fn list_comments(port: u16, file: &str) -> Result<Vec<ReviewComment>, String> {
     shapes::parse_comments(&get(port, &shapes::comments_endpoint(file))?)
+}
+
+/// Adds `reply` under its comment on `file`.
+pub fn add_reply(port: u16, file: &str, reply: &NewReviewReply) -> Result<(), String> {
+    let body = shapes::new_reply_body(reply)?;
+    request(port, "POST", &shapes::comment_endpoint(&reply.comment_id, "/replies", file), Some(&body)).map(|_| ())
+}
+
+/// Marks comment `id` on `file` resolved: crit stops handing it to the agent.
+pub fn resolve_comment(port: u16, file: &str, id: &str) -> Result<(), String> {
+    request(port, "PUT", &shapes::comment_endpoint(id, "/resolve", file), Some(r#"{"resolved":true}"#)).map(|_| ())
+}
+
+fn delete_comment(port: u16, file: &str, id: &str) -> Result<(), String> {
+    request(port, "DELETE", &shapes::comment_endpoint(id, "", file), None).map(|_| ())
+}
+
+/// How long `start_deck_session` waits for crit's daemon to come up, and
+/// for its own `crit` to take the first round.
+const START_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// crit writes its review file 200ms after the last change; a round that
+/// starts before then carries the deleted opener forward again.
+const REVIEW_FILE_SETTLE: Duration = Duration::from_millis(500);
+
+/// Starts a review session on `deck_path` with the bundled crit, the way an
+/// agent would (`crit --no-open <deck file>` in the deck's folder), so the
+/// daemon — which answers every later `crit` on the deck, whatever version
+/// the agent runs — is the bundled one. Returns the session and the round
+/// Studio finished.
+///
+/// The `crit` that starts a daemon also waits on its first round, and crit
+/// reports nothing when a waiting client connects during that first round —
+/// only from the second round on does a connecting agent start a round of
+/// its own (`review_round` goes up; see `engine::crit::with_finished_round`).
+/// So Studio finishes the first round itself right away, with a comment
+/// (a round with none is an approval, which stops the daemon), and deletes
+/// that comment again once its own `crit` has taken the round and exited.
+pub fn start_deck_session(cli: &CritCli, deck_path: &Path) -> Result<(DeckSession, FinishedRound), String> {
+    let deck_path = std::fs::canonicalize(deck_path).map_err(|err| format!("{}: {err}", deck_path.display()))?;
+    let deck_dir = deck_path.parent().ok_or_else(|| format!("{} has no folder", deck_path.display()))?;
+    let file_name = deck_path.file_name().ok_or_else(|| format!("{} has no file name", deck_path.display()))?;
+    let mut child = cli
+        .command()
+        .arg("--no-open")
+        .arg(file_name)
+        .current_dir(deck_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|err| format!("failed to run {}: {err}", cli.bin.display()))?;
+    let result = open_first_round(cli, &deck_path, &mut child);
+    // Its round taken (or given up on), Studio's own `crit` has nothing more
+    // to do. Killing it outright skips its signal handler, which would stop
+    // the daemon it started.
+    let _ = child.kill();
+    let _ = child.wait();
+    result
+}
+
+fn open_first_round(cli: &CritCli, deck_path: &Path, child: &mut Child) -> Result<(DeckSession, FinishedRound), String> {
+    let deadline = Instant::now() + START_TIMEOUT;
+    let (id, port, file, review_round) = loop {
+        match find_deck_session(cli, deck_path)? {
+            DeckSession::Found { id, port, file, review_round, .. } => break (id, port, file, review_round),
+            DeckSession::Ambiguous { ids } => return Err(format!("several crit review sessions review this deck ({})", ids.join(", "))),
+            DeckSession::None => {}
+        }
+        if child.try_wait().map_err(|err| err.to_string())?.is_some() {
+            return Err("crit exited before its review session came up".to_string());
+        }
+        if Instant::now() >= deadline {
+            return Err("crit's review session never came up".to_string());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    let opener = NewReviewComment {
+        start_line: 1,
+        end_line: 1,
+        body: SESSION_OPENER_BODY.into(),
+        quote: String::new(),
+        author: STUDIO_AUTHOR.into(),
+    };
+    add_comment(port, &file, &opener)?;
+    // The daemon lists the session a moment before Studio's `crit` starts
+    // waiting on it, and a round finished before then never reaches that
+    // `crit`: finish again until it takes the round and exits.
+    while !finished_within(port, child, Duration::from_secs(1))? {
+        if Instant::now() >= deadline {
+            return Err("crit never took the review session's first round".to_string());
+        }
+    }
+    if let Some(opener) = shapes::session_opener_id(&list_comments(port, &file)?) {
+        delete_comment(port, &file, &opener)?;
+    }
+    std::thread::sleep(REVIEW_FILE_SETTLE);
+    let finished = FinishedRound { session_id: id.clone(), review_round };
+    Ok((DeckSession::Found { id, port, file, review_round, agent_waiting: false }, finished))
+}
+
+/// Finishes the round, and whether `child` took it (exited) within `wait`.
+fn finished_within(port: u16, child: &mut Child, wait: Duration) -> Result<bool, String> {
+    finish(port)?;
+    let until = Instant::now() + wait;
+    while Instant::now() < until {
+        if child.try_wait().map_err(|err| err.to_string())?.is_some() {
+            return Ok(true);
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    Ok(false)
 }
 
 fn get(port: u16, path: &str) -> Result<String, String> {
@@ -477,6 +590,91 @@ mod tests {
             assert_eq!(comments[0].replies.len(), 1);
             assert_eq!(comments[0].replies[0].body, "Made it bigger");
             assert_eq!(comments[0].replies[0].author, "Agent");
+        }
+
+        /// Whether an agent waits in the deck's session, as Studio tells
+        /// after finishing `finished` — polled, since the round counter
+        /// moves a moment after the agent connects.
+        fn wait_until_agent_waits(sandbox: &Sandbox, finished: &FinishedRound) -> DeckSession {
+            let deadline = Instant::now() + Duration::from_secs(15);
+            loop {
+                let session = shapes::with_finished_round(find_deck_session(&sandbox.cli, &sandbox.deck()).unwrap(), Some(finished));
+                if matches!(session, DeckSession::Found { agent_waiting: true, .. }) {
+                    return session;
+                }
+                assert!(Instant::now() < deadline, "the agent never showed as waiting: {session:?}");
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+
+        #[test]
+        fn a_session_studio_starts_waits_for_the_agent_then_hands_it_only_studios_comments() {
+            // Given Studio starts the review session on a deck nobody reviews,
+            let mut sandbox = Sandbox::new();
+            let (session, finished) = start_deck_session(&sandbox.cli, &sandbox.deck()).unwrap();
+            let DeckSession::Found { port, file, id, review_round, agent_waiting } = session else { panic!("{session:?}") };
+            // Then it is the bundled crit's, no agent waits in it yet, and
+            // the comment Studio opened it with is gone.
+            assert_eq!(file, "deck.md");
+            assert!(!agent_waiting);
+            assert_eq!(finished, FinishedRound { session_id: id.clone(), review_round });
+            assert!(list_comments(port, &file).unwrap().is_empty());
+            let (sender, signals) = mpsc::channel();
+            let _watch = watch_events(port, move |signal| {
+                let _ = sender.send(signal);
+            })
+            .unwrap();
+
+            // When an agent runs `crit --no-open deck.md` in the deck's folder,
+            let agent = sandbox.agent(&["--no-open", "deck.md"]);
+            // Then Studio hears of it and sees the agent waiting.
+            next_signal(&signals, WatchSignal::Update(ReviewUpdate::CommentsChanged));
+            let DeckSession::Found { review_round, .. } = wait_until_agent_waits(&sandbox, &finished) else { unreachable!() };
+
+            // When Studio adds a comment and finishes the round,
+            let comment = NewReviewComment {
+                start_line: 5,
+                end_line: 5,
+                body: "[Slide 1 › heading \"Hello\"] Make it bigger".into(),
+                quote: "Hello".into(),
+                author: STUDIO_AUTHOR.into(),
+            };
+            add_comment(port, &file, &comment).unwrap();
+            finish(port).unwrap();
+            // Then the agent's crit exits with that comment alone,
+            let handed_over = sandbox.agent_output(agent);
+            assert!(handed_over.contains("Make it bigger"), "{handed_over}");
+            assert!(!handed_over.contains(SESSION_OPENER_BODY), "{handed_over}");
+            // and no agent waits until it comes back for the next round.
+            let finished = FinishedRound { session_id: id, review_round };
+            let now = shapes::with_finished_round(find_deck_session(&sandbox.cli, &sandbox.deck()).unwrap(), Some(&finished));
+            assert!(matches!(now, DeckSession::Found { agent_waiting: false, .. }), "{now:?}");
+            sandbox.agent(&["--session", &finished.session_id]);
+            wait_until_agent_waits(&sandbox, &finished);
+        }
+
+        #[test]
+        fn studio_replies_under_a_comment_and_resolves_it() {
+            // Given a comment in a session an agent waits in,
+            let mut sandbox = Sandbox::new();
+            sandbox.agent(&["--no-open", "deck.md"]);
+            let (port, file, _) = sandbox.wait_for_session();
+            let comment = NewReviewComment { start_line: 5, end_line: 5, body: "Bigger".into(), quote: String::new(), author: STUDIO_AUTHOR.into() };
+            add_comment(port, &file, &comment).unwrap();
+            let id = list_comments(port, &file).unwrap()[0].id.clone();
+            // When Studio replies under it,
+            let reply = NewReviewReply { comment_id: id.clone(), body: "Still too small".into(), author: STUDIO_AUTHOR.into() };
+            add_reply(port, &file, &reply).unwrap();
+            // Then the reply is in its thread,
+            let comments = list_comments(port, &file).unwrap();
+            assert_eq!(comments[0].replies.len(), 1);
+            assert_eq!(comments[0].replies[0].body, "Still too small");
+            assert_eq!(comments[0].replies[0].author, STUDIO_AUTHOR);
+            // and when Studio resolves it, it is resolved.
+            resolve_comment(port, &file, &id).unwrap();
+            assert!(list_comments(port, &file).unwrap()[0].resolved);
+            // A reply to a comment that isn't there is an error.
+            assert!(add_reply(port, &file, &NewReviewReply { comment_id: "c_missing".into(), ..reply }).is_err());
         }
 
         #[test]
