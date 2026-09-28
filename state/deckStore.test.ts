@@ -32,3 +32,28 @@ describe('showEditor', () => {
     })
   })
 })
+
+describe('newDeckSettings', () => {
+  test('spec: given the dialog holds 4:3 and 日本語, then it shows them while naming and while creating', () => {
+    createRoot(() => {
+      const store = createDeckStore()
+      const picked = { aspect_ratio: '4:3', lang: 'ja' } as const
+      store.setDeckLifecycle({ kind: 'naming-new-deck', parentDir: '/a', name: 'talk', settings: picked })
+      expect(store.newDeckSettings()).toEqual(picked)
+
+      store.setDeckLifecycle({ kind: 'creating', parentDir: '/a', name: 'talk', settings: picked })
+      expect(store.newDeckSettings()).toEqual(picked)
+    })
+  })
+
+  test('adversarial: given no dialog is open, then it reads as the defaults, not a leftover pick', () => {
+    createRoot(() => {
+      const store = createDeckStore()
+      expect(store.newDeckSettings()).toEqual(DEFAULTS)
+
+      store.setDeckLifecycle({ kind: 'naming-new-deck', parentDir: '/a', name: '', settings: { aspect_ratio: '4:3', lang: 'ja' } })
+      store.setDeckLifecycle({ kind: 'opening', path: '/a/talk/deck.md' })
+      expect(store.newDeckSettings()).toEqual(DEFAULTS)
+    })
+  })
+})

@@ -1,5 +1,6 @@
 import { createSignal, createMemo } from '@barefootjs/client'
 import { type DeckLifecycle, isBusy as computeIsBusy } from '../domain/deckLifecycle'
+import { defaultNewDeckSettings } from '../domain/newDeckSettings'
 
 /** The whole welcome/new-deck/open flow as one `domain/deckLifecycle.ts` ADT
  * signal, replacing five independently-settable signals (`deckPath`/
@@ -51,6 +52,10 @@ export function createDeckStore() {
     const l = deckLifecycle()
     return l.kind === 'naming-new-deck' || l.kind === 'creating' ? l.name : ''
   })
+  const newDeckSettings = createMemo(() => {
+    const l = deckLifecycle()
+    return l.kind === 'naming-new-deck' || l.kind === 'creating' ? l.settings : defaultNewDeckSettings()
+  })
 
-  return { deckLifecycle, setDeckLifecycle, deckPath, showEditor, isBusy, newDeckModalOpen, newDeckParentDir, newDeckName }
+  return { deckLifecycle, setDeckLifecycle, deckPath, showEditor, isBusy, newDeckModalOpen, newDeckParentDir, newDeckName, newDeckSettings }
 }

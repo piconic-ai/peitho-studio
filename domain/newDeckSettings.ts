@@ -37,6 +37,6 @@ const DECK_LANGUAGE_NAMES: Readonly<Record<DeckSettingChoice<'lang'>, string>> =
 
 /** How a choice reads in the dialog, in every UI language: a ratio as
  * written, a language in its own name. */
-export function newDeckChoiceLabel(pick: NewDeckSettingPick): string {
-  return pick.key === 'lang' ? DECK_LANGUAGE_NAMES[pick.choice] : pick.choice
+export function newDeckChoiceLabel<K extends NewDeckSettingKey>(key: K, choice: DeckSettingChoice<K>): string {
+  return key === 'lang' ? DECK_LANGUAGE_NAMES[choice as DeckSettingChoice<'lang'>] : choice
 }

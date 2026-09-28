@@ -32,7 +32,7 @@ describe('newDeckChoicesOf', () => {
   test('spec: given each key, then its choices are exactly the Edit menu\'s, the default first', () => {
     for (const key of NEW_DECK_SETTING_KEYS) {
       expect(newDeckChoicesOf(key)).toBe(DECK_SETTING_CHOICES[key])
-      expect(newDeckChoicesOf(key)[0]).toBe(defaultChoiceOf(key))
+      expect<string>(newDeckChoicesOf(key)[0]).toBe(defaultChoiceOf(key))
     }
   })
 })
@@ -61,12 +61,12 @@ describe('applyNewDeckSettingPick', () => {
 
 describe('newDeckChoiceLabel', () => {
   test('spec: given a ratio, then it reads as written; given a language, then in its own name', () => {
-    expect(ALL_PICKS.map(newDeckChoiceLabel)).toEqual(['16:9', '4:3', 'English', '日本語'])
+    expect(ALL_PICKS.map(pick => newDeckChoiceLabel(pick.key, pick.choice))).toEqual(['16:9', '4:3', 'English', '日本語'])
   })
 
   test('adversarial: given every choice, then no label is empty and no two labels of a key collide', () => {
     for (const key of NEW_DECK_SETTING_KEYS) {
-      const labels = ALL_PICKS.filter(pick => pick.key === key).map(newDeckChoiceLabel)
+      const labels = ALL_PICKS.filter(pick => pick.key === key).map(pick => newDeckChoiceLabel(pick.key, pick.choice))
       expect(labels.every(label => label.trim() !== '')).toBe(true)
       expect(new Set(labels).size).toBe(labels.length)
     }

@@ -1883,9 +1883,11 @@ export function Studio() {
         isOpen={deck.newDeckModalOpen()}
         name={deck.newDeckName()}
         parentDir={deck.newDeckParentDir()}
+        settings={deck.newDeckSettings()}
         isBusy={deck.isBusy()}
         errorMessage={errorMessage()}
         onNameChange={name => void dispatch({ type: 'name-changed', name })}
+        onSettingChange={pick => void dispatch({ type: 'setting-changed', pick })}
         onCancel={() => { setErrorMessage(null); void dispatch({ type: 'create-cancelled' }) }}
         onConfirm={() => void dispatch({ type: 'create-confirmed' })}
       />
