@@ -157,7 +157,7 @@ UTI宣言は、Bearなど先行アプリと同じ`net.daringfireball.markdown`�
   判断ロジックは`peitho.rs`の`open_finder_urls`/`finder_open_target`
   (純粋関数、テストあり)に切り出した。`main_claimed`という呼び出しループ
   内のローカルフラグで「同一バッチ内で`main`を使い切ったか」を追跡している
-  — `PeithoSession`自体は フロント側の非同期`open_deck`往復が終わるまで
+  — `PeithoSession`自体はフロント側の非同期`open_deck`往復が終わるまで
   更新されないため、複数URL一括オープン時に2件目以降が`PeithoSession`の
   状態だけからは`main`が埋まったと判定できない(方針の「2件目以降は
   新規ウィンドウ行きになる」を、この意味で実現している)。
@@ -186,7 +186,7 @@ UTI宣言は、Bearなど先行アプリと同じ`net.daringfireball.markdown`�
   `RunEvent::Opened`が届いた場合、`pending`への書き込みは誰にも
   消費されないまま残る可能性がある。方針どおり`PendingDecks`を使う実装に
   留め、新規IPCイベントの追加はしていない(レイヤー配置の指示どおり
-  フロント側の新規プラミングは避けた)ため、この一点は実機確認に委ねる。
+  フロント側への新規の配線追加は避けた)ため、この一点は実機確認に委ねる。
 
 ## 先送り事項
 
