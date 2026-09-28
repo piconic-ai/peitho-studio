@@ -480,13 +480,22 @@ impl PendingDecks {
     /// this, since it only gains an entry once that consumption's own
     /// `open_deck` round-trip finishes. This same check also covers the
     /// in-batch case (a second URL in one `RunEvent::Opened` call): the
-    /// first URL's own `assign_to_main_window` already wrote to this map
-    /// by the time the second is decided. A poisoned lock reports `true`
+    /// first URL's own call to `set` already wrote to this map by the time
+    /// the second is decided. A poisoned lock reports `true`
     /// (as if occupied) rather than `false`, for the same reason
     /// `PeithoSession::is_empty` prefers a false negative: it costs an
     /// extra window at worst, never a silently dropped file.
     fn has_pending(&self, label: &str) -> bool {
         self.0.lock().map(|guard| guard.contains_key(label)).unwrap_or(true)
+    }
+
+    /// Registers `path` as `label`'s pending deck, overwriting whatever was
+    /// there — used by `open_deck_window_impl` (a freshly counter-named
+    /// `deck-N` label) and `open_finder_urls` (always `MAIN_WINDOW_LABEL`).
+    fn set(&self, label: &str, path: String) -> Result<(), String> {
+        let mut guard = self.0.lock().map_err(|_| "pending-decks lock poisoned".to_string())?;
+        guard.insert(label.to_string(), path);
+        Ok(())
     }
 }
 
@@ -552,10 +561,7 @@ pub(crate) fn open_deck_window_impl(app: &AppHandle, pending: &PendingDecks, ses
 
     let counter = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
     let label = format!("deck-{counter}");
-    {
-        let mut guard = pending.0.lock().map_err(|_| "pending-decks lock poisoned".to_string())?;
-        guard.insert(label.clone(), path);
-    }
+    pending.set(&label, path)?;
     let step = f64::from(counter % WINDOW_CASCADE_STEPS);
     let (base_x, base_y) = WINDOW_BASE_POSITION;
     tauri::WebviewWindowBuilder::new(app, label, tauri::WebviewUrl::App("index.html".into()))
@@ -612,17 +618,6 @@ fn finder_url_to_path(url: &tauri::Url) -> Option<PathBuf> {
     url.to_file_path().ok()
 }
 
-/// Hands `path` to the still-on-the-welcome-screen `main` window the same
-/// way `open_deck_window_impl` hands one to a brand new window: through
-/// `PendingDecks`, which `main`'s own frontend consumes via
-/// `take_pending_deck`. Used only for the `FinderOpenTarget::MainWindow`
-/// branch of `open_finder_urls`.
-fn assign_to_main_window(pending: &PendingDecks, path: String) -> Result<(), String> {
-    let mut guard = pending.0.lock().map_err(|_| "pending-decks lock poisoned".to_string())?;
-    guard.insert(MAIN_WINDOW_LABEL.to_string(), path);
-    Ok(())
-}
-
 /// Called from `lib.rs`'s `RunEvent::Opened` — Finder's `.md` double-click
 /// or "Open With" (see `bundle.fileAssociations` in `tauri.conf.json`).
 /// Loops because macOS can hand several URLs in one `Opened` event (e.g.
@@ -640,7 +635,7 @@ pub(crate) fn open_finder_urls(app: &AppHandle, pending: &PendingDecks, session:
         };
         let path = path.display().to_string();
         let result = if finder_open_target(session.is_empty(), pending.has_pending(MAIN_WINDOW_LABEL)) == FinderOpenTarget::MainWindow {
-            assign_to_main_window(pending, path)
+            pending.set(MAIN_WINDOW_LABEL, path)
         } else {
             open_deck_window_impl(app, pending, session, path)
         };
