@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: 新規デッキ作成ダイアログで縦横比と言語を選べるようにする
 tags: [deck-settings, frontmatter, new-deck]
 ---
@@ -53,9 +53,9 @@ tags: [deck-settings, frontmatter, new-deck]
    `given_every_combination_when_a_created_deck_is_rendered_then_peitho_core_accepts_it_at_that_ratio`)
    で、どれもエラーなく描画され、manifestの`aspectRatio`と
    `canvasWidth`/`canvasHeight`がその比になることを確かめた(4:3は
-   960x720)。見た目が崩れないかは実機確認が要る(完了条件参照)。
-2. 言語の既定値: `en`(peitho-coreの既定)で実装した。最終判断は人間
-   (完了条件参照)。
+   960x720)。見た目が崩れないことは実機で確認済み(完了条件参照)。
+2. 言語の既定値: `en`(peitho-coreの既定)で実装した。`en`固定のままでよいと
+   人間が判断した(完了条件参照)。
 
 ## 方針
 
@@ -69,7 +69,7 @@ tags: [deck-settings, frontmatter, new-deck]
 
 **言語の既定値**: peitho-coreの既定値`en`を既定とする案と、StudioのUI
 言語に合わせる案がある。後者の方が日本語UIの利用者には自然だが、
-`ja`を書き込むことになる。前者で実装した。最終判断は人間に委ねる
+`ja`を書き込むことになる。前者で実装し、そのままでよいと人間が判断した
 (完了条件参照)。
 
 ## レイヤー配置
@@ -106,8 +106,10 @@ tags: [deck-settings, frontmatter, new-deck]
 - [x] `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機で4:3のデッキを作り、表示が崩れないこと
-- [ ] 言語の既定値(`en`固定か、UI言語に合わせるか)
-- [ ] ダイアログの見た目
+- [x] 実機で4:3のデッキを作り、表示が崩れないこと
+- [x] 言語の既定値(`en`固定か、UI言語に合わせるか) — `en`固定のままで
+  よいとkfly8が判断
+- [x] ダイアログの見た目
+  (kfly8が実機確認、2026-09-28)
 
 ## 先送り事項

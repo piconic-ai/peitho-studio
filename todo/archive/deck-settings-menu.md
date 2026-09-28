@@ -18,7 +18,7 @@ tags: [deck-settings, frontmatter, native-menu]
   ページ番号の3択は、このメニューへ移してヘッダーから外す(ユーザー了承
   済み)。ヘッダーには言語バリアント切替とPresentだけが残る。
 - 「新規作成時にだけ設定できる」は避ける。新規作成時の案内は
-  `todo/new-deck-settings.md`で扱い、後からの変更はすべてこのメニューで
+  `todo/archive/new-deck-settings.md`で扱い、後からの変更はすべてこのメニューで
   できるようにする。
 
 置き場所は、実装(PR #114)を見たうえでの壁打ちでさらに詰めた。
@@ -38,7 +38,7 @@ tags: [deck-settings, frontmatter, native-menu]
   - `resolution`(`todo/pdf-export.md`で扱う)。
   - `css`/`layouts`/`fonts`/`syntaxes`/`code_images`/`time`のUI。`time`は
     すでに自動で書き込まれている。
-  - 新規作成ダイアログの変更(`todo/new-deck-settings.md`)。
+  - 新規作成ダイアログの変更(`todo/archive/new-deck-settings.md`)。
   - スライド単位の`page_number:false`トグル(右クリックメニューのまま)。
 - **受け入れ条件**:
   - 編集メニューの「すべてを選択」の後に区切り線があり、その下に次の
