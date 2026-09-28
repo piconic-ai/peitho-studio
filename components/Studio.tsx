@@ -9,9 +9,10 @@ import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
-  REVIEW_AUTHOR, REVIEW_POLL_MS, agentCritCommand, commentCountsBySlide, commentTargetOf, newReviewComment, pollsForAgent, previewPinsOf, reviewRows, reviewStatusText,
+  REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, newReviewComment, pollsForAgent, previewPinsOf, reviewRows, reviewStatusText,
   slideSpans, targetLabel,
 } from '../domain/reviewComment'
+import { agentConnectCommand, agentConnectPrompt, showsConnectGuide } from '../domain/agentConnect'
 import { focusCommentBox, type PreviewClick } from '../dom/previewComments'
 import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
@@ -965,6 +966,27 @@ export function Studio() {
     return () => window.clearInterval(timer)
   })
 
+  // The connect card's prompt and command name the bundled crit by its full
+  // path; without one (a dev build that never ran `crit:fetch`) they fall
+  // back to plain `crit` on the agent's PATH.
+  const [bundledCritPath, setBundledCritPath] = createSignal<string | null>(null)
+  critIpc.bundledCritPath().then(setBundledCritPath, () => setBundledCritPath(null))
+  const connectPrompt = createMemo(() => agentConnectPrompt(deck.deckPath(), bundledCritPath() ?? 'crit'))
+  const connectCommand = createMemo(() => agentConnectCommand(deck.deckPath(), bundledCritPath() ?? 'crit'))
+  const [connectCopied, setConnectCopied] = createSignal<'prompt' | 'command' | null>(null)
+  let connectCopiedTimer: number | undefined
+  async function copyConnectText(which: 'prompt' | 'command'): Promise<void> {
+    try {
+      await editorIpc.writeClipboardText(which === 'prompt' ? connectPrompt() : connectCommand())
+    } catch (err) {
+      review.setError(settings.messages().reviewFailed(String(err)))
+      return
+    }
+    setConnectCopied(which)
+    window.clearTimeout(connectCopiedTimer)
+    connectCopiedTimer = window.setTimeout(() => setConnectCopied(null), 1500)
+  }
+
   const reviewPanelRows = createMemo(() => reviewRows(
     review.comments(),
     review.pendingReplies(),
@@ -972,7 +994,7 @@ export function Studio() {
   ))
 
   const reviewStatus = createMemo(() => reviewStatusText(
-    settings.messages(), review.availability(), review.unsentCount(), review.busy() === 'starting', agentCritCommand(deck.deckPath()),
+    settings.messages(), review.availability(), review.unsentCount(), review.busy() === 'starting',
   ))
 
   // `renderPayload`, when given, is applied together with the exact
@@ -2258,6 +2280,12 @@ export function Studio() {
             onReplyAdd={review.commitReply}
             onReplyCancel={review.cancelReply}
             onResolve={id => void resolveReviewComment(id)}
+            connectShown={showsConnectGuide(review.availability()) && review.busy() !== 'starting'}
+            connectPrompt={connectPrompt()}
+            connectCommand={connectCommand()}
+            copied={connectCopied()}
+            onCopyPrompt={() => void copyConnectText('prompt')}
+            onCopyCommand={() => void copyConnectText('command')}
           />
         </div>
       </div>

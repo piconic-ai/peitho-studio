@@ -5,7 +5,7 @@ import type { ManifestSlide } from './render'
 import {
   liveReplies,
   agentCommentBody, annotatedSpan, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
-  agentCritCommand, newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, previewPinsOf, relocateTarget, reviewRows, reviewStatusText, sendAvailability, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
+  newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, previewPinsOf, relocateTarget, reviewRows, reviewStatusText, sendAvailability, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
   utf8OffsetToIndex, type CommentTarget, type PendingComment,
 } from './reviewComment'
 
@@ -476,12 +476,8 @@ describe('sendAvailability', () => {
   })
 })
 
-describe('reviewStatusText / agentCritCommand', () => {
+describe('reviewStatusText', () => {
   const en = messagesFor('en')
-
-  test('spec: Given no agent waits, Then the status says what to ask the agent to run', () => {
-    expect(reviewStatusText(en, { kind: 'agent-not-waiting' }, 1, false, 'crit --no-open deck.md')).toContain('`crit --no-open deck.md`')
-  })
 
   test.each([
     ['ready', 0, false, en.agentWaiting],
@@ -489,28 +485,17 @@ describe('reviewStatusText / agentCritCommand', () => {
     ['nothing-to-send', 0, false, en.commentHint],
     ['no-session', 0, false, en.commentHint],
     ['no-session', 2, false, en.sendNeedsSession],
+    ['agent-not-waiting', 1, false, en.sendNeedsAgent],
     ['several-sessions', 1, false, en.sendNeedsOneSession],
     ['ready', 1, true, en.startingReview],
   ] as const)('spec: Given %s with %d unsent (starting: %p), Then the status is %p', (kind, unsent, starting, text) => {
-    expect(reviewStatusText(en, { kind }, unsent, starting, 'x')).toBe(text)
+    expect(reviewStatusText(en, { kind }, unsent, starting)).toBe(text)
   })
 
-  test('spec: Given a deck path, Then the agent runs crit on its file name', () => {
-    expect(agentCritCommand('/decks/talk/deck.md')).toBe('crit --no-open deck.md')
-  })
-
-  test('adversarial: Given a file name with spaces or quotes, Then it is quoted for the shell', () => {
-    expect(agentCritCommand('/d/my talk.md')).toBe("crit --no-open 'my talk.md'")
-    expect(agentCritCommand("/d/it's.md")).toBe("crit --no-open 'it'\\''s.md'")
-  })
-
-  test('adversarial: Given no deck path or one ending in a slash, Then it falls back to deck.md', () => {
-    expect(agentCritCommand(null)).toBe('crit --no-open deck.md')
-    expect(agentCritCommand('/decks/')).toBe('crit --no-open deck.md')
-  })
-
-  test('adversarial: Given a Windows-style path, Then the file name is still found', () => {
-    expect(agentCritCommand('C:\\decks\\deck.md')).toBe('crit --no-open deck.md')
+  test('adversarial: Given Studio still starting the session, Then that wins over every other state', () => {
+    for (const kind of ['agent-not-waiting', 'no-session', 'several-sessions'] as const) {
+      expect(reviewStatusText(en, { kind }, 0, true)).toBe(en.startingReview)
+    }
   })
 })
 

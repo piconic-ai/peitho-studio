@@ -311,15 +311,14 @@ export function pollsForAgent(availability: SendAvailability): boolean {
 
 export const REVIEW_POLL_MS = 3000
 
-/** The comments panel's status line. `agentCommand` is what the agent is
- * asked to run in the deck's folder; `starting` whether Studio is starting
- * the session. */
+/** The comments panel's status line. `starting`: whether Studio is
+ * starting the session. What to do about an agent not waiting is the
+ * connect card's (`domain/agentConnect.ts`); this line only names it. */
 export function reviewStatusText(
   messages: Pick<Messages, 'startingReview' | 'agentWaiting' | 'sendingToAgent' | 'commentHint' | 'sendNeedsSession' | 'sendNeedsAgent' | 'sendNeedsOneSession'>,
   availability: SendAvailability,
   unsent: number,
   starting: boolean,
-  agentCommand: string,
 ): string {
   if (starting) return messages.startingReview
   switch (availability.kind) {
@@ -327,20 +326,13 @@ export function reviewStatusText(
     case 'sending': return messages.sendingToAgent
     case 'nothing-to-send': return messages.commentHint
     case 'no-session': return unsent > 0 ? messages.sendNeedsSession : messages.commentHint
-    case 'agent-not-waiting': return messages.sendNeedsAgent(agentCommand)
+    case 'agent-not-waiting': return messages.sendNeedsAgent
     case 'several-sessions': return messages.sendNeedsOneSession
     default: {
       const exhaustive: never = availability
       return exhaustive
     }
   }
-}
-
-/** What the agent runs in the deck's folder to wait for comments on
- * `deckPath` (any crit connects to the session Studio started). */
-export function agentCritCommand(deckPath: string | null): string {
-  const name = (deckPath ?? '').split(/[\\/]/).pop() || 'deck.md'
-  return `crit --no-open ${/^[\w.-]+$/.test(name) ? name : `'${name.replace(/'/g, `'\\''`)}'`}`
 }
 
 /** A pin on the preview: where on the slide (fractions of its size), the

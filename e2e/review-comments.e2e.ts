@@ -11,7 +11,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 import { fillEditor } from './helpers/codeEditor'
-import { createFakeCritIpc, type FakeCritIpc } from '../ipc/fakeCritIpc'
+import { FAKE_CRIT_PATH, createFakeCritIpc, type FakeCritIpc } from '../ipc/fakeCritIpc'
 import type { NewReviewComment } from '../domain/critReview'
 
 const SOURCE = '---\nlang: en\n---\n\n# Hello\n\nSome text\n\n- item one\n- item two\n\n![](img/photo.png)\n\n---\n\n# Second\n\nAnother paragraph\n'
@@ -95,8 +95,59 @@ test('Given no review session, When the first comment is added, Then Studio star
   await expect(page.locator('[data-slide-row="1"] [data-slide-comment-count]')).toBeHidden()
   await expect(page.locator('[data-review-row="unsent-comment"]')).toContainText('[Slide 1 › heading "Hello"] Make it bigger')
   await expect.poll(() => crit.calls.map(call => call.method)).toContain('startSession')
-  await expect(page.locator('[data-review-status]')).toContainText('`crit --no-open deck.md`')
+  await expect(page.locator('[data-review-status]')).toHaveText('Connect your Coding Agent to send comments.')
+  await expect(page.locator('[data-agent-connect]')).toBeVisible()
   await expect(page.locator(SEND)).toBeDisabled()
+})
+
+const CONNECT = '[data-agent-connect]'
+const CRIT_QUOTED = `'${FAKE_CRIT_PATH}'`
+
+test('Given no agent is connected, Then a card walks through connecting one, with a prompt and a command naming the deck and the bundled crit', async ({ page }) => {
+  await openDeck(page, createFakeCritIpc({ session: 'none' }))
+
+  await expect(page.locator(CONNECT)).toBeVisible()
+  await expect(page.locator(`${CONNECT} ol > li`)).toHaveCount(3)
+  const prompt = page.locator('[data-agent-connect-prompt]')
+  await expect(prompt).toContainText(`1. Run: cd /decks/talk && ${CRIT_QUOTED} --no-open deck.md`)
+  await expect(prompt).toContainText(`use ${CRIT_QUOTED} instead.`)
+  await expect(page.locator('[data-agent-connect-command]')).toHaveText(`cd /decks/talk && ${CRIT_QUOTED} --no-open deck.md`)
+})
+
+test('Given the card, When the prompt and then the command are copied, Then each lands on the clipboard and its button says so', async ({ page }) => {
+  const deck = await openDeck(page, createFakeCritIpc({ session: 'none' }))
+
+  await page.locator('[data-agent-connect-copy-prompt]').click()
+  await expect(page.locator('[data-agent-connect-copy-prompt]')).toHaveText('Copied')
+  await expect.poll(() => deck.clipboardText).toContain('Start a review loop for my Peitho deck.')
+
+  await page.locator('[data-agent-connect-copy-command]').click()
+  await expect(page.locator('[data-agent-connect-copy-command]')).toHaveText('Copied')
+  await expect.poll(() => deck.clipboardText).toBe(`cd /decks/talk && ${CRIT_QUOTED} --no-open deck.md`)
+  await expect(page.locator('[data-agent-connect-copy-prompt]')).toHaveText('Copy Prompt')
+})
+
+test('Given the card, When the agent connects, Then the card goes away and the panel says the agent is waiting', async ({ page }) => {
+  const crit = createFakeCritIpc({ session: 'none' })
+  await openDeck(page, crit)
+  await comment(page, 'h1', 'Make it bigger')
+  await expect(page.locator(CONNECT)).toBeVisible()
+
+  crit.agentConnects()
+
+  await expect(page.locator(CONNECT)).toBeHidden()
+  await expect(page.locator('[data-review-status]')).toHaveText('The agent is waiting for your comments.')
+})
+
+test('Given an agent already waiting, Then no card is shown', async ({ page }) => {
+  await openDeck(page, createFakeCritIpc())
+  await expect(page.locator('[data-review-status]')).toHaveText('Click a part of the preview to comment on it.')
+  await expect(page.locator(CONNECT)).toBeHidden()
+})
+
+test('Given no bundled crit (a dev build without crit:fetch), Then the card falls back to crit on the agent\'s PATH', async ({ page }) => {
+  await openDeck(page, createFakeCritIpc({ session: 'none', critPath: null }))
+  await expect(page.locator('[data-agent-connect-command]')).toHaveText('cd /decks/talk && crit --no-open deck.md')
 })
 
 test('Given an agent connects without Studio hearing an event, Then within a few seconds Studio sees it waiting and sending opens up', async ({ page }) => {

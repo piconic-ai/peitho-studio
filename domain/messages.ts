@@ -98,6 +98,17 @@ export interface Messages {
   // Review comments to the Coding Agent (the preview's pins, the comment
   // box and the comments panel under the preview)
   reviewComments: string
+  // The comments column's "Connect your Coding Agent" card (domain/agentConnect.ts)
+  connectAgentTitle: string
+  connectAgentLead: string
+  connectAgentStepOpen: string
+  connectAgentStepPaste: string
+  connectAgentStepWait: string
+  connectAgentWaiting: string
+  connectAgentTerminal: string
+  copyPrompt: string
+  copyCommand: string
+  copiedToClipboard: string
   commentHint: string
   commentPlaceholder: string
   addComment: string
@@ -111,7 +122,7 @@ export interface Messages {
   nothingToSend: string
   sendNeedsSession: string
   /** `command`: what to ask the agent to run in the deck's folder. */
-  sendNeedsAgent: (command: string) => string
+  sendNeedsAgent: string
   sendNeedsOneSession: string
   reviewFailed: (error: string) => string
   reply: string
@@ -239,6 +250,16 @@ const en: Messages = {
   openDeckToPreview: 'Open a deck to preview it.',
 
   reviewComments: 'Comments for the agent',
+  connectAgentTitle: 'Connect your Coding Agent',
+  connectAgentLead: 'To send comments, a Coding Agent has to be waiting for this deck\'s review.',
+  connectAgentStepOpen: 'Open your Coding Agent, such as Claude Code or Codex.',
+  connectAgentStepPaste: 'Copy this prompt, then paste it into the agent and send it.',
+  connectAgentStepWait: 'Once the agent connects, this switches over on its own.',
+  connectAgentWaiting: 'Waiting for the agent to connect…',
+  connectAgentTerminal: 'Running it in a terminal yourself? Copy the command instead.',
+  copyPrompt: 'Copy Prompt',
+  copyCommand: 'Copy Command',
+  copiedToClipboard: 'Copied',
   commentHint: 'Click a part of the preview to comment on it.',
   commentPlaceholder: 'What should the agent change here?',
   addComment: 'Add Comment',
@@ -251,7 +272,7 @@ const en: Messages = {
   agentWaiting: 'The agent is waiting for your comments.',
   nothingToSend: 'Nothing new to send.',
   sendNeedsSession: 'No review session yet. Adding a comment starts one.',
-  sendNeedsAgent: command => `No agent is waiting for comments. Ask your Coding Agent to run \`${command}\` in the deck's folder and wait for the review.`,
+  sendNeedsAgent: 'Connect your Coding Agent to send comments.',
   sendNeedsOneSession: 'Several crit review sessions are open on this deck. Stop all but one (`crit stop`).',
   reviewFailed: error => `Could not reach the review session: ${error}`,
   reply: 'Reply',
@@ -374,6 +395,16 @@ const ja: Messages = {
   openDeckToPreview: 'デッキを開くとプレビューが表示されます。',
 
   reviewComments: 'エージェントへのコメント',
+  connectAgentTitle: 'Coding Agent を接続する',
+  connectAgentLead: 'コメントを送るには、Coding Agent がこのデッキのレビューを待っている必要があります。',
+  connectAgentStepOpen: 'Claude Code や Codex などの Coding Agent を開きます。',
+  connectAgentStepPaste: 'このプロンプトをコピーし、エージェントに貼り付けて送信します。',
+  connectAgentStepWait: 'エージェントが接続すると、この表示は自動で切り替わります。',
+  connectAgentWaiting: 'エージェントの接続を待っています…',
+  connectAgentTerminal: 'ターミナルで自分で実行する場合は、コマンドをコピーしてください。',
+  copyPrompt: 'プロンプトをコピー',
+  copyCommand: 'コマンドをコピー',
+  copiedToClipboard: 'コピーしました',
   commentHint: 'プレビューの気になる箇所をクリックするとコメントできます。',
   commentPlaceholder: 'ここをどう直してほしいですか?',
   addComment: 'コメントを追加',
@@ -386,7 +417,7 @@ const ja: Messages = {
   agentWaiting: 'エージェントがコメントを待っています。',
   nothingToSend: '新しく送るものはありません。',
   sendNeedsSession: 'レビューのセッションがまだありません。コメントを追加すると起動します。',
-  sendNeedsAgent: command => `コメントを待っているエージェントがいません。Coding Agentに、デッキのフォルダで \`${command}\` を実行してレビューを待つよう頼んでください。`,
+  sendNeedsAgent: 'コメントを送るには、Coding Agent を接続してください。',
   sendNeedsOneSession: 'このデッキにcritのレビューのセッションが複数あります。1つを残して止めてください(`crit stop`)。',
   reviewFailed: error => `レビューのセッションに接続できませんでした: ${error}`,
   reply: '返信',
