@@ -45,6 +45,19 @@ describe('isExecutableRemoval', () => {
   test('adversarial: Given a URL that merely mentions javascript later on, then it does not count', () => {
     expect(isExecutableRemoval({ kind: 'attribute', name: 'href', value: 'https://example.com/?q=javascript:' })).toBe(false)
   })
+
+  test('adversarial: Given a removed link or source with any scheme outside the safe list (data:, a made-up one), then it counts', () => {
+    expect(isExecutableRemoval({ kind: 'attribute', name: 'href', value: 'data:text/html,<script>alert(1)</script>' })).toBe(true)
+    expect(isExecutableRemoval({ kind: 'attribute', name: 'xlink:href', value: 'data:image/svg+xml,<svg onload=x>' })).toBe(true)
+    expect(isExecutableRemoval({ kind: 'attribute', name: 'action', value: 'made-up-scheme:run' })).toBe(true)
+  })
+
+  test('adversarial: Given a removed URL attribute with a safe or no scheme, or a colon in a non-URL attribute, then it does not count', () => {
+    expect(isExecutableRemoval({ kind: 'attribute', name: 'href', value: 'mailto:someone@example.com' })).toBe(false)
+    expect(isExecutableRemoval({ kind: 'attribute', name: 'src', value: 'assets/logo.png' })).toBe(false)
+    expect(isExecutableRemoval({ kind: 'attribute', name: 'src', value: '' })).toBe(false)
+    expect(isExecutableRemoval({ kind: 'attribute', name: 'title', value: 'note: data:' })).toBe(false)
+  })
 })
 
 describe('script trust', () => {

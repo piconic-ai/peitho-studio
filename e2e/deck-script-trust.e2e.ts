@@ -115,6 +115,16 @@ test('Given an untrusted deck with no scripts, when it opens, then no banner is 
   await expect(page.locator(BANNER)).toBeHidden()
 })
 
+test('Given an untrusted deck whose only risky markup is a data: link, when it opens, then the link is dropped and the banner is shown', async ({ page }) => {
+  const withDataLink = (title: string): string => `<section class="peitho-slide"><h1>${title}</h1>`
+    + '<a href="data:text/html,&lt;script&gt;alert(1)&lt;/script&gt;">open</a></section>'
+  await openDeck(page, { source: '# Linked\n', fragmentFor: withDataLink })
+
+  await expect(page.locator(BANNER)).toBeVisible()
+  const href = await page.locator('[data-slide-row="0"] [data-slide-canvas-key]').evaluate(host => host.shadowRoot?.querySelector('a')?.getAttribute('href') ?? null)
+  expect(href).toBeNull()
+})
+
 test('Given a trusted deck with scripts, when it opens, then its scripts run as before and no banner is shown', async ({ page }) => {
   await openDeck(page, { source: '# Scripted\n', fragmentFor: scriptedFragment, trusted: true })
 

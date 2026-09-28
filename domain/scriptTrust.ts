@@ -17,7 +17,19 @@ const EXECUTABLE_TAGS = new Set(['script', 'iframe', 'frame', 'frameset', 'objec
 // Browsers ignore ASCII whitespace/control characters inside a URL's
 // scheme (`java\tscript:` still runs), so they're dropped before comparing.
 const URL_IGNORED_CHARS = /[\x00-\x20]/g
-const SCRIPT_URL_SCHEMES = ['javascript:', 'vbscript:']
+const URL_SCHEME = /^([a-z][a-z0-9+.-]*):/
+// The schemes DOMPurify's default `ALLOWED_URI_REGEXP` lets through.
+// Anything else in a URL attribute (`javascript:`, `vbscript:`, `data:`,
+// a scheme nobody has thought of yet) is dropped by it, and counts here.
+const SAFE_URL_SCHEMES = new Set(['http', 'https', 'ftp', 'ftps', 'mailto', 'tel', 'callto', 'sms', 'cid', 'xmpp', 'matrix'])
+const URL_ATTRIBUTES = new Set(['href', 'src', 'xlink:href', 'action', 'formaction', 'poster', 'background', 'data', 'codebase', 'cite'])
+
+/** Whether `value` names a scheme outside `SAFE_URL_SCHEMES`. A relative
+ * URL (no scheme) is safe. */
+function hasUnsafeScheme(value: string): boolean {
+  const scheme = URL_SCHEME.exec(value.replace(URL_IGNORED_CHARS, '').toLowerCase())?.[1]
+  return scheme !== undefined && !SAFE_URL_SCHEMES.has(scheme)
+}
 
 /** Whether `removed` is something that would have run code — as opposed
  * to markup the sanitizer drops for other reasons (a `<meta>`, an unknown
@@ -27,8 +39,7 @@ export function isExecutableRemoval(removed: RemovedContent): boolean {
   const name = removed.name.toLowerCase()
   if (name.length > 2 && name.startsWith('on')) return true
   if (name === 'srcdoc') return true
-  const value = removed.value.replace(URL_IGNORED_CHARS, '').toLowerCase()
-  return SCRIPT_URL_SCHEMES.some(scheme => value.startsWith(scheme))
+  return URL_ATTRIBUTES.has(name) && hasUnsafeScheme(removed.value)
 }
 
 /** The open deck's script trust. `trusting`: "Trust and Run" was pressed
