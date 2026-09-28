@@ -134,6 +134,15 @@ export interface MockDeck {
    * `trust_open_deck` sets it to `true` (so a reload opens it trusted, as a
    * restart would). */
   trusted?: boolean
+  /** What `get_about_info` answers (the About window's page) — defaults to
+   * a CI build with a commit. Passed as is, so a test can hand over a
+   * malformed value too. */
+  aboutInfo?: unknown
+}
+
+const DEFAULT_ABOUT_INFO = {
+  name: 'Peitho Studio', version: '0.1.0', build: '42',
+  commit: '5995c42a1b2c3d4e5f60718293a4b5c6d7e8f901', copyright: 'Copyright (c) 2026 kfly8',
 }
 
 function sleep(ms: number): Promise<void> {
@@ -268,6 +277,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'plugin:clipboard-manager|write_text':
         deck.clipboardText = args.text as string
         return null
+      case 'get_about_info': return deck.aboutInfo ?? DEFAULT_ABOUT_INFO
       default: return null
     }
   })
