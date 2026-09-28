@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { clampMenuPosition, containScale, isPointInRect, dropPointToCss } from './geometry'
+import { clampMenuPosition, containScale, isPointInRect, dropPointToCss, fractionInRect } from './geometry'
 
 describe('clampMenuPosition', () => {
   test('spec: a point that already fits within the viewport is left unchanged', () => {
@@ -102,5 +102,28 @@ describe('dropPointToCss', () => {
       expect(dropPointToCss({ x: 4, y: 6 }, scale, false)).toEqual({ x: 4, y: 6 })
       expect(dropPointToCss({ x: 4, y: 6 }, scale, true)).toEqual({ x: 4, y: 6 })
     }
+  })
+})
+
+describe('fractionInRect', () => {
+  test('spec: Given a click at the middle of a box, Then it is halfway across and down', () => {
+    expect(fractionInRect({ x: 150, y: 70 }, { left: 100, top: 20, right: 200, bottom: 120 })).toEqual({ x: 0.5, y: 0.5 })
+  })
+
+  test('spec: Given the top-left corner, Then it is 0, 0', () => {
+    expect(fractionInRect({ x: 100, y: 20 }, { left: 100, top: 20, right: 200, bottom: 120 })).toEqual({ x: 0, y: 0 })
+  })
+
+  test('adversarial: Given a point outside the box, Then it is clamped to the edge', () => {
+    expect(fractionInRect({ x: -50, y: 500 }, { left: 0, top: 0, right: 100, bottom: 100 })).toEqual({ x: 0, y: 1 })
+  })
+
+  test.each([
+    ['no width', { left: 10, top: 0, right: 10, bottom: 100 }],
+    ['no height', { left: 0, top: 5, right: 100, bottom: 5 }],
+    ['a reversed box', { left: 100, top: 100, right: 0, bottom: 0 }],
+    ['NaN edges', { left: Number.NaN, top: 0, right: 100, bottom: 100 }],
+  ])('adversarial: Given a box with %s, Then there is no fraction', (_label, rect) => {
+    expect(fractionInRect({ x: 1, y: 1 }, rect)).toBeNull()
   })
 })

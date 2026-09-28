@@ -42,3 +42,14 @@ export function dropPointToCss(point: Point, scale: number, macOS: boolean): Poi
   if (macOS || !(scale > 0) || !Number.isFinite(scale)) return point
   return { x: point.x / scale, y: point.y / scale }
 }
+
+/** Where `point` lies across `rect`, as fractions of its width and height
+ * (0 at the left/top edge, 1 at the right/bottom), clamped to the box.
+ * `null` for a box with no area. */
+export function fractionInRect(point: Point, rect: Rect): Point | null {
+  const width = rect.right - rect.left
+  const height = rect.bottom - rect.top
+  if (!(width > 0) || !(height > 0)) return null
+  const clamp = (value: number) => Math.min(Math.max(value, 0), 1)
+  return { x: clamp((point.x - rect.left) / width), y: clamp((point.y - rect.top) / height) }
+}

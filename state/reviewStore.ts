@@ -60,6 +60,10 @@ export function createReviewStore() {
     setReplyDraft({ commentId, text })
   }
 
+  function cancelReply(): void {
+    setReplyDraft(null)
+  }
+
   /** Files the reply being written as unsent. Nothing for a blank one. */
   function commitReply(): void {
     const draft = replyDraft()
@@ -131,7 +135,7 @@ export function createReviewStore() {
   return {
     session, setSession, comments, setComments, pending, pendingReplies, unsentCount, availability,
     box, boxDraft, setBoxDraft, openBox, closeBox, commitBox, discard,
-    replyDraft, editReply, commitReply, markSent, sentPins,
+    replyDraft, editReply, cancelReply, commitReply, markSent, sentPins,
     busy, setBusy, error, setError,
     commentCountOf, syncCommentCounts, reset,
   }

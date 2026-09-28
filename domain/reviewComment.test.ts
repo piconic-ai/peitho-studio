@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import type { CritDeckSession, ReviewComment } from './critReview'
+import { messagesFor } from './messages'
 import type { ManifestSlide } from './render'
 import {
   agentCommentBody, annotatedSpan, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
-  newReviewComment, parseSourceSpan, relocateTarget, sendAvailability, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
+  agentCritCommand, newReviewComment, trimSpan, parseSourceSpan, previewPinsOf, relocateTarget, reviewRows, reviewStatusText, sendAvailability, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
   utf8OffsetToIndex, type CommentTarget, type PendingComment,
 } from './reviewComment'
 
@@ -280,6 +281,19 @@ describe('agentCommentBody', () => {
   })
 })
 
+describe('trimSpan', () => {
+  test('spec: Given a slide\'s text with blank lines around it, Then only its content is left', () => {
+    const source = '---\n\n# Hi\n\ntext\n\n---'
+    const span = trimSpan(source, { start: 4, end: source.length - 3 })
+    expect(source.slice(span.start, span.end)).toBe('# Hi\n\ntext')
+  })
+
+  test('adversarial: Given an all-blank or empty span, Then it shrinks to nothing at its start', () => {
+    expect(trimSpan('a \n\n b', { start: 1, end: 5 })).toEqual({ start: 5, end: 5 })
+    expect(trimSpan('abc', { start: 2, end: 2 })).toEqual({ start: 2, end: 2 })
+  })
+})
+
 describe('newReviewComment', () => {
   const source = '---\nlang: en\n---\n\n# Hello\n\nSome text\n\n---\n\n# Second\n'
   const firstSlide = { start: source.indexOf('# Hello'), end: source.indexOf('---', 20) }
@@ -434,5 +448,121 @@ describe('sendAvailability', () => {
     ['a send in flight with no session', null, 1, true, 'sending'],
   ])('adversarial: Given %s, Then it is %s', (_label, session, unsent, sending, kind) => {
     expect(sendAvailability(session, unsent, sending).kind as string).toBe(kind)
+  })
+})
+
+describe('reviewStatusText / agentCritCommand', () => {
+  const en = messagesFor('en')
+
+  test('spec: Given no agent waits, Then the status says what to ask the agent to run', () => {
+    expect(reviewStatusText(en, { kind: 'agent-not-waiting' }, 1, false, 'crit --no-open deck.md')).toContain('`crit --no-open deck.md`')
+  })
+
+  test.each([
+    ['ready', 0, false, en.agentWaiting],
+    ['sending', 1, false, en.sendingToAgent],
+    ['nothing-to-send', 0, false, en.commentHint],
+    ['no-session', 0, false, en.commentHint],
+    ['no-session', 2, false, en.sendNeedsSession],
+    ['several-sessions', 1, false, en.sendNeedsOneSession],
+    ['ready', 1, true, en.startingReview],
+  ] as const)('spec: Given %s with %d unsent (starting: %p), Then the status is %p', (kind, unsent, starting, text) => {
+    expect(reviewStatusText(en, { kind }, unsent, starting, 'x')).toBe(text)
+  })
+
+  test('spec: Given a deck path, Then the agent runs crit on its file name', () => {
+    expect(agentCritCommand('/decks/talk/deck.md')).toBe('crit --no-open deck.md')
+  })
+
+  test('adversarial: Given a file name with spaces or quotes, Then it is quoted for the shell', () => {
+    expect(agentCritCommand('/d/my talk.md')).toBe("crit --no-open 'my talk.md'")
+    expect(agentCritCommand("/d/it's.md")).toBe("crit --no-open 'it'\\''s.md'")
+  })
+
+  test('adversarial: Given no deck path or one ending in a slash, Then it falls back to deck.md', () => {
+    expect(agentCritCommand(null)).toBe('crit --no-open deck.md')
+    expect(agentCritCommand('/decks/')).toBe('crit --no-open deck.md')
+  })
+
+  test('adversarial: Given a Windows-style path, Then the file name is still found', () => {
+    expect(agentCritCommand('C:\\decks\\deck.md')).toBe('crit --no-open deck.md')
+  })
+})
+
+describe('previewPinsOf', () => {
+  const target: CommentTarget = { kind: 'heading', text: 'Hi', quote: 'Hi', offsetInSlide: 0 }
+  const unsent = (id: string, slideKey: string, pin: { x: number; y: number } | null): PendingComment => ({ id, slideKey, target, pin, body: 'b' })
+  const inCrit = (id: string, body: string, resolved = false): ReviewComment => ({
+    id, lines: { start: 1, end: 1 }, body, quote: null, author: 'Peitho Studio', resolved, replies: [],
+  })
+
+  test('spec: Given a sent comment, an unsent one and the box being written on this slide, Then all three pins show, numbered in that order', () => {
+    const pins = previewPinsOf(
+      'a',
+      [inCrit('c1', '[Slide 1] sent')],
+      { '[Slide 1] sent': { slideKey: 'a', pin: { x: 0.1, y: 0.2 } } },
+      [unsent('p1', 'a', { x: 0.3, y: 0.4 })],
+      { kind: 'open', slideKey: 'a', target, pin: { x: 0.5, y: 0.6 }, at: { x: 0, y: 0 } },
+    )
+    expect(pins).toEqual([
+      { id: 'sent:c1', x: 0.1, y: 0.2, number: 1, sent: true },
+      { id: 'p1', x: 0.3, y: 0.4, number: 2, sent: false },
+      { id: 'writing', x: 0.5, y: 0.6, number: 3, sent: false },
+    ])
+  })
+
+  test('adversarial: Given comments on other slides, resolved ones, ones without a pin, and no selection, Then none of them shows', () => {
+    const sentPins = { gone: { slideKey: 'a', pin: { x: 0, y: 0 } }, other: { slideKey: 'b', pin: { x: 0, y: 0 } } }
+    const comments = [inCrit('c1', 'gone', true), inCrit('c2', 'other'), inCrit('c3', 'unknown body')]
+    const pending = [unsent('p1', 'b', { x: 0, y: 0 }), unsent('p2', 'a', null)]
+    expect(previewPinsOf('a', comments, sentPins, pending, { kind: 'closed' })).toEqual([])
+    expect(previewPinsOf(null, comments, sentPins, pending, { kind: 'closed' })).toEqual([])
+  })
+
+  test('adversarial: Given a comment body like an object property name, Then it is not taken for a known pin', () => {
+    expect(previewPinsOf('a', [inCrit('c1', 'constructor')], {}, [], { kind: 'closed' })).toEqual([])
+  })
+})
+
+describe('reviewRows', () => {
+  const thread = (id: string, resolved: boolean, replies: { id: string; body: string }[] = []): ReviewComment => ({
+    id, lines: { start: 1, end: 1 }, body: `[Slide 1] ${id}`, quote: null, author: 'Peitho Studio', resolved,
+    replies: replies.map(r => ({ ...r, author: 'Agent' })),
+  })
+
+  test('spec: Given a thread with the agent\'s reply, an unsent reply to it and an unsent comment, Then the panel reads them in that order', () => {
+    const rows = reviewRows(
+      [thread('c1', false, [{ id: 'r1', body: 'Done' }])],
+      [{ commentId: 'c1', body: 'Still small' }],
+      [{ id: 'p1', label: 'Slide 2 › heading "Hi"', body: 'Bolder' }],
+    )
+    expect(rows.map(r => [r.kind, r.id, r.author, r.body])).toEqual([
+      ['comment', 'c1', 'Peitho Studio', '[Slide 1] c1'],
+      ['reply', 'c1', 'Agent', 'Done'],
+      ['unsent-reply', 'c1', 'Peitho Studio', 'Still small'],
+      ['unsent-comment', 'p1', 'Peitho Studio', '[Slide 2 › heading "Hi"] Bolder'],
+    ])
+  })
+
+  test('spec: Given a resolved thread before an open one, Then open threads come first and the resolved one is marked on every row', () => {
+    const rows = reviewRows([thread('c1', true, [{ id: 'r1', body: 'ok' }]), thread('c2', false)], [], [])
+    expect(rows.map(r => [r.id, r.resolved])).toEqual([['c2', false], ['c1', true], ['c1', true]])
+  })
+
+  test('adversarial: Given nothing at all, Then there are no rows', () => {
+    expect(reviewRows([], [], [])).toEqual([])
+  })
+
+  test('adversarial: Given an unsent reply to a comment crit no longer has, Then it is not shown under anything', () => {
+    expect(reviewRows([thread('c1', false)], [{ commentId: 'gone', body: 'x' }], [])).toHaveLength(1)
+  })
+
+  test('adversarial: Given every row, Then their keys are distinct', () => {
+    const rows = reviewRows(
+      [thread('c1', false, [{ id: 'r1', body: 'a' }, { id: 'r2', body: 'b' }]), thread('c2', false, [{ id: 'r1', body: 'c' }])],
+      [{ commentId: 'c1', body: 'x' }, { commentId: 'c2', body: 'y' }],
+      [{ id: 'p1', label: 'Slide 1', body: 'z' }],
+    )
+    expect(new Set(rows.map(r => r.key)).size).toBe(rows.length)
   })
 })

@@ -14,8 +14,9 @@
 // so no decoding happens here.
 
 import type { CritDeckSession, LineRange, NewReviewComment, ReviewComment } from './critReview'
+import type { Messages } from './messages'
 import type { ManifestSlide } from './render'
-import { buildSlideList } from './slideList'
+import { buildSlideList, type SlideListEntry } from './slideList'
 import { splitSlides } from './slides'
 
 /** A half-open `[start, end)` range of UTF-16 indices into a string. */
@@ -196,6 +197,17 @@ export function agentCommentBody(label: string, body: string): string {
   return `[${label}] ${body.trim()}`
 }
 
+/** `span` without the whitespace (blank lines) at either end — a slide's
+ * text runs from separator to separator, blank lines included. An
+ * all-blank span shrinks to nothing at its start. */
+export function trimSpan(source: string, span: CharSpan): CharSpan {
+  let start = span.start
+  let end = span.end
+  while (start < end && /\s/.test(source[start])) start++
+  while (end > start && /\s/.test(source[end - 1])) end--
+  return { start, end }
+}
+
 /** `pending` as crit takes it, against the deck file as saved (`source`).
  * `slideSpan` is where its slide is now (`null` when the slide is gone)
  * and `slideNumber` which slide that is. A target whose Markdown was
@@ -203,7 +215,7 @@ export function agentCommentBody(label: string, body: string): string {
  * lands on line 1 — the label still says what it was about. */
 export function newReviewComment(pending: PendingComment, source: string, slideSpan: CharSpan | null, slideNumber: number): NewReviewComment {
   const found = pending.target.kind === 'slide' ? null : relocateTarget(source, slideSpan, pending.target)
-  const lines = lineRangeOf(source, found ?? slideSpan ?? { start: 0, end: 0 })
+  const lines = lineRangeOf(source, found ?? (slideSpan && trimSpan(source, slideSpan)) ?? { start: 0, end: 0 })
   return {
     startLine: lines.start,
     endLine: lines.end,
@@ -222,9 +234,15 @@ export function newReviewComment(pending: PendingComment, source: string, slideS
 export function slideSpans(source: string, manifestSlides: readonly ManifestSlide[]): { key: string; span: CharSpan }[] {
   const ranges = splitSlides(source)
   return buildSlideList(source, manifestSlides).map((entry, i) => ({
-    key: entry.kind === 'rendered' ? entry.slide.key : entry.lastRenderedKey ?? entry.key,
+    key: commentKeyOf(entry),
     span: { start: ranges[i].start, end: ranges[i].end },
   }))
+}
+
+/** The key a slide-list entry's comments are filed under (see
+ * `slideSpans`). */
+export function commentKeyOf(entry: SlideListEntry): string {
+  return entry.kind === 'rendered' ? entry.slide.key : entry.lastRenderedKey ?? entry.key
 }
 
 /** What a click on the preview hit, as `dom/previewComments.ts` reads it:
@@ -270,6 +288,110 @@ export function sendAvailability(session: CritDeckSession | null, unsent: number
   if (session.kind === 'ambiguous') return { kind: 'several-sessions' }
   if (!session.agentWaiting) return { kind: 'agent-not-waiting' }
   return unsent > 0 ? { kind: 'ready' } : { kind: 'nothing-to-send' }
+}
+
+/** The comments panel's status line. `agentCommand` is what the agent is
+ * asked to run in the deck's folder; `starting` whether Studio is starting
+ * the session. */
+export function reviewStatusText(
+  messages: Pick<Messages, 'startingReview' | 'agentWaiting' | 'sendingToAgent' | 'commentHint' | 'sendNeedsSession' | 'sendNeedsAgent' | 'sendNeedsOneSession'>,
+  availability: SendAvailability,
+  unsent: number,
+  starting: boolean,
+  agentCommand: string,
+): string {
+  if (starting) return messages.startingReview
+  switch (availability.kind) {
+    case 'ready': return messages.agentWaiting
+    case 'sending': return messages.sendingToAgent
+    case 'nothing-to-send': return messages.commentHint
+    case 'no-session': return unsent > 0 ? messages.sendNeedsSession : messages.commentHint
+    case 'agent-not-waiting': return messages.sendNeedsAgent(agentCommand)
+    case 'several-sessions': return messages.sendNeedsOneSession
+    default: {
+      const exhaustive: never = availability
+      return exhaustive
+    }
+  }
+}
+
+/** What the agent runs in the deck's folder to wait for comments on
+ * `deckPath` (any crit connects to the session Studio started). */
+export function agentCritCommand(deckPath: string | null): string {
+  const name = (deckPath ?? '').split(/[\\/]/).pop() || 'deck.md'
+  return `crit --no-open ${/^[\w.-]+$/.test(name) ? name : `'${name.replace(/'/g, `'\\''`)}'`}`
+}
+
+/** A pin on the preview: where on the slide (fractions of its size), the
+ * number shown, and whether its comment reached crit yet. */
+export interface PreviewPin {
+  id: string
+  x: number
+  y: number
+  number: number
+  sent: boolean
+}
+
+/** The pins slide `slideKey` shows, numbered in order: the unresolved
+ * comments sent from this window whose pin is known (`sentPins`, by the
+ * body crit got), the unsent ones, then the one being written. */
+export function previewPinsOf(
+  slideKey: string | null,
+  comments: readonly ReviewComment[],
+  sentPins: Readonly<Record<string, { slideKey: string; pin: { x: number; y: number } }>>,
+  pending: readonly PendingComment[],
+  box: CommentBox,
+): PreviewPin[] {
+  if (slideKey === null) return []
+  const pins: Omit<PreviewPin, 'number'>[] = []
+  for (const comment of comments) {
+    const sent = Object.hasOwn(sentPins, comment.body) ? sentPins[comment.body] : undefined
+    if (!comment.resolved && sent !== undefined && sent.slideKey === slideKey) pins.push({ id: `sent:${comment.id}`, ...sent.pin, sent: true })
+  }
+  for (const comment of pending) {
+    if (comment.slideKey === slideKey && comment.pin !== null) pins.push({ id: comment.id, ...comment.pin, sent: false })
+  }
+  if (box.kind === 'open' && box.slideKey === slideKey && box.pin !== null) pins.push({ id: 'writing', ...box.pin, sent: false })
+  return pins.map((pin, i) => ({ ...pin, number: i + 1 }))
+}
+
+/** One line of the comments panel. `id`: the crit comment a `comment`,
+ * `reply` or `unsent-reply` row belongs to (what a reply or resolve acts
+ * on), or the unsent comment's own id. */
+export interface ReviewRow {
+  key: string
+  kind: 'comment' | 'reply' | 'unsent-reply' | 'unsent-comment'
+  id: string
+  author: string
+  body: string
+  resolved: boolean
+}
+
+/** The comments panel as one flat list: each thread in crit (unresolved
+ * ones first, otherwise in crit's order) with its replies and the replies
+ * not sent yet under it, then the comments not sent yet. `unsent` carries
+ * each unsent comment's label, already worked out. */
+export function reviewRows(
+  comments: readonly ReviewComment[],
+  unsentReplies: readonly PendingReply[],
+  unsent: readonly { id: string; label: string; body: string }[],
+): ReviewRow[] {
+  const rows: ReviewRow[] = []
+  const threads = [...comments.filter(c => !c.resolved), ...comments.filter(c => c.resolved)]
+  for (const comment of threads) {
+    rows.push({ key: `comment:${comment.id}`, kind: 'comment', id: comment.id, author: comment.author, body: comment.body, resolved: comment.resolved })
+    for (const reply of comment.replies) {
+      rows.push({ key: `reply:${comment.id}:${reply.id}`, kind: 'reply', id: comment.id, author: reply.author, body: reply.body, resolved: comment.resolved })
+    }
+    unsentReplies.forEach((reply, i) => {
+      if (reply.commentId !== comment.id) return
+      rows.push({ key: `unsent-reply:${String(i)}`, kind: 'unsent-reply', id: comment.id, author: REVIEW_AUTHOR, body: reply.body, resolved: comment.resolved })
+    })
+  }
+  for (const comment of unsent) {
+    rows.push({ key: `unsent:${comment.id}`, kind: 'unsent-comment', id: comment.id, author: REVIEW_AUTHOR, body: agentCommentBody(comment.label, comment.body), resolved: false })
+  }
+  return rows
 }
 
 /** Which of `slides` (each with its span in `source`) line `line` of
