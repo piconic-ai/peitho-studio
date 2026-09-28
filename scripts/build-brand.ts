@@ -17,7 +17,6 @@
 // Run via `bun run icons`. Rasterizes with Playwright's Chromium: the system
 // Chrome by default (like playwright.config.ts), or CHROME_BIN if set.
 import { type Browser, chromium, type Page } from '@playwright/test'
-import opentype from 'opentype.js'
 import { spawnSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -25,10 +24,12 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DMG_CAPTION, DMG_CAPTION_SIZE, DMG_WINDOW, dmgBackgroundSvg } from './brand/dmg'
 import { encodeIco, encodeIcns, type IcnsType } from './brand/iconContainers'
+import { loadCharisSil, textPath } from './brand/text'
 import { appIconSvg, EXPRESSIONS, type Expression, iconComposerGlyphSvg, iconComposerJson, INK, MARK_BOUNDS, markBody, PAPER, SMALL_CUT_MAX_PX, svgDocument } from './brand/mark'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const out = (path: string) => resolve(ROOT, path)
+const font = loadCharisSil()
 
 function write(path: string, data: string | Uint8Array): void {
   mkdirSync(dirname(out(path)), { recursive: true })
@@ -49,31 +50,11 @@ function markDocument(body: string, pad: number): string {
   return svgDocument(v.w * scale, v.h * scale, body, `${v.x} ${v.y} ${v.w} ${v.h}`)
 }
 
-const CHARIS_SIL = 'node_modules/@fontsource/charis-sil/files/charis-sil-latin-400-normal.woff'
-
-/**
- * `text` set in Charis SIL (OFL) on a baseline at y=0, converted to one path
- * so the file needs no font. `tracking` is in ems.
- */
-function textPath(text: string, size: number, tracking = 0): { d: string; width: number; capHeight: number } {
-  const font = opentype.loadSync(out(CHARIS_SIL))
-  const unit = size / font.unitsPerEm
-  const glyphs = font.stringToGlyphs(text)
-  let x = 0
-  const parts: string[] = []
-  glyphs.forEach((glyph, i) => {
-    parts.push(glyph.getPath(x, 0, size).toPathData(2))
-    x += (glyph.advanceWidth ?? 0) * unit + tracking * size
-    if (i + 1 < glyphs.length) x += font.getKerningValue(glyph, glyphs[i + 1]) * unit
-  })
-  return { d: parts.join(''), width: x - tracking * size, capHeight: font.tables.os2.sCapHeight * unit }
-}
-
 /** "Peitho Studio" set in Charis SIL, beside the mark. */
 function wordmarkDocument(ink: string, mark: string): string {
   const size = 100
   // -0.03em: the letter-spacing Peitho's own wordmark uses
-  const { d, width: textWidth, capHeight } = textPath('Peitho Studio', size, -0.03)
+  const { d, width: textWidth, capHeight } = textPath(font, 'Peitho Studio', size, -0.03)
 
   const pad = 1
   const v = markViewBox(pad)
@@ -153,7 +134,7 @@ const DMG_BACKGROUND_TIFF = 'src-tauri/dmg/background.tiff'
  * tiffutil is macOS-only, like actool above.
  */
 async function writeDmgBackground(browser: Browser): Promise<void> {
-  const caption = textPath(DMG_CAPTION, DMG_CAPTION_SIZE)
+  const caption = textPath(font, DMG_CAPTION, DMG_CAPTION_SIZE)
   const svg = dmgBackgroundSvg(caption)
   const { width, height } = DMG_WINDOW
   const work = mkdtempSync(join(tmpdir(), 'peitho-dmg-'))
