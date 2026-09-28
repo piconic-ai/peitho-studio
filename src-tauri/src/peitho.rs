@@ -163,6 +163,18 @@ impl PeithoSession {
         self.0.lock().map(|guard| guard.contains_key(label)).unwrap_or(false)
     }
 
+    /// Whether no window anywhere has a deck open yet — `finder_open_target`
+    /// uses this to tell "the app just launched, nothing open but the
+    /// welcome screen" from "some window already has a deck, opening
+    /// another must not disturb it." A poisoned lock reports `false`
+    /// (as if something were open) rather than `true`, since a false
+    /// negative here only costs an extra window (`open_deck_window_impl`'s
+    /// normal behavior), while a false positive would hand a Finder file to
+    /// a window that may already be mid-render.
+    fn is_empty(&self) -> bool {
+        self.0.lock().map(|guard| guard.is_empty()).unwrap_or(false)
+    }
+
     /// The label of a window that already has `target` open, if any — see
     /// `matching_window_label`. `open_deck_window_impl` uses this to bring an
     /// already-open deck's window to the front instead of opening a
@@ -532,6 +544,86 @@ pub(crate) fn open_deck_window_impl(app: &AppHandle, pending: &PendingDecks, ses
         .build()
         .map_err(|err| err.to_string())?;
     Ok(())
+}
+
+/// The default label Tauri gives `tauri.conf.json`'s `app.windows` entry
+/// (it declares no `label` of its own), i.e. the window that shows the
+/// welcome screen at launch. `open_finder_urls` targets this window
+/// specifically when handing it a Finder-opened file (see
+/// `finder_open_target`).
+const MAIN_WINDOW_LABEL: &str = "main";
+
+/// Where a single Finder-opened file (see `open_finder_urls`) should go:
+/// the still-on-the-welcome-screen `main` window, or a fresh one exactly
+/// like "Open Deck…"/"Open Recent" already open into. Pure decision, split
+/// out so the rule is unit-testable without a real `AppHandle`/session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FinderOpenTarget {
+    MainWindow,
+    NewWindow,
+}
+
+/// `main_already_claimed` is true once an earlier URL in the *same*
+/// `RunEvent::Opened` batch (Finder can hand several files opened at once)
+/// already took the `main` slot. That can't be read back from
+/// `PeithoSession` itself: it only gains an entry once the frontend's own,
+/// later, async `open_deck` round-trip finishes — well after a whole
+/// multi-URL batch has already been decided here — so the caller
+/// (`open_finder_urls`) tracks it locally across the loop instead.
+pub(crate) fn finder_open_target(main_already_claimed: bool, any_session_open: bool) -> FinderOpenTarget {
+    if !main_already_claimed && !any_session_open {
+        FinderOpenTarget::MainWindow
+    } else {
+        FinderOpenTarget::NewWindow
+    }
+}
+
+/// `url`'s local file path, or `None` for anything that isn't a `file://`
+/// URL. Finder is the only real source of `RunEvent::Opened` on this
+/// macOS-only app and always hands file URLs, but nothing about the type
+/// guarantees that, so a URL that doesn't convert is dropped rather than
+/// unwrapped.
+fn finder_url_to_path(url: &tauri::Url) -> Option<PathBuf> {
+    url.to_file_path().ok()
+}
+
+/// Hands `path` to the still-on-the-welcome-screen `main` window the same
+/// way `open_deck_window_impl` hands one to a brand new window: through
+/// `PendingDecks`, which `main`'s own frontend consumes via
+/// `take_pending_deck`. Used only for the `FinderOpenTarget::MainWindow`
+/// branch of `open_finder_urls`.
+fn assign_to_main_window(pending: &PendingDecks, path: String) -> Result<(), String> {
+    let mut guard = pending.0.lock().map_err(|_| "pending-decks lock poisoned".to_string())?;
+    guard.insert(MAIN_WINDOW_LABEL.to_string(), path);
+    Ok(())
+}
+
+/// Called from `lib.rs`'s `RunEvent::Opened` — Finder's `.md` double-click
+/// or "Open With" (see `bundle.fileAssociations` in `tauri.conf.json`).
+/// Loops because macOS can hand several URLs in one `Opened` event (e.g.
+/// multi-selecting files before "Open With"); each is decided independently
+/// via `finder_open_target`, so only the first ever reuses `main` and every
+/// other one gets its own new window via `open_deck_window_impl`, same as
+/// "Open Recent" would for it. A URL that isn't a local file is logged and
+/// skipped rather than surfaced as an error nobody would see.
+pub(crate) fn open_finder_urls(app: &AppHandle, pending: &PendingDecks, session: &PeithoSession, urls: Vec<tauri::Url>) {
+    let mut main_claimed = false;
+    for url in urls {
+        let Some(path) = finder_url_to_path(&url) else {
+            log::warn!("ignoring a non-file URL from Finder: {url}");
+            continue;
+        };
+        let path = path.display().to_string();
+        let result = if finder_open_target(main_claimed, session.is_empty()) == FinderOpenTarget::MainWindow {
+            main_claimed = true;
+            assign_to_main_window(pending, path)
+        } else {
+            open_deck_window_impl(app, pending, session, path)
+        };
+        if let Err(err) = result {
+            log::error!("failed to open a Finder-opened deck: {err}");
+        }
+    }
 }
 
 /// Called once by a newly created window's frontend on mount. Consumes
@@ -1349,6 +1441,42 @@ Start writing your slides here.\n";
         // path can't match anything already open, but it also can't
         // crash the comparison that's about to check that.
         assert_eq!(deck_path_for_comparison("/definitely/does/not/exist/deck.md"), PathBuf::from("/definitely/does/not/exist/deck.md"));
+    }
+
+    #[test]
+    fn given_the_app_has_no_deck_open_anywhere_when_a_single_finder_file_is_opened_then_it_targets_the_main_window() {
+        assert_eq!(finder_open_target(false, false), FinderOpenTarget::MainWindow);
+    }
+
+    #[test]
+    fn given_a_deck_is_already_open_somewhere_when_a_finder_file_is_opened_then_it_targets_a_new_window() {
+        assert_eq!(finder_open_target(false, true), FinderOpenTarget::NewWindow);
+    }
+
+    #[test]
+    fn given_an_earlier_url_in_the_same_batch_already_claimed_main_when_the_next_one_is_decided_then_it_targets_a_new_window() {
+        // Even if `PeithoSession` still reports empty (the frontend's own
+        // `open_deck` for the first URL hasn't finished yet), a second
+        // simultaneously-opened file must not also try to land in `main`.
+        assert_eq!(finder_open_target(true, false), FinderOpenTarget::NewWindow);
+    }
+
+    #[test]
+    fn finder_open_target_adversarial_both_already_claimed_and_already_open_is_still_a_new_window() {
+        assert_eq!(finder_open_target(true, true), FinderOpenTarget::NewWindow);
+    }
+
+    #[test]
+    fn finder_url_to_path_spec_converts_a_file_url_to_its_local_path() {
+        let url = tauri::Url::parse("file:///Users/me/decks/talk/deck.md").unwrap();
+        assert_eq!(finder_url_to_path(&url), Some(PathBuf::from("/Users/me/decks/talk/deck.md")));
+    }
+
+    #[test]
+    fn finder_url_to_path_adversarial_a_non_file_url_is_ignored_not_panicked_on() {
+        for url in ["https://example.com/deck.md", "mailto:me@example.com"] {
+            assert_eq!(finder_url_to_path(&tauri::Url::parse(url).unwrap()), None, "{url}");
+        }
     }
 
     #[test]
