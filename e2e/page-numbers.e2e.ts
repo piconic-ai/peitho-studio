@@ -9,13 +9,12 @@
 // theme CSS and needs a real device.
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
+import type { DeckSettingsState } from '../domain/deckSettings'
 
 const PLAIN_DECK = '<!-- {"key":"one"} -->\n# Slide One\n\n---\n\n<!-- {"key":"two"} -->\n# Slide Two\n'
 const NUMBERED_DECK = `---\npage_numbers: current\n---\n<!-- {"key":"one","page_number":false} -->\n# Slide One\n\n---\n\n<!-- {"page_number":false} -->\n# Slide Two\n`
 
 type Choice = 'none' | 'current' | 'current_of_total'
-
-type Reported = { kind: 'known'; choice: string } | { kind: 'unknown'; raw: string }
 
 /** Opens `deck`, returning the `page_numbers` value of every settings
  * report the window sends the Edit menu: the choice, or `raw:<text>` for a
@@ -24,7 +23,7 @@ async function openDeck(page: Page, deck: MockDeck): Promise<string[]> {
   const reported: string[] = []
   deck.onInvoke = (cmd, args) => {
     if (cmd !== 'report_deck_settings') return
-    const value = (args.settings as { page_numbers: Reported }).page_numbers
+    const value = (args.settings as DeckSettingsState).page_numbers
     reported.push(value.kind === 'known' ? value.choice : `raw:${value.raw}`)
   }
   await mockTauri(page, deck)
