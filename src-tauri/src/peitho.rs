@@ -29,6 +29,7 @@ use crate::deck_variants;
 use crate::edit_menu;
 use crate::i18n::{self, Language, MenuLabels};
 use crate::engine::builtin;
+use crate::engine::image_layout;
 use crate::engine::images;
 use crate::engine::layout_fit::{self, LayoutVerdict};
 use crate::engine::pipeline::{self, RenderOutput};
@@ -1040,6 +1041,25 @@ pub fn check_slide_layouts(
         state.deck_path.clone()
     };
     layout_fit::check_slide_layouts(&deck_path, &content, slide_index)
+}
+
+/// Adds Studio's built-in image layout to this window's deck, for the slide
+/// at `slide_index` of `content` (the deck source as the frontend has it,
+/// the slide already re-pinned to the new layout if it was pinned to
+/// another) — the fix the error bar offers when no layout of the deck fits
+/// a slide holding an image. Returns the deck-relative paths written;
+/// writes nothing when any of them exists or the addition would change how
+/// another slide builds. See `engine::image_layout`. `async` like
+/// `check_slide_layouts`: it parses the whole deck and touches no shared
+/// state.
+#[tauri::command(async)]
+pub fn add_image_layout(
+    content: String,
+    slide_index: usize,
+    window: WebviewWindow,
+    session: State<PeithoSession>,
+) -> Result<Vec<&'static str>, String> {
+    image_layout::add_image_layout(&session_deck_path(&session, window.label())?, &content, slide_index)
 }
 
 #[tauri::command]
