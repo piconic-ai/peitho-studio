@@ -10,7 +10,7 @@ tags: [export, pdf, deck-settings]
 
 発端: デッキ設定の配置を検討した壁打ち(2026-09-28)で、ユーザーから
 「PDF出力あった方が良いね」。frontmatterの`resolution`はPDFにしか効かない
-ため、`todo/deck-settings-menu.md`からは外してこちらで扱う。
+ため、`todo/archive/deck-settings-menu.md`からは外してこちらで扱う。
 
 ## 分かっていること(未整理 — リファインメント時に方針を決める)
 

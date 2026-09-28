@@ -12,7 +12,7 @@ tags: [deck-settings, frontmatter, new-deck]
 「新規作成時**のみ**設定できるのは避けたい。新規作成時に案内しつつ、
 後から変更できると良い。だいたいあとから状況は変わるものだから」との
 結論。後から変更する手段は編集メニューのデッキ設定
-(`todo/deck-settings-menu.md`で実装済み。当初は「Deckメニュー」を
+(`todo/archive/deck-settings-menu.md`で実装済み。当初は「Deckメニュー」を
 新設する案だったが、既存の編集メニュー内に現在値つきのサブメニューとして
 置かれた)。
 
@@ -25,7 +25,7 @@ tags: [deck-settings, frontmatter, new-deck]
     メニューを見ればすぐ分かるので不要)。
   - テーマの選択(雛形は組み込みテーマ固定のまま)。
   - `page_numbers`/`breaks`など、ほかのキーの選択。
-  - 編集メニューのデッキ設定側の変更(`todo/deck-settings-menu.md`)。
+  - 編集メニューのデッキ設定側の変更(`todo/archive/deck-settings-menu.md`)。
 - **受け入れ条件**:
   - `NewDeckModal`に縦横比(16:9 / 4:3)と言語(編集メニューのデッキ設定と
     同じ候補)の選択があり、既定値が選ばれた状態で開く。
