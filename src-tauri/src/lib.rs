@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod build_info;
 mod deck_menu;
 mod deck_trust;
 mod deck_variants;
