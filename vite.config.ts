@@ -60,7 +60,11 @@ export default defineConfig({
     // target).
     target: 'esnext',
     rollupOptions: {
-      input: { 'pages/index': resolve(HERE, 'pages/index.html') },
+      input: {
+        'pages/index': resolve(HERE, 'pages/index.html'),
+        // The About window's page (src-tauri/src/about.rs).
+        'pages/about': resolve(HERE, 'pages/about.html'),
+      },
     },
   },
   plugins: [

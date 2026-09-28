@@ -4,6 +4,7 @@
 //   brand/expressions/*.svg  the mark wearing each of her expressions
 //   brand/app-icon.png       the 1024 px app icon, for reference/previews
 //   public/favicon.svg       the small cut on a full-bleed tile
+//   public/app-icon.svg      the app icon, for the About window
 //   src-tauri/icons/*        every PNG Tauri bundles, plus icon.icns / icon.ico
 //   src-tauri/icons/AppIcon.icon  the Icon Composer source for macOS 26+
 //   src-tauri/icons/Assets.car    that source compiled with Xcode 26's actool
@@ -147,6 +148,8 @@ async function main(): Promise<void> {
   write('brand/app-icon.svg', appIconSvg())
   write('brand/app-icon-small.svg', appIconSvg({ small: true }))
   write('public/favicon.svg', appIconSvg({ small: true, shadow: false, tile: 'full' }))
+  // The About window's icon (pages/about.html).
+  write('public/app-icon.svg', appIconSvg())
   write(`${ICON_COMPOSER_DIR}/icon.json`, iconComposerJson('glyph.svg'))
   write(`${ICON_COMPOSER_DIR}/Assets/glyph.svg`, iconComposerGlyphSvg())
   compileAssetsCar()
