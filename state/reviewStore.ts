@@ -1,0 +1,138 @@
+import { batch, createMemo, createSignal } from '@barefootjs/client'
+import type { CritDeckSession, ReviewComment } from '../domain/critReview'
+import { sendAvailability, type CommentBox, type CommentTarget, type PendingComment, type PendingReply } from '../domain/reviewComment'
+
+/** The review round trip with the Coding Agent as the comment UI shows it
+ * (todo/review-comment-ui.md): what crit last reported (the session and its
+ * comments — crit is the source of truth for everything already sent), the
+ * comments and replies written but not sent yet, the comment box, and
+ * what's in flight. Talking to crit (`ipc/critIpc.ts`) and deciding when to
+ * stays in `Studio.tsx`; this store only holds and transitions state. */
+export function createReviewStore() {
+  const [session, setSession] = createSignal<CritDeckSession | null>(null)
+  const [comments, setComments] = createSignal<ReviewComment[]>([])
+  const [pending, setPending] = createSignal<PendingComment[]>([])
+  const [pendingReplies, setPendingReplies] = createSignal<PendingReply[]>([])
+  const [box, setBox] = createSignal<CommentBox>({ kind: 'closed' })
+  const [boxDraft, setBoxDraft] = createSignal('')
+  /** The reply being written, under which comment. */
+  const [replyDraft, setReplyDraft] = createSignal<{ commentId: string; text: string } | null>(null)
+  const [busy, setBusy] = createSignal<'idle' | 'starting' | 'sending'>('idle')
+  const [error, setError] = createSignal<string | null>(null)
+  // Where the pins of comments sent in this window sat, by the body crit
+  // got (a sent comment is only known by what crit reports back).
+  const [sentPins, setSentPins] = createSignal<Record<string, { slideKey: string; pin: { x: number; y: number } }>>({})
+  let nextId = 1
+
+  const unsentCount = createMemo(() => pending().length + pendingReplies().length)
+  const availability = createMemo(() => sendAvailability(session(), unsentCount(), busy() === 'sending'))
+
+  function openBox(slideKey: string, target: CommentTarget, pin: { x: number; y: number } | null, at: { x: number; y: number }): void {
+    batch(() => {
+      setBox({ kind: 'open', slideKey, target, pin, at })
+      setBoxDraft('')
+    })
+  }
+
+  function closeBox(): void {
+    setBox({ kind: 'closed' })
+  }
+
+  /** Files the open box's comment as unsent and closes the box. `null`
+   * (nothing filed, the box stays open) for a blank comment or no box. */
+  function commitBox(): PendingComment | null {
+    const current = box()
+    const body = boxDraft().trim()
+    if (current.kind !== 'open' || body === '') return null
+    const comment: PendingComment = { id: `pending-${String(nextId++)}`, slideKey: current.slideKey, target: current.target, pin: current.pin, body }
+    batch(() => {
+      setPending([...pending(), comment])
+      setBox({ kind: 'closed' })
+    })
+    return comment
+  }
+
+  function discard(id: string): void {
+    setPending(pending().filter(comment => comment.id !== id))
+  }
+
+  function editReply(commentId: string, text: string): void {
+    setReplyDraft({ commentId, text })
+  }
+
+  /** Files the reply being written as unsent. Nothing for a blank one. */
+  function commitReply(): void {
+    const draft = replyDraft()
+    if (draft === null || draft.text.trim() === '') return
+    batch(() => {
+      setPendingReplies([...pendingReplies(), { commentId: draft.commentId, body: draft.text.trim() }])
+      setReplyDraft(null)
+    })
+  }
+
+  /** Everything unsent reached crit: forget it, keeping each comment's pin
+   * under the body it was sent with (`sentBodies[i]` for `sent[i]`). */
+  function markSent(sent: readonly PendingComment[], sentBodies: readonly string[]): void {
+    const pins = { ...sentPins() }
+    sent.forEach((comment, i) => {
+      if (comment.pin !== null && sentBodies[i] !== undefined) pins[sentBodies[i]] = { slideKey: comment.slideKey, pin: comment.pin }
+    })
+    const sentIds = new Set(sent.map(comment => comment.id))
+    batch(() => {
+      setSentPins(pins)
+      setPending(pending().filter(comment => !sentIds.has(comment.id)))
+      setPendingReplies([])
+    })
+  }
+
+  // One count signal per slide key, set only when that slide's count
+  // changes — every thumbnail row reads its own (see CLAUDE.md's
+  // "Don't hold an entire Map/Record in a single signal/memo").
+  const countSignals = new Map<string, [() => number, (value: number) => void]>()
+  function countSignal(key: string): [() => number, (value: number) => void] {
+    let entry = countSignals.get(key)
+    if (!entry) {
+      entry = createSignal(0)
+      countSignals.set(key, entry)
+    }
+    return entry
+  }
+  function commentCountOf(key: string): number {
+    return countSignal(key)[0]()
+  }
+  function syncCommentCounts(counts: Readonly<Record<string, number>>): void {
+    batch(() => {
+      for (const [key, [get, set]] of countSignals) {
+        const next = counts[key] ?? 0
+        if (get() !== next) set(next)
+      }
+      for (const [key, count] of Object.entries(counts)) {
+        const [get, set] = countSignal(key)
+        if (get() !== count) set(count)
+      }
+    })
+  }
+
+  /** The deck closed or changed: nothing of its review carries over. */
+  function reset(): void {
+    batch(() => {
+      setSession(null)
+      setComments([])
+      setPending([])
+      setPendingReplies([])
+      setBox({ kind: 'closed' })
+      setReplyDraft(null)
+      setBusy('idle')
+      setError(null)
+      setSentPins({})
+    })
+  }
+
+  return {
+    session, setSession, comments, setComments, pending, pendingReplies, unsentCount, availability,
+    box, boxDraft, setBoxDraft, openBox, closeBox, commitBox, discard,
+    replyDraft, editReply, commitReply, markSent, sentPins,
+    busy, setBusy, error, setError,
+    commentCountOf, syncCommentCounts, reset,
+  }
+}

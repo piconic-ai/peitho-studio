@@ -50,6 +50,12 @@ export interface PendingComment {
   body: string
 }
 
+/** The box a comment is written in, over the preview: closed, or open on a
+ * target — with where the pin goes and where on screen the box sits. */
+export type CommentBox =
+  | { kind: 'closed' }
+  | { kind: 'open'; slideKey: string; target: CommentTarget; pin: { x: number; y: number } | null; at: { x: number; y: number } }
+
 /** A reply written under a comment already in crit, not yet sent. */
 export interface PendingReply {
   commentId: string
