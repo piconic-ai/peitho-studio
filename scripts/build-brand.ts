@@ -8,6 +8,7 @@
 //   src-tauri/icons/*        every PNG Tauri bundles, plus icon.icns / icon.ico
 //   src-tauri/icons/AppIcon.icon  the Icon Composer source for macOS 26+
 //   src-tauri/icons/Assets.car    that source compiled with Xcode 26's actool
+//   src-tauri/dmg/background.tiff the .dmg window's picture, at 1x and 2x
 //
 // Each raster size is rendered on its own (48 px and below from the small
 // cut) and packed into .icns/.ico here, instead of `tauri icon` resizing a
@@ -15,13 +16,14 @@
 //
 // Run via `bun run icons`. Rasterizes with Playwright's Chromium: the system
 // Chrome by default (like playwright.config.ts), or CHROME_BIN if set.
-import { chromium, type Page } from '@playwright/test'
+import { type Browser, chromium, type Page } from '@playwright/test'
 import opentype from 'opentype.js'
 import { spawnSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { DMG_CAPTION, DMG_CAPTION_SIZE, DMG_WINDOW, dmgBackgroundSvg } from './brand/dmg'
 import { encodeIco, encodeIcns, type IcnsType } from './brand/iconContainers'
 import { appIconSvg, EXPRESSIONS, type Expression, iconComposerGlyphSvg, iconComposerJson, INK, MARK_BOUNDS, markBody, PAPER, SMALL_CUT_MAX_PX, svgDocument } from './brand/mark'
 
@@ -143,6 +145,33 @@ async function rasterize(page: Page, svg: string, size: number): Promise<Uint8Ar
   return new Uint8Array(await page.screenshot({ omitBackground: true, type: 'png' }))
 }
 
+const DMG_BACKGROUND_TIFF = 'src-tauri/dmg/background.tiff'
+
+/**
+ * The .dmg window's picture as one TIFF holding a 1x and a 2x image, which
+ * Finder picks between per display (a single PNG is blurry on Retina).
+ * tiffutil is macOS-only, like actool above.
+ */
+async function writeDmgBackground(browser: Browser): Promise<void> {
+  const caption = textPath(DMG_CAPTION, DMG_CAPTION_SIZE)
+  const svg = dmgBackgroundSvg(caption)
+  const { width, height } = DMG_WINDOW
+  const work = mkdtempSync(join(tmpdir(), 'peitho-dmg-'))
+  const files: string[] = []
+  for (const scale of [1, 2]) {
+    const page = await browser.newPage({ deviceScaleFactor: scale, viewport: { width, height } })
+    await page.setContent(`<!doctype html><style>html,body{margin:0}svg{display:block}</style>${svg}`)
+    const file = join(work, `background@${scale}x.png`)
+    await page.screenshot({ path: file, type: 'png' })
+    await page.close()
+    files.push(file)
+  }
+  mkdirSync(dirname(out(DMG_BACKGROUND_TIFF)), { recursive: true })
+  const result = spawnSync('tiffutil', ['-cathidpicheck', ...files, '-out', out(DMG_BACKGROUND_TIFF)], { stdio: ['ignore', 'inherit', 'inherit'] })
+  if (result.status !== 0) throw new Error(`tiffutil exited with ${result.status}`)
+  console.log(`wrote ${DMG_BACKGROUND_TIFF}`)
+}
+
 async function main(): Promise<void> {
   const onLight = markBody()
   const onDark = markBody({ figure: PAPER, line: INK })
@@ -165,6 +194,7 @@ async function main(): Promise<void> {
 
   const browser = await chromium.launch(process.env.CHROME_BIN ? { executablePath: process.env.CHROME_BIN } : { channel: 'chrome' })
   try {
+    await writeDmgBackground(browser)
     const page = await browser.newPage({ deviceScaleFactor: 1 })
     const cache = new Map<number, Uint8Array>()
     const png = async (size: number) => {
