@@ -1105,13 +1105,6 @@ mod tests {
     }
 
     #[test]
-    fn given_the_defaults_when_the_starter_deck_is_built_then_its_frontmatter_holds_only_time() {
-        let deck = starter_deck(default_new_deck_settings());
-        assert_eq!(starter_frontmatter(&deck), ["time: 1m"]);
-        assert!(deck.ends_with(STARTER_BODY));
-    }
-
-    #[test]
     fn given_each_combination_when_the_starter_deck_is_built_then_only_non_defaults_are_written() {
         let cases = [
             ("16:9", "en", vec!["time: 1m"]),
