@@ -296,9 +296,13 @@ function renderPayloadFor(source: string, deck: MockDeck): RenderPayload {
 export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
   // Mirrors `sync_crit_watch` in peitho.rs: crit's events reach this window.
   deck.crit?.onReviewEvent(event => {
-    void page.evaluate(payload => {
+    page.evaluate(payload => {
       (window as unknown as { __mockEmitTauriEvent?: (event: string, payload: unknown, toWindow?: string) => void }).__mockEmitTauriEvent?.('crit-review', payload, 'main')
-    }, event)
+    }, event).catch(() => {
+      // An event fired as the test ends (e.g. the fake crit's `finish`
+      // right after the last assertion) finds the page closed; nothing
+      // is left to hear it. Unhandled, it failed the test after it passed.
+    })
   })
   await page.exposeFunction('__mockInvoke', async (cmd: string, args: Record<string, unknown>) => {
     deck.invokedCommands?.push(cmd)
