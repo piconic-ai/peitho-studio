@@ -57,6 +57,9 @@ impl CritCli {
         let mut command = Command::new(&self.bin);
         // Keeps crit from printing tips about installing its agent plugins.
         command.env("CRIT_NO_INTEGRATION_CHECK", "1");
+        // Nor check online for a newer crit on every start: Studio runs it
+        // for each status check, and the bundled version is pinned anyway.
+        command.env("CRIT_NO_UPDATE_CHECK", "1");
         if let Some(home) = &self.home {
             command.env("HOME", home);
         }
