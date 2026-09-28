@@ -16,8 +16,10 @@ export interface FakeCritIpc extends CritIpc {
   calls: RecordedCritCall[]
   emitReviewEvent(event: CritReviewEvent): void
   /** An agent runs `crit` on the deck: its next round starts and it waits
-   * (emits `commentsChanged`). Throws without a session. */
-  agentConnects(): void
+   * (emits `commentsChanged`, unless `silent` — as when Studio reads the
+   * session before crit has advanced its round and no later event comes).
+   * Throws without a session. */
+  agentConnects(options?: { silent?: boolean }): void
   /** Adds the agent's reply under comment `id` (emits `commentsChanged`). */
   reply(id: string, body: string, author?: string): void
 }
@@ -123,11 +125,11 @@ export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
       return () => { listeners.delete(callback) }
     },
     emitReviewEvent: emit,
-    agentConnects: () => {
+    agentConnects: options => {
       const current = found()
       current.reviewRound++
       current.agentWaiting = true
-      emit('commentsChanged')
+      if (!options?.silent) emit('commentsChanged')
     },
     reply: (id, body, author = 'Agent') => {
       commentById(id).replies.push({ id: `rp_${String(nextId++)}`, body, author })

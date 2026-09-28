@@ -9,7 +9,7 @@ import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
-  REVIEW_AUTHOR, agentCritCommand, commentCountsBySlide, commentTargetOf, newReviewComment, previewPinsOf, reviewRows, reviewStatusText,
+  REVIEW_AUTHOR, REVIEW_POLL_MS, agentCritCommand, commentCountsBySlide, commentTargetOf, newReviewComment, pollsForAgent, previewPinsOf, reviewRows, reviewStatusText,
   slideSpans, targetLabel,
 } from '../domain/reviewComment'
 import { focusCommentBox, type PreviewClick } from '../dom/previewComments'
@@ -956,6 +956,14 @@ export function Studio() {
   })
 
   const previewPins = createMemo(() => previewPinsOf(selectedSlideKey(), review.comments(), review.sentPins(), review.pending(), review.box()))
+
+  // See `pollsForAgent`: an agent that connected can be missed by the
+  // event alone, so the session is re-read until one is seen waiting.
+  createEffect(() => {
+    if (!pollsForAgent(review.availability())) return
+    const timer = window.setInterval(() => { void refreshReview() }, REVIEW_POLL_MS)
+    return () => window.clearInterval(timer)
+  })
 
   const reviewPanelRows = createMemo(() => reviewRows(
     review.comments(),

@@ -5,7 +5,7 @@ import type { ManifestSlide } from './render'
 import {
   liveReplies,
   agentCommentBody, annotatedSpan, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
-  agentCritCommand, newReviewComment, trimSpan, parseSourceSpan, previewPinsOf, relocateTarget, reviewRows, reviewStatusText, sendAvailability, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
+  agentCritCommand, newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, previewPinsOf, relocateTarget, reviewRows, reviewStatusText, sendAvailability, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
   utf8OffsetToIndex, type CommentTarget, type PendingComment,
 } from './reviewComment'
 
@@ -437,6 +437,18 @@ describe('commentTargetOf', () => {
   test('adversarial: Given no slide span, Then the element is placed from the start of the source', () => {
     const hit = { kind: 'heading' as const, text: 'Title', byteSpan: { start: 2, end: 7 }, quote: 'Title' }
     expect(commentTargetOf(source, null, hit)).toMatchObject({ kind: 'heading', offsetInSlide: 2 })
+  })
+})
+
+describe('pollsForAgent', () => {
+  test('spec: Given a session with no agent waiting, Then Studio keeps checking for one', () => {
+    expect(pollsForAgent({ kind: 'agent-not-waiting' })).toBe(true)
+  })
+
+  test('adversarial: Given any other state, Then nothing is polled', () => {
+    for (const kind of ['ready', 'sending', 'nothing-to-send', 'no-session', 'several-sessions'] as const) {
+      expect(pollsForAgent({ kind })).toBe(false)
+    }
   })
 })
 

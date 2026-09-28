@@ -99,6 +99,18 @@ test('Given no review session, When the first comment is added, Then Studio star
   await expect(page.locator(SEND)).toBeDisabled()
 })
 
+test('Given an agent connects without Studio hearing an event, Then within a few seconds Studio sees it waiting and sending opens up', async ({ page }) => {
+  const crit = createFakeCritIpc({ session: 'none' })
+  await openDeck(page, crit)
+  await comment(page, 'h1', 'Make it bigger')
+  await expect(page.locator(SEND)).toBeDisabled()
+
+  crit.agentConnects({ silent: true })
+
+  await expect(page.locator(SEND)).toBeEnabled({ timeout: 8_000 })
+  await expect(page.locator('[data-review-status]')).toHaveText('The agent is waiting for your comments.')
+})
+
 test('Given an agent connects and waits, When the comments are sent, Then crit gets their lines, Markdown and labels, and the agent\'s reply shows under the comment', async ({ page }) => {
   const crit = createFakeCritIpc({ session: 'none' })
   await openDeck(page, crit)

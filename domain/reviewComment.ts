@@ -299,6 +299,18 @@ export function sendAvailability(session: CritDeckSession | null, unsent: number
   return unsent > 0 ? { kind: 'ready' } : { kind: 'nothing-to-send' }
 }
 
+/** Whether to keep re-reading crit's session. crit announces an agent's
+ * `crit` connecting with an event, but the session read on that event can
+ * still show the old round (crit advances it asynchronously, next to
+ * merging the agent's own writes to the review file), and no further event
+ * comes to correct it — so while no agent is known to wait, Studio checks
+ * again every `REVIEW_POLL_MS`. */
+export function pollsForAgent(availability: SendAvailability): boolean {
+  return availability.kind === 'agent-not-waiting'
+}
+
+export const REVIEW_POLL_MS = 3000
+
 /** The comments panel's status line. `agentCommand` is what the agent is
  * asked to run in the deck's folder; `starting` whether Studio is starting
  * the session. */
