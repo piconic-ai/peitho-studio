@@ -189,6 +189,17 @@ fn matching_window_label<'a>(mut open_decks: impl Iterator<Item = (&'a str, &'a 
         .map(|(label, _)| label.to_string())
 }
 
+/// The folder `deck_path` lives in. A bare file name (`deck.md`, e.g. from
+/// `PEITHO_STUDIO_DEV_DECK`) has an empty parent rather than none, which
+/// would leave the folder's trust unsaveable and `read_dir` failing — it's
+/// the current directory, `.`, instead.
+fn deck_dir_of(deck_path: &Path) -> PathBuf {
+    match deck_path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        _ => PathBuf::from("."),
+    }
+}
+
 /// Registers `state` as `label`'s session, refusing if that window already
 /// has one. A window's session is set exactly once: the app itself never
 /// re-opens a deck in a window that has one (`domain/deckLifecycle.ts`
@@ -670,10 +681,7 @@ pub fn open_deck(
         return Err(ALREADY_OPEN_ERROR.to_string());
     }
     let deck_path = resolve_deck_path(&path)?;
-    let deck_dir = deck_path
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."));
+    let deck_dir = deck_dir_of(&deck_path);
 
     let source = std::fs::read_to_string(&deck_path).map_err(|err| err.to_string())?;
     let output = pipeline::render_source(&deck_path, &source)?;
@@ -1053,6 +1061,23 @@ mod tests {
         // Case-sensitive, and no match on a mere substring occurring mid-line.
         assert!(!is_present_ready_line("Serving presentation at http://x"));
         assert!(!is_present_ready_line("now serving presentation at http://x"));
+    }
+
+    #[test]
+    fn deck_dir_of_spec_is_the_folder_holding_the_deck() {
+        assert_eq!(deck_dir_of(Path::new("/decks/talk/deck.md")), PathBuf::from("/decks/talk"));
+        assert_eq!(deck_dir_of(Path::new("talk/deck.md")), PathBuf::from("talk"));
+    }
+
+    #[test]
+    fn deck_dir_of_adversarial_a_bare_file_name_is_the_current_directory() {
+        assert_eq!(deck_dir_of(Path::new("deck.md")), PathBuf::from("."));
+    }
+
+    #[test]
+    fn deck_dir_of_adversarial_a_path_with_no_parent_is_the_current_directory() {
+        assert_eq!(deck_dir_of(Path::new("")), PathBuf::from("."));
+        assert_eq!(deck_dir_of(Path::new("/")), PathBuf::from("."));
     }
 
     #[test]
