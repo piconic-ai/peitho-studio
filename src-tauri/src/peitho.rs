@@ -208,7 +208,7 @@ fn deck_dir_of(deck_path: &Path) -> PathBuf {
 /// app. Letting a second `open_deck` swap the session would let that
 /// script point `read_deck_source`/`save_deck_source` — and the editor's
 /// own autosave — at any file on disk (see
-/// `todo/deck-script-tauri-access.md`). A page reload clears the session
+/// `todo/archive/deck-script-tauri-access.md`). A page reload clears the session
 /// first (`lib.rs`'s `on_page_load`), which also discards the script.
 /// Generic over the session value so it's testable without a real
 /// `SessionState`.

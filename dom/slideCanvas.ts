@@ -159,7 +159,7 @@ function executeInlineScripts(root: ParentNode): void {
 
 // Whether the open deck may run its scripts. Starts untrusted: until
 // `open_deck` says otherwise, nothing a deck wrote gets to run. See
-// `todo/deck-script-trust.md`.
+// `todo/archive/deck-script-trust.md`.
 let scriptsTrusted = false
 let onScriptsBlocked: () => void = () => {}
 

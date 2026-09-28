@@ -1,5 +1,5 @@
 // Strips everything that could run code out of an untrusted deck's slide
-// HTML before it reaches the DOM — see `todo/deck-script-trust.md`.
+// HTML before it reaches the DOM — see `todo/archive/deck-script-trust.md`.
 // Stopping `<script>` alone isn't enough: `innerHTML` never runs a parsed
 // `<script>`, but an `<img onerror>` fires as soon as it's inserted, and an
 // `<iframe srcdoc>` shares this document's origin (and so the app's IPC).

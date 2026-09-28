@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: デッキのレイアウト`<script>`がStudioの文書内で実行されるため、Tauriコマンドに到達できるかを確認し、CSP/隔離の方針を決める(リリース前に判断)
 tags: [release, security, csp]
 ---
@@ -220,7 +220,7 @@ Studioのコードから辿ったもので、実機では試していない。
   `e2e/deck-variants.e2e.ts` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機で確認する(`tauri.conf.json`の`devtools`を一時的に`true`に
+- [x] 実機で確認する(`tauri.conf.json`の`devtools`を一時的に`true`に
   して`bunx tauri dev`)。Studioの「New Deck」で作ったデッキの
   `layouts/title-body-code.html`の`</section>`直前に下の`<script>`を
   足して開き直し、DevToolsのConsoleで次を見る(存在しないパスしか

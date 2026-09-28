@@ -4,7 +4,7 @@
 //! user trusts it from the banner that appears, and that choice is kept in
 //! a JSON list of folders under the app's data directory — Rust-side, so a
 //! deck's own script can't add its folder to it (`update_settings` would
-//! let it). See `todo/deck-script-trust.md`.
+//! let it). See `todo/archive/deck-script-trust.md`.
 //!
 //! Trust is per folder, not per file: a folder's decks (`deck.md`,
 //! `deck.ja.md`, ...) share its `layouts/`, which is where scripts live.

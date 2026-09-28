@@ -1,7 +1,7 @@
 // A deck nobody has trusted yet is shown with nothing of its own running —
 // no layout <script>, no `on*` handler, no `<iframe srcdoc>` — on every
 // surface a slide is drawn on, and a banner offers to trust it. See
-// todo/deck-script-trust.md.
+// todo/archive/deck-script-trust.md.
 //
 // Every vector below records itself in `window.__ran` when it runs, so
 // "nothing ran" is checked against the same markup that, once the deck is

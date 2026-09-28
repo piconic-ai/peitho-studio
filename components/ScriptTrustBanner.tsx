@@ -17,7 +17,7 @@ export interface ScriptTrustBannerProps {
 
 /** The strip under the deck header telling the user an untrusted deck's
  * scripts were turned off, with the button that trusts it — see
- * `todo/deck-script-trust.md`. The button itself is the confirmation: no
+ * `todo/archive/deck-script-trust.md`. The button itself is the confirmation: no
  * `window.confirm()`, which WKWebView can silently treat as cancelled. */
 export function ScriptTrustBanner(props: ScriptTrustBannerProps) {
   return (
