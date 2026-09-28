@@ -8,11 +8,11 @@ describe('createFakeDeckIpc', () => {
     expect(ipc.calls).toEqual([{ method: 'saveDeckSource', args: ['# Hello'] }])
   })
 
-  test('spec: createDeck joins parentDir/name/deck.md and records both args', async () => {
+  test('spec: createDeck joins parentDir/name/deck.md and records every arg', async () => {
     const ipc = createFakeDeckIpc()
-    const path = await ipc.createDeck('/tmp', 'talk')
+    const path = await ipc.createDeck('/tmp', 'talk', { aspect_ratio: '4:3', lang: 'ja' })
     expect(path).toBe('/tmp/talk/deck.md')
-    expect(ipc.calls).toEqual([{ method: 'createDeck', args: ['/tmp', 'talk'] }])
+    expect(ipc.calls).toEqual([{ method: 'createDeck', args: ['/tmp', 'talk', { aspect_ratio: '4:3', lang: 'ja' }] }])
   })
 
   test('spec: openDeck echoes the given path into deckPath/deckDir with an empty render', async () => {
