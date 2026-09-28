@@ -145,13 +145,13 @@ export function locateQuote(source: string, quote: string, within: CharSpan, nea
 }
 
 /** Where `target` is now in `source`: its quote in its slide (`slideSpan`)
- * nearest where it was, else anywhere in `source` — the slide may have
- * moved around it. `null` when the quote is gone, or for a whole-slide
- * target. */
+ * nearest where it was. Never in another slide — the same Markdown there
+ * is another element, and the comment's label names its own slide — so
+ * only without a slide span is all of `source` searched. `null` when the
+ * quote is gone from its slide, or for a whole-slide target. */
 export function relocateTarget(source: string, slideSpan: CharSpan | null, target: CommentTarget): CharSpan | null {
-  const whole = { start: 0, end: source.length }
-  const near = (slideSpan?.start ?? 0) + target.offsetInSlide
-  return (slideSpan && locateQuote(source, target.quote, slideSpan, near)) ?? locateQuote(source, target.quote, whole, near)
+  const within = slideSpan ?? { start: 0, end: source.length }
+  return locateQuote(source, target.quote, within, within.start + target.offsetInSlide)
 }
 
 const HEADING_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6'])

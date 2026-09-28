@@ -194,10 +194,15 @@ describe('relocateTarget', () => {
     expect(relocateTarget(source, second, heading)).toEqual({ start: second.start + 2, end: second.start + 7 })
   })
 
-  test('adversarial: Given the Markdown moved to another slide, Then it is found there', () => {
+  test('adversarial: Given the Markdown is gone from its slide but the same text is on another, Then it is not taken from there', () => {
     const source = '# Other\n\n---\n\n# Title\n'
     const first = { start: 0, end: source.indexOf('---') }
-    expect(relocateTarget(source, first, heading)).toEqual({ start: source.lastIndexOf('Title'), end: source.lastIndexOf('Title') + 5 })
+    expect(relocateTarget(source, first, heading)).toBeNull()
+  })
+
+  test('adversarial: Given no slide span, Then the whole source is searched', () => {
+    const source = '# Other\n\n---\n\n# Title\n'
+    expect(relocateTarget(source, null, heading)).toEqual({ start: source.lastIndexOf('Title'), end: source.lastIndexOf('Title') + 5 })
   })
 
   test('adversarial: Given the Markdown was edited away, Then there is nothing to point at', () => {
@@ -314,6 +319,13 @@ describe('newReviewComment', () => {
   test('adversarial: Given the commented Markdown was edited away, When it is sent, Then it falls back to its slide', () => {
     const comment = newReviewComment(pending({ kind: 'paragraph', text: 'Gone', quote: 'Gone', offsetInSlide: 0 }), source, firstSlide, 1)
     expect(comment).toMatchObject({ startLine: 5, endLine: 7, quote: '', body: '[Slide 1 › paragraph "Gone"] Make it bigger' })
+  })
+
+  test('adversarial: Given its Markdown left its slide for another one, When it is sent, Then its lines stay on its own slide, as its label says', () => {
+    const text = '# Other\n\n---\n\n# Title\n'
+    const first = { start: 0, end: text.indexOf('---') }
+    const comment = newReviewComment(pending({ kind: 'heading', text: 'Title', quote: 'Title', offsetInSlide: 2 }), text, first, 1)
+    expect(comment).toMatchObject({ startLine: 1, endLine: 1, quote: '', body: '[Slide 1 › heading "Title"] Make it bigger' })
   })
 
   test('adversarial: Given its slide and Markdown are both gone, When it is sent, Then it lands on line 1 with its label', () => {
