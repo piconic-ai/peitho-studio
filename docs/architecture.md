@@ -247,5 +247,6 @@ canvas's shadow root (`@font-face` registration, `adoptedStyleSheets`,
 `border-radius` clipping a scaled child), native dialogs, dragging while
 focus is lost, a pending deck across multiple windows, launching `peitho
 present` — these can only be confirmed with a real Tauri window. Log
-them as examples carrying `manual: { reason }`, and see
-`.claude/skills/run-peitho-studio/SKILL.md` for the verification steps.
+them as examples carrying `manual: { reason }`; on-device verification is
+currently done by the user manually (see `CLAUDE.md`'s e2e section for
+why the automated `run-peitho-studio` skill was removed).

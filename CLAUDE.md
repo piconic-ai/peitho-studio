@@ -79,12 +79,12 @@ see every file's status at a glance:
   A spike into the actual macOS-viable alternative
   (`tauri-plugin-playwright`, which drives the webview over a Unix socket
   instead of OS-level input) is in progress — see
-  `docs/tauri-playwright-spike.md`. Until real e2e lands, the steps for
-  verifying WKWebView-specific behavior on a real device are collected in
-  `.claude/skills/run-peitho-studio/SKILL.md` — but see that spike doc's
-  own findings first: OS-level GUI automation (`osascript`/`cliclick`) has
-  caused a real incident (a misdirected click during a screen-shared
-  meeting) and should be treated as a last resort, not the default.
+  `docs/tauri-playwright-spike.md`. A `run-peitho-studio` skill used to
+  automate this verification with `osascript`/`cliclick`, but it caused a
+  second misdirected-click incident (see `docs/tauri-playwright-spike.md`)
+  and was deleted — on-device WKWebView verification is done by the user
+  manually until `tauri-plugin-playwright` (or another non-coordinate
+  approach) replaces it.
 
 ## Debugging a layout's own JavaScript
 

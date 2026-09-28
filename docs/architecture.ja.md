@@ -207,4 +207,5 @@ IME合成中のエディタ(CodeMirror)同期、プレビュー枠のiframe上�
 通過するケース、ネイティブダイアログ、フォーカス喪失中のドラッグ、複数
 ウィンドウのpending deck、`peitho present`の起動——これらは実機Tauri
 ウィンドウでしか確認できない。`manual: { reason }`付きの例示として台帳化
-し、検証手順は`.claude/skills/run-peitho-studio/SKILL.md`を参照する。
+する。実機確認は現在ユーザー自身が手動で行う(自動化していた
+`run-peitho-studio` skillを削除した経緯は`CLAUDE.md`のe2e節を参照)。

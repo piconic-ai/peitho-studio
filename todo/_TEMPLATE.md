@@ -70,7 +70,8 @@ domain/state/ipc/dom/components(フロント)、engine/peitho.rs/lib.rs
 - [ ] <その他、コマンド一発で真偽が決まる項目>
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機(`run-peitho-studio` skill)での見た目/挙動確認
+- [ ] 実機での見た目/挙動確認(ユーザー自身に依頼する — 自動化していた
+  `run-peitho-studio` skillは削除済み、`CLAUDE.md`のe2e節参照)
 - [ ] <設計方針の最終確認など、コードだけでは決まらない項目>
 
 ## 先送り事項

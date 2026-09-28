@@ -7,12 +7,15 @@ comments) explicitly cannot reach: real peitho-core rendering, real
 WKWebView CSS/reactivity quirks, native right-click menus, native drag,
 native dialogs.
 
-This followed real-device GUI automation (`osascript`/`cliclick`, per
-`.claude/skills/run-peitho-studio/SKILL.md`) causing an actual incident: a
+This followed real-device GUI automation (`osascript`/`cliclick`, then
+documented in a `run-peitho-studio` skill) causing an actual incident: a
 coordinate click landed on the operator's own Chrome window instead of
-Peitho Studio's, during a screen-shared meeting. `tauri-driver` (Tauri's
-own official WebDriver tooling) turned out to have no macOS support at all
-— Apple doesn't ship a WKWebDriver, confirmed at
+Peitho Studio's, during a screen-shared meeting. The same failure mode
+recurred later (a click landed on the operator's own terminal instead of
+Finder), at which point the skill was deleted rather than kept as a
+documented-but-unsafe default — see `CLAUDE.md`'s e2e section. `tauri-driver`
+(Tauri's own official WebDriver tooling) turned out to have no macOS
+support at all — Apple doesn't ship a WKWebDriver, confirmed at
 [tauri-apps/tauri#7068](https://github.com/tauri-apps/tauri/issues/7068).
 `tauri-playwright` is a third-party plugin that avoids OS-level input
 entirely: it embeds a control server in the app that Playwright talks to
