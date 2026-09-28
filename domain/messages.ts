@@ -95,6 +95,30 @@ export interface Messages {
   selectSlideToPreview: string
   openDeckToPreview: string
 
+  // Review comments to the Coding Agent (the preview's pins, the comment
+  // box and the comments panel under the preview)
+  reviewComments: string
+  commentHint: string
+  commentPlaceholder: string
+  addComment: string
+  discardComment: string
+  unsentComment: string
+  commentCount: (count: number) => string
+  sendToAgent: string
+  sendingToAgent: string
+  startingReview: string
+  agentWaiting: string
+  nothingToSend: string
+  sendNeedsSession: string
+  /** `command`: what to ask the agent to run in the deck's folder. */
+  sendNeedsAgent: (command: string) => string
+  sendNeedsOneSession: string
+  reviewFailed: (error: string) => string
+  reply: string
+  replyPlaceholder: string
+  resolveComment: string
+  resolvedComment: string
+
   // Settings panel
   settings: string
   closeSettings: string
@@ -214,6 +238,27 @@ const en: Messages = {
   selectSlideToPreview: 'Select a slide to preview it.',
   openDeckToPreview: 'Open a deck to preview it.',
 
+  reviewComments: 'Comments for the agent',
+  commentHint: 'Click a part of the preview to comment on it.',
+  commentPlaceholder: 'What should the agent change here?',
+  addComment: 'Add Comment',
+  discardComment: 'Discard',
+  unsentComment: 'Not sent yet',
+  commentCount: count => (count === 1 ? '1 comment' : `${String(count)} comments`),
+  sendToAgent: 'Send to Agent',
+  sendingToAgent: 'Sending…',
+  startingReview: 'Starting a review session…',
+  agentWaiting: 'The agent is waiting for your comments.',
+  nothingToSend: 'Nothing new to send.',
+  sendNeedsSession: 'No review session yet. Adding a comment starts one.',
+  sendNeedsAgent: command => `No agent is waiting for comments. Ask your Coding Agent to run \`${command}\` in the deck's folder and wait for the review.`,
+  sendNeedsOneSession: 'Several crit review sessions are open on this deck. Stop all but one (`crit stop`).',
+  reviewFailed: error => `Could not reach the review session: ${error}`,
+  reply: 'Reply',
+  replyPlaceholder: 'Reply to the agent…',
+  resolveComment: 'Resolve',
+  resolvedComment: 'Resolved',
+
   settings: 'Settings',
   closeSettings: 'Close settings',
   language: 'Language',
@@ -327,6 +372,27 @@ const ja: Messages = {
   phoneShapeDeckDetail: 'デッキ本来の比率(16:9 / 4:3)のまま',
   selectSlideToPreview: 'プレビューするスライドを選んでください。',
   openDeckToPreview: 'デッキを開くとプレビューが表示されます。',
+
+  reviewComments: 'エージェントへのコメント',
+  commentHint: 'プレビューの気になる箇所をクリックするとコメントできます。',
+  commentPlaceholder: 'ここをどう直してほしいですか?',
+  addComment: 'コメントを追加',
+  discardComment: '取り消す',
+  unsentComment: '未送信',
+  commentCount: count => `コメント ${String(count)} 件`,
+  sendToAgent: 'エージェントに送信',
+  sendingToAgent: '送信中…',
+  startingReview: 'レビューのセッションを起動しています…',
+  agentWaiting: 'エージェントがコメントを待っています。',
+  nothingToSend: '新しく送るものはありません。',
+  sendNeedsSession: 'レビューのセッションがまだありません。コメントを追加すると起動します。',
+  sendNeedsAgent: command => `コメントを待っているエージェントがいません。Coding Agentに、デッキのフォルダで \`${command}\` を実行してレビューを待つよう頼んでください。`,
+  sendNeedsOneSession: 'このデッキにcritのレビューのセッションが複数あります。1つを残して止めてください(`crit stop`)。',
+  reviewFailed: error => `レビューのセッションに接続できませんでした: ${error}`,
+  reply: '返信',
+  replyPlaceholder: 'エージェントに返信…',
+  resolveComment: '解決済みにする',
+  resolvedComment: '解決済み',
 
   settings: '設定',
   closeSettings: '設定を閉じる',
