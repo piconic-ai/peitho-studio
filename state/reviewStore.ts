@@ -1,6 +1,6 @@
 import { batch, createMemo, createSignal } from '@barefootjs/client'
 import type { CritDeckSession, ReviewComment } from '../domain/critReview'
-import { sendAvailability, type CommentBox, type CommentTarget, type PendingComment, type PendingReply } from '../domain/reviewComment'
+import { sendAvailability, type CommentBox, type CommentTarget, type PendingComment, type PendingReply, type SentPins } from '../domain/reviewComment'
 
 /** The review round trip with the Coding Agent as the comment UI shows it
  * (todo/review-comment-ui.md): what crit last reported (the session and its
@@ -19,9 +19,8 @@ export function createReviewStore() {
   const [replyDraft, setReplyDraft] = createSignal<{ commentId: string; text: string } | null>(null)
   const [busy, setBusy] = createSignal<'idle' | 'starting' | 'sending'>('idle')
   const [error, setError] = createSignal<string | null>(null)
-  // Where the pins of comments sent in this window sat, by the body crit
-  // got (a sent comment is only known by what crit reports back).
-  const [sentPins, setSentPins] = createSignal<Record<string, { slideKey: string; pin: { x: number; y: number } }>>({})
+  // Where the pins of comments sent in this window sat (`SentPins`).
+  const [sentPins, setSentPins] = createSignal<SentPins>({})
   let nextId = 1
 
   const unsentCount = createMemo(() => pending().length + pendingReplies().length)
@@ -77,9 +76,12 @@ export function createReviewStore() {
   /** Everything unsent reached crit: forget it, keeping each comment's pin
    * under the body it was sent with (`sentBodies[i]` for `sent[i]`). */
   function markSent(sent: readonly PendingComment[], sentBodies: readonly string[]): void {
-    const pins = { ...sentPins() }
+    const pins: Record<string, SentPins[string]> = { ...sentPins() }
     sent.forEach((comment, i) => {
-      if (comment.pin !== null && sentBodies[i] !== undefined) pins[sentBodies[i]] = { slideKey: comment.slideKey, pin: comment.pin }
+      const body = sentBodies[i]
+      // Filed even without a pin, so a later comment with the same body
+      // still lines up with its own place in crit's order.
+      if (body !== undefined) pins[body] = [...(Object.hasOwn(pins, body) ? pins[body] : []), { slideKey: comment.slideKey, pin: comment.pin }]
     })
     const sentIds = new Set(sent.map(comment => comment.id))
     batch(() => {

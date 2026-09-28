@@ -500,7 +500,7 @@ describe('previewPinsOf', () => {
     const pins = previewPinsOf(
       'a',
       [inCrit('c1', '[Slide 1] sent')],
-      { '[Slide 1] sent': { slideKey: 'a', pin: { x: 0.1, y: 0.2 } } },
+      { '[Slide 1] sent': [{ slideKey: 'a', pin: { x: 0.1, y: 0.2 } }] },
       [unsent('p1', 'a', { x: 0.3, y: 0.4 })],
       { kind: 'open', slideKey: 'a', target, pin: { x: 0.5, y: 0.6 }, at: { x: 0, y: 0 } },
     )
@@ -512,11 +512,23 @@ describe('previewPinsOf', () => {
   })
 
   test('adversarial: Given comments on other slides, resolved ones, ones without a pin, and no selection, Then none of them shows', () => {
-    const sentPins = { gone: { slideKey: 'a', pin: { x: 0, y: 0 } }, other: { slideKey: 'b', pin: { x: 0, y: 0 } } }
+    const sentPins = { gone: [{ slideKey: 'a', pin: { x: 0, y: 0 } }], other: [{ slideKey: 'b', pin: { x: 0, y: 0 } }] }
     const comments = [inCrit('c1', 'gone', true), inCrit('c2', 'other'), inCrit('c3', 'unknown body')]
     const pending = [unsent('p1', 'b', { x: 0, y: 0 }), unsent('p2', 'a', null)]
     expect(previewPinsOf('a', comments, sentPins, pending, { kind: 'closed' })).toEqual([])
     expect(previewPinsOf(null, comments, sentPins, pending, { kind: 'closed' })).toEqual([])
+  })
+
+  test('adversarial: Given two sent comments with the same body, Then each keeps its own pin, in crit\'s order', () => {
+    const sentPins = { '[Slide 1] Fix': [{ slideKey: 'a', pin: { x: 0.1, y: 0.1 } }, { slideKey: 'a', pin: { x: 0.9, y: 0.9 } }] }
+    const pins = previewPinsOf('a', [inCrit('c1', '[Slide 1] Fix'), inCrit('c2', '[Slide 1] Fix')], sentPins, [], { kind: 'closed' })
+    expect(pins.map(p => [p.id, p.x])).toEqual([['sent:c1', 0.1], ['sent:c2', 0.9]])
+  })
+
+  test('adversarial: Given the first of two same-bodied comments had no pin, Then the second still gets its own', () => {
+    const sentPins = { same: [{ slideKey: 'a', pin: null }, { slideKey: 'a', pin: { x: 0.9, y: 0.9 } }] }
+    const pins = previewPinsOf('a', [inCrit('c1', 'same'), inCrit('c2', 'same')], sentPins, [], { kind: 'closed' })
+    expect(pins.map(p => p.id)).toEqual(['sent:c2'])
   })
 
   test('adversarial: Given a comment body like an object property name, Then it is not taken for a known pin', () => {

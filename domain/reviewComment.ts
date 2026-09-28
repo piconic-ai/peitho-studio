@@ -332,21 +332,30 @@ export interface PreviewPin {
   sent: boolean
 }
 
+/** Where the pins of comments sent from this window sat. crit only reports
+ * a comment's body back, so they are filed by the body crit got — a list,
+ * in sending order, since two comments can end up with the same body. */
+export type SentPins = Readonly<Record<string, readonly { slideKey: string; pin: { x: number; y: number } | null }[]>>
+
 /** The pins slide `slideKey` shows, numbered in order: the unresolved
- * comments sent from this window whose pin is known (`sentPins`, by the
- * body crit got), the unsent ones, then the one being written. */
+ * comments sent from this window whose pin is known (`sentPins`; comments
+ * sharing a body take its pins in crit's order), the unsent ones, then the
+ * one being written. */
 export function previewPinsOf(
   slideKey: string | null,
   comments: readonly ReviewComment[],
-  sentPins: Readonly<Record<string, { slideKey: string; pin: { x: number; y: number } }>>,
+  sentPins: SentPins,
   pending: readonly PendingComment[],
   box: CommentBox,
 ): PreviewPin[] {
   if (slideKey === null) return []
   const pins: Omit<PreviewPin, 'number'>[] = []
+  const taken = new Map<string, number>()
   for (const comment of comments) {
-    const sent = Object.hasOwn(sentPins, comment.body) ? sentPins[comment.body] : undefined
-    if (!comment.resolved && sent !== undefined && sent.slideKey === slideKey) pins.push({ id: `sent:${comment.id}`, ...sent.pin, sent: true })
+    const nth = taken.get(comment.body) ?? 0
+    taken.set(comment.body, nth + 1)
+    const sent = Object.hasOwn(sentPins, comment.body) ? sentPins[comment.body][nth] : undefined
+    if (!comment.resolved && sent?.pin != null && sent.slideKey === slideKey) pins.push({ id: `sent:${comment.id}`, ...sent.pin, sent: true })
   }
   for (const comment of pending) {
     if (comment.slideKey === slideKey && comment.pin !== null) pins.push({ id: comment.id, ...comment.pin, sent: false })
