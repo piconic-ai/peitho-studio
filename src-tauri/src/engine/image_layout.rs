@@ -13,7 +13,7 @@
 //! that builds today keeps building on the same layout.
 
 use std::io::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use peitho_core::{parse_layout, Layouts};
 
@@ -123,27 +123,60 @@ pub fn check_addition(deck_path: &Path, source: &str, slide_index: usize) -> Res
 /// Writes the image layout's files (see `image_layout_files`) into
 /// `deck_path`'s folder once `check_addition` agrees, and returns the
 /// deck-relative paths written. Nothing is written when any of them already
-/// exists or the check fails.
+/// exists or the check fails, and a write that fails partway removes what
+/// it had already written — a half-added layout would otherwise be refused
+/// as "already exists" on every retry.
 pub fn add_image_layout(deck_path: &Path, source: &str, slide_index: usize) -> Result<Vec<&'static str>, String> {
     let deck_dir = pipeline::deck_dir_of(deck_path);
     let files = image_layout_files(deck_dir.join("layouts").is_dir(), deck_dir.join("css").is_dir());
     refuse_taken(&files, |path| std::fs::symlink_metadata(deck_dir.join(path)).is_ok())?;
     check_addition(deck_path, source, slide_index)?;
+    let mut written = Written::default();
     for (relative_path, content) in &files {
-        let path = deck_dir.join(relative_path);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+        if let Err(err) = write_new_file(&deck_dir.join(relative_path), content, &mut written) {
+            written.remove();
+            return Err(err);
         }
-        // `create_new`: a file that appeared since `refuse_taken` looked is
-        // left alone rather than overwritten.
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
-        file.write_all(content.as_bytes()).map_err(|err| format!("failed to write {}: {err}", path.display()))?;
     }
     Ok(files.iter().map(|(path, _)| *path).collect())
+}
+
+/// What `add_image_layout` has created so far, for undoing a partial write.
+#[derive(Default)]
+struct Written {
+    files: Vec<PathBuf>,
+    dirs: Vec<PathBuf>,
+}
+
+impl Written {
+    fn remove(self) {
+        for file in self.files.iter().rev() {
+            let _ = std::fs::remove_file(file);
+        }
+        // Only directories this call created, innermost first; `remove_dir`
+        // leaves one alone if something else has since been put in it.
+        for dir in self.dirs.iter().rev() {
+            let _ = std::fs::remove_dir(dir);
+        }
+    }
+}
+
+fn write_new_file(path: &Path, content: &str, written: &mut Written) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        if !parent.is_dir() {
+            std::fs::create_dir(parent).map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+            written.dirs.push(parent.to_path_buf());
+        }
+    }
+    // `create_new`: a file that appeared since `refuse_taken` looked is
+    // left alone rather than overwritten.
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
+    written.files.push(path.to_path_buf());
+    file.write_all(content.as_bytes()).map_err(|err| format!("failed to write {}: {err}", path.display()))
 }
 
 #[cfg(test)]
@@ -392,6 +425,21 @@ mod tests {
         );
         let after = render_source(&deck_path, source).unwrap_or_else(|err| panic!("{err}"));
         assert!(after.css.contains("color: red"), "the deck's own theme stays");
+    }
+
+    #[test]
+    fn given_a_write_that_fails_partway_when_the_image_layout_is_added_then_what_was_written_is_removed_again() {
+        let source = "# Title\n\n![](img/photo.png)\n";
+        // No `layouts/`, and a plain file where `css/` would go: both
+        // layouts get written before creating `css/` fails.
+        let (dir, deck_path) = deck(&[], &[], source);
+        std::fs::write(dir.path().join("css"), "not a directory").unwrap();
+
+        let err = add_image_layout(&deck_path, source, 0).unwrap_err();
+
+        assert!(err.contains("css"), "{err}");
+        assert_eq!(files_under(dir.path()), vec!["css", "deck.md", "img/photo.png"]);
+        assert!(!dir.path().join("layouts").exists(), "the layouts/ it created is removed too");
     }
 
     #[test]
