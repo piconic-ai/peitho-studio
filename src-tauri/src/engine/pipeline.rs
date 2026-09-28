@@ -113,7 +113,13 @@ pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, Str
     let manifest = build_manifest(&resolved, &image_assets);
     let manifest_json = manifest_json(&manifest).map_err(|err| err.to_string())?;
 
-    let rendered = render_deck(resolved, highlighter, theme_css, EditAnnotations::Off, &layout_assets)
+    // `On`, as `peitho preview` renders: paragraphs, headings, list items
+    // and table cells carry `data-peitho-src` (their UTF-8 byte span in the
+    // source the parser read) and `data-peitho-md` (that Markdown), which
+    // the preview's comment UI reads (`domain/reviewComment.ts`). Nothing
+    // Studio renders here is ever published, which is the only place
+    // peitho-core refuses the attributes (`find_edit_annotation_attribute`).
+    let rendered = render_deck(resolved, highlighter, theme_css, EditAnnotations::On, &layout_assets)
         .map_err(|err| err.to_string())?;
     let has_math = rendered.math_assets().is_some();
     let css = rendered.css().to_string();
@@ -261,6 +267,50 @@ mod tests {
         assert_eq!(manifest["slideCount"], 3);
         assert_eq!(output.fragments.len(), 3);
         assert!(!output.css.is_empty());
+    }
+
+    /// Each `data-peitho-src="<start>-<end>"` and its `data-peitho-md` in
+    /// `html`, with the Markdown decoded the way a browser's `getAttribute`
+    /// would (only the entities peitho-core writes).
+    fn edit_annotations(html: &str) -> Vec<(usize, usize, String)> {
+        const SRC: &str = "data-peitho-src=\"";
+        const MD: &str = "data-peitho-md=\"";
+        let mut found = Vec::new();
+        let mut rest = html;
+        while let Some(at) = rest.find(SRC) {
+            rest = &rest[at + SRC.len()..];
+            let (span, after) = rest.split_once('"').unwrap();
+            let (start, end) = span.split_once('-').unwrap();
+            let md_at = after.find(MD).unwrap() + MD.len();
+            let raw = &after[md_at..md_at + after[md_at..].find('"').unwrap()];
+            let markdown =
+                raw.replace("&#10;", "\n").replace("&#13;", "\r").replace("&quot;", "\"").replace("&lt;", "<").replace("&amp;", "&");
+            found.push((start.parse().unwrap(), end.parse().unwrap(), markdown));
+        }
+        found
+    }
+
+    #[test]
+    fn render_source_spec_edit_annotations_are_byte_spans_into_the_source_as_given() {
+        // Given a deck with frontmatter, multibyte text, a list and a table,
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let source = "---\nlang: ja\n---\n\n# 見出し 🎉 & \"q\"\n\n段落の\nテキスト\n\n- 項目 one\n- two\n\n| a | 表 |\n|---|---|\n| 1 | 😀 |\n";
+        // When it is rendered,
+        let output = render_source(&deck_path, source).expect("the deck should render");
+        let annotations: Vec<_> = output.fragments.values().flat_map(|html| edit_annotations(html)).collect();
+        // Then every annotated element's span, read as UTF-8 bytes of the
+        // source Studio passed in (frontmatter included), is exactly its
+        // Markdown — which `domain/reviewComment.ts` relies on,
+        assert!(annotations.len() >= 6, "{annotations:?}");
+        for (start, end, markdown) in &annotations {
+            assert_eq!(&source.as_bytes()[*start..*end], markdown.as_bytes(), "span {start}-{end}");
+        }
+        // and the kinds the comment UI targets are all annotated.
+        let markdowns: Vec<&str> = annotations.iter().map(|(_, _, markdown)| markdown.as_str()).collect();
+        for expected in ["見出し 🎉 & \"q\"", "段落の\nテキスト", "項目 one", "two", "表", "😀"] {
+            assert!(markdowns.contains(&expected), "{expected:?} not in {markdowns:?}");
+        }
     }
 
     // A deck with two layouts where one ("cover") is a strict subset of the
