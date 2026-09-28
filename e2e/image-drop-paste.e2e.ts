@@ -99,6 +99,18 @@ test.describe('functional', () => {
     expect(imports(invocations)).toEqual([])
   })
 
+  test('Given text copied with a rendered image beside it (as Excel or Keynote copy), when it is pasted, then the text is pasted and nothing is imported', async ({ page }) => {
+    const deck: MockDeck = { source: TWO_SLIDES }
+    const invocations = await openDeck(page, deck)
+
+    await moveToEditorEnd(page)
+    await paste(page, [{ name: 'image.png', type: 'image/png', bytes: PNG_BYTES }], ' and more')
+
+    await expect.poll(() => editorText(page)).toBe('# Slide One\n\nSome text and more')
+    await expect.poll(() => deck.source).toContain('Some text and more')
+    expect(imports(invocations)).toEqual([])
+  })
+
   test('Given an image file dragged from Finder, when it is dropped at the end of a line in the body, then it is copied into img/ and inserted there as its own paragraph', async ({ page }) => {
     const deck: MockDeck = { source: TWO_SLIDES }
     const invocations = await openDeck(page, deck)

@@ -7,9 +7,10 @@
 import { isImageMime, pastedImageExtension, pastedImageName } from '../domain/images'
 
 /** The image files on `data` (a paste event's `clipboardData`), in order —
- * none when it holds only text, which the editor then pastes as usual. */
+ * none when it holds any text, which the editor then pastes as usual: apps
+ * like Excel or Keynote put a rendered image next to the text they copy. */
 export function imageFilesOf(data: DataTransfer | null): File[] {
-  if (data === null) return []
+  if (data === null || data.getData('text/plain') !== '') return []
   const files: File[] = []
   for (const item of Array.from(data.items)) {
     if (item.kind !== 'file' || !isImageMime(item.type)) continue
