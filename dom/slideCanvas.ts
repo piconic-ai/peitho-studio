@@ -233,7 +233,9 @@ function runScriptsIfTrusted(root: ParentNode): void {
 const CANVAS_HOST_ATTR = 'data-peitho-canvas-host'
 
 // Shadow roots that already have the interactive-mode link guard attached
-// — `mountSlideCanvas` re-runs on every selection change for the same
+// (which is to say, every interactive canvas's root — `fillShadow` also
+// reads it to give those their overlay slot) — `mountSlideCanvas` re-runs
+// on every selection change for the same
 // preview-pane host (a fresh `srcdoc`-style remount, not a `patchSlideCanvas`
 // in-place update), so this stops a second listener from stacking on top.
 const linkGuardedRoots = new WeakSet<ShadowRoot>()
@@ -305,8 +307,15 @@ export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragme
   fillShadow(host, shadow, fragmentHtml)
 }
 
+/** Where an interactive canvas shows its host's light-DOM children marked
+ * `slot="overlay"` — the preview's comment pins (`SlidePreview.tsx`). A
+ * shadow host renders none of its light-DOM children without a slot. Only
+ * the slide itself is ever swapped by `patchSlideCanvas`, so the slot
+ * stays put between mounts. */
+const OVERLAY_SLOT_HTML = '<slot name="overlay"></slot>'
+
 function fillShadow(host: HTMLElement, shadow: ShadowRoot, fragmentHtml: string): void {
-  shadow.innerHTML = insertableHtml(fragmentHtml)
+  shadow.innerHTML = insertableHtml(fragmentHtml) + (linkGuardedRoots.has(shadow) ? OVERLAY_SLOT_HTML : '')
   runScriptsIfTrusted(shadow)
   announceShadowMounted(host, shadow)
   appliedFragments.set(host, fragmentHtml)
