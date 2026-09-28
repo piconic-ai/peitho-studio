@@ -8,6 +8,7 @@
 //   src-tauri/icons/*        every PNG Tauri bundles, plus icon.icns / icon.ico
 //   src-tauri/icons/AppIcon.icon  the Icon Composer source for macOS 26+
 //   src-tauri/icons/Assets.car    that source compiled with Xcode 26's actool
+//   src-tauri/dmg/background.tiff the .dmg window's picture, at 1x and 2x
 //
 // Each raster size is rendered on its own (48 px and below from the small
 // cut) and packed into .icns/.ico here, instead of `tauri icon` resizing a
@@ -15,18 +16,20 @@
 //
 // Run via `bun run icons`. Rasterizes with Playwright's Chromium: the system
 // Chrome by default (like playwright.config.ts), or CHROME_BIN if set.
-import { chromium, type Page } from '@playwright/test'
-import opentype from 'opentype.js'
+import { type Browser, chromium, type Page } from '@playwright/test'
 import { spawnSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { DMG_CAPTION, DMG_CAPTION_SIZE, DMG_WINDOW, dmgBackgroundSvg } from './brand/dmg'
 import { encodeIco, encodeIcns, type IcnsType } from './brand/iconContainers'
+import { loadCharisSil, textPath } from './brand/text'
 import { appIconSvg, EXPRESSIONS, type Expression, iconComposerGlyphSvg, iconComposerJson, INK, MARK_BOUNDS, markBody, PAPER, SMALL_CUT_MAX_PX, svgDocument } from './brand/mark'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const out = (path: string) => resolve(ROOT, path)
+const font = loadCharisSil()
 
 function write(path: string, data: string | Uint8Array): void {
   mkdirSync(dirname(out(path)), { recursive: true })
@@ -47,22 +50,11 @@ function markDocument(body: string, pad: number): string {
   return svgDocument(v.w * scale, v.h * scale, body, `${v.x} ${v.y} ${v.w} ${v.h}`)
 }
 
-/** "Peitho Studio" set in Charis SIL (OFL), converted to one path so the file needs no font. */
+/** "Peitho Studio" set in Charis SIL, beside the mark. */
 function wordmarkDocument(ink: string, mark: string): string {
-  const font = opentype.loadSync(out('node_modules/@fontsource/charis-sil/files/charis-sil-latin-400-normal.woff'))
   const size = 100
-  const tracking = -0.03 * size // the letter-spacing Peitho's own wordmark uses
-  const unit = size / font.unitsPerEm
-  const glyphs = font.stringToGlyphs('Peitho Studio')
-  let x = 0
-  const parts: string[] = []
-  glyphs.forEach((glyph, i) => {
-    parts.push(glyph.getPath(x, 0, size).toPathData(2))
-    x += (glyph.advanceWidth ?? 0) * unit + tracking
-    if (i + 1 < glyphs.length) x += font.getKerningValue(glyph, glyphs[i + 1]) * unit
-  })
-  const textWidth = x - tracking
-  const capHeight = font.tables.os2.sCapHeight * unit
+  // -0.03em: the letter-spacing Peitho's own wordmark uses
+  const { d, width: textWidth, capHeight } = textPath(font, 'Peitho Studio', size, -0.03)
 
   const pad = 1
   const v = markViewBox(pad)
@@ -76,7 +68,7 @@ function wordmarkDocument(ink: string, mark: string): string {
   const width = margin + markWidth + gap + textWidth + margin
   const body =
     `<g transform="translate(${(margin - v.x * markScale).toFixed(2)} ${(margin - v.y * markScale).toFixed(2)}) scale(${markScale.toFixed(4)})">${mark}</g>` +
-    `<path transform="translate(${(margin + markWidth + gap).toFixed(2)} ${baseline.toFixed(2)})" fill="${ink}" d="${parts.join('')}"/>`
+    `<path transform="translate(${(margin + markWidth + gap).toFixed(2)} ${baseline.toFixed(2)})" fill="${ink}" d="${d}"/>`
   return svgDocument(Math.ceil(width), Math.ceil(height), body)
 }
 
@@ -134,6 +126,33 @@ async function rasterize(page: Page, svg: string, size: number): Promise<Uint8Ar
   return new Uint8Array(await page.screenshot({ omitBackground: true, type: 'png' }))
 }
 
+const DMG_BACKGROUND_TIFF = 'src-tauri/dmg/background.tiff'
+
+/**
+ * The .dmg window's picture as one TIFF holding a 1x and a 2x image, which
+ * Finder picks between per display (a single PNG is blurry on Retina).
+ * tiffutil is macOS-only, like actool above.
+ */
+async function writeDmgBackground(browser: Browser): Promise<void> {
+  const caption = textPath(font, DMG_CAPTION, DMG_CAPTION_SIZE)
+  const svg = dmgBackgroundSvg(caption)
+  const { width, height } = DMG_WINDOW
+  const work = mkdtempSync(join(tmpdir(), 'peitho-dmg-'))
+  const files: string[] = []
+  for (const scale of [1, 2]) {
+    const page = await browser.newPage({ deviceScaleFactor: scale, viewport: { width, height } })
+    await page.setContent(`<!doctype html><style>html,body{margin:0}svg{display:block}</style>${svg}`)
+    const file = join(work, `background@${scale}x.png`)
+    await page.screenshot({ path: file, type: 'png' })
+    await page.close()
+    files.push(file)
+  }
+  mkdirSync(dirname(out(DMG_BACKGROUND_TIFF)), { recursive: true })
+  const result = spawnSync('tiffutil', ['-cathidpicheck', ...files, '-out', out(DMG_BACKGROUND_TIFF)], { stdio: ['ignore', 'inherit', 'inherit'] })
+  if (result.status !== 0) throw new Error(`tiffutil exited with ${result.status}`)
+  console.log(`wrote ${DMG_BACKGROUND_TIFF}`)
+}
+
 async function main(): Promise<void> {
   const onLight = markBody()
   const onDark = markBody({ figure: PAPER, line: INK })
@@ -156,6 +175,7 @@ async function main(): Promise<void> {
 
   const browser = await chromium.launch(process.env.CHROME_BIN ? { executablePath: process.env.CHROME_BIN } : { channel: 'chrome' })
   try {
+    await writeDmgBackground(browser)
     const page = await browser.newPage({ deviceScaleFactor: 1 })
     const cache = new Map<number, Uint8Array>()
     const png = async (size: number) => {

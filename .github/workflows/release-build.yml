@@ -91,10 +91,14 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          # With CI=true, tauri's bundle_dmg skips the Finder step that lays
+          # out the dmg window (bundle.macOS.dmg in tauri.conf.json): no
+          # background picture, and the icons in Finder's default order.
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
         run: bunx tauri build --target "$TARGET" --bundles dmg
       # tauri deletes the intermediate .app once the dmg is built, so check
       # the app as users get it: from inside the mounted dmg.
-      - name: Verify the signature and notarization
+      - name: Verify the signature, notarization and window layout
         run: |
           dmgs=(src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg)
           if [ "${#dmgs[@]}" -ne 1 ] || [ ! -f "${dmgs[0]}" ]; then
@@ -110,6 +114,9 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app"
           spctl --assess --type execute --verbose=2 "$app"
           xcrun stapler validate "$app"
+          # bundle_dmg's Finder step saves the window layout in .DS_Store.
+          test -f "$mnt/.background/background.tiff"
+          test -f "$mnt/.DS_Store"
       - name: Upload the dmg to the release
         env:
           GH_TOKEN: ${{ github.token }}
