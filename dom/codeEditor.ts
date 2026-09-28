@@ -13,7 +13,9 @@ import { EditorView, ViewPlugin, drawSelection, keymap, placeholder as placehold
 import { defaultKeymap, history, insertTab, isolateHistory, redo, redoDepth, undo, undoDepth } from '@codemirror/commands'
 import { getCM, vim } from '@replit/codemirror-vim'
 import { MAX_HISTORY_DEPTH } from '../domain/editorHistory'
-import { editorTextChange, normalizeLineBreaks } from '../domain/editorText'
+import { editorTextChange, normalizeLineBreaks, type TextInsertion } from '../domain/editorText'
+import { isPointInRect, type Point } from '../domain/geometry'
+import { imageFilesOf } from './imagePaste'
 import { parseVimMode, type VimMode } from '../domain/vimMode'
 import { canReplayTextGroup, carryTextHistory, trackTextHistory } from './textHistoryTracking'
 import { vimLastLineDelete } from './vimLastLineDelete'
@@ -41,6 +43,10 @@ export interface CodeEditorOptions {
   /** Vim mode only: a vim command finished (a yank, a delete, a motion, or
    * leaving insert mode). The unnamed register may have changed. */
   onVimCommandDone?: () => void
+  /** A paste brought these image files (a screenshot, say). Given, the
+   * editor leaves such a paste to this handler instead of pasting it
+   * itself; a paste with no image is pasted as usual. */
+  onPasteImages?: (files: File[]) => void
 }
 
 // Marks a transaction `setCodeEditorText` sends, so `onChange` reports only
@@ -159,10 +165,26 @@ function vimExtension(options: CodeEditorOptions, on: boolean): Extension {
   return on ? [vim({ status: true }), drawSelection(), vimEvents(options), vimTab, vimLastLineDelete()] : []
 }
 
+// Hands a paste carrying images to `onPaste`. Runs before CodeMirror's own
+// paste handling, which reads only the clipboard's text and so would do
+// nothing (or paste a file name) for a screenshot.
+function imagePaste(onPaste: (files: File[]) => void): Extension {
+  return EditorView.domEventHandlers({
+    paste: event => {
+      const files = imageFilesOf(event.clipboardData)
+      if (files.length === 0) return false
+      event.preventDefault()
+      onPaste(files)
+      return true
+    },
+  })
+}
+
 function editorExtensions(options: CodeEditorOptions, vimOn: boolean): Extension[] {
   return [
     // First, so vim's keys win over every other keymap below.
     vimCompartment.of(vimExtension(options, vimOn)),
+    options.onPasteImages ? imagePaste(options.onPasteImages) : [],
     // No `historyKeymap`: Cmd+Z / Cmd+Shift+Z are the Edit menu's
     // accelerators (`src-tauri/src/edit_menu.rs`), which walk the app's
     // timeline and land in `replayCodeEditorGroup` below. Binding them here
@@ -230,6 +252,34 @@ export function setCodeEditorText(view: EditorView, text: string): void {
   view.dispatch({
     changes: change,
     annotations: [fromApp.of(true), Transaction.addToHistory.of(false)],
+  })
+}
+
+/** The editor's text and its main selection (`from === to` for a caret). */
+export function codeEditorSelection(view: EditorView): { doc: string; from: number; to: number } {
+  const { from, to } = view.state.selection.main
+  return { doc: view.state.doc.toString(), from, to }
+}
+
+/** The text position under `point` (CSS pixels, relative to the page), or
+ * `null` when `point` is outside the editor. A point past the last line
+ * lands at the nearest position. */
+export function codeEditorPositionAt(view: EditorView, point: Point): number | null {
+  if (!isPointInRect(point, view.dom.getBoundingClientRect())) return null
+  return view.posAtCoords(point, false)
+}
+
+/** Applies `insertion` as the user's own edit — a paste or a drop, per
+ * `userEvent` — so it reaches `onChange` and is one step of its own in the
+ * undo history (never merged with typing just before or after), and moves
+ * the cursor to `insertion.cursor`. */
+export function insertIntoCodeEditor(view: EditorView, insertion: TextInsertion, userEvent: 'input.paste' | 'input.drop'): void {
+  view.dispatch({
+    changes: { from: insertion.from, to: insertion.to, insert: insertion.insert },
+    selection: { anchor: insertion.cursor },
+    userEvent,
+    scrollIntoView: true,
+    annotations: isolateHistory.of('full'),
   })
 }
 
