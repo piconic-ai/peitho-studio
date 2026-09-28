@@ -5,7 +5,6 @@ import {
   DECK_SETTING_KEYS,
   type DeckSettingKey,
   type DeckSettingPick,
-  deckSettingsReport,
   defaultChoiceOf,
   frontmatterValueOf,
   parseDeckSetting,
@@ -13,7 +12,7 @@ import {
   pickChangesNothing,
   readDeckSettings,
   resolveDeckSettingPick,
-  sameDeckSettingsReport,
+  sameDeckSettings,
 } from './deckSettings'
 import { readDeckSettingsExamples, writeDeckSettingExamples } from './deckSettings.examples'
 import { setFrontmatterKey } from './frontmatter'
@@ -23,11 +22,11 @@ const ALL_PICKS: DeckSettingPick[] = DECK_SETTING_KEYS.flatMap(key =>
   DECK_SETTING_CHOICES[key].map(choice => ({ key, choice }) as DeckSettingPick),
 )
 
-describe('Deck menu setting examples', () => {
+describe('deck setting examples', () => {
   test.each(readDeckSettingsExamples.automated.map(e => [`${e.id}: Given ${e.given}, when ${e.when}, then ${e.then}`, e] as const))(
     'example: %s',
     (_title, example) => {
-      expect(deckSettingsReport(readDeckSettings(example.state))).toEqual(example.expect)
+      expect(readDeckSettings(example.state)).toEqual(example.expect)
     },
   )
 
@@ -87,12 +86,12 @@ describe('parseDeckSetting', () => {
 
 describe('readDeckSettings', () => {
   test('adversarial: the empty source reads as all defaults', () => {
-    expect(deckSettingsReport(readDeckSettings(''))).toEqual({ page_numbers: 'none', aspect_ratio: '16:9', breaks: 'false', lang: 'en' })
+    expect(sameDeckSettings(readDeckSettings(''), readDeckSettings('# Title\n'))).toBe(true)
   })
 
   test('adversarial: CRLF line endings don\'t leak into the values', () => {
     const source = '---\r\naspect_ratio: 4:3\r\nlang: ja\r\n---\r\n# Title\r\n'
-    expect(deckSettingsReport(readDeckSettings(source))).toMatchObject({ aspect_ratio: '4:3', lang: 'ja' })
+    expect(readDeckSettings(source)).toMatchObject({ aspect_ratio: { kind: 'known', choice: '4:3' }, lang: { kind: 'known', choice: 'ja' } })
   })
 
   test('adversarial: a key written in a slide, after the frontmatter, is not read', () => {
@@ -204,15 +203,22 @@ describe('pickChangesNothing', () => {
   })
 })
 
-describe('sameDeckSettingsReport', () => {
-  const report = deckSettingsReport(readDeckSettings('# Title\n'))
+describe('sameDeckSettings', () => {
+  const state = readDeckSettings('# Title\n')
 
-  test('spec: equal reports are the same, a changed key is not', () => {
-    expect(sameDeckSettingsReport(report, { ...report })).toBe(true)
-    expect(sameDeckSettingsReport(report, { ...report, lang: 'ja' })).toBe(false)
+  test('spec: equal states are the same, a changed choice is not', () => {
+    expect(sameDeckSettings(state, readDeckSettings('# Title\n'))).toBe(true)
+    expect(sameDeckSettings(state, { ...state, lang: { kind: 'known', choice: 'ja' } })).toBe(false)
   })
 
   test('adversarial: a key that became unknown counts as a change', () => {
-    expect(sameDeckSettingsReport(report, { ...report, aspect_ratio: null })).toBe(false)
+    expect(sameDeckSettings(state, { ...state, aspect_ratio: { kind: 'unknown', raw: '16:10' } })).toBe(false)
+  })
+
+  test('adversarial: two unknown values differ by their raw text, which the menu shows', () => {
+    const fr = readDeckSettings('---\nlang: fr\n---\n# T\n')
+    expect(sameDeckSettings(fr, readDeckSettings('---\nlang: fr\n---\n# T\n'))).toBe(true)
+    expect(sameDeckSettings(fr, readDeckSettings('---\nlang: de\n---\n# T\n'))).toBe(false)
+    expect(sameDeckSettings(fr, readDeckSettings('---\nlang: ""\n---\n# T\n'))).toBe(false)
   })
 })

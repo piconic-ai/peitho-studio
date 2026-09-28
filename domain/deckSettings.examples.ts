@@ -1,13 +1,16 @@
-// Given-When-Then examples for the Deck menu's settings
+// Given-When-Then examples for the deck settings in the Edit menu
 // (`readDeckSettings` and `frontmatterValueOf`): which item each menu
 // checks for a deck, and what picking an item writes. See
 // docs/architecture.md's "Examples by Specification". Run by
 // deckSettings.test.ts.
 import { defineExamples } from './spec'
-import type { DeckSettingPick, DeckSettingsReport } from './deckSettings'
+import type { DeckSettingPick, DeckSettingsState } from './deckSettings'
 
-export const readDeckSettingsExamples = defineExamples<string, 'deck-opened', DeckSettingsReport>(
-  'deckSettingsReport(readDeckSettings(source))',
+const known = <C extends string>(choice: C) => ({ kind: 'known' as const, choice })
+const unknown = (raw: string) => ({ kind: 'unknown' as const, raw })
+
+export const readDeckSettingsExamples = defineExamples<string, 'deck-opened', DeckSettingsState>(
+  'readDeckSettings(source)',
   [
     {
       id: 'no-frontmatter',
@@ -16,7 +19,7 @@ export const readDeckSettingsExamples = defineExamples<string, 'deck-opened', De
       then: 'every menu checks its default: Off, 16:9, line breaks off, English',
       state: '# Title\n',
       event: 'deck-opened',
-      expect: { page_numbers: 'none', aspect_ratio: '16:9', breaks: 'false', lang: 'en' },
+      expect: { page_numbers: known('none'), aspect_ratio: known('16:9'), breaks: known('false'), lang: known('en') },
     },
     {
       id: 'every-key-set',
@@ -25,16 +28,16 @@ export const readDeckSettingsExamples = defineExamples<string, 'deck-opened', De
       then: 'each menu checks the value the deck holds',
       state: '---\npage_numbers: current_of_total\naspect_ratio: 4:3\nbreaks: true\nlang: ja\n---\n# Title\n',
       event: 'deck-opened',
-      expect: { page_numbers: 'current_of_total', aspect_ratio: '4:3', breaks: 'true', lang: 'ja' },
+      expect: { page_numbers: known('current_of_total'), aspect_ratio: known('4:3'), breaks: known('true'), lang: known('ja') },
     },
     {
       id: 'unknown-values',
       given: 'a deck with lang: fr and page_numbers: both (values the menus don\'t offer)',
       when: 'it is opened',
-      then: 'those two menus check nothing, and the others still show their values',
+      then: 'those two read as unknown with their raw values (the menu checks none of their choices), and the others still show their values',
       state: '---\nlang: fr\npage_numbers: both\naspect_ratio: 4:3\n---\n# Title\n',
       event: 'deck-opened',
-      expect: { page_numbers: null, aspect_ratio: '4:3', breaks: 'false', lang: null },
+      expect: { page_numbers: unknown('both'), aspect_ratio: known('4:3'), breaks: known('false'), lang: unknown('fr') },
       tags: ['boundary'],
     },
     {
@@ -44,7 +47,7 @@ export const readDeckSettingsExamples = defineExamples<string, 'deck-opened', De
       then: 'the quotes are ignored',
       state: '---\naspect_ratio: "4:3"\nlang: \'ja\'\n---\n# Title\n',
       event: 'deck-opened',
-      expect: { page_numbers: 'none', aspect_ratio: '4:3', breaks: 'false', lang: 'ja' },
+      expect: { page_numbers: known('none'), aspect_ratio: known('4:3'), breaks: known('false'), lang: known('ja') },
       tags: ['boundary'],
     },
     {
@@ -54,7 +57,7 @@ export const readDeckSettingsExamples = defineExamples<string, 'deck-opened', De
       then: 'nothing is read from it, so every menu checks its default',
       state: '---\nlang: ja\n# Title\n',
       event: 'deck-opened',
-      expect: { page_numbers: 'none', aspect_ratio: '16:9', breaks: 'false', lang: 'en' },
+      expect: { page_numbers: known('none'), aspect_ratio: known('16:9'), breaks: known('false'), lang: known('en') },
       tags: ['boundary'],
     },
   ],

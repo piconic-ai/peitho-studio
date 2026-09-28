@@ -280,7 +280,7 @@ export function applyPageNumbersStep(texts: readonly string[], step: PageNumbers
 }
 
 /** One top-level frontmatter key set to `value` (`null`: removed) — a deck
- * setting that touches nothing but its own line, such as the Deck menu's
+ * setting that touches nothing but its own line, such as the Edit menu's
  * aspect ratio, line breaks, or language. `page_numbers` has its own
  * `PageNumbersStep`, since turning it off also rewrites slides. Like that
  * step, it holds the key's whole state, so the step that undoes it is

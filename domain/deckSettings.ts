@@ -1,4 +1,4 @@
-// The deck-wide settings the native Deck menu offers (see
+// The deck-wide settings the native Edit menu offers (see
 // `src-tauri/src/deck_menu.rs`): which of each key's choices the deck's
 // frontmatter holds now, and what picking a choice writes back.
 //
@@ -31,14 +31,13 @@ export type DeckSettingState<K extends DeckSettingKey = DeckSettingKey> =
   | { kind: 'known'; choice: DeckSettingChoice<K> }
   | { kind: 'unknown'; raw: string }
 
+/** Every setting as found in the frontmatter. It is also what
+ * `report_deck_settings` takes as is: the menu checks each `known` choice,
+ * and shows an `unknown` value's raw text next to its setting's name,
+ * checking none of the choices. */
 export type DeckSettingsState = { [K in DeckSettingKey]: DeckSettingState<K> }
 
-/** What the Deck menu checks, as `report_deck_settings` takes it: each
- * key's choice, or `null` for a value that is none of them (nothing is
- * checked). */
-export type DeckSettingsReport = { [K in DeckSettingKey]: DeckSettingChoice<K> | null }
-
-/** A Deck menu pick, as the `menu:deck-setting` event carries it. */
+/** A deck-setting menu pick, as the `menu:deck-setting` event carries it. */
 export type DeckSettingPick = { [K in DeckSettingKey]: { key: K; choice: DeckSettingChoice<K> } }[DeckSettingKey]
 
 /** The choice peitho-core uses when the key is absent. */
@@ -54,7 +53,7 @@ export function isChoiceOf<K extends DeckSettingKey>(key: K, value: unknown): va
 /** Reads one setting from its raw frontmatter value (`readFrontmatterKey`'s
  * result, `null` for an absent key). Matching is exact, as in peitho-core:
  * `16：9`, `JA`, or an empty value are `unknown`. `page_numbers` goes
- * through `parsePageNumbersMode`, so the Deck menu and the slide context
+ * through `parsePageNumbersMode`, so the Edit menu and the slide context
  * menu's Hide Page Number never read it differently. */
 export function parseDeckSetting<K extends DeckSettingKey>(key: K, raw: string | null): DeckSettingState<K> {
   if (key === PAGE_NUMBERS_KEY) {
@@ -65,7 +64,7 @@ export function parseDeckSetting<K extends DeckSettingKey>(key: K, raw: string |
   return isChoiceOf(key, raw) ? { kind: 'known', choice: raw } : { kind: 'unknown', raw }
 }
 
-/** Every Deck menu setting of the deck `source`. A deck with no
+/** Every deck-setting menu value of the deck `source`. A deck with no
  * frontmatter, or one whose block isn't closed, reads as all defaults. */
 export function readDeckSettings(source: string): DeckSettingsState {
   return {
@@ -76,24 +75,16 @@ export function readDeckSettings(source: string): DeckSettingsState {
   }
 }
 
-function reportedChoice<K extends DeckSettingKey>(state: DeckSettingState<K>): DeckSettingChoice<K> | null {
-  return state.kind === 'known' ? state.choice : null
+function sameDeckSetting(a: DeckSettingState, b: DeckSettingState): boolean {
+  return a.kind === 'known'
+    ? b.kind === 'known' && a.choice === b.choice
+    : b.kind === 'unknown' && a.raw === b.raw
 }
 
-/** `state` as the Deck menu shows it. */
-export function deckSettingsReport(state: DeckSettingsState): DeckSettingsReport {
-  return {
-    page_numbers: reportedChoice(state.page_numbers),
-    aspect_ratio: reportedChoice(state.aspect_ratio),
-    breaks: reportedChoice(state.breaks),
-    lang: reportedChoice(state.lang),
-  }
-}
-
-/** Whether two reports check the same items, so an unchanged one needn't
- * be sent again. */
-export function sameDeckSettingsReport(a: DeckSettingsReport, b: DeckSettingsReport): boolean {
-  return DECK_SETTING_KEYS.every(key => a[key] === b[key])
+/** Whether two states would show the menu the same way, so an unchanged
+ * one needn't be reported again. */
+export function sameDeckSettings(a: DeckSettingsState, b: DeckSettingsState): boolean {
+  return DECK_SETTING_KEYS.every(key => sameDeckSetting(a[key], b[key]))
 }
 
 /** The frontmatter value that selects `choice`: `null` (remove the key)
@@ -113,7 +104,7 @@ export function parseDeckSettingPick(payload: unknown): DeckSettingPick | null {
   return isChoiceOf(settingKey, choice) ? ({ key: settingKey, choice } as DeckSettingPick) : null
 }
 
-/** The choice the Deck menu's single Line Breaks item sends: flip whatever
+/** The choice the Edit menu's single Line Breaks item sends: flip whatever
  * the deck holds when the pick runs. Resolving it then, rather than from
  * the menu's last check mark, keeps two quick clicks an on-then-off. */
 export const BREAKS_TOGGLE = 'toggle'
