@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { createEffect, createRoot } from '@barefootjs/client'
-import type { CritDeckSession } from '../domain/critReview'
+import type { CritDeckSession, ReviewComment } from '../domain/critReview'
 import type { CommentTarget } from '../domain/reviewComment'
 import { createReviewStore } from './reviewStore'
 
 const heading: CommentTarget = { kind: 'heading', text: 'Hello', quote: 'Hello', offsetInSlide: 2 }
 const waiting: CritDeckSession = { kind: 'found', id: 's', port: 1, file: 'deck.md', reviewRound: 2, agentWaiting: true }
+const thread = (id: string): ReviewComment => ({ id, lines: { start: 1, end: 1 }, body: 'b', quote: null, author: 'Peitho Studio', resolved: false, replies: [] })
 
 describe('the comment box', () => {
   test('Given a click opened the box on a heading, When a comment is written and added, Then it is filed unsent and the box closes', () => {
@@ -64,13 +65,30 @@ describe('the comment box', () => {
 })
 
 describe('replies and sending', () => {
+  test('Given an unsent reply to a comment crit no longer has, Then it is neither counted nor sendable, and it can be discarded', () => {
+    createRoot(() => {
+      const store = createReviewStore()
+      store.setSession(waiting)
+      store.setComments([thread('c_1')])
+      store.editReply('c_1', 'Still small')
+      store.commitReply()
+      store.setComments([thread('c_9')])
+      expect(store.unsentCount()).toBe(0)
+      expect(store.sendableReplies()).toEqual([])
+      expect(store.availability()).toEqual({ kind: 'nothing-to-send' })
+      store.discard(store.pendingReplies()[0].id)
+      expect(store.pendingReplies()).toEqual([])
+    })
+  })
+
   test('Given a reply is written under a comment, When it is filed, Then it counts as unsent', () => {
     createRoot(() => {
       const store = createReviewStore()
       store.setSession(waiting)
+      store.setComments([thread('c_1')])
       store.editReply('c_1', ' Still small ')
       store.commitReply()
-      expect(store.pendingReplies()).toEqual([{ commentId: 'c_1', body: 'Still small' }])
+      expect(store.pendingReplies()).toMatchObject([{ commentId: 'c_1', body: 'Still small' }])
       expect(store.replyDraft()).toBeNull()
       expect(store.availability()).toEqual({ kind: 'ready' })
     })
@@ -108,9 +126,12 @@ describe('replies and sending', () => {
       const later = store.commitBox()!
       store.editReply('c_1', 'ok')
       store.commitReply()
-      store.markSent([sent], ['[Slide 1 › heading "Hello"] Bigger'])
+      const sentReplies = store.pendingReplies()
+      store.editReply('c_1', 'Written while sending too')
+      store.commitReply()
+      store.markSent([sent], ['[Slide 1 › heading "Hello"] Bigger'], sentReplies)
       expect(store.pending()).toEqual([later])
-      expect(store.pendingReplies()).toEqual([])
+      expect(store.pendingReplies().map(reply => reply.body)).toEqual(['Written while sending too'])
       expect(store.sentPins()).toEqual({ '[Slide 1 › heading "Hello"] Bigger': [{ slideKey: 'hello', pin: { x: 0.5, y: 0.5 } }] })
     })
   })
@@ -123,7 +144,7 @@ describe('replies and sending', () => {
         store.setBoxDraft('Fix')
         return store.commitBox()!
       })
-      store.markSent(sent, ['same', 'same'])
+      store.markSent(sent, ['same', 'same'], [])
       expect(store.sentPins().same.map(entry => entry.pin)).toEqual([{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.9 }])
     })
   })

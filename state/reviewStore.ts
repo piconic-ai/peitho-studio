@@ -1,6 +1,6 @@
 import { batch, createMemo, createSignal } from '@barefootjs/client'
 import type { CritDeckSession, ReviewComment } from '../domain/critReview'
-import { sendAvailability, type CommentBox, type CommentTarget, type PendingComment, type PendingReply, type SentPins } from '../domain/reviewComment'
+import { liveReplies, sendAvailability, type CommentBox, type CommentTarget, type PendingComment, type PendingReply, type SentPins } from '../domain/reviewComment'
 
 /** The review round trip with the Coding Agent as the comment UI shows it
  * (todo/review-comment-ui.md): what crit last reported (the session and its
@@ -23,7 +23,9 @@ export function createReviewStore() {
   const [sentPins, setSentPins] = createSignal<SentPins>({})
   let nextId = 1
 
-  const unsentCount = createMemo(() => pending().length + pendingReplies().length)
+  // The unsent replies that can still be sent (`liveReplies`).
+  const sendableReplies = createMemo(() => liveReplies(pendingReplies(), comments()))
+  const unsentCount = createMemo(() => pending().length + sendableReplies().length)
   const availability = createMemo(() => sendAvailability(session(), unsentCount(), busy() === 'sending'))
 
   function openBox(slideKey: string, target: CommentTarget, pin: { x: number; y: number } | null, at: { x: number; y: number }): void {
@@ -51,8 +53,12 @@ export function createReviewStore() {
     return comment
   }
 
+  /** Drops the unsent comment or reply with `id`. */
   function discard(id: string): void {
-    setPending(pending().filter(comment => comment.id !== id))
+    batch(() => {
+      setPending(pending().filter(comment => comment.id !== id))
+      setPendingReplies(pendingReplies().filter(reply => reply.id !== id))
+    })
   }
 
   function editReply(commentId: string, text: string): void {
@@ -74,14 +80,15 @@ export function createReviewStore() {
     const draft = replyDraft()
     if (draft === null || draft.text.trim() === '') return
     batch(() => {
-      setPendingReplies([...pendingReplies(), { commentId: draft.commentId, body: draft.text.trim() }])
+      setPendingReplies([...pendingReplies(), { id: `reply-${String(nextId++)}`, commentId: draft.commentId, body: draft.text.trim() }])
       setReplyDraft(null)
     })
   }
 
-  /** Everything unsent reached crit: forget it, keeping each comment's pin
-   * under the body it was sent with (`sentBodies[i]` for `sent[i]`). */
-  function markSent(sent: readonly PendingComment[], sentBodies: readonly string[]): void {
+  /** `sent` and `sentReplies` reached crit: forget them, keeping each
+   * comment's pin under the body it was sent with (`sentBodies[i]` for
+   * `sent[i]`). Anything written while the send ran stays unsent. */
+  function markSent(sent: readonly PendingComment[], sentBodies: readonly string[], sentReplies: readonly PendingReply[]): void {
     const pins: Record<string, SentPins[string]> = { ...sentPins() }
     sent.forEach((comment, i) => {
       const body = sentBodies[i]
@@ -89,11 +96,11 @@ export function createReviewStore() {
       // still lines up with its own place in crit's order.
       if (body !== undefined) pins[body] = [...(Object.hasOwn(pins, body) ? pins[body] : []), { slideKey: comment.slideKey, pin: comment.pin }]
     })
-    const sentIds = new Set(sent.map(comment => comment.id))
+    const sentIds = new Set([...sent.map(comment => comment.id), ...sentReplies.map(reply => reply.id)])
     batch(() => {
       setSentPins(pins)
       setPending(pending().filter(comment => !sentIds.has(comment.id)))
-      setPendingReplies([])
+      setPendingReplies(pendingReplies().filter(reply => !sentIds.has(reply.id)))
     })
   }
 
@@ -141,7 +148,7 @@ export function createReviewStore() {
   }
 
   return {
-    session, setSession, comments, setComments, pending, pendingReplies, unsentCount, availability,
+    session, setSession, comments, setComments, pending, pendingReplies, sendableReplies, unsentCount, availability,
     box, boxDraft, setBoxDraft, openBox, closeBox, commitBox, discard,
     replyDraft, editReply, setReplyText, cancelReply, commitReply, markSent, sentPins,
     busy, setBusy, error, setError,

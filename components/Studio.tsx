@@ -929,11 +929,12 @@ export function Studio() {
         const index = slides.findIndex(slide => slide.key === comment.slideKey)
         return newReviewComment(comment, source, slides[index]?.span ?? null, index + 1 || slideNumberOf(comment.slideKey))
       })
-      const replies = review.pendingReplies().map(reply => ({ ...reply, author: REVIEW_AUTHOR }))
+      const sendable = review.sendableReplies()
+      const replies = sendable.map(reply => ({ commentId: reply.commentId, body: reply.body, author: REVIEW_AUTHOR }))
       if (comments.length > 0) await critIpc.addComments(comments)
       if (replies.length > 0) await critIpc.addReplies(replies)
       await critIpc.finish()
-      review.markSent(pending, comments.map(comment => comment.body))
+      review.markSent(pending, comments.map(comment => comment.body), sendable)
     } catch (err) {
       review.setError(settings.messages().reviewFailed(String(err)))
     } finally {
