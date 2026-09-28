@@ -459,8 +459,7 @@ export function Studio() {
     }
     if (images.length === 0) return
     view.focus()
-    const doc = view.state.doc.toString()
-    await importImagesIntoBody(view, { doc, from: pos, to: pos }, images.length, async () => {
+    await importImagesIntoBody(view, { doc: codeEditorSelection(view).doc, from: pos, to: pos }, images.length, async () => {
       const paths: string[] = []
       for (const path of images) paths.push(await imageIpc.importImageFile(path))
       return paths

@@ -183,15 +183,14 @@ fn image_dir(deck_dir: &Path) -> Result<PathBuf, String> {
 pub fn import_image(deck_dir: &Path, source_name: &str, bytes: &[u8]) -> Result<String, String> {
     let (file_name, format) = image_file_name(source_name)?;
     if sniff_image_format(bytes) != Some(format) {
-        return Err(format!("{source_name} is not a valid {} image", file_name.rsplit('.').next().unwrap_or_default().to_uppercase()));
+        return Err(format!("{source_name} is not a valid {format:?} image"));
     }
-    let dir = image_dir(deck_dir)?;
+    image_dir(deck_dir)?;
     let target = choose_image_path(&file_name, |relative_path| {
         occupant_on_disk(&deck_dir.join(relative_path), bytes)
     })?;
     if target.needs_write {
-        let name = target.relative_path.rsplit('/').next().unwrap_or_default();
-        let path = dir.join(name);
+        let path = deck_dir.join(&target.relative_path);
         // `create_new`: something that appeared since `choose_image_path`
         // looked is left alone rather than overwritten.
         let mut file = std::fs::OpenOptions::new()
