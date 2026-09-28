@@ -927,7 +927,7 @@ export function Studio() {
       const pending = review.pending()
       const comments = pending.map(comment => {
         const index = slides.findIndex(slide => slide.key === comment.slideKey)
-        return newReviewComment(comment, source, index === -1 ? null : slides[index].span, index === -1 ? slideNumberOf(comment.slideKey) : index + 1)
+        return newReviewComment(comment, source, slides[index]?.span ?? null, index + 1 || slideNumberOf(comment.slideKey))
       })
       const replies = review.pendingReplies().map(reply => ({ ...reply, author: REVIEW_AUTHOR }))
       if (comments.length > 0) await critIpc.addComments(comments)
@@ -2229,7 +2229,7 @@ export function Studio() {
             onSend={() => void sendReview()}
             onDiscard={review.discard}
             onStartReply={commentId => review.editReply(commentId, '')}
-            onReplyInput={text => { const draft = review.replyDraft(); if (draft) review.editReply(draft.commentId, text) }}
+            onReplyInput={review.setReplyText}
             onReplyAdd={review.commitReply}
             onReplyCancel={review.cancelReply}
             onResolve={id => void resolveReviewComment(id)}

@@ -76,6 +76,17 @@ describe('replies and sending', () => {
     })
   })
 
+  test('Given a reply is being written, When its text changes, Then it stays under the same comment; with none open, nothing starts', () => {
+    createRoot(() => {
+      const store = createReviewStore()
+      store.setReplyText('orphan')
+      expect(store.replyDraft()).toBeNull()
+      store.editReply('c_1', '')
+      store.setReplyText('Still small')
+      expect(store.replyDraft()).toEqual({ commentId: 'c_1', text: 'Still small' })
+    })
+  })
+
   test('Given a blank reply, When it is filed, Then nothing is queued', () => {
     createRoot(() => {
       const store = createReviewStore()

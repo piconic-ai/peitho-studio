@@ -59,6 +59,12 @@ export function createReviewStore() {
     setReplyDraft({ commentId, text })
   }
 
+  /** Updates the text of the reply being written (nothing when none is). */
+  function setReplyText(text: string): void {
+    const draft = replyDraft()
+    if (draft !== null) setReplyDraft({ commentId: draft.commentId, text })
+  }
+
   function cancelReply(): void {
     setReplyDraft(null)
   }
@@ -137,7 +143,7 @@ export function createReviewStore() {
   return {
     session, setSession, comments, setComments, pending, pendingReplies, unsentCount, availability,
     box, boxDraft, setBoxDraft, openBox, closeBox, commitBox, discard,
-    replyDraft, editReply, cancelReply, commitReply, markSent, sentPins,
+    replyDraft, editReply, setReplyText, cancelReply, commitReply, markSent, sentPins,
     busy, setBusy, error, setError,
     commentCountOf, syncCommentCounts, reset,
   }
