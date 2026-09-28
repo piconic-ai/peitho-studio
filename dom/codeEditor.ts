@@ -89,7 +89,10 @@ function editorTheme(monospace: boolean): Extension {
 
 function createEditorTheme(monospace: boolean): Extension {
   return EditorView.theme({
-    '&': { height: '100%', fontSize: '0.875rem' },
+    // Its own stacking context: CodeMirror's base theme puts `.cm-panels`
+    // (the vim status line) at `z-index: 300`, which would otherwise paint
+    // over the app's popovers (the slide context menu is `z-40`).
+    '&': { height: '100%', fontSize: '0.875rem', isolation: 'isolate' },
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': {
       fontFamily: monospace ? 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' : 'inherit',
