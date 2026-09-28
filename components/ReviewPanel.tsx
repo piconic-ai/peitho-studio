@@ -92,7 +92,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
               <button
                 type="button"
                 data-review-discard=""
-                className={row.kind === 'unsent-comment' ? 'hover:text-foreground' : 'hidden'}
+                className={row.kind === 'unsent-comment' || row.kind === 'unsent-reply' ? 'hover:text-foreground' : 'hidden'}
                 onClick={() => props.onDiscard(row.id)}
               >
                 {messagesFor(props.language).discardComment}

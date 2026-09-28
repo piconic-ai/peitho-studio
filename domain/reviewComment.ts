@@ -59,8 +59,17 @@ export type CommentBox =
 
 /** A reply written under a comment already in crit, not yet sent. */
 export interface PendingReply {
+  id: string
   commentId: string
   body: string
+}
+
+/** Those of `replies` whose comment crit still has. A reply to a comment
+ * that's gone (its session ended and a new one began) can't be sent: it
+ * stays listed, to be discarded, but isn't counted or sent. */
+export function liveReplies(replies: readonly PendingReply[], comments: readonly ReviewComment[]): PendingReply[] {
+  const ids = new Set(comments.map(comment => comment.id))
+  return replies.filter(reply => ids.has(reply.commentId))
 }
 
 /** The name Studio's comments and replies carry in crit. */
@@ -364,9 +373,9 @@ export function previewPinsOf(
   return pins.map((pin, i) => ({ ...pin, number: i + 1 }))
 }
 
-/** One line of the comments panel. `id`: the crit comment a `comment`,
- * `reply` or `unsent-reply` row belongs to (what a reply or resolve acts
- * on), or the unsent comment's own id. */
+/** One line of the comments panel. `id`: the crit comment a `comment` or
+ * `reply` row belongs to (what a reply or resolve acts on), or an unsent
+ * comment's or reply's own id (what discarding it acts on). */
 export interface ReviewRow {
   key: string
   kind: 'comment' | 'reply' | 'unsent-reply' | 'unsent-comment'
@@ -378,7 +387,8 @@ export interface ReviewRow {
 
 /** The comments panel as one flat list: each thread in crit (unresolved
  * ones first, otherwise in crit's order) with its replies and the replies
- * not sent yet under it, then the comments not sent yet. `unsent` carries
+ * not sent yet under it, then unsent replies whose comment crit no longer
+ * has (`liveReplies`), then the comments not sent yet. `unsent` carries
  * each unsent comment's label, already worked out. */
 export function reviewRows(
   comments: readonly ReviewComment[],
@@ -392,10 +402,15 @@ export function reviewRows(
     for (const reply of comment.replies) {
       rows.push({ key: `reply:${comment.id}:${reply.id}`, kind: 'reply', id: comment.id, author: reply.author, body: reply.body, resolved: comment.resolved })
     }
-    unsentReplies.forEach((reply, i) => {
-      if (reply.commentId !== comment.id) return
-      rows.push({ key: `unsent-reply:${String(i)}`, kind: 'unsent-reply', id: comment.id, author: REVIEW_AUTHOR, body: reply.body, resolved: comment.resolved })
-    })
+    for (const reply of unsentReplies) {
+      if (reply.commentId !== comment.id) continue
+      rows.push({ key: `unsent-reply:${reply.id}`, kind: 'unsent-reply', id: reply.id, author: REVIEW_AUTHOR, body: reply.body, resolved: comment.resolved })
+    }
+  }
+  const live = new Set(liveReplies(unsentReplies, comments))
+  for (const reply of unsentReplies) {
+    if (live.has(reply)) continue
+    rows.push({ key: `unsent-reply:${reply.id}`, kind: 'unsent-reply', id: reply.id, author: REVIEW_AUTHOR, body: reply.body, resolved: false })
   }
   for (const comment of unsent) {
     rows.push({ key: `unsent:${comment.id}`, kind: 'unsent-comment', id: comment.id, author: REVIEW_AUTHOR, body: agentCommentBody(comment.label, comment.body), resolved: false })
