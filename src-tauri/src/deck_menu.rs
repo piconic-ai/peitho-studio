@@ -254,31 +254,6 @@ pub(crate) fn setting_label(key: SettingKey, front: Option<&DeckSettings>, label
     format!("{title}: {value}")
 }
 
-/// The label one setting's item should show.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct LabelState {
-    pub id: String,
-    pub text: String,
-}
-
-/// Every deck setting's label for the front window's settings: each
-/// submenu's, and the Line Breaks check item's.
-pub(crate) fn label_states(front: Option<&DeckSettings>, labels: &MenuLabels) -> Vec<LabelState> {
-    SettingKey::ALL
-        .into_iter()
-        .map(|key| LabelState { id: labelled_item_id(key), text: setting_label(key, front, labels) })
-        .collect()
-}
-
-/// The id of the item carrying `key`'s label: its submenu, or for line
-/// breaks its one check item.
-fn labelled_item_id(key: SettingKey) -> String {
-    match key {
-        SettingKey::Breaks => menu_id(key, "true"),
-        _ => submenu_id(key),
-    }
-}
-
 fn submenu_id(key: SettingKey) -> String {
     format!("{ID_PREFIX}{}", key.as_str())
 }
@@ -362,12 +337,16 @@ pub(crate) fn apply<R: Runtime>(menu: &Menu<R>, front: Option<&DeckSettings>, la
             let _ = item.set_enabled(enabled);
         }
     }
-    for state in label_states(front, labels) {
-        if let Some(submenu) = submenus.get(&state.id) {
-            let _ = submenu.set_text(&state.text);
+    for key in SettingKey::ALL {
+        let text = setting_label(key, front, labels);
+        if key == SettingKey::Breaks {
+            // Its one check item carries the label.
+            if let Some(item) = checks.get(&menu_id(key, "true")) {
+                let _ = item.set_text(&text);
+            }
+        } else if let Some(submenu) = submenus.get(&submenu_id(key)) {
+            let _ = submenu.set_text(&text);
             let _ = submenu.set_enabled(enabled);
-        } else if let Some(item) = checks.get(&state.id) {
-            let _ = item.set_text(&state.text);
         }
     }
 }
@@ -477,26 +456,20 @@ mod tests {
         }
     }
 
-    const SUBMENU_KEYS: [SettingKey; 3] = [SettingKey::PageNumbers, SettingKey::AspectRatio, SettingKey::Lang];
+    /// Every setting's label, in menu order.
+    fn labels_of(front: Option<&DeckSettings>, labels: &MenuLabels) -> Vec<String> {
+        SettingKey::ALL.into_iter().map(|key| setting_label(key, front, labels)).collect()
+    }
 
     #[test]
     fn given_the_ids_of_the_items_and_submenus_when_listed_then_each_is_distinct() {
         let mut ids: Vec<String> = item_states(Some(&defaults())).into_iter().map(|state| state.id).collect();
-        ids.extend(SUBMENU_KEYS.into_iter().map(submenu_id));
+        ids.extend(SettingKey::ALL.into_iter().filter(|key| *key != SettingKey::Breaks).map(submenu_id));
         let total = ids.len();
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), total);
         assert_eq!(total, (3 + 2 + 1 + 2) + 3);
-    }
-
-    #[test]
-    fn given_every_setting_when_labelled_then_its_label_sits_on_an_item_the_menu_has() {
-        let items: Vec<String> = item_states(None).into_iter().map(|state| state.id).collect();
-        for state in label_states(None, en()) {
-            let is_submenu = SUBMENU_KEYS.into_iter().any(|key| submenu_id(key) == state.id);
-            assert!(is_submenu || items.contains(&state.id), "{}", state.id);
-        }
     }
 
     #[test]
@@ -562,7 +535,7 @@ mod tests {
     #[test]
     fn given_the_deck_values_when_labelled_then_each_setting_shows_its_name_and_value() {
         let front = settings("current_of_total", "4:3", "true", "ja");
-        let texts = |labels| -> Vec<String> { label_states(Some(&front), labels).into_iter().map(|state| state.text).collect() };
+        let texts = |labels| labels_of(Some(&front), labels);
         assert_eq!(texts(en()), ["Page Numbers: 1/N", "Aspect Ratio: 4:3", "Line Breaks as Written", "Language: 日本語"]);
         assert_eq!(texts(ja()), ["ページ番号: 1/N", "縦横比: 4:3", "改行をそのまま反映", "言語: 日本語"]);
     }
@@ -586,7 +559,7 @@ mod tests {
 
     #[test]
     fn given_no_deck_in_front_when_labelled_then_only_the_names_are_shown() {
-        let texts: Vec<String> = label_states(None, ja()).into_iter().map(|state| state.text).collect();
+        let texts = labels_of(None, ja());
         assert_eq!(texts, ["ページ番号", "縦横比", "改行をそのまま反映", "言語"]);
     }
 

@@ -826,20 +826,23 @@ pub fn present_deck(rehearsal: bool, window: WebviewWindow, session: State<Peith
 /// Every window's deck settings, and which window the Edit menu's
 /// deck-setting items follow (see `deck_menu::DeckSettingsRegistry`).
 /// Keyed by window label, like `PeithoSession`: each window reports its own
-/// deck's values. Also the UI language the menu was last built in, which
-/// their labels are worded in.
-#[derive(Default)]
+/// deck's values. Also the labels the menu was last built with (in the UI
+/// language), which their labels are worded in — kept here rather than
+/// re-read from the settings file on every focus change.
 pub struct DeckMenuState {
     registry: Mutex<DeckSettingsRegistry>,
-    language: Mutex<Option<Language>>,
+    labels: Mutex<&'static MenuLabels>,
+}
+
+impl Default for DeckMenuState {
+    fn default() -> Self {
+        Self { registry: Mutex::default(), labels: Mutex::new(i18n::menu_labels(Language::En)) }
+    }
 }
 
 impl DeckMenuState {
-    /// The labels for the language the menu was last built in (English
-    /// before it first is).
     fn labels(&self) -> &'static MenuLabels {
-        let language = self.language.lock().ok().and_then(|language| *language).unwrap_or(Language::En);
-        i18n::menu_labels(language)
+        self.labels.lock().map(|labels| *labels).unwrap_or_else(|_| i18n::menu_labels(Language::En))
     }
 
     /// `label`'s window gained or lost focus (`WindowEvent::Focused`).
@@ -876,10 +879,11 @@ impl DeckMenuState {
 /// before it replaces the old one. Later refreshes keep that language.
 pub(crate) fn apply_deck_menu(app: &AppHandle, menu: &Menu<tauri::Wry>, language: Language) {
     let state = app.state::<DeckMenuState>();
-    if let Ok(mut current) = state.language.lock() {
-        *current = Some(language);
+    let labels = i18n::menu_labels(language);
+    if let Ok(mut current) = state.labels.lock() {
+        *current = labels;
     }
-    deck_menu::apply(menu, state.front_settings().as_ref(), i18n::menu_labels(language));
+    deck_menu::apply(menu, state.front_settings().as_ref(), labels);
 }
 
 /// Shows the front window's settings in the menu bar's deck-setting items.
