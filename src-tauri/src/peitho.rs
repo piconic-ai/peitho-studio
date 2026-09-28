@@ -29,6 +29,7 @@ use crate::deck_variants;
 use crate::edit_menu;
 use crate::i18n::{self, Language, MenuLabels};
 use crate::engine::builtin;
+use crate::engine::images;
 use crate::engine::layout_fit::{self, LayoutVerdict};
 use crate::engine::pipeline::{self, RenderOutput};
 use crate::engine::serve::AssetServer;
@@ -929,6 +930,41 @@ fn session_deck_path(session: &PeithoSession, label: &str) -> Result<PathBuf, St
     let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
     let state = guard.get(label).ok_or_else(|| "no deck is open".to_string())?;
     Ok(state.deck_path.clone())
+}
+
+fn session_deck_dir(session: &PeithoSession, label: &str) -> Result<PathBuf, String> {
+    let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+    let state = guard.get(label).ok_or_else(|| "no deck is open".to_string())?;
+    Ok(state.deck_dir.clone())
+}
+
+/// Copies an image file dropped on the body editor into this window's
+/// deck, under `img/`, and returns its deck-relative path for the Markdown
+/// (see `engine::images`). Only a PNG, JPEG, GIF or WebP file is ever read.
+/// `async`: the file can be large, or on a slow volume.
+#[tauri::command(async)]
+pub fn import_deck_image_file(path: String, window: WebviewWindow, session: State<PeithoSession>) -> Result<String, String> {
+    images::import_image_file(&session_deck_dir(&session, window.label())?, Path::new(&path))
+}
+
+/// The header naming a pasted image (`screenshot-20260925-143012.png`).
+const IMAGE_NAME_HEADER: &str = "x-image-name";
+
+/// Saves an image pasted into the body editor into this window's deck,
+/// under `img/`, and returns its deck-relative path for the Markdown (see
+/// `engine::images`). The image's bytes come as the raw request body, not
+/// base64 in JSON, and its name in the `x-image-name` header.
+#[tauri::command(async)]
+pub fn import_deck_image_bytes(request: tauri::ipc::Request<'_>, window: WebviewWindow, session: State<PeithoSession>) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("the image must be sent as raw bytes".to_string());
+    };
+    let name = request
+        .headers()
+        .get(IMAGE_NAME_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| format!("the image has no {IMAGE_NAME_HEADER} header"))?;
+    images::import_image(&session_deck_dir(&session, window.label())?, name, bytes)
 }
 
 #[derive(Serialize)]
