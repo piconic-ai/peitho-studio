@@ -381,6 +381,14 @@ don't bundle everything into one giant commit.
   already shown (`000` or `-1` into a number input that shows `0`) stays on
   screen. When an input normalizes what's typed, also rewrite the field
   from `onChange` (see `dom/sectionHeader.ts`'s `showCanonicalValue`).
+- **In a `.map()` row's JSX text child, an object literal can't have a key
+  named like the row's parameter.** `{items.map(choice => (<b>{f({ key:
+  'x', choice })}</b>))}` — or `{ choice: 1 }` — fails the build with
+  esbuild's `Expected "{" but found "}"`: the compiler rewrites the
+  parameter's name inside the key too. A key named otherwise
+  (`{ a: choice }`) and the same literal inside an event handler are fine.
+  Pass such values as separate arguments (see `newDeckChoiceLabel` in
+  `domain/newDeckSettings.ts`).
 
 ## Pitfalls hit with UnoCSS (Wind4 preset)
 
