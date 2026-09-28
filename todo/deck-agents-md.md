@@ -16,7 +16,7 @@ tags: [agent, crit, scaffold]
 
 3本組のうちの1本。往復の仕組みは`todo/crit-review-bridge.md`、UIは
 `todo/review-comment-ui.md`。**中身の一部(critの呼び方)は
-`todo/crit-review-bridge.md`の要調査1の結論に依存する**ので、その結論が
+`todo/crit-review-bridge.md`の要調査1の結論に依存する**(→ (c)に決定済み)ので、その結論が
 出てから着手する。
 
 ## スコープ
@@ -42,9 +42,10 @@ tags: [agent, crit, scaffold]
     - 背景画像などのファイルはレイアウトの要素から参照すること(CSSの`url()`は
       出力にコピーされない — `peitho docs layouts`の「Files a layout
       references」)
-    - Studioからのレビューの受け取り方(critの実行方法。
-      `todo/crit-review-bridge.md`の要調査1の結論に従う)。少なくとも
-      「デッキのフォルダで`crit --no-open deck.md`を実行する」こと
+    - Studioからのレビューの受け取り方: デッキのフォルダで
+      `crit --no-open deck.md`を実行して待つこと。Studioが同梱のcritで
+      セッションを先に起動しているので、エージェントのcritはそれに繋がる
+      (`todo/crit-review-bridge.md`の要調査1で(c)に決定)
       (Studioはデッキのフォルダの`crit status`でセッションを探すため、
       gitでないフォルダでは別の場所から起動したセッションが見つからない —
       `todo/crit-review-bridge.md`の要調査3の結論)
