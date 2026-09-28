@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: macOS標準のAboutパネルを自前のAboutウィンドウに置き換え、アイコン・説明文・Version/Build/Commit・Website/GitHub/Licenseへのリンクを載せる(Ghostty風)
 tags: [release, ui]
 ---
@@ -132,9 +132,9 @@ kfly8の判断: 標準パネルの拡張ではなく自前のウィンドウに�
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `cargo test` グリーン
-- [ ] `bun run test:e2e` グリーン(上の新しいe2eを含む)
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `cargo test` グリーン
+- [x] `bun run test:e2e` グリーン(上の新しいe2eを含む)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機で確認する: メニューからAboutが開く、二回選んでも一枚だけ、
