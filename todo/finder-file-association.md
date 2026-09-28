@@ -149,6 +149,16 @@ UTI宣言は、Bearなど先行アプリと同じ`net.daringfireball.markdown`�
 
 ## 実装メモ(PR #125)
 
+- セルフレビュー(`code-review` skill)で実バグを1件検出: `open_finder_urls`
+  が`finder_open_target(main_claimed, session.is_empty())`と呼んでいたが、
+  第2引数の意味は元々「どこかでデッキが開いている」で`is_empty()`の
+  結果とは正反対だった。未起動状態からのFinder経由オープン(本命の
+  ユースケース)で`main`を再利用せず新規ウィンドウへ行ってしまう、
+  Plan Bの狙いを台無しにする不具合。既存の単体テストは`finder_open_target`
+  を手書きの真偽値で直接呼んでいたため検出できていなかった。引数名を
+  `session_is_empty`に変え、`is_empty()`の結果をそのまま渡せば正しくなる
+  よう分岐を反転して修正(呼び出し側の書き間違いを型/命名レベルで
+  再発しにくくした)。
 - `tauri.conf.json`の`bundle.fileAssociations`に`ext: ["md"]` +
   `contentTypes: ["net.daringfireball.markdown"]`(方針どおり、独自
   `exportedType`は宣言せず先行アプリのUTIに相乗り)。`bunx tauri build`後の
