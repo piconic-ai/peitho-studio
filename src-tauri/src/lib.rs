@@ -1,4 +1,5 @@
 mod deck_menu;
+mod deck_trust;
 mod deck_variants;
 mod edit_menu;
 mod engine;
@@ -335,6 +336,7 @@ pub fn run() {
             peitho::check_slide_layouts,
             peitho::present_deck,
             peitho::report_deck_settings,
+            peitho::trust_open_deck,
             settings::get_settings,
             settings::update_settings,
             settings::get_system_locales,

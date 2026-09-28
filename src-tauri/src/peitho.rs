@@ -24,6 +24,7 @@ use tauri::menu::Menu;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
 use crate::deck_menu::{self, DeckSettings, DeckSettingsRegistry, SettingKey};
+use crate::deck_trust;
 use crate::deck_variants;
 use crate::edit_menu;
 use crate::i18n::{self, Language, MenuLabels};
@@ -253,6 +254,9 @@ fn to_payload(output: RenderOutput, asset_base_url: String) -> Result<RenderPayl
 pub struct DeckSessionInfo {
     deck_path: String,
     deck_dir: String,
+    /// Whether the deck's folder is trusted to run scripts — decided once
+    /// here; afterwards only `trust_open_deck` changes it.
+    trusted: bool,
     render: RenderPayload,
 }
 
@@ -397,11 +401,23 @@ fn scaffold_deck_files(settings: NewDeckSettings) -> Vec<(&'static str, String)>
 /// the frontend to hand straight to `open_deck_window`). `aspect_ratio`
 /// and `lang` are the New Deck dialog's picks: an absent one is its key's
 /// default, and a value that isn't one of the key's choices creates
-/// nothing.
+/// nothing. The new folder is trusted to run scripts from the start: the
+/// app wrote every file in it. It never overwrites an existing folder, so
+/// this can't be used to trust one somebody else wrote.
 #[tauri::command]
-pub fn create_deck(parent_dir: String, name: String, aspect_ratio: Option<String>, lang: Option<String>) -> Result<String, String> {
-    let trimmed = validate_deck_name(&name)?;
+pub fn create_deck(app: AppHandle, parent_dir: String, name: String, aspect_ratio: Option<String>, lang: Option<String>) -> Result<String, String> {
     let settings = NewDeckSettings::parse(aspect_ratio.as_deref(), lang.as_deref())?;
+    let deck_path = scaffold_deck(&parent_dir, &name, settings)?;
+    if let Some(dir) = deck_path.parent() {
+        trust_deck_dir(&app, dir)?;
+    }
+    Ok(deck_path.display().to_string())
+}
+
+/// `create_deck`'s filesystem half, without trusting the result — split
+/// out so it's testable without an `AppHandle`.
+fn scaffold_deck(parent_dir: &str, name: &str, settings: NewDeckSettings) -> Result<PathBuf, String> {
+    let trimmed = validate_deck_name(name)?;
     let dir = PathBuf::from(&parent_dir).join(trimmed);
     if dir.exists() {
         return Err(format!("{} already exists", dir.display()));
@@ -416,7 +432,7 @@ pub fn create_deck(parent_dir: String, name: String, aspect_ratio: Option<String
         std::fs::write(&path, content).map_err(|err| format!("failed to write {}: {err}", path.display()))?;
     }
 
-    Ok(dir.join("deck.md").display().to_string())
+    Ok(dir.join("deck.md"))
 }
 
 /// Windows spawned by `open_deck_window_impl`, keyed by their (not-yet-loaded)
@@ -573,6 +589,41 @@ pub fn get_recent_decks(app: AppHandle) -> Vec<String> {
     read_recent_decks(&app)
 }
 
+/// Serializes the read-modify-write of `trusted_deck_dirs.json` across
+/// windows trusting their decks at the same moment.
+static TRUSTED_DECK_DIRS_LOCK: Mutex<()> = Mutex::new(());
+
+fn trusted_deck_dirs_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|err| format!("failed to create {}: {err}", dir.display()))?;
+    Ok(dir.join("trusted_deck_dirs.json"))
+}
+
+fn is_deck_dir_trusted(app: &AppHandle, deck_dir: &Path) -> bool {
+    let Ok(file) = trusted_deck_dirs_path(app) else { return false };
+    let _guard = TRUSTED_DECK_DIRS_LOCK.lock();
+    deck_trust::is_trusted(&deck_trust::read_trusted_dirs(&file), deck_dir)
+}
+
+fn trust_deck_dir(app: &AppHandle, deck_dir: &Path) -> Result<(), String> {
+    let file = trusted_deck_dirs_path(app)?;
+    let _guard = TRUSTED_DECK_DIRS_LOCK.lock().map_err(|_| "trusted-decks lock poisoned".to_string())?;
+    deck_trust::add_trusted_dir(&file, deck_dir)
+}
+
+/// Trusts the calling window's open deck folder to run scripts — the
+/// banner's "Trust and Run" button. Takes no path: it can only ever trust
+/// the folder this window already has open. Until then that deck's scripts
+/// never run, so no deck can call this to trust itself.
+#[tauri::command]
+pub fn trust_open_deck(app: AppHandle, window: WebviewWindow, session: State<PeithoSession>) -> Result<(), String> {
+    let deck_dir = {
+        let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+        guard.get(window.label()).ok_or_else(|| "no deck is open".to_string())?.deck_dir.clone()
+    };
+    trust_deck_dir(&app, &deck_dir)
+}
+
 /// Watches `deck_path` for changes and emits `DECK_FILE_CHANGED_EVENT`
 /// (to this window only — each window watches only its own deck) once per
 /// burst of filesystem activity. Editors commonly touch a file more than
@@ -632,6 +683,7 @@ pub fn open_deck(
     let info = DeckSessionInfo {
         deck_path: deck_path.display().to_string(),
         deck_dir: deck_dir.display().to_string(),
+        trusted: is_deck_dir_trusted(&app, &deck_dir),
         render,
     };
 
@@ -1156,12 +1208,12 @@ Start writing your slides here.\n";
     }
 
     #[test]
-    fn create_deck_spec_writes_the_full_scaffold_and_returns_the_deck_md_path() {
+    fn scaffold_deck_spec_writes_the_full_scaffold_and_returns_the_deck_md_path() {
         let parent = tempfile::tempdir().unwrap();
-        let deck_path = create_deck(parent.path().to_str().unwrap().to_string(), "my-talk".to_string(), None, None).unwrap();
+        let deck_path = scaffold_deck(parent.path().to_str().unwrap(), "my-talk", NewDeckSettings::parse(None, None).unwrap()).unwrap();
 
         let dir = parent.path().join("my-talk");
-        assert_eq!(deck_path, dir.join("deck.md").display().to_string());
+        assert_eq!(deck_path, dir.join("deck.md"));
         assert!(dir.join("deck.md").is_file());
         assert!(dir.join("layouts/title-body-code.html").is_file());
         assert!(dir.join("css/base.css").is_file());
@@ -1169,16 +1221,17 @@ Start writing your slides here.\n";
     }
 
     #[test]
-    fn create_deck_adversarial_refuses_to_overwrite_an_existing_directory() {
+    fn scaffold_deck_adversarial_refuses_to_overwrite_an_existing_directory() {
         let parent = tempfile::tempdir().unwrap();
         std::fs::create_dir(parent.path().join("my-talk")).unwrap();
 
-        let err = create_deck(parent.path().to_str().unwrap().to_string(), "my-talk".to_string(), None, None).unwrap_err();
+        let err = scaffold_deck(parent.path().to_str().unwrap(), "my-talk", NewDeckSettings::parse(None, None).unwrap()).unwrap_err();
         assert!(err.contains("already exists"));
     }
 
     fn create_deck_with(parent: &Path, aspect_ratio: &str, lang: &str) -> Result<String, String> {
-        create_deck(parent.to_str().unwrap().to_string(), "my-talk".to_string(), Some(aspect_ratio.to_string()), Some(lang.to_string()))
+        let settings = NewDeckSettings::parse(Some(aspect_ratio), Some(lang))?;
+        scaffold_deck(parent.to_str().unwrap(), "my-talk", settings).map(|path| path.display().to_string())
     }
 
     #[test]
