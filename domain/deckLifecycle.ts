@@ -72,7 +72,7 @@ export function decide(state: DeckLifecycle, event: DeckEvent): Decision {
           if (state.name.trim() === '') return { kind: 'rejected', reason: 'invalid-name' }
           return {
             kind: 'transition',
-            next: { kind: 'creating', parentDir: state.parentDir, name: state.name, settings: state.settings },
+            next: { ...state, kind: 'creating' },
             effect: 'invoke-create',
           }
         case 'create-cancelled':
@@ -94,10 +94,7 @@ export function decide(state: DeckLifecycle, event: DeckEvent): Decision {
           // the same parentDir/name/settings so the user can see the error
           // and retry without re-picking the folder, retyping the name, or
           // picking the settings again.
-          return {
-            kind: 'transition',
-            next: { kind: 'naming-new-deck', parentDir: state.parentDir, name: state.name, settings: state.settings },
-          }
+          return { kind: 'transition', next: { ...state, kind: 'naming-new-deck' } }
         default:
           return { kind: 'rejected', reason: 'busy' }
       }

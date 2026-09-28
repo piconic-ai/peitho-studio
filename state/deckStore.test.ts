@@ -56,4 +56,14 @@ describe('newDeckSettings', () => {
       expect(store.newDeckSettings()).toEqual(DEFAULTS)
     })
   })
+
+  test('adversarial: given the lifecycle moves on outside the dialog, then it keeps handing back the same object', () => {
+    createRoot(() => {
+      const store = createDeckStore()
+      const closed = store.newDeckSettings()
+      store.setDeckLifecycle({ kind: 'opening', path: '/a/deck.md' })
+      store.setDeckLifecycle({ kind: 'open', deckPath: '/a/deck.md' })
+      expect(store.newDeckSettings()).toBe(closed)
+    })
+  })
 })

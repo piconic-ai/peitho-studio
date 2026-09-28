@@ -2,6 +2,10 @@ import { createSignal, createMemo } from '@barefootjs/client'
 import { type DeckLifecycle, isBusy as computeIsBusy } from '../domain/deckLifecycle'
 import { defaultNewDeckSettings } from '../domain/newDeckSettings'
 
+/** What `newDeckSettings` reads while no dialog is open: one object, so a
+ * lifecycle change outside the dialog doesn't hand it a new value. */
+const CLOSED_DIALOG_SETTINGS = Object.freeze(defaultNewDeckSettings())
+
 /** The whole welcome/new-deck/open flow as one `domain/deckLifecycle.ts` ADT
  * signal, replacing five independently-settable signals (`deckPath`/
  * `isBusy`/`newDeckModalOpen`/`newDeckParentDir`/`newDeckName`) that let bug
@@ -54,7 +58,7 @@ export function createDeckStore() {
   })
   const newDeckSettings = createMemo(() => {
     const l = deckLifecycle()
-    return l.kind === 'naming-new-deck' || l.kind === 'creating' ? l.settings : defaultNewDeckSettings()
+    return l.kind === 'naming-new-deck' || l.kind === 'creating' ? l.settings : CLOSED_DIALOG_SETTINGS
   })
 
   return { deckLifecycle, setDeckLifecycle, deckPath, showEditor, isBusy, newDeckModalOpen, newDeckParentDir, newDeckName, newDeckSettings }

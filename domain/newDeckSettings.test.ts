@@ -1,16 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { DECK_SETTING_CHOICES, defaultChoiceOf, frontmatterValueOf } from './deckSettings'
+import { DECK_SETTING_CHOICES, frontmatterValueOf } from './deckSettings'
 import {
   NEW_DECK_SETTING_KEYS,
   type NewDeckSettingPick,
   applyNewDeckSettingPick,
   defaultNewDeckSettings,
   newDeckChoiceLabel,
-  newDeckChoicesOf,
 } from './newDeckSettings'
 
 const ALL_PICKS: NewDeckSettingPick[] = NEW_DECK_SETTING_KEYS.flatMap(key =>
-  newDeckChoicesOf(key).map(choice => ({ key, choice }) as NewDeckSettingPick),
+  DECK_SETTING_CHOICES[key].map(choice => ({ key, choice }) as NewDeckSettingPick),
 )
 
 describe('defaultNewDeckSettings', () => {
@@ -25,15 +24,6 @@ describe('defaultNewDeckSettings', () => {
     first.lang = 'ja'
     expect(defaultNewDeckSettings()).not.toBe(first)
     expect(defaultNewDeckSettings()).toEqual({ aspect_ratio: '16:9', lang: 'en' })
-  })
-})
-
-describe('newDeckChoicesOf', () => {
-  test('spec: given each key, then its choices are exactly the Edit menu\'s, the default first', () => {
-    for (const key of NEW_DECK_SETTING_KEYS) {
-      expect(newDeckChoicesOf(key)).toBe(DECK_SETTING_CHOICES[key])
-      expect<string>(newDeckChoicesOf(key)[0]).toBe(defaultChoiceOf(key))
-    }
   })
 })
 

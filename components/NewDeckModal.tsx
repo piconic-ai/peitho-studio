@@ -2,7 +2,8 @@
 
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
-import { newDeckChoiceLabel, newDeckChoicesOf, type NewDeckSettingPick, type NewDeckSettings } from '../domain/newDeckSettings'
+import { DECK_SETTING_CHOICES } from '../domain/deckSettings'
+import { newDeckChoiceLabel, type NewDeckSettingPick, type NewDeckSettings } from '../domain/newDeckSettings'
 // Props here are values (`isBusy={isBusy()}`), not signal getters — see
 // `components/WelcomeScreen.tsx` for why (BF044). `isOpen` gates rendering
 // inside this component (a single sibling condition, not a nested
@@ -66,12 +67,12 @@ export function NewDeckModal(props: NewDeckModalProps) {
           </div>
           {/* Buttons rather than a `<select>`, as in SettingsPanel's language
               picker: with two choices each, both stay in view, and the
-              choices are the Edit menu's own (`newDeckChoicesOf`). */}
+              choices are the Edit menu's own (`DECK_SETTING_CHOICES`). */}
           <div className="mb-3 flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
               <span id="new-deck-aspect-ratio-label" className="text-xs text-muted-foreground">{messagesFor(props.language).newDeckAspectRatio}</span>
               <div role="radiogroup" aria-labelledby="new-deck-aspect-ratio-label" className="flex rounded-md border border-border overflow-hidden">
-                {newDeckChoicesOf('aspect_ratio').map(choice => (
+                {DECK_SETTING_CHOICES.aspect_ratio.map(choice => (
                   <button
                     type="button"
                     key={choice}
@@ -89,7 +90,7 @@ export function NewDeckModal(props: NewDeckModalProps) {
             <div className="flex items-center justify-between gap-3">
               <span id="new-deck-language-label" className="text-xs text-muted-foreground">{messagesFor(props.language).newDeckLanguage}</span>
               <div role="radiogroup" aria-labelledby="new-deck-language-label" className="flex rounded-md border border-border overflow-hidden">
-                {newDeckChoicesOf('lang').map(choice => (
+                {DECK_SETTING_CHOICES.lang.map(choice => (
                   <button
                     type="button"
                     key={choice}
