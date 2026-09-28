@@ -11,6 +11,18 @@
 pub const LAYOUT_HTML: &str = include_str!("builtin/title-body-code.html");
 pub const BASE_CSS: &str = include_str!("builtin/base.css");
 
+/// Mirrors the header `peitho new` prepends to its scaffolded
+/// `css/base.css` (see `crates/peitho/src/new_cmd.rs::BASE_CSS_HEADER` in
+/// the peitho repo) — explains why the file exists before the copied
+/// built-in rules.
+pub const BASE_CSS_HEADER: &str = "/*\n  This file replaces peitho's embedded themes/base.css for this deck.\n  Edit it as your deck's complete theme.\n*/\n\n";
+
+/// `css/base.css` as Studio writes it into a deck: `BASE_CSS` under
+/// `BASE_CSS_HEADER`.
+pub fn scaffolded_base_css() -> String {
+    format!("{BASE_CSS_HEADER}{BASE_CSS}")
+}
+
 /// Studio's own layout for a slide holding one image (a title, optional
 /// body text, and the image below), scaffolded next to `LAYOUT_HTML` by
 /// `create_deck` so an image dropped or pasted into a new deck shows up

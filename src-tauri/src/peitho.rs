@@ -381,12 +381,6 @@ fn starter_deck(settings: NewDeckSettings) -> String {
     format!("---\n{}\n---\n{STARTER_BODY}", lines.join("\n"))
 }
 
-/// Mirrors the header `peitho new` prepends to its scaffolded
-/// `css/base.css` (see `crates/peitho/src/new_cmd.rs::BASE_CSS_HEADER` in
-/// the peitho repo) — explains why the file exists before the copied
-/// built-in rules.
-const BASE_CSS_HEADER: &str = "/*\n  This file replaces peitho's embedded themes/base.css for this deck.\n  Edit it as your deck's complete theme.\n*/\n\n";
-
 /// `name` becomes a directory name picked by the user in a plain text
 /// field, not a path — rejected outright if it could act like one, rather
 /// than trying to sanitize it into something safe. Split out of
@@ -419,7 +413,7 @@ fn scaffold_deck_files(settings: NewDeckSettings) -> Vec<(&'static str, String)>
         ("deck.md", starter_deck(settings)),
         ("layouts/title-body-code.html", builtin::LAYOUT_HTML.to_string()),
         ("layouts/title-body-image.html", builtin::IMAGE_LAYOUT_HTML.to_string()),
-        ("css/base.css", format!("{BASE_CSS_HEADER}{}", builtin::BASE_CSS)),
+        ("css/base.css", builtin::scaffolded_base_css()),
         ("css/title-body-image.css", builtin::IMAGE_LAYOUT_CSS.to_string()),
         (".gitignore", builtin::GITIGNORE.to_string()),
     ]
@@ -1380,7 +1374,7 @@ Start writing your slides here.\n";
         );
 
         let base_css = &files.iter().find(|(path, _)| *path == "css/base.css").unwrap().1;
-        assert!(base_css.starts_with(BASE_CSS_HEADER));
+        assert!(base_css.starts_with(builtin::BASE_CSS_HEADER));
         assert!(base_css.contains(builtin::BASE_CSS));
 
         let layout = &files.iter().find(|(path, _)| *path == "layouts/title-body-code.html").unwrap().1;
