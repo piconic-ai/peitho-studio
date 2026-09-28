@@ -43,7 +43,11 @@ tags: [agent, crit, scaffold]
       出力にコピーされない — `peitho docs layouts`の「Files a layout
       references」)
     - Studioからのレビューの受け取り方(critの実行方法。
-      `todo/crit-review-bridge.md`の要調査1の結論に従う)
+      `todo/crit-review-bridge.md`の要調査1の結論に従う)。少なくとも
+      「デッキのフォルダで`crit --no-open deck.md`を実行する」こと
+      (Studioはデッキのフォルダの`crit status`でセッションを探すため、
+      gitでないフォルダでは別の場所から起動したセッションが見つからない —
+      `todo/crit-review-bridge.md`の要調査3の結論)
 
 ## 背景・要調査
 

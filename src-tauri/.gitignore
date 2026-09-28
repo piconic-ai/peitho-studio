@@ -2,3 +2,7 @@
 # will have compiled files and executables
 /target/
 /gen/schemas
+
+# crit sidecar binaries, downloaded by `bun run crit:fetch` (see
+# crit-release.json)
+/binaries/

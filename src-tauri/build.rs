@@ -23,8 +23,25 @@ fn main() {
   // (Android's included), which `--offline` then fails on.
   println!("cargo:rustc-env=PEITHO_STUDIO_TARGET={}", std::env::var("TARGET").expect("cargo sets TARGET for build scripts"));
   embed_build_info();
+  require_crit_sidecar();
   tauri_build::try_build(tauri_build::Attributes::new().capabilities_path_pattern(pattern))
     .expect("failed to run tauri-build");
+}
+
+/// `bundle.externalBin: ["binaries/crit"]` (tauri.conf.json) makes
+/// tauri-build copy `binaries/crit-<target>` next to the executable on
+/// every build, and fail with a bare "path doesn't exist" when it's
+/// missing. The binary isn't committed (see crit-release.json), so say how
+/// to get it instead.
+fn require_crit_sidecar() {
+  let target = std::env::var("TARGET").expect("cargo sets TARGET for build scripts");
+  let dir = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR for build scripts");
+  let sidecar = Path::new(&dir).join("binaries").join(format!("crit-{target}"));
+  println!("cargo:rerun-if-changed={}", sidecar.display());
+  println!("cargo:rerun-if-changed=crit-release.json");
+  if !sidecar.exists() {
+    panic!("{} is missing: run `bun run crit:fetch` to download the crit release pinned in crit-release.json", sidecar.display());
+  }
 }
 
 /// The About window's Build and Commit (`about.rs`): the CI run number and

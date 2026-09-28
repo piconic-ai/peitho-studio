@@ -1,0 +1,8 @@
+{
+  "version": "0.21.0",
+  "repository": "tomasz-tomczyk/crit",
+  "sha256": {
+    "aarch64-apple-darwin": "0eb05b29d81230cf16168bb373e8d9a18eab5c60ae868ef6a92fee73df7dd90e",
+    "x86_64-apple-darwin": "b3ded3bae8deb4997daaad7001eca9dce6be19e3e50d4e142a94bd3069708455"
+  }
+}

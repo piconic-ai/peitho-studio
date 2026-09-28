@@ -29,8 +29,19 @@ Requires the `peitho` CLI on `PATH` (used only for Present), and a local checkou
 
 ```sh
 bun install
+bun run crit:fetch
 bunx tauri dev
 ```
+
+`bun run crit:fetch` downloads [crit](https://crit.md), the review tool a Coding Agent waits in while Studio sends it comments, into `src-tauri/binaries/` (not committed). The app bundles it next to its executable, so every Rust build needs it. The fetch is skipped when the pinned version is already there.
+
+### Updating the bundled crit
+
+The version lives only in `src-tauri/crit-release.json`, together with the SHA-256 of each macOS binary:
+
+1. Set `version`, and copy the `crit-darwin-arm64` and `crit-darwin-amd64` lines of that release's `checksums.txt` into `sha256` (`aarch64-apple-darwin` and `x86_64-apple-darwin`).
+2. Replace `src-tauri/licenses/crit/LICENSE` with the one at that tag if it changed.
+3. `bun run crit:fetch`, then `cargo test --manifest-path src-tauri/Cargo.toml`. crit's HTTP API is the one its own web UI uses, not a published contract; the `crit::tests::round_trip` tests run an agent's whole round trip against the new binary, and the version is updated only if they pass.
 
 ## Build
 

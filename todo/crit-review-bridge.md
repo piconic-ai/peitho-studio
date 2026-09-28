@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: バージョンを固定したcritをStudioに同梱し、Rust側からcritのレビューセッションにコメント登録・完了通知・返信の受け取りをする
 tags: [agent, crit, rust-command, release]
 ---
@@ -108,6 +108,95 @@ critの作者に、外部からUIを作るためのAPIを相談する**と決め
    場合の挙動も確かめる。
 4. **ライセンス表記。** MITの著作権表示を同梱物・About画面のどこに載せるか。
 
+### 要調査の結論(2026-09-28、crit 0.21.0で確認)
+
+固定したのは0.21.0(着手時の最新)。試行で使った0.20.1と同じ往復が
+0.21.0でもそのまま通ることを、結合テスト(`src-tauri/src/crit.rs`の
+`crit::tests::round_trip`)で確かめている。
+
+1. **エージェントが使うcritを揃える方法 — (c)を推奨。最終決定は人間。**
+   - HTTP APIを答えるのは、そのセッションを最初に起動した`crit`のデーモン。
+     同梱の0.21.0で`crit --no-open deck.md`を先に起動しておき、PATH上の
+     Homebrew版0.20.1で同じ`crit --no-open deck.md`を実行すると、0.20.1は
+     `Connected to crit daemon`で既存のデーモンに繋がり、完了の通知は両方に
+     届いた。つまり**デーモンを誰が起動したか**でAPIのバージョンが決まる。
+   - (a)は単独では揃わない。完了時にcritが出す指示文(`crit comment
+     --reply-to …`、`crit --session <id>`)も、`crit install claude-code`が
+     入れるskill(`.claude/skills/crit*/SKILL.md`)も、素の`crit`(PATH上)を
+     呼ぶ。1巡目だけ絶対パスで起動しても、そのデーモンが生きている限りは
+     同梱版のAPIのままだが、デーモンを誰かが止めて次にPATH上のcritが起動
+     すれば、そちらのバージョンになる。
+   - (b)はHomebrew版と名前がぶつかる(`/opt/homebrew/bin/crit`)。
+   - (c)は、エージェントがどのcritを使っても、Studioが話す相手が同梱版に
+     なる。このPRでは実装していない(Studioが自分でデーモンを起動する口は
+     作っていない)。受け入れ条件どおり、エージェントが起動したセッションを
+     見つけて話すところまで。(c)に進むなら、Studioが同梱のcritで
+     `crit --no-open deck.md`を起動する(そのプロセスは完了の通知で終わるが、
+     コメントが1件以上あればデーモンは次の巡のために残る)。
+2. **Tauriへの同梱 — `bundle.externalBin`(`binaries/crit`)。**
+   - tauri-buildがビルドのたびに`binaries/crit-<target-triple>`を実行ファイル
+     の隣へコピーし、`.app`では`Contents/MacOS/crit`になる。Studioは
+     `current_exe()`の隣から探す(`CritCli::bundled`)ので、devビルドと
+     配布用で同じ。`resources`で入れると署名の扱いが実行ファイルと別に
+     なるため選ばなかった。
+   - バイナリはコミットしない。`src-tauri/crit-release.json`がバージョンと
+     各バイナリのSHA-256を固定し、`bun run crit:fetch`
+     (`scripts/fetch-crit.ts`)がGitHub Releasesから取ってきてハッシュを
+     確かめる。`build.rs`はバイナリがないと`crit:fetch`を促すメッセージで
+     止まる。更新手順はREADMEの「Updating the bundled crit」。
+   - リリース手順への組み込み: `release-build.yml`の`tauri build`は
+     `beforeBuildCommand`(`bun run build:app`)で`crit:fetch`を実行する。
+     `test.yml`のrustジョブにも`crit:fetch`を追加した。
+   - 署名・公証: critの配布バイナリは`adhoc,linker-signed`で、Developer ID
+     の署名はない。tauriのbundlerは`externalBin`もアプリと同じIDで署名する
+     はずだが、**公証まで通るかは配布用ビルドでしか確かめられない**(人間の
+     判断が必要な項目)。署名なしの`tauri build --bundles app --no-sign`で、
+     `Contents/MacOS/crit`と`Contents/Resources/licenses/crit/LICENSE`が
+     入ることは確認した。
+3. **セッションの見つけ方 — `crit status --json`をデッキのフォルダで実行し、
+   各セッションの`GET /api/session`で照合する。**
+   - `crit status --json`が列挙するのは、gitでないフォルダではそのフォルダで
+     起動したセッションだけ、gitリポジトリの中ではリポジトリ内のすべて。
+     0.21.0の`sessions[]`には`running`がない(動いているものだけが出る)。
+   - `sessions[].args`は入力した文字列そのまま(`./deck.md`、絶対パス、
+     リポジトリのルートからの`talks/a/deck.md`)で、起動したフォルダが
+     分からないため照合に使えない。代わりに各デーモンの`/api/session`が返す
+     `cwd`と`files[].path`を結合し、デッキのパスと比べる(両方を
+     `canonicalize`して、`/tmp`と`/private/tmp`の違いを吸収)。gitの中では
+     `cwd`がリポジトリのルートになり、`files[].path`はそこからの相対パス。
+     コメントのAPIの`?path=`にはこの`files[].path`を渡す。
+   - 同じデッキに2つ以上のセッションがあるときは、どちらにエージェントが
+     いるか分からないので`ambiguous`として返し、送らない。
+   - `~/.crit/sessions/*.json`を直接読む方法は、内部のファイル形式に依存する
+     ため採らなかった。
+   - 制約: gitでないフォルダで、デッキのフォルダ以外から`crit`を起動した
+     セッションは見つからない。`todo/deck-agents-md.md`の指示に「デッキの
+     フォルダで`crit --no-open deck.md`を実行する」と書く。
+4. **ライセンス表記 — 同梱物に入れた。About画面は先送り。**
+   `src-tauri/licenses/crit/LICENSE`(v0.21.0のタグのもの)を
+   `bundle.resources`で`.app/Contents/Resources/licenses/crit/LICENSE`に
+   入れる。MITの条件(著作権表示と許諾表示を複製に含める)はこれで満たす。
+   About画面への表記は、UIを作る`todo/review-comment-ui.md`の側で検討する。
+
+実装して分かったこと(`todo/review-comment-ui.md`向け):
+
+- **完了の通知は、その瞬間に待っている`crit`にしか届かない。** エージェント
+  が返信している間(`crit --session <id>`を実行する前)に完了を通知すると、
+  その巡はエージェントに渡らず、後から`crit --session`で待ち始めても届か
+  ない。待っているかどうかを知るAPIは見当たらなかった(`/api/health`の
+  `browser_clients`はブラウザの数)。送信ボタンは、`crit-review`の
+  `commentsChanged`(エージェントが次の巡に入った)を受けてから押せるように
+  するなどの工夫が要る。
+- **コメントなしで完了すると承認扱いになり、デーモンが終了する**
+  (`crit-review`の`ended`が届く)。
+- 0.21.0では`quote`と`anchor`は別物: `quote`は送った文字列のまま、
+  `anchor`はその行のファイル上の実際のテキスト。
+- 0.21.0では巡が進んでもコメントのIDが保たれた(`carried_forward: true`)が、
+  0.20.1では振り直されたので、引き続きIDに頼らない。
+- e2e: まだフロントに呼び出し元(UI)がないため、`mockTauri`でのe2eは
+  `todo/review-comment-ui.md`で書く。フロントの口は`ipc/fakeCritIpc.ts`と
+  その単体テストで押さえた。
+
 ## 方針
 
 - 案A(UIはStudio、往復はcrit)で決定済み。critはバージョン固定で同梱。
@@ -154,15 +243,19 @@ critの作者に、外部からUIを作るためのAPIを相談する**と決め
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `cargo test` グリーン(結合テストを含む)
-- [ ] 要調査1〜4の結論をこのファイルに書いた
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `cargo test` グリーン(結合テストを含む)
+- [x] 要調査1〜4の結論をこのファイルに書いた
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 要調査1(エージェントが使うcritを揃える方法)の最終決定
 - [ ] 配布用ビルドで、同梱したcritが署名・公証を通ること(リリース手順の
   実行はユーザーが行う)
 - [ ] 実機で、Claude Codeなど実際のエージェントとの往復を確認する
+  (このPRではまだUIがないため、`crit_*`コマンドを呼ぶ画面の操作はない。
+  往復そのものは結合テストが同梱のcritで確かめている。Tauriのコマンド
+  経由・実際のエージェントでの確認は`todo/review-comment-ui.md`のUIが
+  できてから)
 
 ## 先送り事項
 

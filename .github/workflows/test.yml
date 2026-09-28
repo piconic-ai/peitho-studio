@@ -68,6 +68,11 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
+      # The crit sidecar (bundle.externalBin) must exist for tauri-build,
+      # and crit's integration tests run it. No `bun install` needed: the
+      # script only uses Bun's built-ins.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun run crit:fetch
       - run: cargo test --manifest-path src-tauri/Cargo.toml
 
   e2e:

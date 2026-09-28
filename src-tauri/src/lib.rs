@@ -1,4 +1,5 @@
 mod about;
+mod crit;
 #[cfg(test)]
 mod build_info;
 mod deck_menu;
@@ -340,6 +341,10 @@ pub fn run() {
             peitho::trust_open_deck,
             peitho::import_deck_image_file,
             peitho::import_deck_image_bytes,
+            peitho::crit_session_status,
+            peitho::crit_add_comments,
+            peitho::crit_finish,
+            peitho::crit_list_comments,
             settings::get_settings,
             settings::update_settings,
             settings::get_system_locales,

@@ -37,6 +37,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "externalBin": [
+      "binaries/crit"
+    ],
+    "resources": {
+      "licenses/crit/LICENSE": "licenses/crit/LICENSE"
+    },
     "category": "Productivity",
     "copyright": "Copyright (c) 2026 kfly8",
     "publisher": "kfly8",
