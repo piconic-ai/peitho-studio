@@ -570,8 +570,11 @@ pub(crate) enum FinderOpenTarget {
 /// later, async `open_deck` round-trip finishes — well after a whole
 /// multi-URL batch has already been decided here — so the caller
 /// (`open_finder_urls`) tracks it locally across the loop instead.
-pub(crate) fn finder_open_target(main_already_claimed: bool, any_session_open: bool) -> FinderOpenTarget {
-    if !main_already_claimed && !any_session_open {
+/// `session_is_empty` is `PeithoSession::is_empty()`'s own answer, passed
+/// straight through (not its negation) so the call site can never invert
+/// it by accident.
+pub(crate) fn finder_open_target(main_already_claimed: bool, session_is_empty: bool) -> FinderOpenTarget {
+    if !main_already_claimed && session_is_empty {
         FinderOpenTarget::MainWindow
     } else {
         FinderOpenTarget::NewWindow
@@ -1445,12 +1448,12 @@ Start writing your slides here.\n";
 
     #[test]
     fn given_the_app_has_no_deck_open_anywhere_when_a_single_finder_file_is_opened_then_it_targets_the_main_window() {
-        assert_eq!(finder_open_target(false, false), FinderOpenTarget::MainWindow);
+        assert_eq!(finder_open_target(false, true), FinderOpenTarget::MainWindow);
     }
 
     #[test]
     fn given_a_deck_is_already_open_somewhere_when_a_finder_file_is_opened_then_it_targets_a_new_window() {
-        assert_eq!(finder_open_target(false, true), FinderOpenTarget::NewWindow);
+        assert_eq!(finder_open_target(false, false), FinderOpenTarget::NewWindow);
     }
 
     #[test]
@@ -1458,12 +1461,12 @@ Start writing your slides here.\n";
         // Even if `PeithoSession` still reports empty (the frontend's own
         // `open_deck` for the first URL hasn't finished yet), a second
         // simultaneously-opened file must not also try to land in `main`.
-        assert_eq!(finder_open_target(true, false), FinderOpenTarget::NewWindow);
+        assert_eq!(finder_open_target(true, true), FinderOpenTarget::NewWindow);
     }
 
     #[test]
     fn finder_open_target_adversarial_both_already_claimed_and_already_open_is_still_a_new_window() {
-        assert_eq!(finder_open_target(true, true), FinderOpenTarget::NewWindow);
+        assert_eq!(finder_open_target(true, false), FinderOpenTarget::NewWindow);
     }
 
     #[test]
