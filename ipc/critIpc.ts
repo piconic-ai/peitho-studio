@@ -1,4 +1,5 @@
-// Typed boundary around the crit review commands (`crit_session_status`,
+// Typed boundary around the crit review commands (`crit_bundled_path`,
+// `crit_session_status`,
 // `crit_start_session`, `crit_add_comments`, `crit_add_replies`,
 // `crit_resolve_comment`, `crit_finish`, `crit_list_comments` in
 // src-tauri/src/peitho.rs) and the `crit-review` event they emit to this
@@ -13,6 +14,9 @@ import { subscribeToThisWindowWithPayload, type Unsubscribe } from './deckIpc'
 export type { CritDeckSession, CritReviewEvent, NewReviewComment, NewReviewReply, ReviewComment } from '../domain/critReview'
 
 export interface CritIpc {
+  /** The full path of the crit bundled with Studio. Rejects when it's
+   * missing (a dev build that never ran `bun run crit:fetch`). */
+  bundledCritPath(): Promise<string>
   /** The session an agent waits in on the deck. While one is found, this
    * window gets `onReviewEvent` callbacks for it. */
   sessionStatus(): Promise<CritDeckSession>
@@ -41,6 +45,7 @@ export interface CritIpc {
 
 export function createTauriCritIpc(): CritIpc {
   return {
+    bundledCritPath: () => invoke('crit_bundled_path'),
     sessionStatus: () => invoke('crit_session_status'),
     startSession: () => invoke('crit_start_session'),
     addComments: comments => invoke('crit_add_comments', { comments }),

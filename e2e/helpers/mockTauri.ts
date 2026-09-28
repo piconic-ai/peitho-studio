@@ -377,6 +377,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         deck.clipboardText = args.text as string
         return null
       case 'get_about_info': return deck.aboutInfo ?? DEFAULT_ABOUT_INFO
+      case 'crit_bundled_path': return deck.crit?.bundledCritPath() ?? null
       case 'crit_session_status': return deck.crit?.sessionStatus() ?? null
       case 'crit_start_session': return deck.crit?.startSession() ?? null
       case 'crit_add_comments': return deck.crit?.addComments(args.comments as NewReviewComment[]) ?? null

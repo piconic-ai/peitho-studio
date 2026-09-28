@@ -341,6 +341,7 @@ pub fn run() {
             peitho::trust_open_deck,
             peitho::import_deck_image_file,
             peitho::import_deck_image_bytes,
+            peitho::crit_bundled_path,
             peitho::crit_session_status,
             peitho::crit_start_session,
             peitho::crit_add_comments,

@@ -28,7 +28,12 @@ export interface FakeCritOptions {
   /** `'none'`: no session until `startSession`. `'waiting'` (default): a
    * session with an agent waiting in it. */
   session?: 'none' | 'waiting'
+  /** What `bundledCritPath` answers; `null` rejects, as with no bundled
+   * crit. Defaults to where a release build has it. */
+  critPath?: string | null
 }
+
+export const FAKE_CRIT_PATH = '/Applications/Peitho Studio.app/Contents/MacOS/crit'
 
 export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
   let session: CritDeckSession = options.session === 'none'
@@ -80,6 +85,12 @@ export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
 
   return {
     calls,
+    bundledCritPath: async () => {
+      record('bundledCritPath')
+      const path = options.critPath === undefined ? FAKE_CRIT_PATH : options.critPath
+      if (path === null) throw new Error('the bundled crit is missing')
+      return path
+    },
     sessionStatus: async () => {
       record('sessionStatus')
       return structuredClone(session)

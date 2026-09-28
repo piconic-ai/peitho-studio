@@ -53,6 +53,11 @@ impl CritCli {
         Ok(Self { bin, home: None })
     }
 
+    /// The crit executable itself.
+    pub fn path(&self) -> &Path {
+        &self.bin
+    }
+
     fn command(&self) -> Command {
         let mut command = Command::new(&self.bin);
         // Keeps crit from printing tips about installing its agent plugins.

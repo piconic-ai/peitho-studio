@@ -1207,6 +1207,15 @@ fn sync_crit_watch(session: &PeithoSession, window: &WebviewWindow, found: &Deck
     Ok(())
 }
 
+/// Where the crit bundled with Studio is, for the command Studio asks the
+/// Coding Agent to run (`domain/agentConnect.ts`): named by its full path,
+/// nothing has to be installed first, and whichever crit the agent runs
+/// joins the session Studio started.
+#[tauri::command]
+pub fn crit_bundled_path() -> Result<String, String> {
+    Ok(CritCli::bundled()?.path().display().to_string())
+}
+
 /// The crit session a Coding Agent is waiting in on this window's deck
 /// (`crit --no-open deck.md` in the deck's folder), and starts following
 /// its events (`CRIT_REVIEW_EVENT`). `async`: it runs the bundled crit and
