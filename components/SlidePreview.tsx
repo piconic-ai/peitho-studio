@@ -5,6 +5,8 @@ import type { PhoneShape, ViewportMode } from '../domain/viewport'
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
+import { watchCommentClicks, type PreviewClick } from '../dom/previewComments'
+import { type PreviewPin } from '../domain/reviewComment'
 
 export interface SlidePreviewProps {
   /** The UI language every label here is shown in. */
@@ -26,6 +28,10 @@ export interface SlidePreviewProps {
   slideStylesheet: () => CSSStyleSheet
   canvasWidth: number
   canvasHeight: number
+  /** The selected slide's comment pins. */
+  pins: PreviewPin[]
+  /** A click on the slide meant as a comment (`dom/previewComments.ts`). */
+  onCommentClick: (click: PreviewClick) => void
 }
 
 export function SlidePreview(props: SlidePreviewProps) {
@@ -169,10 +175,35 @@ export function SlidePreview(props: SlidePreviewProps) {
             const canvas = { width: props.canvasWidth, height: props.canvasHeight }
             mountSlideCanvas(el, props.slideStylesheet(), untrack(() => props.canvasFragmentOf(key)), canvas, 'interactive')
             observeCanvasScale(el, canvas)
+            watchCommentClicks(el, click => props.onCommentClick(click))
           })
         }}
-        className={(props.selectedSlideKey === null ? 'hidden ' : '') + 'flex-1 w-full'}
-      />
+        className={(props.selectedSlideKey === null ? 'hidden ' : '') + 'relative flex-1 w-full'}
+      >
+        {/* The comment pins, drawn over the slide through the canvas's
+            overlay slot (`dom/slideCanvas.ts`): a box the slide's own size,
+            centered and scaled exactly as the slide is, so a pin placed at
+            a fraction of the slide stays on the spot it was put on. Each
+            pin is scaled back so it keeps one size on screen. They don't
+            take clicks — a click there is a click on the slide. */}
+        <div
+          slot="overlay"
+          data-comment-overlay
+          className="pointer-events-none"
+          style="position: absolute; left: 50%; top: 50%; width: var(--peitho-canvas-width); height: var(--peitho-canvas-height); transform: translate(-50%, -50%) scale(var(--peitho-thumb-scale, 1))"
+        >
+          {props.pins.map(pin => (
+            <span
+              key={pin.id}
+              data-comment-pin={pin.sent ? 'sent' : 'unsent'}
+              className={(pin.sent ? 'bg-primary text-primary-foreground ' : 'bg-[#eab308] text-black ') + 'flex items-center justify-center w-6 h-6 rounded-full rounded-bl-none text-xs font-semibold shadow-md border-2 border-white'}
+              style={`position: absolute; left: ${String(pin.x * 100)}%; top: ${String(pin.y * 100)}%; transform-origin: bottom left; transform: translate(0, -100%) scale(calc(1 / var(--peitho-thumb-scale, 1)))`}
+            >
+              {pin.number}
+            </span>
+          ))}
+        </div>
+      </div>
       <div className={(props.selectedSlideKey === null ? '' : 'hidden ') + 'flex-1 flex items-center justify-center text-sm text-muted-foreground'}>
         {props.hasDeck ? messagesFor(props.language).selectSlideToPreview : messagesFor(props.language).openDeckToPreview}
       </div>

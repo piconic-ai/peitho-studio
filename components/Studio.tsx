@@ -7,6 +7,15 @@ import { createTauriDeckIpc } from '../ipc/deckIpc'
 import { createTauriSettingsIpc } from '../ipc/settingsIpc'
 import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
+import { createTauriCritIpc } from '../ipc/critIpc'
+import {
+  REVIEW_AUTHOR, agentCritCommand, commentCountsBySlide, commentTargetOf, newReviewComment, previewPinsOf, reviewRows, reviewStatusText,
+  slideSpans, targetLabel,
+} from '../domain/reviewComment'
+import { focusCommentBox, type PreviewClick } from '../dom/previewComments'
+import { createReviewStore } from '../state/reviewStore'
+import { CommentBox } from './CommentBox'
+import { ReviewPanel } from './ReviewPanel'
 import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
 import { imageParagraphInsertion, insertionRangeAfterWait } from '../domain/editorText'
@@ -135,6 +144,8 @@ export function Studio() {
       // Only once `open`: a variant picked while still `opening` would be
       // rejected by `decide` as busy, silently doing nothing.
       void refreshDeckVariants()
+      review.reset()
+      void refreshReview()
     } catch (err) {
       setErrorMessage(String(err))
       // A failure here often means the path was a Recent entry pointing
@@ -829,6 +840,131 @@ export function Studio() {
     const key = selectedSlideKey()
     if (key !== null) patchSlideCanvases(`[data-preview-host][data-slide-canvas-key="${CSS.escape(key)}"]`, render.previewFragmentOf(key))
   })
+
+  // --- Comments for the Coding Agent (todo/review-comment-ui.md) ---
+  // A click on the preview opens the comment box; added comments wait,
+  // unsent, until "Send to Agent" hands them all to the agent waiting in
+  // crit (starting the deck's crit session with the first one). What was
+  // sent — replies, resolved state — is read back from crit.
+  const critIpc = createTauriCritIpc()
+  const review = createReviewStore()
+
+  // Each slide's comment key and span in the source the preview shows.
+  const renderedSlideSpans = createMemo(() => slideSpans(render.renderedSource(), render.manifest()?.slides ?? []))
+
+  function slideNumberOf(key: string): number {
+    return renderedSlideSpans().findIndex(slide => slide.key === key) + 1
+  }
+
+  let reviewGeneration = 0
+  // Reads the session and its comments back from crit. Quiet on failure —
+  // without crit (a dev build that never ran `crit:fetch`) there is simply
+  // no session; acting on one is what reports errors.
+  async function refreshReview(): Promise<void> {
+    const generation = ++reviewGeneration
+    try {
+      const session = (await critIpc.sessionStatus()) ?? { kind: 'none' as const }
+      const comments = session.kind === 'found' ? (await critIpc.listComments()) ?? [] : []
+      if (generation !== reviewGeneration) return
+      review.setSession(session)
+      review.setComments(comments)
+    } catch {
+      if (generation !== reviewGeneration) return
+      review.setSession({ kind: 'none' })
+      review.setComments([])
+    }
+  }
+
+  async function startReviewSession(): Promise<void> {
+    const session = review.session()
+    if (review.busy() !== 'idle' || (session !== null && session.kind !== 'none')) return
+    review.setBusy('starting')
+    review.setError(null)
+    try {
+      review.setSession(await critIpc.startSession())
+    } catch (err) {
+      review.setError(settings.messages().reviewFailed(String(err)))
+    } finally {
+      review.setBusy('idle')
+    }
+  }
+
+  function openCommentBox(click: PreviewClick): void {
+    const key = selectedSlideKey()
+    if (key === null) return
+    const slide = renderedSlideSpans().find(s => s.key === key)
+    const target = commentTargetOf(render.renderedSource(), slide?.span ?? null, click.hit)
+    const at = clampMenuPosition(click.at, { width: 336, height: 180 }, { width: window.innerWidth, height: window.innerHeight }, 8)
+    review.openBox(key, target, click.pin, at)
+    focusCommentBox()
+  }
+
+  function addComment(): void {
+    if (review.commitBox() !== null) void startReviewSession()
+  }
+
+  const commentBoxLabel = createMemo(() => {
+    const box = review.box()
+    return box.kind === 'open' ? targetLabel(slideNumberOf(box.slideKey), box.target) : ''
+  })
+
+  const commentBoxAt = createMemo(() => {
+    const box = review.box()
+    return box.kind === 'open' ? box.at : { x: 0, y: 0 }
+  })
+
+  // Hands every unsent comment and reply to the agent waiting in crit and
+  // finishes the round. Lines are worked out against the deck as saved
+  // (what crit and the agent read), so an unsaved edit is saved first.
+  async function sendReview(): Promise<void> {
+    if (review.availability().kind !== 'ready') return
+    review.setBusy('sending')
+    review.setError(null)
+    try {
+      if (editor.isDirty()) await handleSave()
+      const source = editor.fullSource()
+      const slides = slideSpans(source, render.manifest()?.slides ?? [])
+      const pending = review.pending()
+      const comments = pending.map(comment => {
+        const index = slides.findIndex(slide => slide.key === comment.slideKey)
+        return newReviewComment(comment, source, index === -1 ? null : slides[index].span, index === -1 ? slideNumberOf(comment.slideKey) : index + 1)
+      })
+      const replies = review.pendingReplies().map(reply => ({ ...reply, author: REVIEW_AUTHOR }))
+      if (comments.length > 0) await critIpc.addComments(comments)
+      if (replies.length > 0) await critIpc.addReplies(replies)
+      await critIpc.finish()
+      review.markSent(pending, comments.map(comment => comment.body))
+    } catch (err) {
+      review.setError(settings.messages().reviewFailed(String(err)))
+    } finally {
+      review.setBusy('idle')
+    }
+    await refreshReview()
+  }
+
+  async function resolveReviewComment(id: string): Promise<void> {
+    try {
+      review.setComments(await critIpc.resolveComment(id))
+    } catch (err) {
+      review.setError(settings.messages().reviewFailed(String(err)))
+    }
+  }
+
+  createEffect(() => {
+    review.syncCommentCounts(commentCountsBySlide(render.renderedSource(), renderedSlideSpans(), review.pending(), review.comments()))
+  })
+
+  const previewPins = createMemo(() => previewPinsOf(selectedSlideKey(), review.comments(), review.sentPins(), review.pending(), review.box()))
+
+  const reviewPanelRows = createMemo(() => reviewRows(
+    review.comments(),
+    review.pendingReplies(),
+    review.pending().map(comment => ({ id: comment.id, label: targetLabel(slideNumberOf(comment.slideKey), comment.target), body: comment.body })),
+  ))
+
+  const reviewStatus = createMemo(() => reviewStatusText(
+    settings.messages(), review.availability(), review.unsentCount(), review.busy() === 'starting', agentCritCommand(deck.deckPath()),
+  ))
 
   // `renderPayload`, when given, is applied together with the exact
   // `source` this same call just read — see `state/renderStore.ts`'s
@@ -1790,6 +1926,9 @@ export function Studio() {
       void replayHistory(direction)
     }
     const unlistenFileDrop = imageIpc.onFileDrop(drop => { void dropFiles(drop) })
+    // Whatever crit reports — the agent's next round, a reply, the round
+    // reaching the agent, the session ending — is read back whole.
+    const unlistenReview = critIpc.onReviewEvent(() => { void refreshReview() })
     const unlistenMenuUndo = deckIpc.onMenuUndo(() => { onMenuHistory('undo') })
     const unlistenMenuRedo = deckIpc.onMenuRedo(() => { onMenuHistory('redo') })
 
@@ -1904,6 +2043,7 @@ export function Studio() {
       unlistenSettingsChanged()
       unlistenClipboard()
       unlistenFileDrop()
+      unlistenReview()
       unlistenMenuUndo()
       unlistenMenuRedo()
       unlistenMenuDeckSetting()
@@ -2026,6 +2166,7 @@ export function Studio() {
           canvasHeight={render.canvasHeight()}
           canvasFragmentOf={render.canvasFragmentOf}
           slideStylesheet={getSlideStylesheet}
+          commentCountOf={review.commentCountOf}
           onContextMenu={openContextMenu}
           onDragStart={startSlideDrag}
           onSelectSlide={index => selectSlide(index)}
@@ -2056,22 +2197,44 @@ export function Studio() {
           onMouseDown={startColumnResize(ui.editorWidth, ui.setEditorWidth, 1)}
         />
 
-        <SlidePreview
-          language={settings.language()}
-          selectedSlideKey={selectedSlideKey()}
-          hasDeck={Boolean(render.assetBaseUrl())}
-          canvasFragmentOf={render.previewFragmentOf}
-          slideStylesheet={getSlideStylesheet}
-          viewportMode={ui.viewportMode()}
-          onToggleViewportMode={ui.toggleViewportMode}
-          phoneShape={ui.phoneShape()}
-          phoneShapeMenuOpen={ui.phoneShapeMenuOpen()}
-          onTogglePhoneShapeMenu={ui.togglePhoneShapeMenu}
-          onClosePhoneShapeMenu={ui.closePhoneShapeMenu}
-          onSelectPhoneShape={ui.selectPhoneShape}
-          canvasWidth={previewCanvasWidth()}
-          canvasHeight={previewCanvasHeight()}
-        />
+        <div className="flex-1 min-w-0 flex flex-col min-h-0">
+          <SlidePreview
+            language={settings.language()}
+            selectedSlideKey={selectedSlideKey()}
+            hasDeck={Boolean(render.assetBaseUrl())}
+            canvasFragmentOf={render.previewFragmentOf}
+            slideStylesheet={getSlideStylesheet}
+            viewportMode={ui.viewportMode()}
+            onToggleViewportMode={ui.toggleViewportMode}
+            phoneShape={ui.phoneShape()}
+            phoneShapeMenuOpen={ui.phoneShapeMenuOpen()}
+            onTogglePhoneShapeMenu={ui.togglePhoneShapeMenu}
+            onClosePhoneShapeMenu={ui.closePhoneShapeMenu}
+            onSelectPhoneShape={ui.selectPhoneShape}
+            canvasWidth={previewCanvasWidth()}
+            canvasHeight={previewCanvasHeight()}
+            pins={previewPins()}
+            onCommentClick={openCommentBox}
+          />
+          <ReviewPanel
+            language={settings.language()}
+            shown={Boolean(render.assetBaseUrl())}
+            status={reviewStatus()}
+            canSend={review.availability().kind === 'ready'}
+            sending={review.busy() === 'sending'}
+            error={review.error()}
+            rows={reviewPanelRows()}
+            replyingTo={review.replyDraft()?.commentId ?? null}
+            replyText={review.replyDraft()?.text ?? ''}
+            onSend={() => void sendReview()}
+            onDiscard={review.discard}
+            onStartReply={commentId => review.editReply(commentId, '')}
+            onReplyInput={text => { const draft = review.replyDraft(); if (draft) review.editReply(draft.commentId, text) }}
+            onReplyAdd={review.commitReply}
+            onReplyCancel={review.cancelReply}
+            onResolve={id => void resolveReviewComment(id)}
+          />
+        </div>
       </div>
       )}
 
@@ -2084,6 +2247,18 @@ export function Studio() {
         statusMessage={statusText(settings.messages(), statusMessage())}
         onCopyErrorMessage={() => void copyErrorMessage()}
         onImageSlotFix={applyImageSlotFix}
+      />
+
+      <CommentBox
+        language={settings.language()}
+        open={review.box().kind === 'open'}
+        label={commentBoxLabel()}
+        draft={review.boxDraft()}
+        left={commentBoxAt().x}
+        top={commentBoxAt().y}
+        onDraftInput={review.setBoxDraft}
+        onCancel={review.closeBox}
+        onAdd={addComment}
       />
 
       <SlideContextMenu
