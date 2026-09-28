@@ -8,6 +8,7 @@ import { toggleCollapsedKey } from '../domain/sectionCollapse'
 
 const SLIDE_LIST_WIDTH = 176
 const EDITOR_WIDTH = 420
+const REVIEW_PANEL_WIDTH = 320
 
 /** Transient UI-only state that doesn't belong to any single deck/editor
  * concept: the thumbnail drag gesture, the right-click context menu (+ its
@@ -123,6 +124,7 @@ export function createUiStore() {
 
   const [slideListWidth, setSlideListWidth] = createSignal(SLIDE_LIST_WIDTH)
   const [editorWidth, setEditorWidth] = createSignal(EDITOR_WIDTH)
+  const [reviewPanelWidth, setReviewPanelWidth] = createSignal(REVIEW_PANEL_WIDTH)
 
   // Which section header's own row (by `sourceIndex`) is expanded into its
   // editable name/time spinners — every other section header shows a
@@ -193,7 +195,7 @@ export function createUiStore() {
     presentMenuOpen, setPresentMenuOpen, presentPending, setPresentPending,
     imageLayoutAdding, setImageLayoutAdding,
     variantMenuOpen, setVariantMenuOpen,
-    slideListWidth, setSlideListWidth, editorWidth, setEditorWidth,
+    slideListWidth, setSlideListWidth, editorWidth, setEditorWidth, reviewPanelWidth, setReviewPanelWidth,
     editingSectionIndex, setEditingSectionIndex,
     collapsedSectionKeys, toggleSectionCollapsed,
     viewportMode, toggleViewportMode, phoneShape, selectPhoneShape,

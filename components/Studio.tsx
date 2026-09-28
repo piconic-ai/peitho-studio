@@ -2225,24 +2225,40 @@ export function Studio() {
             pins={previewPins()}
             onCommentClick={openCommentBox}
           />
-          <ReviewPanel
-            language={settings.language()}
-            shown={Boolean(render.assetBaseUrl())}
-            status={reviewStatus()}
-            canSend={review.availability().kind === 'ready'}
-            sending={review.busy() === 'sending'}
-            error={review.error()}
-            rows={reviewPanelRows()}
-            replyingTo={review.replyDraft()?.commentId ?? null}
-            replyText={review.replyDraft()?.text ?? ''}
-            onSend={() => void sendReview()}
-            onDiscard={review.discard}
-            onStartReply={commentId => review.editReply(commentId, '')}
-            onReplyInput={review.setReplyText}
-            onReplyAdd={review.commitReply}
-            onReplyCancel={review.cancelReply}
-            onResolve={id => void resolveReviewComment(id)}
-          />
+        </div>
+
+        {/* The comments column, rightmost: a fourth column rather than a
+            strip under the preview, so the threads get the window's full
+            height. Hidden with the panel until a deck is open. */}
+        <div
+          hidden={!render.assetBaseUrl()}
+          className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"
+          onMouseDown={startColumnResize(ui.reviewPanelWidth, ui.setReviewPanelWidth, -1)}
+        />
+
+        <div
+          hidden={!render.assetBaseUrl()}
+          className="shrink-0 flex flex-col min-h-0 border-l border-border"
+          style={`width: ${ui.reviewPanelWidth()}px`}
+        >
+            <ReviewPanel
+              language={settings.language()}
+              shown={Boolean(render.assetBaseUrl())}
+              status={reviewStatus()}
+              canSend={review.availability().kind === 'ready'}
+              sending={review.busy() === 'sending'}
+              error={review.error()}
+              rows={reviewPanelRows()}
+              replyingTo={review.replyDraft()?.commentId ?? null}
+              replyText={review.replyDraft()?.text ?? ''}
+              onSend={() => void sendReview()}
+              onDiscard={review.discard}
+              onStartReply={commentId => review.editReply(commentId, '')}
+              onReplyInput={review.setReplyText}
+              onReplyAdd={review.commitReply}
+              onReplyCancel={review.cancelReply}
+              onResolve={id => void resolveReviewComment(id)}
+            />
         </div>
       </div>
       )}

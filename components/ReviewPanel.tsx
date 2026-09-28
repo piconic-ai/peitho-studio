@@ -27,7 +27,7 @@ export interface ReviewPanelProps {
   onResolve: (commentId: string) => void
 }
 
-/** The comments for the Coding Agent, under the preview
+/** The comments for the Coding Agent, in the rightmost column
  * (todo/review-comment-ui.md): each thread in crit with the agent's
  * replies, what hasn't been sent yet, and the button that sends it all.
  * Every row and control stays mounted and is toggled with `hidden`, as
@@ -38,11 +38,12 @@ export function ReviewPanel(props: ReviewPanelProps) {
       data-review-panel=""
       aria-label={messagesFor(props.language).reviewComments}
       hidden={!props.shown}
-      className="shrink-0 border-t border-border flex flex-col max-h-72 min-h-0 text-sm"
+      className="flex-1 flex flex-col min-h-0 text-sm"
     >
-      <div className="shrink-0 flex items-center gap-3 px-3 py-2">
-        <span className="font-semibold">{messagesFor(props.language).reviewComments}</span>
-        <span data-review-status="" className="flex-1 text-xs text-muted-foreground">{props.status}</span>
+      {/* Title and button on one line, the status under them: in a column
+          this narrow, sharing one line squeezed both texts into wraps. */}
+      <div className="shrink-0 flex items-center gap-3 px-3 pt-2">
+        <span className="flex-1 font-semibold">{messagesFor(props.language).reviewComments}</span>
         <button
           type="button"
           data-review-send=""
@@ -56,6 +57,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
           {messagesFor(props.language)[props.sending ? 'sendingToAgent' : 'sendToAgent']}
         </button>
       </div>
+      <p data-review-status="" className="shrink-0 px-3 pt-1 pb-2 text-xs text-muted-foreground">{props.status}</p>
       <div role="alert" data-review-error="" hidden={props.error === null} className="shrink-0 px-3 pb-2 text-xs text-destructive">
         {props.error ?? ''}
       </div>
