@@ -87,6 +87,16 @@ impl SettingKey {
         }
     }
 
+    /// The choice peitho-core uses when the key is absent.
+    pub(crate) fn default_choice(self) -> &'static str {
+        self.choices()[0]
+    }
+
+    /// `value` as one of the choices, spelled exactly, or `None`.
+    pub(crate) fn choice_of(self, value: &str) -> Option<&'static str> {
+        self.choices().iter().copied().find(|choice| *choice == value)
+    }
+
     /// The choices that get an item of their own. Line breaks is a single
     /// on/off item standing for `true`; a click on it sends a toggle
     /// (`pick_for_click`).
@@ -445,6 +455,35 @@ mod tests {
     fn click(id: &str, front: Option<&DeckSettings>) -> Option<DeckSettingPick> {
         let (key, choice) = parse_menu_id(id)?;
         pick_for_click(key, choice, front)
+    }
+
+    #[test]
+    fn given_each_key_when_asked_for_its_default_then_it_is_peitho_cores_default() {
+        let defaults: Vec<&str> = SettingKey::ALL.into_iter().map(SettingKey::default_choice).collect();
+        assert_eq!(defaults, ["none", "16:9", "false", "en"]);
+    }
+
+    #[test]
+    fn given_each_choice_when_looked_up_then_it_is_found_as_itself() {
+        for key in SettingKey::ALL {
+            for choice in key.choices() {
+                assert_eq!(key.choice_of(choice), Some(*choice), "{key:?} {choice}");
+            }
+        }
+    }
+
+    #[test]
+    fn given_a_value_that_is_not_spelled_exactly_as_a_choice_when_looked_up_then_it_is_none() {
+        for value in ["", " ", "16:9 ", " 16:9", "16：9", "4/3", "EN", "Ja", "fr", "true", "16:9\n"] {
+            assert_eq!(SettingKey::AspectRatio.choice_of(value), None, "{value:?}");
+            assert_eq!(SettingKey::Lang.choice_of(value), None, "{value:?}");
+        }
+    }
+
+    #[test]
+    fn given_another_keys_choice_when_looked_up_then_it_is_none() {
+        assert_eq!(SettingKey::Lang.choice_of("4:3"), None);
+        assert_eq!(SettingKey::AspectRatio.choice_of("ja"), None);
     }
 
     #[test]
