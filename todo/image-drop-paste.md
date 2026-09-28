@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: 画像ファイルのドラッグ&ドロップ、またはクリップボードの画像のペーストで、デッキ内に画像を取り込んでMarkdownを挿入する
 tags: [editor, images, tauri, rust-command]
 ---
@@ -248,17 +248,56 @@ peitho-coreのエラーをStatusBarに出すだけに留める(自動でレイ�
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `cargo test`(`src-tauri/`)グリーン
-- [ ] `bun run test:e2e` グリーン(追加分含む)
-- [ ] `create_deck`で作ったデッキに画像だけの段落を足したソースが
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `cargo test`(`src-tauri/`)グリーン
+- [x] `bun run test:e2e` グリーン(追加分含む)
+- [x] `create_deck`で作ったデッキに画像だけの段落を足したソースが
   `render_source`でエラーなく描画される(Rustテスト)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] レイアウト決定(上記(a))の承認と、`title-body-image`の見た目
 - [ ] 実機での確認: Finderからのドロップ、スクリーンショットのペースト
   (要調査1の結果をこのファイルに追記)、対応外ファイルのエラー表示
+  - モックe2eで追えなかった箇所(実機でしか分からない):
+    - ドロップ位置: `onDragDropEvent`の`position`を`devicePixelRatio`で
+      割った点が、落とした行に一致するか(要調査2。Retina/非Retina/
+      複数ディスプレイ)
+    - `import_deck_image_bytes`の生ボディ+`x-image-name`ヘッダが実際の
+      Tauri IPCで届くか(モックは`exposeFunction`経由で別経路)
+    - スクリーンショットが`image/tiff`で来た場合に`createImageBitmap`で
+      PNGへ描き直せるか
+    - Finderでファイルを「コピー」してCmd+Vしたとき、ファイル本体では
+      なくアイコン画像が取り込まれてしまわないか
+    - 貼った画像がプレビューに出ること、Cmd+Zで1回で消えること
 - [ ] ペースト経路(a)/(b)の最終決定
+
+## 実装メモ
+
+- レイアウトは方針(a)で実装: `layouts/title-body-image.html`(画像スロット
+  `arity="1"`)と、その画像を余白いっぱいに収める`css/title-body-image.css`
+  を`create_deck`のscaffoldに追加。組み込みフォールバック(`layouts/`の
+  ないデッキ)には足していない — peitho CLIの組み込みは`title-body-code`
+  だけなので、足すとStudioとCLIでビルド結果が分かれる。
+  画像なし/コード/画像ありのスライドが並んでも曖昧にならないことをRust
+  テストで確認(`given_a_created_deck_when_slides_with_and_without_an_image_
+  sit_side_by_side_...`)。
+- Rust: `engine/images.rs`(名前の正規化・拡張子とマジックバイトの照合・
+  連番・`img/`の包含チェック・`create_new`で上書きしない)。コマンドは
+  `import_deck_image_file`(パス)と`import_deck_image_bytes`(生ボディ+
+  `x-image-name`ヘッダ)。
+- ペーストは候補(a)(DOM `paste`)で実装。`image/png`/`jpeg`/`gif`/`webp`
+  はそのまま、それ以外の`image/*`(TIFFなど)は`createImageBitmap`→canvas
+  でPNGに描き直す(`dom/imagePaste.ts`)。WKWebViewがTIFFをデコード
+  できるかは未確認 — 失敗するとエラーバーに出る。ペーストした画像の名前は
+  常に`screenshot-YYYYMMDD-HHMMSS.<ext>`(元ファイル名は使わない。ヘッダは
+  ASCIIのみのため)。
+- ドロップに対応外のファイルが1つでも混ざっていたら、ドロップ全体を拒否
+  してエラーバーに名前を出す(何も書き込まない)。一部だけ取り込むと、
+  続く描画の成功がエラーバーを消してしまい、どれが除外されたか読めない
+  ため。
+- 取り込み中にスライドを移った/デッキが読み直された場合、画像は保存される
+  が挿入はしない。取り込み中に打鍵してテキストが変わった場合は、その
+  時点のカーソル位置に挿入する(`insertionRangeAfterWait`)。
 
 ## 先送り事項
 
