@@ -13,6 +13,7 @@ import type { Manifest, ManifestSection, ManifestSlide, RenderPayload } from '..
 import type { DeckVariant } from '../../domain/deckVariants'
 import type { LayoutVerdict } from '../../domain/layoutFit'
 import type { Size } from '../../domain/geometry'
+import { readFrontmatterKey } from '../../domain/frontmatter'
 
 export interface MockDeck {
   source: string
@@ -108,8 +109,10 @@ export interface MockDeck {
    * `--peitho-canvas-width/height` that the real theme gives it). */
   css?: string
   /** The deck's native canvas size (the manifest's `canvasWidth/Height`) —
-   * defaults to 16:9, 1280x720. peitho-core only produces that or 4:3
-   * (960x720). */
+   * defaults to what the source's frontmatter `aspect_ratio` gives, as in
+   * peitho-core: 4:3 is 960x720, anything else 16:9, 1280x720. Set it to
+   * fix the size whatever the source says. peitho-core only produces those
+   * two sizes. */
   canvas?: Size
   /** The fragment every `preview_layouts` entry carries — defaults to an
    * empty one (the picker then draws name-only cards and mounts no canvas).
@@ -132,7 +135,10 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-const DEFAULT_CANVAS: Size = { width: 1280, height: 720 }
+/** The canvas peitho-core sizes a deck to from its `aspect_ratio`. */
+function canvasFor(source: string): Size {
+  return readFrontmatterKey(source, 'aspect_ratio') === '4:3' ? { width: 960, height: 720 } : { width: 1280, height: 720 }
+}
 
 function buildManifest(source: string, fragmentFor: (title: string) => string, canvas: Size): { manifest: Manifest; fragments: Record<string, string> } {
   const ranges = splitSlides(source)
@@ -185,7 +191,7 @@ const DEFAULT_FRAGMENT_FOR = (title: string): string => `<section class="peitho-
 const DEFAULT_CSS = '.peitho-slide { color: black; }'
 
 function renderPayloadFor(source: string, deck: MockDeck): RenderPayload {
-  const { manifest, fragments } = buildManifest(source, deck.fragmentFor ?? DEFAULT_FRAGMENT_FOR, deck.canvas ?? DEFAULT_CANVAS)
+  const { manifest, fragments } = buildManifest(source, deck.fragmentFor ?? DEFAULT_FRAGMENT_FOR, deck.canvas ?? canvasFor(source))
   return { manifest, fragments, assetBaseUrl: 'http://localhost:9/', css: deck.css ?? DEFAULT_CSS }
 }
 

@@ -3,7 +3,7 @@
 // cares about via `overrides`; every call still lands in `calls` so a
 // test can assert on what was invoked and with what arguments, without a
 // real Tauri window. `emitDeckFileChanged`/`emitMenuNewDeck`/
-// `emitMenuUndo`/`emitMenuRedo`/`emitPresentReady`/`emitPresentFailed`
+// `emitMenuUndo`/`emitMenuRedo`/`emitMenuDeckSetting`/`emitPresentReady`/`emitPresentFailed`
 // let a test simulate the Rust side pushing an event.
 import type { DeckIpc, DeckSessionInfo, LayoutPreviewsPayload, RenderPayload } from './deckIpc'
 
@@ -18,6 +18,7 @@ export interface FakeDeckIpc extends DeckIpc {
   emitMenuNewDeck(): void
   emitMenuUndo(): void
   emitMenuRedo(): void
+  emitMenuDeckSetting(payload: unknown): void
   emitPresentReady(): void
   emitPresentFailed(message: string): void
 }
@@ -35,6 +36,7 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
   const menuNewDeckListeners = new Set<() => void>()
   const menuUndoListeners = new Set<() => void>()
   const menuRedoListeners = new Set<() => void>()
+  const menuDeckSettingListeners = new Set<(payload: unknown) => void>()
   const presentReadyListeners = new Set<() => void>()
   const presentFailedListeners = new Set<(message: string) => void>()
 
@@ -64,6 +66,7 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
     },
     checkSlideLayouts: async (content, slideIndex) => { record('checkSlideLayouts', [content, slideIndex]); return null },
     presentDeck: async rehearsal => { record('presentDeck', [rehearsal]) },
+    reportDeckSettings: async settings => { record('reportDeckSettings', [settings]) },
     onDeckFileChanged: callback => {
       deckFileChangedListeners.add(callback)
       return () => { deckFileChangedListeners.delete(callback) }
@@ -79,6 +82,10 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
     onMenuRedo: callback => {
       menuRedoListeners.add(callback)
       return () => { menuRedoListeners.delete(callback) }
+    },
+    onMenuDeckSetting: callback => {
+      menuDeckSettingListeners.add(callback)
+      return () => { menuDeckSettingListeners.delete(callback) }
     },
     onPresentReady: callback => {
       presentReadyListeners.add(callback)
@@ -98,6 +105,7 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
     emitMenuNewDeck: () => { for (const cb of menuNewDeckListeners) cb() },
     emitMenuUndo: () => { for (const cb of menuUndoListeners) cb() },
     emitMenuRedo: () => { for (const cb of menuRedoListeners) cb() },
+    emitMenuDeckSetting: payload => { for (const cb of menuDeckSettingListeners) cb(payload) },
     emitPresentReady: () => { for (const cb of presentReadyListeners) cb() },
     emitPresentFailed: message => { for (const cb of presentFailedListeners) cb(message) },
   }

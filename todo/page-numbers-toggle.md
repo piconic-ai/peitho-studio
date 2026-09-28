@@ -196,8 +196,10 @@ index, { page_number: hidden ? undefined : false })`。`MenuContext`に
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機(`run-peitho-studio` skill)で、組み込みテーマのデッキに番号が
   出る/消えること、サムネイルとプレビューの両方で反映されること
-- [ ] コントロールの見た目と置き場所の最終確認 — 置き場所はネイティブの
-  Deckメニューへ移すと決まった(`todo/deck-settings-menu.md`)
+- [x] ~~コントロールの見た目と置き場所の最終確認~~ — ヘッダーの
+  コントロールは削除し、ネイティブの編集メニュー(`ページ番号: <現在値>`)へ移した
+  (`todo/deck-settings-menu.md`)。メニューの表記の確認はそちらの人間の
+  項目で扱う
 - [ ] 「なし」に切り替えたときに各スライドの`page_number:false`を黙って
   取り除く挙動でよいか(代案: 取り除かずにトグルを無効化して理由を表示)
 
@@ -218,7 +220,9 @@ index, { page_number: hidden ? undefined : false })`。`MenuContext`に
   無効化した(peitho-coreはdraft+page_numberの併用を拒否するため)。番号を
   再表示する方向のトグルは常に有効(手編集で拒否される組み合わせに
   なったスライドを戻せるように)。
-- 本番経路のトレース: ヘッダーのラジオ → `setPageNumbers` →
+- 本番経路のトレース(ヘッダーのラジオと`setPageNumbers`は
+  `todo/deck-settings-menu.md`で削除し、いまは編集メニューから入る):
+  編集 > ページ番号 → `menu:deck-setting` → `setDeckSetting` →
   `performStep`(直列化キュー)→ `runPageNumbersStep` → `commitChange` →
   `render_draft` / `save_deck_source`。peitho-coreは`render_deck`で
   `<section>`に`data-peitho-page-number`を付け、Studioは`slide.html()`を

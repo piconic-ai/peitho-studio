@@ -13,8 +13,9 @@ import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, indexAfterCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
-import { type HistoryStep, type PageNumbersStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyPageNumbersStep, commandForStep, inversePageNumbersStep, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
-import { PAGE_NUMBERS_KEY, type PageNumbersChoice, pageNumbersShown, pageNumbersValueOf, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
+import { type FrontmatterStep, type HistoryStep, type PageNumbersStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inversePageNumbersStep, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
+import { type DeckSettingsState, frontmatterValueOf, pickChangesNothing, readDeckSettings, resolveDeckSettingPick, sameDeckSettings } from '../domain/deckSettings'
+import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import { type LayoutVerdict } from '../domain/layoutFit'
@@ -423,9 +424,25 @@ export function Studio() {
     })
   })
   // The deck's `page_numbers` setting: its raw frontmatter value (what an
-  // undo writes back), and as the header's control shows it.
+  // undo writes back), and whether it shows numbers at all (for the slide
+  // context menu's Hide Page Number).
   const pageNumbersValue = createMemo(() => readFrontmatterKey(editor.fullSource(), PAGE_NUMBERS_KEY))
   const pageNumbersMode = createMemo(() => parsePageNumbersMode(pageNumbersValue()))
+  // The Edit menu's deck settings as this deck's frontmatter holds them
+  // (see `src-tauri/src/deck_menu.rs`). Each change is reported so the
+  // menu can show them (checks and current-value labels) while this window
+  // is in front; a report equal to the last one sent (a save that left the
+  // frontmatter alone) is skipped. A report that fails is sent again with
+  // the next change.
+  const deckSettings = createMemo(() => readDeckSettings(editor.fullSource()))
+  let reportedDeckSettings: DeckSettingsState | null = null
+  createEffect(() => {
+    if (deck.deckPath() === null) return
+    const report = deckSettings()
+    if (reportedDeckSettings !== null && sameDeckSettings(reportedDeckSettings, report)) return
+    reportedDeckSettings = report
+    deckIpc.reportDeckSettings(report).catch(() => { reportedDeckSettings = null })
+  })
   const currentMenuItems = createMemo(() => computeMenuItems(ui.contextMenu(), {
     slideCount: slideEntries().length,
     hasClipboard: ui.clipboardSlideText() !== null,
@@ -973,18 +990,6 @@ export function Studio() {
     })
   }
 
-  // Header > Page numbers: sets the deck's `page_numbers` (and, turning
-  // them off, clears every slide's `page_number:false`) as one undoable
-  // step. The step is built only once earlier operations have landed, so
-  // the slides it keeps hidden are the ones hidden by then. Picking the
-  // setting already in place does nothing.
-  function setPageNumbers(choice: PageNumbersChoice): Promise<void> {
-    return performStep(async () => {
-      if (pageNumbersMode().kind === choice) return { kind: 'rejected' }
-      return runPageNumbersStep(pageNumbersStepFor(currentSlideTexts(), pageNumbersValueOf(choice)))
-    })
-  }
-
   // Writes a page-number step's frontmatter value and slide flags through
   // the same `commitChange` path as every structural operation. The open
   // slide stays open: the step never moves or removes a slide.
@@ -992,6 +997,39 @@ export function Studio() {
     const texts = currentSlideTexts()
     const inverse = inversePageNumbersStep(texts, pageNumbersValue())
     const nextSource = setFrontmatterKey(rebuildSource(applyPageNumbersStep(texts, step)), PAGE_NUMBERS_KEY, step.value)
+    const ok = await commitChange(nextSource, { kind: 'keep' })
+    return ok ? { kind: 'done', inverse } : { kind: 'failed' }
+  }
+
+  // Edit menu's deck settings: writes the picked choice into the deck's
+  // frontmatter as one undoable step, removing the key for peitho-core's
+  // default. Page numbers
+  // go through a `PageNumbersStep`, which also clears the slides' own
+  // `page_number:false` when turning them off. Picking the choice already
+  // in place does nothing. `payload` is the menu event's, read only once
+  // earlier operations have landed, so the Line Breaks toggle flips what
+  // the deck holds by then; one that isn't a pick the menu offers is
+  // dropped.
+  function setDeckSetting(payload: unknown): Promise<void> {
+    return performStep(async () => {
+      const pick = resolveDeckSettingPick(payload, deckSettings())
+      if (pick === null || pickChangesNothing(deckSettings(), pick)) return { kind: 'rejected' }
+      const value = frontmatterValueOf(pick.key, pick.choice)
+      return pick.key === 'page_numbers'
+        ? runPageNumbersStep(pageNumbersStepFor(currentSlideTexts(), value))
+        : runFrontmatterStep({ kind: 'frontmatter', key: pick.key, value })
+    })
+  }
+
+  // Writes one frontmatter key through the same `commitChange` path as
+  // every structural operation, the open slide's draft included. A step
+  // that would leave the source as it is (a frontmatter block that isn't
+  // closed, which `setFrontmatterKey` won't touch) records nothing.
+  async function runFrontmatterStep(step: FrontmatterStep): Promise<StepOutcome> {
+    const source = rebuildSource(currentSlideTexts())
+    const nextSource = applyFrontmatterStep(source, step)
+    if (nextSource === source) return { kind: 'rejected' }
+    const inverse = inverseFrontmatterStep(source, step)
     const ok = await commitChange(nextSource, { kind: 'keep' })
     return ok ? { kind: 'done', inverse } : { kind: 'failed' }
   }
@@ -1059,11 +1097,19 @@ export function Studio() {
   // other stack; a failed commit puts the step back so it can be retried; a
   // rejected one means the history no longer matches the deck, so it is
   // dropped whole rather than left to misfire on the next press.
-  async function replayStructuralStep(step: StructuralStep | PageNumbersStep, direction: 'undo' | 'redo'): Promise<void> {
+  function runReplayedStep(step: StructuralStep | PageNumbersStep | FrontmatterStep): Promise<StepOutcome> {
+    switch (step.kind) {
+      case 'page-numbers':
+        return runPageNumbersStep(step)
+      case 'frontmatter':
+        return runFrontmatterStep(step)
+      default:
+        return runStep(step, cmd => selectionForReplay(step, cmd, editor.selectedIndex()))
+    }
+  }
+  async function replayStructuralStep(step: StructuralStep | PageNumbersStep | FrontmatterStep, direction: 'undo' | 'redo'): Promise<void> {
     const isUndo = direction === 'undo'
-    const outcome = step.kind === 'page-numbers'
-      ? await runPageNumbersStep(step)
-      : await runStep(step, cmd => selectionForReplay(step, cmd, editor.selectedIndex()))
+    const outcome = await runReplayedStep(step)
     if (outcome.kind === 'done') {
       pushReplayed(outcome.inverse, direction)
     } else if (outcome.kind === 'failed') {
@@ -1517,6 +1563,14 @@ export function Studio() {
     const unlistenMenuUndo = deckIpc.onMenuUndo(() => { onMenuHistory('undo') })
     const unlistenMenuRedo = deckIpc.onMenuRedo(() => { onMenuHistory('redo') })
 
+    // Edit menu's deck settings (see `setDeckSetting`), sent to the focused
+    // window only. The items are disabled while no deck is open, but a pick
+    // that still arrives then is dropped.
+    const unlistenMenuDeckSetting = deckIpc.onMenuDeckSetting(payload => {
+      if (deck.deckPath() === null) return
+      void setDeckSetting(payload)
+    })
+
     const onKeyDown = (event: KeyboardEvent) => {
       // While the settings panel is open, Escape closes it and every other
       // shortcut waits, since Delete or an arrow key would otherwise act on
@@ -1621,6 +1675,7 @@ export function Studio() {
       unlistenClipboard()
       unlistenMenuUndo()
       unlistenMenuRedo()
+      unlistenMenuDeckSetting()
     })
   })
 
@@ -1690,8 +1745,6 @@ export function Studio() {
         onTogglePresentMenu={() => ui.setPresentMenuOpen(!ui.presentMenuOpen())}
         onClosePresentMenu={() => ui.setPresentMenuOpen(false)}
         onPresent={rehearsal => void handlePresent(rehearsal)}
-        pageNumbersMode={pageNumbersMode()}
-        onChangePageNumbers={choice => void setPageNumbers(choice)}
       />
 
       {deck.deckPath() === null ? (
