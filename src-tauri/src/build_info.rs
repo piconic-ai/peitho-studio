@@ -4,6 +4,8 @@
 //! to compute `PEITHO_STUDIO_BUILD`/`PEITHO_STUDIO_COMMIT`, and the crate
 //! compiles it only under `cfg(test)`, for these tests.
 
+use std::path::{Path, PathBuf};
+
 /// What the Build row says when the build didn't come from CI.
 pub const LOCAL_BUILD_LABEL: &str = "dev";
 
@@ -27,6 +29,19 @@ pub fn commit_sha(git_output: &str) -> String {
     } else {
         String::new()
     }
+}
+
+/// What to hand cargo's `rerun-if-changed` so a new commit on the branch
+/// re-runs the build script: `ref_file` (`refs/heads/<branch>`) itself if
+/// it exists, else its nearest existing folder inside `refs_root`. After a
+/// `git gc` the branch lives only in `packed-refs` with no loose file, and
+/// the next commit creates one — watching the folder catches that. Never
+/// climbs above `refs_root` (a watched `.git` would re-run on every index
+/// change), and a missing path is never returned (cargo treats one as
+/// always changed). `exists` is the filesystem check, passed in to keep
+/// this pure.
+pub fn ref_rerun_target(ref_file: &Path, refs_root: &Path, exists: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    ref_file.ancestors().take_while(|path| path.starts_with(refs_root)).find(|path| exists(path)).map(Path::to_path_buf)
 }
 
 #[cfg(test)]
@@ -75,5 +90,44 @@ mod tests {
         ] {
             assert_eq!(commit_sha(output), "", "{output:?}");
         }
+    }
+
+    fn existing(paths: &'static [&'static str]) -> impl Fn(&Path) -> bool {
+        move |path| paths.iter().any(|p| Path::new(p) == path)
+    }
+
+    #[test]
+    fn ref_rerun_target_spec_watches_the_loose_ref_file_when_it_exists() {
+        let target = ref_rerun_target(Path::new("/r/.git/refs/heads/main"), Path::new("/r/.git/refs"), existing(&["/r/.git/refs/heads/main", "/r/.git/refs/heads"]));
+        assert_eq!(target, Some(PathBuf::from("/r/.git/refs/heads/main")));
+    }
+
+    #[test]
+    fn ref_rerun_target_adversarial_a_packed_only_branch_watches_its_folder() {
+        let target = ref_rerun_target(Path::new("/r/.git/refs/heads/main"), Path::new("/r/.git/refs"), existing(&["/r/.git/refs/heads"]));
+        assert_eq!(target, Some(PathBuf::from("/r/.git/refs/heads")));
+    }
+
+    #[test]
+    fn ref_rerun_target_adversarial_a_nested_branch_name_climbs_to_the_nearest_existing_folder() {
+        let target = ref_rerun_target(Path::new("/r/.git/refs/heads/feat/x"), Path::new("/r/.git/refs"), existing(&["/r/.git/refs/heads", "/r/.git/refs"]));
+        assert_eq!(target, Some(PathBuf::from("/r/.git/refs/heads")));
+    }
+
+    #[test]
+    fn ref_rerun_target_adversarial_never_climbs_above_the_refs_root() {
+        let target = ref_rerun_target(Path::new("/r/.git/refs/heads/main"), Path::new("/r/.git/refs"), existing(&["/r/.git", "/r"]));
+        assert_eq!(target, None);
+    }
+
+    #[test]
+    fn ref_rerun_target_adversarial_a_ref_outside_the_root_is_none() {
+        let target = ref_rerun_target(Path::new("/elsewhere/refs/heads/main"), Path::new("/r/.git/refs"), existing(&["/elsewhere/refs/heads/main"]));
+        assert_eq!(target, None);
+    }
+
+    #[test]
+    fn ref_rerun_target_adversarial_empty_paths_are_none() {
+        assert_eq!(ref_rerun_target(Path::new(""), Path::new("/r/.git/refs"), existing(&[""])), None);
     }
 }

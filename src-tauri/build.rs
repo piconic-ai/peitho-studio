@@ -38,13 +38,17 @@ fn embed_build_info() {
   println!("cargo:rustc-env=PEITHO_STUDIO_COMMIT={commit}");
 
   // Re-run when HEAD moves: a checkout changes `HEAD`, a commit changes the
-  // branch's ref file (or `packed-refs`). Only existing files are listed —
-  // cargo treats a missing one as always changed.
-  let mut watched = vec![git_path("HEAD"), git_path("packed-refs")];
-  if let Some(branch) = git(&["symbolic-ref", "-q", "HEAD"]) {
-    watched.push(git_path(branch.trim()));
+  // branch's ref file (or `packed-refs`, or `reftable/` on that backend).
+  // Only existing paths are listed — cargo treats a missing one as always
+  // changed. A branch with no loose ref file yet is watched through its
+  // folder (see `build_info::ref_rerun_target`).
+  let mut watched = vec![git_path("HEAD"), git_path("packed-refs"), git_path("reftable")];
+  if let (Some(branch), Some(refs_root)) = (git(&["symbolic-ref", "-q", "HEAD"]), git_path("refs")) {
+    if let Some(ref_file) = git_path(branch.trim()) {
+      watched.push(build_info::ref_rerun_target(&ref_file, &refs_root, Path::exists));
+    }
   }
-  for path in watched.into_iter().flatten().filter(|p| p.is_file()) {
+  for path in watched.into_iter().flatten().filter(|p| p.exists()) {
     println!("cargo:rerun-if-changed={}", path.display());
   }
 }
@@ -59,7 +63,12 @@ fn git(args: &[&str]) -> Option<String> {
 /// Where `name` (`HEAD`, a ref) lives in the git directory, worktrees
 /// included (a worktree's refs are in the main repository's directory).
 fn git_path(name: &str) -> Option<PathBuf> {
-  let out = git(&["rev-parse", "--path-format=absolute", "--git-path", name])?;
+  let out = git(&["rev-parse", "--git-path", name])?;
   let path = Path::new(out.trim());
-  path.is_absolute().then(|| path.to_path_buf())
+  if path.as_os_str().is_empty() {
+    return None;
+  }
+  // Relative to the directory `git` ran in (`--path-format=absolute` would
+  // say so directly, but needs git 2.31+).
+  Some(Path::new(&std::env::var("CARGO_MANIFEST_DIR").ok()?).join(path))
 }
