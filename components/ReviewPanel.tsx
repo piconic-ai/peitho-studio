@@ -238,29 +238,32 @@ export function ReviewPanel(props: ReviewPanelProps) {
                   </div>
                   {/* The user's words on the right, dark; the agent's on the
                       left, light; not sent yet, outlined. */}
-                  <p
-                    data-review-bubble=""
-                    className={(row.byAgent
-                      ? 'rounded-tl-sm bg-muted text-foreground '
-                      : row.kind === 'unsent-comment' || row.kind === 'unsent-reply'
-                        ? 'rounded-tr-sm border-2 border-dashed border-[#eab308] bg-background text-foreground '
-                        : 'rounded-tr-sm bg-primary text-primary-foreground ') + 'rounded-2xl px-3 py-2 whitespace-pre-wrap break-words'}
-                  >
-                    {row.body}
-                  </p>
-                  {/* Under the agent's last word: what a reply answers. */}
-                  <button
-                    type="button"
-                    data-review-reply=""
-                    className={row.replyHere && !row.replyBoxHere ? 'flex items-center gap-1 px-1 text-xs text-muted-foreground rounded hover:text-foreground hover:bg-muted' : 'hidden'}
-                    onClick={() => props.onStartReply(row.id)}
-                  >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M9 14 4 9l5-5" />
-                      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
-                    </svg>
-                    {messagesFor(props.language).reply}
-                  </button>
+                  <div className="flex items-end gap-1 max-w-full">
+                    <p
+                      data-review-bubble=""
+                      className={(row.byAgent
+                        ? 'rounded-tl-sm bg-muted text-foreground '
+                        : row.kind === 'unsent-comment' || row.kind === 'unsent-reply'
+                          ? 'rounded-tr-sm border-2 border-dashed border-[#eab308] bg-background text-foreground '
+                          : 'rounded-tr-sm bg-primary text-primary-foreground ') + 'min-w-0 rounded-2xl px-3 py-2 whitespace-pre-wrap break-words'}
+                    >
+                      {row.body}
+                    </p>
+                    {/* Beside the agent's last word, at its foot: what a reply
+                        answers. */}
+                    <button
+                      type="button"
+                      data-review-reply=""
+                      className={row.replyHere && !row.replyBoxHere ? 'shrink-0 flex items-center gap-1 px-1 py-0.5 text-xs whitespace-nowrap text-muted-foreground rounded hover:text-foreground hover:bg-muted' : 'hidden'}
+                      onClick={() => props.onStartReply(row.id)}
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 14 4 9l5-5" />
+                        <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+                      </svg>
+                      {messagesFor(props.language).reply}
+                    </button>
+                  </div>
                 </div>
               </div>
                 {/* The reply box sits under the thread it answers. */}
