@@ -12,7 +12,7 @@ describe('createFakeCritIpc', () => {
     expect((await ipc.sessionStatus()).kind).toBe('found')
     const comments = await ipc.addComments([comment()])
     expect(comments).toEqual([{
-      id: 'c_1', lines: { start: 5, end: 5 }, body: 'Make it bigger', quote: '# Hello', author: 'Peitho Studio', resolved: false, replies: [],
+      id: 'c_1', lines: { start: 5, end: 5 }, body: 'Make it bigger', quote: '# Hello', author: 'Peitho Studio', resolved: false, replies: [], createdAt: expect.any(String),
     }])
     expect(ipc.calls.map(call => call.method)).toEqual(['sessionStatus', 'addComments'])
   })
@@ -25,7 +25,7 @@ describe('createFakeCritIpc', () => {
     await ipc.finish()
     ipc.reply(sent.id, 'Made it bigger')
     expect(heard).toEqual(['finished', 'commentsChanged'])
-    expect((await ipc.listComments())[0].replies).toEqual([{ id: 'rp_2', body: 'Made it bigger', author: 'Agent' }])
+    expect((await ipc.listComments())[0].replies).toEqual([{ id: 'rp_2', body: 'Made it bigger', author: 'Agent', createdAt: expect.any(String) }])
   })
 
   test('Given no session, When Studio tries to send, Then every call that needs the session rejects', async () => {
@@ -66,7 +66,7 @@ describe('createFakeCritIpc', () => {
     const ipc = createFakeCritIpc()
     const [sent] = await ipc.addComments([comment()])
     const replied = await ipc.addReplies([{ commentId: sent.id, body: 'Still small', author: 'Peitho Studio' }])
-    expect(replied[0].replies).toEqual([{ id: 'rp_2', body: 'Still small', author: 'Peitho Studio' }])
+    expect(replied[0].replies).toEqual([{ id: 'rp_2', body: 'Still small', author: 'Peitho Studio', createdAt: expect.any(String) }])
     expect((await ipc.resolveComment(sent.id))[0].resolved).toBe(true)
   })
 

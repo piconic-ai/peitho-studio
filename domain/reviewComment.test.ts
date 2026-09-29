@@ -5,7 +5,7 @@ import type { ManifestSlide } from './render'
 import {
   liveReplies,
   agentCommentBody, annotatedSpan, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
-  newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, previewPinsOf, relocateTarget, reviewRows, reviewStatusText, sendAvailability, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
+  newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, previewPinsOf, relocateTarget, reviewStatusText, sendAvailability, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
   utf8OffsetToIndex, type CommentTarget, type PendingComment,
 } from './reviewComment'
 
@@ -303,7 +303,7 @@ describe('trimSpan', () => {
 describe('newReviewComment', () => {
   const source = '---\nlang: en\n---\n\n# Hello\n\nSome text\n\n---\n\n# Second\n'
   const firstSlide = { start: source.indexOf('# Hello'), end: source.indexOf('---', 20) }
-  const pending = (target: CommentTarget): PendingComment => ({ id: 'p1', slideKey: 'hello', target, pin: null, body: 'Make it bigger' })
+  const pending = (target: CommentTarget): PendingComment => ({ id: 'p1', slideKey: 'hello', target, pin: null, body: 'Make it bigger', createdAt: '2026-09-29T00:00:00Z' })
 
   test('spec: Given a comment on a heading, When it is sent, Then crit gets the heading\'s line, its Markdown and the labelled comment', () => {
     const comment = newReviewComment(pending({ kind: 'heading', text: 'Hello', quote: 'Hello', offsetInSlide: 2 }), source, firstSlide, 1)
@@ -348,7 +348,7 @@ describe('slideIndexOfLine / commentCountsBySlide', () => {
     { key: 'two', span: { start: source.indexOf('# Two'), end: source.length } },
   ]
   const sent = (start: number, resolved = false): ReviewComment => ({
-    id: `c${String(start)}`, lines: { start, end: start }, body: 'b', quote: null, author: 'Peitho Studio', resolved, replies: [],
+    id: `c${String(start)}`, lines: { start, end: start }, body: 'b', quote: null, author: 'Peitho Studio', resolved, replies: [], createdAt: null,
   })
 
   test('spec: Given line 5 is in the second slide, Then that slide is found', () => {
@@ -482,7 +482,7 @@ describe('reviewStatusText', () => {
   const en = messagesFor('en')
 
   test.each([
-    ['ready', 0, false, en.agentWaiting],
+    ['ready', 0, false, ''],
     ['sending', 1, false, en.sendingToAgent],
     ['nothing-to-send', 0, false, en.commentHint],
     ['no-session', 0, false, en.commentHint],
@@ -503,9 +503,9 @@ describe('reviewStatusText', () => {
 
 describe('previewPinsOf', () => {
   const target: CommentTarget = { kind: 'heading', text: 'Hi', quote: 'Hi', offsetInSlide: 0 }
-  const unsent = (id: string, slideKey: string, pin: { x: number; y: number } | null): PendingComment => ({ id, slideKey, target, pin, body: 'b' })
+  const unsent = (id: string, slideKey: string, pin: { x: number; y: number } | null): PendingComment => ({ id, slideKey, target, pin, body: 'b', createdAt: '2026-09-29T00:00:00Z' })
   const inCrit = (id: string, body: string, resolved = false): ReviewComment => ({
-    id, lines: { start: 1, end: 1 }, body, quote: null, author: 'Peitho Studio', resolved, replies: [],
+    id, lines: { start: 1, end: 1 }, body, quote: null, author: 'Peitho Studio', resolved, replies: [], createdAt: null,
   })
 
   test('spec: Given a sent comment, an unsent one and the box being written on this slide, Then all three pins show, numbered in that order', () => {
@@ -549,59 +549,16 @@ describe('previewPinsOf', () => {
 })
 
 describe('liveReplies', () => {
-  const comment = (id: string): ReviewComment => ({ id, lines: null, body: 'b', quote: null, author: 'a', resolved: false, replies: [] })
+  const comment = (id: string): ReviewComment => ({ id, lines: null, body: 'b', quote: null, author: 'a', resolved: false, replies: [], createdAt: null })
 
   test('spec: Given replies to comments crit has and to one it lost, Then only the former are live, in order', () => {
-    const replies = [{ id: 'r1', commentId: 'c1', body: 'a' }, { id: 'r2', commentId: 'gone', body: 'b' }, { id: 'r3', commentId: 'c2', body: 'c' }]
+    const replies = [{ id: 'r1', commentId: 'c1', body: 'a', createdAt: '2026-09-29T00:00:00Z' }, { id: 'r2', commentId: 'gone', body: 'b', createdAt: '2026-09-29T00:00:00Z' }, { id: 'r3', commentId: 'c2', body: 'c', createdAt: '2026-09-29T00:00:00Z' }]
     expect(liveReplies(replies, [comment('c1'), comment('c2')]).map(r => r.id)).toEqual(['r1', 'r3'])
   })
 
   test('adversarial: Given no comments or no replies, Then nothing is live', () => {
-    expect(liveReplies([{ id: 'r1', commentId: 'c1', body: 'a' }], [])).toEqual([])
+    expect(liveReplies([{ id: 'r1', commentId: 'c1', body: 'a', createdAt: '2026-09-29T00:00:00Z' }], [])).toEqual([])
     expect(liveReplies([], [comment('c1')])).toEqual([])
   })
 })
 
-describe('reviewRows', () => {
-  const thread = (id: string, resolved: boolean, replies: { id: string; body: string }[] = []): ReviewComment => ({
-    id, lines: { start: 1, end: 1 }, body: `[Slide 1] ${id}`, quote: null, author: 'Peitho Studio', resolved,
-    replies: replies.map(r => ({ ...r, author: 'Agent' })),
-  })
-
-  test('spec: Given a thread with the agent\'s reply, an unsent reply to it and an unsent comment, Then the panel reads them in that order', () => {
-    const rows = reviewRows(
-      [thread('c1', false, [{ id: 'r1', body: 'Done' }])],
-      [{ id: 'reply-1', commentId: 'c1', body: 'Still small' }],
-      [{ id: 'p1', label: 'Slide 2 › heading "Hi"', body: 'Bolder' }],
-    )
-    expect(rows.map(r => [r.kind, r.id, r.author, r.body])).toEqual([
-      ['comment', 'c1', 'Peitho Studio', '[Slide 1] c1'],
-      ['reply', 'c1', 'Agent', 'Done'],
-      ['unsent-reply', 'reply-1', 'Peitho Studio', 'Still small'],
-      ['unsent-comment', 'p1', 'Peitho Studio', '[Slide 2 › heading "Hi"] Bolder'],
-    ])
-  })
-
-  test('spec: Given a resolved thread before an open one, Then open threads come first and the resolved one is marked on every row', () => {
-    const rows = reviewRows([thread('c1', true, [{ id: 'r1', body: 'ok' }]), thread('c2', false)], [], [])
-    expect(rows.map(r => [r.id, r.resolved])).toEqual([['c2', false], ['c1', true], ['c1', true]])
-  })
-
-  test('adversarial: Given nothing at all, Then there are no rows', () => {
-    expect(reviewRows([], [], [])).toEqual([])
-  })
-
-  test('adversarial: Given an unsent reply to a comment crit no longer has, Then it is listed after the threads, on its own, to be discarded', () => {
-    const rows = reviewRows([thread('c1', false)], [{ id: 'reply-1', commentId: 'gone', body: 'x' }], [{ id: 'p1', label: 'Slide 1', body: 'z' }])
-    expect(rows.map(r => [r.kind, r.id, r.resolved])).toEqual([['comment', 'c1', false], ['unsent-reply', 'reply-1', false], ['unsent-comment', 'p1', false]])
-  })
-
-  test('adversarial: Given every row, Then their keys are distinct', () => {
-    const rows = reviewRows(
-      [thread('c1', false, [{ id: 'r1', body: 'a' }, { id: 'r2', body: 'b' }]), thread('c2', false, [{ id: 'r1', body: 'c' }])],
-      [{ id: 'reply-1', commentId: 'c1', body: 'x' }, { id: 'reply-2', commentId: 'c2', body: 'y' }, { id: 'reply-3', commentId: 'gone', body: 'w' }],
-      [{ id: 'p1', label: 'Slide 1', body: 'z' }],
-    )
-    expect(new Set(rows.map(r => r.key)).size).toBe(rows.length)
-  })
-})

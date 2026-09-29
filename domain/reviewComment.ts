@@ -49,6 +49,8 @@ export interface PendingComment {
    * height — `null` when the click position isn't known. */
   pin: { x: number; y: number } | null
   body: string
+  /** When it was written (RFC 3339). */
+  createdAt: string
 }
 
 /** The box a comment is written in, over the preview: closed, or open on a
@@ -62,6 +64,8 @@ export interface PendingReply {
   id: string
   commentId: string
   body: string
+  /** When it was written (RFC 3339). */
+  createdAt: string
 }
 
 /** Those of `replies` whose comment crit still has. A reply to a comment
@@ -312,18 +316,19 @@ export function pollsForAgent(availability: SendAvailability): boolean {
 
 export const REVIEW_POLL_MS = 3000
 
-/** The comments panel's status line. `starting`: whether Studio is
+/** The comments panel's status line — empty when all is ready. `starting`: whether Studio is
  * starting the session. What to do about an agent not waiting is the
  * connect card's (`domain/agentConnect.ts`); this line only names it. */
 export function reviewStatusText(
-  messages: Pick<Messages, 'startingReview' | 'agentWaiting' | 'sendingToAgent' | 'commentHint' | 'sendNeedsSession' | 'sendNeedsAgent' | 'sendNeedsOneSession'>,
+  messages: Pick<Messages, 'startingReview' | 'sendingToAgent' | 'commentHint' | 'sendNeedsSession' | 'sendNeedsAgent' | 'sendNeedsOneSession'>,
   availability: SendAvailability,
   unsent: number,
   starting: boolean,
 ): string {
   if (starting) return messages.startingReview
   switch (availability.kind) {
-    case 'ready': return messages.agentWaiting
+    // Nothing to say: the Send button being enabled says it.
+    case 'ready': return ''
     case 'sending': return messages.sendingToAgent
     case 'nothing-to-send': return messages.commentHint
     case 'no-session': return unsent > 0 ? messages.sendNeedsSession : messages.commentHint
@@ -376,51 +381,6 @@ export function previewPinsOf(
   }
   if (box.kind === 'open' && box.slideKey === slideKey && box.pin !== null) pins.push({ id: 'writing', ...box.pin, sent: false })
   return pins.map((pin, i) => ({ ...pin, number: i + 1 }))
-}
-
-/** One line of the comments panel. `id`: the crit comment a `comment` or
- * `reply` row belongs to (what a reply or resolve acts on), or an unsent
- * comment's or reply's own id (what discarding it acts on). */
-export interface ReviewRow {
-  key: string
-  kind: 'comment' | 'reply' | 'unsent-reply' | 'unsent-comment'
-  id: string
-  author: string
-  body: string
-  resolved: boolean
-}
-
-/** The comments panel as one flat list: each thread in crit (unresolved
- * ones first, otherwise in crit's order) with its replies and the replies
- * not sent yet under it, then unsent replies whose comment crit no longer
- * has (`liveReplies`), then the comments not sent yet. `unsent` carries
- * each unsent comment's label, already worked out. */
-export function reviewRows(
-  comments: readonly ReviewComment[],
-  unsentReplies: readonly PendingReply[],
-  unsent: readonly { id: string; label: string; body: string }[],
-): ReviewRow[] {
-  const rows: ReviewRow[] = []
-  const threads = [...comments.filter(c => !c.resolved), ...comments.filter(c => c.resolved)]
-  for (const comment of threads) {
-    rows.push({ key: `comment:${comment.id}`, kind: 'comment', id: comment.id, author: comment.author, body: comment.body, resolved: comment.resolved })
-    for (const reply of comment.replies) {
-      rows.push({ key: `reply:${comment.id}:${reply.id}`, kind: 'reply', id: comment.id, author: reply.author, body: reply.body, resolved: comment.resolved })
-    }
-    for (const reply of unsentReplies) {
-      if (reply.commentId !== comment.id) continue
-      rows.push({ key: `unsent-reply:${reply.id}`, kind: 'unsent-reply', id: reply.id, author: REVIEW_AUTHOR, body: reply.body, resolved: comment.resolved })
-    }
-  }
-  const live = new Set(liveReplies(unsentReplies, comments))
-  for (const reply of unsentReplies) {
-    if (live.has(reply)) continue
-    rows.push({ key: `unsent-reply:${reply.id}`, kind: 'unsent-reply', id: reply.id, author: REVIEW_AUTHOR, body: reply.body, resolved: false })
-  }
-  for (const comment of unsent) {
-    rows.push({ key: `unsent:${comment.id}`, kind: 'unsent-comment', id: comment.id, author: REVIEW_AUTHOR, body: agentCommentBody(comment.label, comment.body), resolved: false })
-  }
-  return rows
 }
 
 /** Which of `slides` (each with its span in `source`) line `line` of

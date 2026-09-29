@@ -6,7 +6,7 @@ import { createReviewStore } from './reviewStore'
 
 const heading: CommentTarget = { kind: 'heading', text: 'Hello', quote: 'Hello', offsetInSlide: 2 }
 const waiting: CritDeckSession = { kind: 'found', id: 's', port: 1, file: 'deck.md', reviewRound: 2, agentWaiting: true }
-const thread = (id: string): ReviewComment => ({ id, lines: { start: 1, end: 1 }, body: 'b', quote: null, author: 'Peitho Studio', resolved: false, replies: [] })
+const thread = (id: string): ReviewComment => ({ id, lines: { start: 1, end: 1 }, body: 'b', quote: null, author: 'Peitho Studio', resolved: false, replies: [], createdAt: null })
 
 describe('the comment box', () => {
   test('Given a click opened the box on a heading, When a comment is written and added, Then it is filed unsent and the box closes', () => {

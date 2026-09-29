@@ -22,6 +22,8 @@ export interface ReviewReply {
   id: string
   body: string
   author: string
+  /** When it was written, as crit recorded it (RFC 3339); `null` if unknown. */
+  createdAt: string | null
 }
 
 /** A comment in the crit session, with its thread. crit renumbers ids
@@ -35,6 +37,8 @@ export interface ReviewComment {
   author: string
   resolved: boolean
   replies: ReviewReply[]
+  /** When it was written, as crit recorded it (RFC 3339); `null` if unknown. */
+  createdAt: string | null
 }
 
 /** A line comment to add to the session. */

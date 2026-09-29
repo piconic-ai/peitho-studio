@@ -8,7 +8,8 @@ import { liveReplies, sendAvailability, type CommentBox, type CommentTarget, typ
  * comments and replies written but not sent yet, the comment box, and
  * what's in flight. Talking to crit (`ipc/critIpc.ts`) and deciding when to
  * stays in `Studio.tsx`; this store only holds and transitions state. */
-export function createReviewStore() {
+/** `now`: the time stamped on each comment and reply written. */
+export function createReviewStore(now: () => string = () => new Date().toISOString()) {
   const [session, setSession] = createSignal<CritDeckSession | null>(null)
   const [comments, setComments] = createSignal<ReviewComment[]>([])
   const [pending, setPending] = createSignal<PendingComment[]>([])
@@ -18,6 +19,8 @@ export function createReviewStore() {
   /** The reply being written, under which comment. */
   const [replyDraft, setReplyDraft] = createSignal<{ commentId: string; text: string } | null>(null)
   const [busy, setBusy] = createSignal<'idle' | 'starting' | 'sending'>('idle')
+  // Resolved threads are left out of the panel unless asked for.
+  const [showResolved, setShowResolved] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
   // Where the pins of comments sent in this window sat (`SentPins`).
   const [sentPins, setSentPins] = createSignal<SentPins>({})
@@ -45,7 +48,7 @@ export function createReviewStore() {
     const current = box()
     const body = boxDraft().trim()
     if (current.kind !== 'open' || body === '') return null
-    const comment: PendingComment = { id: `pending-${String(nextId++)}`, slideKey: current.slideKey, target: current.target, pin: current.pin, body }
+    const comment: PendingComment = { id: `pending-${String(nextId++)}`, slideKey: current.slideKey, target: current.target, pin: current.pin, body, createdAt: now() }
     batch(() => {
       setPending([...pending(), comment])
       setBox({ kind: 'closed' })
@@ -80,7 +83,7 @@ export function createReviewStore() {
     const draft = replyDraft()
     if (draft === null || draft.text.trim() === '') return
     batch(() => {
-      setPendingReplies([...pendingReplies(), { id: `reply-${String(nextId++)}`, commentId: draft.commentId, body: draft.text.trim() }])
+      setPendingReplies([...pendingReplies(), { id: `reply-${String(nextId++)}`, commentId: draft.commentId, body: draft.text.trim(), createdAt: now() }])
       setReplyDraft(null)
     })
   }
@@ -151,7 +154,7 @@ export function createReviewStore() {
     session, setSession, comments, setComments, pending, pendingReplies, sendableReplies, unsentCount, availability,
     box, boxDraft, setBoxDraft, openBox, closeBox, commitBox, discard,
     replyDraft, editReply, setReplyText, cancelReply, commitReply, markSent, sentPins,
-    busy, setBusy, error, setError,
+    busy, setBusy, error, setError, showResolved, toggleShowResolved: () => setShowResolved(!showResolved()),
     commentCountOf, syncCommentCounts, reset,
   }
 }

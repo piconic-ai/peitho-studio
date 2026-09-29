@@ -34,6 +34,8 @@ export interface FakeCritOptions {
   /** What `bundledCritPath` answers; `null` rejects, as with no bundled
    * crit. Defaults to where a release build has it. */
   critPath?: string | null
+  /** The time stamped on each comment and reply added. */
+  now?: () => string
 }
 
 export const FAKE_CRIT_PATH = '/Applications/Peitho Studio.app/Contents/MacOS/crit'
@@ -56,8 +58,11 @@ export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
     for (const listener of listeners) listener(event)
   }
 
+  const now = options.now ?? (() => new Date().toISOString())
+
   function toComment(comment: NewReviewComment): ReviewComment {
     return {
+      createdAt: now(),
       id: `c_${String(nextId++)}`,
       lines: { start: comment.startLine, end: comment.endLine },
       body: comment.body,
@@ -115,7 +120,7 @@ export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
       if (replies.some(isMalformedReply)) throw new Error('a reply is malformed')
       found()
       for (const reply of replies) commentById(reply.commentId)
-      for (const reply of replies) commentById(reply.commentId).replies.push({ id: `rp_${String(nextId++)}`, body: reply.body, author: reply.author })
+      for (const reply of replies) commentById(reply.commentId).replies.push({ id: `rp_${String(nextId++)}`, body: reply.body, author: reply.author, createdAt: now() })
       return structuredClone(comments)
     },
     resolveComment: async id => {
@@ -149,7 +154,7 @@ export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
       session = { kind: 'found', id: 'agent-session', port: 1, file: 'deck.md', reviewRound: 1, agentWaiting: true }
     },
     reply: (id, body, author = 'Agent') => {
-      commentById(id).replies.push({ id: `rp_${String(nextId++)}`, body, author })
+      commentById(id).replies.push({ id: `rp_${String(nextId++)}`, body, author, createdAt: now() })
       emit('commentsChanged')
     },
   }
