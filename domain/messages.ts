@@ -118,6 +118,7 @@ export interface Messages {
   sendToAgent: string
   agentThinking: string
   reconnectAgent: string
+  reconnectHint: string
   sendingToAgent: string
   startingReview: string
   showResolved: (count: number) => string
@@ -271,6 +272,7 @@ const en: Messages = {
   sendToAgent: 'Send',
   agentThinking: 'Thinking…',
   reconnectAgent: 'Reconnect',
+  reconnectHint: 'No reply?',
   sendingToAgent: 'Sending…',
   startingReview: 'Getting the review ready…',
   showResolved: count => `Show resolved (${String(count)})`,
@@ -418,6 +420,7 @@ const ja: Messages = {
   sendToAgent: '送信',
   agentThinking: '考え中…',
   reconnectAgent: '接続し直す',
+  reconnectHint: '応答がない場合は',
   sendingToAgent: '送信中…',
   startingReview: 'レビューの準備をしています…',
   showResolved: count => `解決済みも表示（${String(count)}）`,

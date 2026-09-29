@@ -308,32 +308,33 @@ export function ReviewPanel(props: ReviewPanelProps) {
             </li>
           ))}
         </ul>
-      </div>
-      {/* Bottom bar: resolved threads on request at the left, the send
-          button at the panel's bottom right. */}
-      <div className="shrink-0 border-t border-border px-3 py-2 flex items-center gap-2">
+        {/* A filter on the list, so at the list's end. */}
         <button
           type="button"
           data-review-show-resolved=""
           aria-pressed={props.showResolved ? 'true' : 'false'}
           hidden={props.resolvedCount === 0}
           onClick={() => props.onToggleResolved()}
-          className="text-xs text-muted-foreground hover:text-foreground"
+          className="mx-3 mb-3 text-xs text-muted-foreground hover:text-foreground"
         >
           {props.resolvedToggleLabel}
         </button>
-        {/* While the agent is taken to be at work: a way back to the
-            connect card if it's gone (its session closed). */}
-        <button
-          type="button"
-          data-review-reconnect=""
-          hidden={!props.working || props.sending}
-          onClick={() => props.onReconnect()}
-          className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-        >
-          {messagesFor(props.language).reconnectAgent}
-        </button>
-        <span className="flex-1" />
+      </div>
+      {/* Bottom bar: the Send button alone at the right — and, while the
+          agent is taken to be at work, a way back to the connect card
+          right above it, since it's about that state. */}
+      <div className="shrink-0 border-t border-border px-3 py-2 flex flex-col items-end gap-1">
+        <p data-review-reconnect-hint="" hidden={!props.working || props.sending} className="text-xs text-muted-foreground">
+          {messagesFor(props.language).reconnectHint}
+          <button
+            type="button"
+            data-review-reconnect=""
+            onClick={() => props.onReconnect()}
+            className="ml-1 underline underline-offset-2 hover:text-foreground"
+          >
+            {messagesFor(props.language).reconnectAgent}
+          </button>
+        </p>
         <button
           type="button"
           data-review-send=""
