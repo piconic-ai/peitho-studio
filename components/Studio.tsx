@@ -14,8 +14,8 @@ import {
   type PreviewPin,
 } from '../domain/reviewComment'
 import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, showsConnectGuide } from '../domain/agentConnect'
-import { formatReviewTime, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
-import { focusCommentBox, placePreviewPins, revealReviewThread, type PreviewClick } from '../dom/previewComments'
+import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
+import { focusCommentBox, focusUnsentEdit, placePreviewPins, revealReviewThread, type PreviewClick } from '../dom/previewComments'
 import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
 import { ReviewPanel } from './ReviewPanel'
@@ -934,6 +934,8 @@ export function Studio() {
   // (what crit and the agent read), so an unsaved edit is saved first.
   async function sendReview(): Promise<void> {
     if (review.availability().kind !== 'ready') return
+    // Send what the user sees: a rewrite still open goes in as it reads.
+    review.commitEdit()
     review.setBusy('sending')
     review.setError(null)
     try {
@@ -1035,7 +1037,7 @@ export function Studio() {
       showResolved: review.showResolved(),
       replyingTo: review.replyDraft()?.commentId ?? null,
       slideOf: comment => slideIndexOfComment(source, slides, comment),
-    }).map(row => ({ ...row, time: formatReviewTime(row.createdAt, now) }))
+    }).map(row => ({ ...row, time: formatReviewTime(row.createdAt, now), editing: isUnsentEditing(row, review.unsentEdit()?.id ?? null) }))
   })
   const reviewResolvedCount = createMemo(() => resolvedCount(review.comments()))
 
@@ -2360,6 +2362,14 @@ export function Studio() {
             replyText={review.replyDraft()?.text ?? ''}
             onSend={() => void sendReview()}
             onDiscard={review.discard}
+            editText={review.unsentEdit()?.text ?? ''}
+            onStartEdit={id => {
+              review.startEdit(id)
+              focusUnsentEdit()
+            }}
+            onEditInput={review.setEditText}
+            onEditSave={review.commitEdit}
+            onEditCancel={review.cancelEdit}
             onStartReply={commentId => review.editReply(commentId, '')}
             onReplyInput={review.setReplyText}
             onReplyAdd={review.commitReply}

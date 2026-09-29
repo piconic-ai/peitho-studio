@@ -54,9 +54,11 @@ export function threadOfPin(pinId: string): string | null {
   return `unsent:${pinId}`
 }
 
-/** A row as the panel shows it: with its time worded (`formatReviewTime`). */
+/** A row as the panel shows it: with its time worded (`formatReviewTime`)
+ * and whether its text is being rewritten (an unsent one only). */
 export interface PanelRow extends ReviewRow {
   time: string
+  editing: boolean
 }
 
 /** A comment not sent yet, as the panel lists it. */
@@ -151,6 +153,13 @@ export function reviewRows(input: ReviewRowsInput): ReviewRow[] {
     }])
   }
   return markThreads(groups)
+}
+
+/** Whether `row` is the unsent comment or reply being rewritten
+ * (`editingId`). A sent comment is never rewritten, even one whose crit id
+ * happened to match. */
+export function isUnsentEditing(row: Pick<ReviewRow, 'kind' | 'id'>, editingId: string | null): boolean {
+  return editingId !== null && row.id === editingId && (row.kind === 'unsent-comment' || row.kind === 'unsent-reply')
 }
 
 /** How many resolved threads `showResolved` would add. */

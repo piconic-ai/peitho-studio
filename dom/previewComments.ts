@@ -117,6 +117,16 @@ export function placePreviewPins(pins: readonly PreviewPin[]): PreviewPin[] {
 
 /** Scrolls the comments column to `threadKey`'s card
  * (`data-review-thread`), for a pin clicked on the preview. */
+/** Puts the caret at the end of the unsent comment or reply being
+ * rewritten, once its editor shows. */
+export function focusUnsentEdit(): void {
+  requestAnimationFrame(() => {
+    const field = document.querySelector<HTMLTextAreaElement>('[data-review-editing="true"] [data-review-edit-box] textarea')
+    field?.focus()
+    field?.setSelectionRange(field.value.length, field.value.length)
+  })
+}
+
 export function revealReviewThread(threadKey: string): void {
   requestAnimationFrame(() => {
     document.querySelector(`[data-review-thread="${CSS.escape(threadKey)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })

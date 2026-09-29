@@ -113,6 +113,8 @@ export interface Messages {
   commentPlaceholder: string
   addComment: string
   discardComment: string
+  editComment: string
+  saveEdit: string
   unsentComment: string
   commentCount: (count: number) => string
   sendToAgent: string
@@ -267,6 +269,8 @@ const en: Messages = {
   commentPlaceholder: 'What should the agent change here?',
   addComment: 'Add Comment',
   discardComment: 'Discard',
+  editComment: 'Edit',
+  saveEdit: 'Save',
   unsentComment: 'Not sent yet',
   commentCount: count => (count === 1 ? '1 comment' : `${String(count)} comments`),
   sendToAgent: 'Send',
@@ -415,6 +419,8 @@ const ja: Messages = {
   commentPlaceholder: 'ここをどう直してほしいですか?',
   addComment: 'コメントを追加',
   discardComment: '取り消す',
+  editComment: '編集',
+  saveEdit: '保存',
   unsentComment: '未送信',
   commentCount: count => `コメント ${String(count)} 件`,
   sendToAgent: '送信',

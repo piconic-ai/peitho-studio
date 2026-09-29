@@ -1,6 +1,6 @@
 import { batch, createMemo, createSignal } from '@barefootjs/client'
 import type { CritDeckSession, ReviewComment } from '../domain/critReview'
-import { awaitingAgentCount, liveReplies, sendAvailability, type CommentBox, type CommentTarget, type PendingComment, type PendingReply, type PinSpot, type SentPins } from '../domain/reviewComment'
+import { awaitingAgentCount, liveReplies, rewriteUnsent, sendAvailability, unsentBody, type CommentBox, type CommentTarget, type PendingComment, type PendingReply, type PinSpot, type SentPins } from '../domain/reviewComment'
 
 /** The review round trip with the Coding Agent as the comment UI shows it
  * (todo/review-comment-ui.md): what crit last reported (the session and its
@@ -49,6 +49,8 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
   const [boxDraft, setBoxDraft] = createSignal('')
   /** The reply being written, under which comment. */
   const [replyDraft, setReplyDraft] = createSignal<{ commentId: string; text: string } | null>(null)
+  // The unsent comment or reply being rewritten in place, and its new text.
+  const [unsentEdit, setUnsentEdit] = createSignal<{ id: string; text: string } | null>(null)
   const [busy, setBusy] = createSignal<'idle' | 'starting' | 'sending'>('idle')
   // Resolved threads are left out of the panel unless asked for.
   const [showResolved, setShowResolved] = createSignal(false)
@@ -95,6 +97,39 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
     batch(() => {
       setPending(pending().filter(comment => comment.id !== id))
       setPendingReplies(pendingReplies().filter(reply => reply.id !== id))
+      if (unsentEdit()?.id === id) setUnsentEdit(null)
+    })
+  }
+
+  /** Starts rewriting the unsent comment or reply `id` from its text. */
+  function startEdit(id: string): void {
+    const body = unsentBody(pending(), pendingReplies(), id)
+    if (body !== null) setUnsentEdit({ id, text: body })
+  }
+
+  /** Updates the text being rewritten (nothing when nothing is). */
+  function setEditText(text: string): void {
+    const current = unsentEdit()
+    if (current !== null) setUnsentEdit({ id: current.id, text })
+  }
+
+  function cancelEdit(): void {
+    setUnsentEdit(null)
+  }
+
+  /** Puts the rewritten text in place. A blank one changes nothing and
+   * keeps the editor open; one whose comment was sent meanwhile just
+   * closes it. */
+  function commitEdit(): void {
+    const current = unsentEdit()
+    if (current === null || current.text.trim() === '') return
+    const next = rewriteUnsent(pending(), pendingReplies(), current.id, current.text)
+    batch(() => {
+      if (next !== null) {
+        setPending(next.pending)
+        setPendingReplies(next.replies)
+      }
+      setUnsentEdit(null)
     })
   }
 
@@ -179,6 +214,7 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
       setPendingReplies([])
       setBox({ kind: 'closed' })
       setReplyDraft(null)
+      setUnsentEdit(null)
       setBusy('idle')
       setError(null)
       setSentPins({})
@@ -188,6 +224,7 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
   return {
     session, setSession, agentSeen, forgetAgent, comments, setComments, pending, pendingReplies, sendableReplies, unsentCount, sendCount, availability,
     box, boxDraft, setBoxDraft, openBox, closeBox, commitBox, discard,
+    unsentEdit, startEdit, setEditText, cancelEdit, commitEdit,
     replyDraft, editReply, setReplyText, cancelReply, commitReply, markSent, sentPins,
     busy, setBusy, error, setError, showResolved, toggleShowResolved: () => setShowResolved(!showResolved()),
     commentCountOf, syncCommentCounts, reset,

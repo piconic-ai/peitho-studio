@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { ReviewComment } from './critReview'
 import type { PendingReply } from './reviewComment'
-import { formatReviewTime, resolvedCount, reviewRows, splitCommentLabel, threadOfPin, type ReviewRowsInput, type UnsentRowSource } from './reviewPanel'
+import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, splitCommentLabel, threadOfPin, type ReviewRowsInput, type UnsentRowSource } from './reviewPanel'
 
 const comment = (id: string, createdAt: string | null, options: Partial<ReviewComment> = {}): ReviewComment => ({
   id, lines: { start: 3, end: 3 }, body: `[Slide 1 › heading "Hello"] ${id} text`, quote: null, author: 'Peitho Studio',
@@ -192,5 +192,22 @@ describe('formatReviewTime', () => {
 
   test('adversarial: Given the same day of another month, Then the date is still shown', () => {
     expect(formatReviewTime(new Date(2026, 7, 29, 9, 5).toISOString(), now)).toBe('8/29 09:05')
+  })
+})
+
+describe('isUnsentEditing', () => {
+  test('spec: Given the unsent comment or reply being rewritten, Then its row is the one editing', () => {
+    expect(isUnsentEditing({ kind: 'unsent-comment', id: 'pending-1' }, 'pending-1')).toBe(true)
+    expect(isUnsentEditing({ kind: 'unsent-reply', id: 'reply-2' }, 'reply-2')).toBe(true)
+  })
+
+  test.each([
+    ['nothing being rewritten', 'unsent-comment', 'pending-1', null],
+    ['another unsent comment', 'unsent-comment', 'pending-1', 'pending-2'],
+    ['a sent comment with the same id', 'comment', 'pending-1', 'pending-1'],
+    ['a sent reply with the same id', 'reply', 'pending-1', 'pending-1'],
+    ['an empty id', 'unsent-comment', '', null],
+  ] as const)('adversarial: Given %s, Then the row is not editing', (_label, kind, id, editingId) => {
+    expect(isUnsentEditing({ kind, id }, editingId)).toBe(false)
   })
 })

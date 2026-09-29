@@ -36,6 +36,12 @@ export interface ReviewPanelProps {
   replyText: string
   onSend: () => void
   onDiscard: (id: string) => void
+  /** Rewriting an unsent comment or reply in place (`PanelRow.editing`). */
+  editText: string
+  onStartEdit: (id: string) => void
+  onEditInput: (text: string) => void
+  onEditSave: () => void
+  onEditCancel: () => void
   onStartReply: (commentId: string) => void
   onReplyInput: (text: string) => void
   onReplyAdd: () => void
@@ -56,7 +62,7 @@ export interface ReviewPanelProps {
 // `.map()` row's handlers are delegated, so the button's own click reaches
 // the row's too (CLAUDE.md, barefootjs#2930).
 function isRowControl(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest('button, textarea, [data-review-reply-box]') !== null
+  return target instanceof Element && target.closest('button, textarea, [data-review-reply-box], [data-review-edit-box]') !== null
 }
 
 /** The comments for the Coding Agent, in the rightmost column
@@ -179,6 +185,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
               data-review-thread-start={row.threadStart ? 'true' : 'false'}
               data-review-thread={row.threadKey}
               data-review-highlighted={row.threadKey === props.highlightedThread ? 'true' : 'false'}
+              data-review-editing={row.editing ? 'true' : 'false'}
               onClick={e => {
                 if (!isRowControl(e.target) && row.slideIndex !== null) props.onSelectSlide(row.slideIndex)
               }}
@@ -232,6 +239,19 @@ export function ReviewPanel(props: ReviewPanelProps) {
                     <span data-review-time="" className="shrink-0">{row.time}</span>
                     <button
                       type="button"
+                      data-review-edit=""
+                      aria-label={messagesFor(props.language).editComment}
+                      title={messagesFor(props.language).editComment}
+                      className={(row.kind === 'unsent-comment' || row.kind === 'unsent-reply') && !row.editing ? 'shrink-0 p-0.5 rounded hover:bg-muted hover:text-foreground' : 'hidden'}
+                      onClick={() => props.onStartEdit(row.id)}
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-4-4L4 16v4Z" />
+                      <path d="m13.5 6.5 4 4" />
+                    </svg>
+                    </button>
+                    <button
+                      type="button"
                       data-review-discard=""
                       aria-label={messagesFor(props.language).discardComment}
                       title={messagesFor(props.language).discardComment}
@@ -248,6 +268,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
                   <div className="flex flex-col gap-0.5 max-w-full">
                     <p
                       data-review-bubble=""
+                      hidden={row.editing}
                       className={(row.byAgent
                         ? 'rounded-tl-sm bg-muted text-foreground '
                         : row.kind === 'unsent-comment' || row.kind === 'unsent-reply'
@@ -256,6 +277,38 @@ export function ReviewPanel(props: ReviewPanelProps) {
                     >
                       {row.body}
                     </p>
+                    {/* An unsent bubble rewritten where it stands. */}
+                    <div data-review-edit-box="" hidden={!row.editing} className="w-72 max-w-full flex flex-col gap-2">
+                      <textarea
+                        rows={3}
+                        value={props.editText}
+                        onInput={e => props.onEditInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Escape') {
+                            e.preventDefault()
+                            props.onEditCancel()
+                          } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                            e.preventDefault()
+                            props.onEditSave()
+                          }
+                        }}
+                        className="w-full resize-none rounded-2xl rounded-tr-sm border-2 border-dashed border-[#eab308] bg-background px-3 py-2"
+                      />
+                      <div className="flex justify-end gap-2">
+                        <button type="button" onClick={() => props.onEditCancel()} className="px-3 py-1 rounded-md hover:bg-accent">
+                          {messagesFor(props.language).cancel}
+                        </button>
+                        <button
+                          type="button"
+                          data-review-edit-save=""
+                          disabled={props.editText.trim() === ''}
+                          onClick={() => props.onEditSave()}
+                          className="px-3 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                        >
+                          {messagesFor(props.language).saveEdit}
+                        </button>
+                      </div>
+                    </div>
                     {/* Under the agent's last word, flush with its right edge:
                         what a reply answers. */}
                     <button
