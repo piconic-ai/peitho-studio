@@ -6,7 +6,9 @@
 /** Whether an agent is waiting in a crit session on the open deck. */
 export type CritDeckSession =
   | { kind: 'none' }
-  | { kind: 'found'; id: string; port: number; file: string; reviewRound: number }
+  /** `agentWaiting`: whether an agent's `crit` waits for the next round —
+   * finishing one while it doesn't never reaches the agent. */
+  | { kind: 'found'; id: string; port: number; file: string; reviewRound: number; agentWaiting: boolean }
   /** More than one session reviews the deck; Studio won't guess which. */
   | { kind: 'ambiguous'; ids: string[] }
 
@@ -20,6 +22,8 @@ export interface ReviewReply {
   id: string
   body: string
   author: string
+  /** When it was written, as crit recorded it (RFC 3339); `null` if unknown. */
+  createdAt: string | null
 }
 
 /** A comment in the crit session, with its thread. crit renumbers ids
@@ -33,6 +37,8 @@ export interface ReviewComment {
   author: string
   resolved: boolean
   replies: ReviewReply[]
+  /** When it was written, as crit recorded it (RFC 3339); `null` if unknown. */
+  createdAt: string | null
 }
 
 /** A line comment to add to the session. */
@@ -42,6 +48,13 @@ export interface NewReviewComment {
   body: string
   /** The Markdown commented on, so the agent can find it after lines move. */
   quote: string
+  author: string
+}
+
+/** A reply to add under comment `commentId` in the session. */
+export interface NewReviewReply {
+  commentId: string
+  body: string
   author: string
 }
 

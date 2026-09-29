@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { createRoot } from '@barefootjs/client'
+import { createEffect, createRoot } from '@barefootjs/client'
 import { createRenderStore } from './renderStore'
 import { type RenderPayload, type ManifestSlide } from '../domain/render'
 
@@ -200,6 +200,31 @@ describe('fragmentOf', () => {
   test('adversarial: a key that was never rendered reads as an empty fragment', () => {
     createRoot(() => {
       expect(createRenderStore().fragmentOf('never-rendered')).toBe('')
+    })
+  })
+
+  test('spec: Given an annotated render, Then thumbnails read it without annotations and the preview reads it with them', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      const html = '<section><p data-peitho-src="4-8" data-peitho-md="text">text</p></section>'
+      store.applyRenderPayload(payload({ fragments: { 'slide-1': html } }), 'source')
+      expect(store.fragmentOf('slide-1')).toBe('<section><p>text</p></section>')
+      expect(store.canvasFragmentOf('slide-1')).toBe('<section><p>text</p></section>')
+      expect(store.previewFragmentOf('slide-1')).toBe(html)
+    })
+  })
+
+  test('adversarial: Given a re-render that only moved byte spans, Then a thumbnail reader is not notified', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.applyRenderPayload(payload({ fragments: { 'slide-1': '<p data-peitho-src="4-8" data-peitho-md="text">text</p>' } }), 'source')
+      let thumbnailReads = 0
+      let previewReads = 0
+      createEffect(() => { store.fragmentOf('slide-1'); thumbnailReads++ })
+      createEffect(() => { store.previewFragmentOf('slide-1'); previewReads++ })
+      store.applyRenderPayload(payload({ fragments: { 'slide-1': '<p data-peitho-src="9-13" data-peitho-md="text">text</p>' } }), 'more source')
+      expect(thumbnailReads).toBe(1)
+      expect(previewReads).toBe(2)
     })
   })
 

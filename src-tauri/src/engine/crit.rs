@@ -124,26 +124,101 @@ pub struct DeckSessionMatch {
 pub enum DeckSession {
     /// No running session reviews the deck.
     None,
+    /// `agent_waiting`: whether an agent's `crit` is waiting for the next
+    /// round, so that finishing it now would reach the agent — see
+    /// `with_finished_round`.
     #[serde(rename_all = "camelCase")]
-    Found { id: String, port: u16, file: String, review_round: u32 },
+    Found { id: String, port: u16, file: String, review_round: u32, agent_waiting: bool },
     /// More than one does, and which one the agent is waiting on can't be
     /// told apart — Studio won't guess where to send comments.
     #[serde(rename_all = "camelCase")]
     Ambiguous { ids: Vec<String> },
 }
 
+/// A session found here is taken to have an agent waiting in it (see
+/// `with_finished_round` for when Studio knows better).
 pub fn select_deck_session(mut matches: Vec<DeckSessionMatch>) -> DeckSession {
     match matches.len() {
         0 => DeckSession::None,
         1 => {
             let found = matches.remove(0);
-            DeckSession::Found { id: found.session.id, port: found.session.port, file: found.file, review_round: found.review_round }
+            DeckSession::Found {
+                id: found.session.id,
+                port: found.session.port,
+                file: found.file,
+                review_round: found.review_round,
+                agent_waiting: true,
+            }
         }
         _ => {
             let mut ids: Vec<String> = matches.into_iter().map(|found| found.session.id).collect();
             ids.sort();
             DeckSession::Ambiguous { ids }
         }
+    }
+}
+
+/// The round of a session that Studio last finished. A session is its id
+/// *and* its daemon's port: crit reuses the id when a daemon on the same
+/// deck is started again (by an agent, after the old one stopped), and that
+/// new daemon's rounds say nothing about what Studio finished in the old one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinishedRound {
+    pub session_id: String,
+    pub port: u16,
+    pub review_round: u32,
+}
+
+/// How many sessions' finished rounds Studio remembers.
+pub const MAX_FINISHED_ROUNDS: usize = 64;
+
+/// `rounds` with `finished` recorded: it replaces the entry for the same
+/// session and daemon, and only the newest `MAX_FINISHED_ROUNDS` are kept.
+pub fn record_finished_round(rounds: &[FinishedRound], finished: FinishedRound) -> Vec<FinishedRound> {
+    let mut kept: Vec<FinishedRound> = rounds
+        .iter()
+        .filter(|round| !(round.session_id == finished.session_id && round.port == finished.port))
+        .cloned()
+        .collect();
+    kept.push(finished);
+    let excess = kept.len().saturating_sub(MAX_FINISHED_ROUNDS);
+    kept.drain(..excess);
+    kept
+}
+
+/// The finished rounds Studio saved (`finished_rounds_json`); nothing for a
+/// missing, empty or unreadable file — at worst an agent is taken to wait.
+pub fn parse_finished_rounds(json: &str) -> Vec<FinishedRound> {
+    serde_json::from_str(json).unwrap_or_default()
+}
+
+pub fn finished_rounds_json(rounds: &[FinishedRound]) -> String {
+    serde_json::to_string(rounds).unwrap_or_else(|_| "[]".to_string())
+}
+
+/// `session` with whether an agent waits in it, given the round Studio last
+/// finished there. An agent's `crit` waits on `POST /api/review-cycle`, and
+/// every call after a session's first finished round starts the next round
+/// (`review_round` goes up) — so once Studio has finished round `n`, an
+/// agent waits again exactly when the session is past `n`. crit exposes no
+/// count of waiting clients, so a session Studio never finished a round of
+/// is taken to have its agent waiting: whoever started it runs the `crit`
+/// that waits on its first round. (Studio's own sessions are finished once
+/// right after they start, `crate::crit::start_deck_session`, so they
+/// don't count as waiting until an agent connects.) `rounds` are every
+/// session's, as Studio saved them — kept across restarts of Studio.
+pub fn with_finished_round(session: DeckSession, rounds: &[FinishedRound]) -> DeckSession {
+    match session {
+        DeckSession::Found { id, port, file, review_round, .. } => {
+            let finished = rounds.iter().rev().find(|round| round.session_id == id && round.port == port);
+            let agent_waiting = match finished {
+                Some(finished) => review_round > finished.review_round,
+                None => true,
+            };
+            DeckSession::Found { id, port, file, review_round, agent_waiting }
+        }
+        other => other,
     }
 }
 
@@ -170,6 +245,9 @@ pub struct ReviewComment {
     pub author: String,
     pub resolved: bool,
     pub replies: Vec<ReviewReply>,
+    /// When it was written, as crit recorded it (RFC 3339, UTC); `None`
+    /// when crit gave none.
+    pub created_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -178,6 +256,7 @@ pub struct ReviewReply {
     pub id: String,
     pub body: String,
     pub author: String,
+    pub created_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -196,6 +275,7 @@ struct CommentJson {
     resolved: bool,
     #[serde(default)]
     replies: Vec<ReplyJson>,
+    created_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -205,6 +285,7 @@ struct ReplyJson {
     body: String,
     #[serde(default)]
     author: String,
+    created_at: Option<String>,
 }
 
 /// A line range from crit's numbers: no range for line 0 (or below), and an
@@ -213,6 +294,10 @@ fn line_range(start: i64, end: i64) -> Option<LineRange> {
     let start = u32::try_from(start).ok().filter(|start| *start > 0)?;
     let end = u32::try_from(end).ok().filter(|end| *end >= start).unwrap_or(start);
     Some(LineRange { start, end })
+}
+
+fn nonempty(value: Option<String>) -> Option<String> {
+    value.filter(|value| !value.is_empty())
 }
 
 /// The comments `GET /api/file/comments?path=…` returns. An empty quote is
@@ -230,10 +315,11 @@ pub fn parse_comments(json: &str) -> Result<Vec<ReviewComment>, String> {
             quote: comment.quote.filter(|quote| !quote.is_empty()),
             author: comment.author,
             resolved: comment.resolved,
+            created_at: nonempty(comment.created_at),
             replies: comment
                 .replies
                 .into_iter()
-                .map(|reply| ReviewReply { id: reply.id, body: reply.body, author: reply.author })
+                .map(|reply| ReviewReply { id: reply.id, body: reply.body, author: reply.author, created_at: nonempty(reply.created_at) })
                 .collect(),
         })
         .collect())
@@ -286,17 +372,73 @@ pub fn new_comment_body(comment: &NewReviewComment) -> Result<String, String> {
     .map_err(|err| err.to_string())
 }
 
-/// `/api/file/comments?path=<file>`, with `file` percent-encoded.
-pub fn comments_endpoint(file: &str) -> String {
+/// `value` percent-encoded, leaving unreserved characters and `keep` as is.
+fn percent_encode(value: &str, keep: &[u8]) -> String {
     let mut encoded = String::new();
-    for byte in file.bytes() {
-        if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) || keep.contains(&byte) {
             encoded.push(byte as char);
         } else {
             encoded.push_str(&format!("%{byte:02X}"));
         }
     }
-    format!("/api/file/comments?path={encoded}")
+    encoded
+}
+
+/// `/api/file/comments?path=<file>`, with `file` percent-encoded.
+pub fn comments_endpoint(file: &str) -> String {
+    format!("/api/file/comments?path={}", percent_encode(file, b"/"))
+}
+
+/// `/api/comment/<id><action>?path=<file>` — one comment of `file`
+/// (`action` ""), its replies ("/replies") or its resolved flag
+/// ("/resolve"). The id is encoded as one path segment.
+pub fn comment_endpoint(id: &str, action: &str, file: &str) -> String {
+    format!("/api/comment/{}{action}?path={}", percent_encode(id, b""), percent_encode(file, b"/"))
+}
+
+/// The author Studio's comments carry (`REVIEW_AUTHOR` in
+/// `domain/reviewComment.ts`).
+pub const STUDIO_AUTHOR: &str = "Peitho Studio";
+
+/// The body Studio's own first comment carries: `crate::crit::start_deck_session`
+/// finishes a new session's first round with it (an empty round would be an
+/// approval, which stops crit), then deletes it.
+pub const SESSION_OPENER_BODY: &str = "Peitho Studio opened this review session.";
+
+/// The id of Studio's session-opening comment among `comments`.
+pub fn session_opener_id(comments: &[ReviewComment]) -> Option<String> {
+    comments.iter().find(|comment| comment.body == SESSION_OPENER_BODY && comment.author == STUDIO_AUTHOR).map(|comment| comment.id.clone())
+}
+
+/// A reply Studio adds under a comment in the session.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewReviewReply {
+    pub comment_id: String,
+    pub body: String,
+    pub author: String,
+}
+
+#[derive(Serialize)]
+struct NewReplyJson<'a> {
+    body: &'a str,
+    author: &'a str,
+}
+
+/// The JSON body of `POST /api/comment/<id>/replies?path=…` for `reply`, or
+/// why it can't be sent.
+pub fn new_reply_body(reply: &NewReviewReply) -> Result<String, String> {
+    if reply.comment_id.trim().is_empty() {
+        return Err("a reply needs the comment it answers".to_string());
+    }
+    if reply.body.trim().is_empty() {
+        return Err("a reply needs a body".to_string());
+    }
+    if reply.author.trim().is_empty() {
+        return Err("a reply needs an author".to_string());
+    }
+    serde_json::to_string(&NewReplyJson { body: &reply.body, author: &reply.author }).map_err(|err| err.to_string())
 }
 
 /// One server-sent event.
@@ -377,6 +519,22 @@ fn is_same_comment(comment: &NewReviewComment, sent: &ReviewComment) -> bool {
         && sent.body == comment.body
         && sent.author == comment.author
         && sent.quote.as_deref().unwrap_or("") == comment.quote
+}
+
+/// Those of `replies` not yet in the session: the comment they answer
+/// already has a reply with the same body and author, sent by an earlier
+/// attempt that failed partway (or whose finish failed afterwards). Like
+/// `unsent_comments`, lets a send be retried whole.
+pub fn unsent_replies<'a>(replies: &'a [NewReviewReply], existing: &[ReviewComment]) -> Vec<&'a NewReviewReply> {
+    replies
+        .iter()
+        .filter(|reply| {
+            !existing.iter().any(|comment| {
+                comment.id == reply.comment_id
+                    && comment.replies.iter().any(|sent| sent.body == reply.body && sent.author == reply.author)
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -490,7 +648,7 @@ mod tests {
     fn one_matching_session_is_found() {
         assert_eq!(
             select_deck_session(vec![found("a", 5000)]),
-            DeckSession::Found { id: "a".into(), port: 5000, file: "deck.md".into(), review_round: 1 }
+            DeckSession::Found { id: "a".into(), port: 5000, file: "deck.md".into(), review_round: 1, agent_waiting: true }
         );
     }
 
@@ -511,8 +669,8 @@ mod tests {
     fn deck_session_serializes_as_a_tagged_union_for_the_frontend() {
         assert_eq!(serde_json::to_string(&DeckSession::None).unwrap(), r#"{"kind":"none"}"#);
         assert_eq!(
-            serde_json::to_string(&DeckSession::Found { id: "a".into(), port: 1, file: "deck.md".into(), review_round: 2 }).unwrap(),
-            r#"{"kind":"found","id":"a","port":1,"file":"deck.md","reviewRound":2}"#
+            serde_json::to_string(&DeckSession::Found { id: "a".into(), port: 1, file: "deck.md".into(), review_round: 2, agent_waiting: false }).unwrap(),
+            r#"{"kind":"found","id":"a","port":1,"file":"deck.md","reviewRound":2,"agentWaiting":false}"#
         );
         assert_eq!(serde_json::to_string(&DeckSession::Ambiguous { ids: vec!["a".into()] }).unwrap(), r#"{"kind":"ambiguous","ids":["a"]}"#);
     }
@@ -533,7 +691,13 @@ mod tests {
                 quote: Some("# Hello".into()),
                 author: "Studio".into(),
                 resolved: false,
-                replies: vec![ReviewReply { id: "rp_35db49".into(), body: "Made it bigger".into(), author: "Agent".into() }],
+                replies: vec![ReviewReply {
+                    id: "rp_35db49".into(),
+                    body: "Made it bigger".into(),
+                    author: "Agent".into(),
+                    created_at: Some("2026-09-28T14:38:51Z".into()),
+                }],
+                created_at: Some("2026-09-28T14:38:37Z".into()),
             }]
         );
     }
@@ -546,6 +710,15 @@ mod tests {
         assert_eq!(comments[0].quote, None);
         assert_eq!(comments[0].lines, Some(LineRange { start: 2, end: 4 }));
         assert_eq!(comments[1].quote, None);
+    }
+
+    #[test]
+    fn comment_without_or_with_an_empty_time_reads_as_no_time() {
+        let json = r#"[{"id":"c1","start_line":1,"end_line":1,"body":"b","author":"a"},{"id":"c2","start_line":1,"end_line":1,"body":"b","author":"a","created_at":"","replies":[{"id":"r","body":"x","author":"y","created_at":""}]}]"#;
+        let comments = parse_comments(json).unwrap();
+        assert_eq!(comments[0].created_at, None);
+        assert_eq!(comments[1].created_at, None);
+        assert_eq!(comments[1].replies[0].created_at, None);
     }
 
     #[test]
@@ -631,6 +804,159 @@ mod tests {
         assert_eq!(comments_endpoint(""), "/api/file/comments?path=");
     }
 
+    // --- comment_endpoint ---
+
+    #[test]
+    fn comment_endpoint_addresses_a_comment_its_replies_or_its_resolved_flag() {
+        assert_eq!(comment_endpoint("c_e4b825", "", "deck.md"), "/api/comment/c_e4b825?path=deck.md");
+        assert_eq!(comment_endpoint("c_e4b825", "/replies", "talks/a/deck.md"), "/api/comment/c_e4b825/replies?path=talks/a/deck.md");
+        assert_eq!(comment_endpoint("c_e4b825", "/resolve", "deck.md"), "/api/comment/c_e4b825/resolve?path=deck.md");
+    }
+
+    #[test]
+    fn comment_endpoint_keeps_an_odd_id_inside_its_path_segment() {
+        // A slash or query character in an id can't reach another route.
+        assert_eq!(comment_endpoint("a/replies?x", "", "deck.md"), "/api/comment/a%2Freplies%3Fx?path=deck.md");
+        assert_eq!(comment_endpoint("", "/resolve", "my deck.md"), "/api/comment//resolve?path=my%20deck.md");
+    }
+
+    // --- with_finished_round ---
+
+    fn found_session(id: &str, port: u16, review_round: u32) -> DeckSession {
+        DeckSession::Found { id: id.into(), port, file: "deck.md".into(), review_round, agent_waiting: true }
+    }
+
+    fn waiting(session: DeckSession) -> Option<bool> {
+        match session {
+            DeckSession::Found { agent_waiting, .. } => Some(agent_waiting),
+            _ => None,
+        }
+    }
+
+    fn finished(id: &str, port: u16, review_round: u32) -> FinishedRound {
+        FinishedRound { session_id: id.into(), port, review_round }
+    }
+
+    #[test]
+    fn given_studio_finished_the_current_round_then_no_agent_waits_until_the_next_round() {
+        // Given Studio finished round 2, When the session is still in round
+        // 2, Then the agent is busy; When it moved on to round 3, it waits.
+        assert_eq!(waiting(with_finished_round(found_session("a", 1, 2), &[finished("a", 1, 2)])), Some(false));
+        assert_eq!(waiting(with_finished_round(found_session("a", 1, 3), &[finished("a", 1, 2)])), Some(true));
+    }
+
+    #[test]
+    fn given_a_session_studio_never_finished_a_round_of_then_its_agent_is_taken_to_wait() {
+        assert_eq!(waiting(with_finished_round(found_session("a", 1, 1), &[])), Some(true));
+        // A round finished in another session says nothing about this one.
+        assert_eq!(waiting(with_finished_round(found_session("b", 1, 1), &[finished("a", 1, 5)])), Some(true));
+    }
+
+    #[test]
+    fn given_a_daemon_started_again_under_the_same_id_then_its_agent_is_taken_to_wait() {
+        // crit reuses the id for a new daemon on the same deck (an agent ran
+        // `crit` after the old one stopped); only its port tells it apart.
+        assert_eq!(waiting(with_finished_round(found_session("a", 2, 5), &[finished("a", 1, 5)])), Some(true));
+    }
+
+    #[test]
+    fn given_several_saved_rounds_then_the_one_for_this_session_and_daemon_counts() {
+        let rounds = [finished("b", 9, 1), finished("a", 1, 3), finished("a", 2, 7)];
+        assert_eq!(waiting(with_finished_round(found_session("a", 1, 3), &rounds)), Some(false));
+        assert_eq!(waiting(with_finished_round(found_session("a", 2, 8), &rounds)), Some(true));
+    }
+
+    #[test]
+    fn given_no_single_session_then_there_is_nothing_to_mark() {
+        assert_eq!(with_finished_round(DeckSession::None, &[finished("a", 1, 1)]), DeckSession::None);
+        let ambiguous = DeckSession::Ambiguous { ids: vec!["a".into(), "b".into()] };
+        assert_eq!(with_finished_round(ambiguous.clone(), &[]), ambiguous);
+    }
+
+    // --- record_finished_round / saved rounds ---
+
+    #[test]
+    fn given_a_round_finished_again_in_the_same_session_then_it_replaces_the_old_one() {
+        let rounds = record_finished_round(&[finished("a", 1, 2), finished("b", 3, 1)], finished("a", 1, 3));
+        assert_eq!(rounds, vec![finished("b", 3, 1), finished("a", 1, 3)]);
+    }
+
+    #[test]
+    fn given_the_same_id_on_another_daemon_then_both_are_kept() {
+        let rounds = record_finished_round(&[finished("a", 1, 2)], finished("a", 2, 1));
+        assert_eq!(rounds, vec![finished("a", 1, 2), finished("a", 2, 1)]);
+    }
+
+    #[test]
+    fn given_more_than_the_limit_then_only_the_newest_are_kept() {
+        let full: Vec<FinishedRound> = (0..MAX_FINISHED_ROUNDS as u16).map(|port| finished("s", port, 1)).collect();
+        let rounds = record_finished_round(&full, finished("new", 1, 1));
+        assert_eq!(rounds.len(), MAX_FINISHED_ROUNDS);
+        assert_eq!(rounds.first(), Some(&finished("s", 1, 1)));
+        assert_eq!(rounds.last(), Some(&finished("new", 1, 1)));
+    }
+
+    #[test]
+    fn saved_rounds_read_back_as_written() {
+        let rounds = vec![finished("a", 1, 2), finished("b", 3, 4)];
+        assert_eq!(parse_finished_rounds(&finished_rounds_json(&rounds)), rounds);
+        assert_eq!(finished_rounds_json(&[finished("a", 1, 2)]), r#"[{"sessionId":"a","port":1,"reviewRound":2}]"#);
+    }
+
+    #[test]
+    fn missing_empty_or_broken_saved_rounds_read_as_none() {
+        for json in ["", "{}", "not json", r#"[{"sessionId":"a"}]"#] {
+            assert_eq!(parse_finished_rounds(json), vec![], "{json}");
+        }
+    }
+
+    // --- session_opener_id ---
+
+    fn review_comment(id: &str, body: &str, author: &str) -> ReviewComment {
+        ReviewComment { id: id.into(), lines: None, body: body.into(), quote: None, author: author.into(), resolved: false, replies: vec![], created_at: None }
+    }
+
+    #[test]
+    fn studios_session_opener_is_found_among_the_comments() {
+        let comments = [review_comment("c1", "Fix this", "Peitho Studio"), review_comment("c2", SESSION_OPENER_BODY, "Peitho Studio")];
+        assert_eq!(session_opener_id(&comments), Some("c2".into()));
+    }
+
+    #[test]
+    fn the_same_words_from_someone_else_or_no_comments_are_not_the_opener() {
+        assert_eq!(session_opener_id(&[review_comment("c1", SESSION_OPENER_BODY, "Agent")]), None);
+        assert_eq!(session_opener_id(&[]), None);
+    }
+
+    // --- new_reply_body ---
+
+    fn reply(comment_id: &str, body: &str, author: &str) -> NewReviewReply {
+        NewReviewReply { comment_id: comment_id.into(), body: body.into(), author: author.into() }
+    }
+
+    #[test]
+    fn reply_body_carries_the_text_and_author() {
+        assert_eq!(new_reply_body(&reply("c1", "Still too small", "Peitho Studio")).unwrap(), r#"{"body":"Still too small","author":"Peitho Studio"}"#);
+    }
+
+    #[test]
+    fn reply_body_escapes_quotes_and_keeps_non_ascii() {
+        assert_eq!(new_reply_body(&reply("c1", "\"大きく\"\n", "A")).unwrap(), r#"{"body":"\"大きく\"\n","author":"A"}"#);
+    }
+
+    #[test]
+    fn a_reply_without_a_comment_body_or_author_is_refused() {
+        assert!(new_reply_body(&reply("", "x", "A")).unwrap_err().contains("comment"));
+        assert!(new_reply_body(&reply("c1", "  \n", "A")).unwrap_err().contains("body"));
+        assert!(new_reply_body(&reply("c1", "x", " ")).unwrap_err().contains("author"));
+    }
+
+    #[test]
+    fn a_reply_arrives_from_the_frontend_in_camel_case() {
+        let parsed: NewReviewReply = serde_json::from_str(r#"{"commentId":"c1","body":"b","author":"a"}"#).unwrap();
+        assert_eq!(parsed, reply("c1", "b", "a"));
+    }
+
     // --- SseParser / review_update_of ---
 
     fn parse_stream(lines: &[&str]) -> Vec<SseEvent> {
@@ -681,6 +1007,7 @@ mod tests {
             author: new.author.clone(),
             resolved,
             replies: vec![],
+            created_at: None,
         }
     }
 
@@ -721,5 +1048,50 @@ mod tests {
     #[test]
     fn given_an_empty_batch_when_checked_then_nothing_is_unsent() {
         assert!(unsent_comments(&[], &[]).is_empty());
+    }
+
+    // --- unsent_replies ---
+
+    fn thread(id: &str, replies: &[(&str, &str)]) -> ReviewComment {
+        ReviewComment {
+            id: id.into(),
+            lines: Some(LineRange { start: 1, end: 1 }),
+            body: "b".into(),
+            quote: None,
+            author: "Peitho Studio".into(),
+            resolved: false,
+            replies: replies
+                .iter()
+                .enumerate()
+                .map(|(i, (author, body))| ReviewReply { id: format!("rp_{i}"), body: (*body).into(), author: (*author).into(), created_at: None })
+                .collect(),
+            created_at: None,
+        }
+    }
+
+    fn new_reply(comment_id: &str, body: &str) -> NewReviewReply {
+        NewReviewReply { comment_id: comment_id.into(), body: body.into(), author: "Peitho Studio".into() }
+    }
+
+    #[test]
+    fn given_replies_sent_by_an_attempt_whose_finish_failed_when_retried_then_only_the_rest_are_unsent() {
+        let batch = [new_reply("c_1", "Still too long"), new_reply("c_2", "Thanks")];
+        let existing = [thread("c_1", &[("Agent", "Shortened"), ("Peitho Studio", "Still too long")]), thread("c_2", &[])];
+        assert_eq!(unsent_replies(&batch, &existing), vec![&batch[1]]);
+    }
+
+    #[test]
+    fn given_the_same_text_from_another_author_or_under_another_comment_when_checked_then_it_is_still_unsent() {
+        let batch = [new_reply("c_1", "OK")];
+        for existing in [[thread("c_1", &[("Agent", "OK")])], [thread("c_2", &[("Peitho Studio", "OK")])]] {
+            assert_eq!(unsent_replies(&batch, &existing), vec![&batch[0]]);
+        }
+    }
+
+    #[test]
+    fn given_no_comments_or_no_replies_when_checked_then_every_reply_is_unsent_and_an_empty_batch_stays_empty() {
+        let batch = [new_reply("c_1", "a")];
+        assert_eq!(unsent_replies(&batch, &[]), vec![&batch[0]]);
+        assert!(unsent_replies(&[], &[thread("c_1", &[])]).is_empty());
     }
 }

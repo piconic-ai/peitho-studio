@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import fc from 'fast-check'
-import { absolutizeFragmentUrls, hasFixedCanvas } from './slideFragment'
+import { absolutizeFragmentUrls, hasFixedCanvas, stripEditAnnotations } from './slideFragment'
 import { fixedCanvasExamples } from './slideFragment.examples'
 import { isExhaustivelyAccountedFor } from './spec'
 
@@ -291,5 +291,33 @@ describe('hasFixedCanvas', () => {
         expect(hasFixedCanvas(`<!--${body}-->${slide}`)).toBe(hasFixedCanvas(slide))
       },
     ))
+  })
+})
+
+describe('stripEditAnnotations', () => {
+  test('spec: Given a slide with annotated elements, Then the annotations are gone and the markup is otherwise the same', () => {
+    const html = '<section class="peitho-slide"><h1><span data-peitho-src="4-9" data-peitho-md="Hello">Hello</span></h1>'
+      + '<p data-peitho-src="11-30" data-peitho-md="a &quot;b&quot;&#10;c">a "b"\nc</p></section>'
+    expect(stripEditAnnotations(html)).toBe('<section class="peitho-slide"><h1><span>Hello</span></h1><p>a "b"\nc</p></section>')
+  })
+
+  test('spec: Given two renders that differ only in byte spans, Then their stripped fragments are equal', () => {
+    const before = '<p data-peitho-src="10-14" data-peitho-md="text">text</p>'
+    const after = '<p data-peitho-src="25-29" data-peitho-md="text">text</p>'
+    expect(stripEditAnnotations(before)).toBe(stripEditAnnotations(after))
+  })
+
+  test('adversarial: Given no annotations or an empty fragment, Then it is unchanged', () => {
+    expect(stripEditAnnotations('<p>plain</p>')).toBe('<p>plain</p>')
+    expect(stripEditAnnotations('')).toBe('')
+  })
+
+  test('adversarial: Given the attribute names in text or a script, Then only real attributes are removed', () => {
+    const html = '<p>data-peitho-src="1-2" data-peitho-md="x" in text</p><script>const a = \' data-peitho-src="1-2" data-peitho-md="x"\'</script>'
+    expect(stripEditAnnotations(html)).toBe(html)
+  })
+
+  test('adversarial: Given a layout-written data-peitho-src that is not peitho-core\'s shape, Then it is kept', () => {
+    expect(stripEditAnnotations('<div data-peitho-src="custom">x</div>')).toBe('<div data-peitho-src="custom">x</div>')
   })
 })

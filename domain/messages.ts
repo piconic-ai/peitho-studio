@@ -95,6 +95,46 @@ export interface Messages {
   selectSlideToPreview: string
   openDeckToPreview: string
 
+  // Review comments to the Coding Agent (the preview's pins, the comment
+  // box and the comments panel under the preview)
+  reviewComments: string
+  // The comments column's "Connect your Coding Agent" card (domain/agentConnect.ts)
+  connectAgentTitle: string
+  connectAgentLead: string
+  connectAgentStepOpen: string
+  connectAgentStepPaste: string
+  connectAgentStepWait: string
+  connectAgentWaiting: string
+  connectAgentTerminal: string
+  copyPrompt: string
+  copyCommand: string
+  copiedToClipboard: string
+  commentHint: string
+  commentPlaceholder: string
+  addComment: string
+  discardComment: string
+  editComment: string
+  saveEdit: string
+  unsentComment: string
+  commentCount: (count: number) => string
+  sendToAgent: string
+  agentThinking: string
+  reconnectAgent: string
+  reconnectHint: string
+  sendingToAgent: string
+  startingReview: string
+  showResolved: (count: number) => string
+  hideResolved: string
+  nothingToSend: string
+  sendNeedsSession: string
+  /** `command`: what to ask the agent to run in the deck's folder. */
+  sendNeedsAgent: string
+  sendNeedsOneSession: string
+  reviewFailed: (error: string) => string
+  reply: string
+  resolveComment: string
+  resolvedComment: string
+
   // Settings panel
   settings: string
   closeSettings: string
@@ -214,6 +254,42 @@ const en: Messages = {
   selectSlideToPreview: 'Select a slide to preview it.',
   openDeckToPreview: 'Open a deck to preview it.',
 
+  reviewComments: 'Comments for the agent',
+  connectAgentTitle: 'First, connect me',
+  connectAgentLead: 'To get your comments, I need to be waiting for this deck\'s review.',
+  connectAgentStepOpen: 'Open me in Claude Code, Codex, or another coding agent.',
+  connectAgentStepPaste: 'Copy this prompt and send it to me.',
+  connectAgentStepWait: 'Once I\'m connected, this switches over on its own.',
+  connectAgentWaiting: 'Waiting for me to connect…',
+  connectAgentTerminal: 'Run it in a terminal yourself',
+  copyPrompt: 'Copy Prompt',
+  copyCommand: 'Copy Command',
+  copiedToClipboard: 'Copied',
+  commentHint: 'Click anything on a slide and tell me what to change.',
+  commentPlaceholder: 'What should the agent change here?',
+  addComment: 'Add Comment',
+  discardComment: 'Discard',
+  editComment: 'Edit',
+  saveEdit: 'Save',
+  unsentComment: 'Not sent yet',
+  commentCount: count => (count === 1 ? '1 comment' : `${String(count)} comments`),
+  sendToAgent: 'Send',
+  agentThinking: 'Thinking…',
+  reconnectAgent: 'Reconnect',
+  reconnectHint: 'No reply?',
+  sendingToAgent: 'Sending…',
+  startingReview: 'Getting the review ready…',
+  showResolved: count => `Show resolved (${String(count)})`,
+  hideResolved: 'Hide resolved',
+  nothingToSend: 'Nothing new to send.',
+  sendNeedsSession: 'Add a comment and I\'ll start the review.',
+  sendNeedsAgent: 'Connect me to send your comments.',
+  sendNeedsOneSession: 'Several crit review sessions are open on this deck. Stop all but one (`crit stop`).',
+  reviewFailed: error => `Could not reach the review session: ${error}`,
+  reply: 'Reply',
+  resolveComment: 'Resolve',
+  resolvedComment: 'Resolved',
+
   settings: 'Settings',
   closeSettings: 'Close settings',
   language: 'Language',
@@ -327,6 +403,42 @@ const ja: Messages = {
   phoneShapeDeckDetail: 'デッキ本来の比率(16:9 / 4:3)のまま',
   selectSlideToPreview: 'プレビューするスライドを選んでください。',
   openDeckToPreview: 'デッキを開くとプレビューが表示されます。',
+
+  reviewComments: 'エージェントへのコメント',
+  connectAgentTitle: 'まず、私を接続してください',
+  connectAgentLead: 'コメントを受け取るには、私がこのデッキのレビューを待っている必要があります。',
+  connectAgentStepOpen: 'Claude Code や Codex などで、私を開いてください。',
+  connectAgentStepPaste: 'このプロンプトをコピーして、私に送ってください。',
+  connectAgentStepWait: 'つながったら、ここは自動で切り替わります。',
+  connectAgentWaiting: '接続を待っています…',
+  connectAgentTerminal: 'ターミナルで自分で実行する',
+  copyPrompt: 'プロンプトをコピー',
+  copyCommand: 'コマンドをコピー',
+  copiedToClipboard: 'コピーしました',
+  commentHint: 'スライドの気になるところをクリックして、教えてください。',
+  commentPlaceholder: 'ここをどう直してほしいですか?',
+  addComment: 'コメントを追加',
+  discardComment: '取り消す',
+  editComment: '編集',
+  saveEdit: '保存',
+  unsentComment: '未送信',
+  commentCount: count => `コメント ${String(count)} 件`,
+  sendToAgent: '送信',
+  agentThinking: '考え中…',
+  reconnectAgent: '接続し直す',
+  reconnectHint: '応答がない場合は',
+  sendingToAgent: '送信中…',
+  startingReview: 'レビューの準備をしています…',
+  showResolved: count => `解決済みも表示（${String(count)}）`,
+  hideResolved: '解決済みを隠す',
+  nothingToSend: '新しく送るものはありません。',
+  sendNeedsSession: 'コメントを追加すると、レビューを始めます。',
+  sendNeedsAgent: 'コメントを送るには、私を接続してください。',
+  sendNeedsOneSession: 'このデッキにcritのレビューのセッションが複数あります。1つを残して止めてください(`crit stop`)。',
+  reviewFailed: error => `レビューのセッションに接続できませんでした: ${error}`,
+  reply: '返信',
+  resolveComment: '解決済みにする',
+  resolvedComment: '解決済み',
 
   settings: '設定',
   closeSettings: '設定を閉じる',

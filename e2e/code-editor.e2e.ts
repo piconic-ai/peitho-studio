@@ -218,7 +218,9 @@ test.describe('functional: each slide keeps its own undo history', () => {
     // Cmd+Shift+ArrowUp outside the text fields moves the open slide up.
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     await page.keyboard.press('Meta+Shift+ArrowUp')
-    await expect.poll(() => deck.source.indexOf('# Slide Two')).toBeLessThan(deck.source.indexOf('# Slide One'))
+    // Both sides re-read on every poll: an expected value taken once, before
+    // the move's save lands, would compare against the old order.
+    await expect.poll(() => deck.source.indexOf('# Slide Two') < deck.source.indexOf('# Slide One')).toBe(true)
 
     await selectRow(page, 1, '# Slide One typed')
     await editorContent(page).click()

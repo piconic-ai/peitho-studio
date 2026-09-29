@@ -7,6 +7,18 @@ import { createTauriDeckIpc } from '../ipc/deckIpc'
 import { createTauriSettingsIpc } from '../ipc/settingsIpc'
 import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
+import { createTauriCritIpc } from '../ipc/critIpc'
+import {
+  REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, newReviewComment, pollsForAgent, previewPinsOf, reviewStatusText, slideIndexOfComment,
+  slideSpans, targetLabel,
+  type PreviewPin,
+} from '../domain/reviewComment'
+import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, showsConnectGuide } from '../domain/agentConnect'
+import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
+import { focusCommentBox, focusUnsentEdit, placePreviewPins, revealReviewThread, watchPreviewLayout, type PreviewClick } from '../dom/previewComments'
+import { createReviewStore } from '../state/reviewStore'
+import { CommentBox } from './CommentBox'
+import { ReviewPanel } from './ReviewPanel'
 import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
 import { imageParagraphInsertion, insertionRangeAfterWait } from '../domain/editorText'
@@ -135,6 +147,8 @@ export function Studio() {
       // Only once `open`: a variant picked while still `opening` would be
       // rejected by `decide` as busy, silently doing nothing.
       void refreshDeckVariants()
+      review.reset()
+      void refreshReview()
     } catch (err) {
       setErrorMessage(String(err))
       // A failure here often means the path was a Recent entry pointing
@@ -806,12 +820,14 @@ export function Studio() {
   })
 
   // One key can match two hosts: a thumbnail row and the "selected slide"
-  // pane both carry `data-slide-canvas-key`. Fed the *absolutized*
-  // fragment, not the raw one — a shadow root has no `<base href>` to
-  // resolve `src="assets/…"` against, and a spelling other than the one
-  // mounted would defeat `patchSlideCanvas`'s unchanged-fragment check.
-  function patchSlideCanvases(key: string, fragmentHtml: string): void {
-    const selector = `[data-slide-canvas-key="${CSS.escape(key)}"]`
+  // pane both carry `data-slide-canvas-key`. The thumbnails get the
+  // fragment without peitho-core's edit annotations, the preview with them
+  // (its comment UI reads them) — see `state/renderStore.ts`. Fed the
+  // *absolutized* fragment, not the raw one — a shadow root has no
+  // `<base href>` to resolve `src="assets/…"` against, and a spelling other
+  // than the one mounted would defeat `patchSlideCanvas`'s
+  // unchanged-fragment check.
+  function patchSlideCanvases(selector: string, fragmentHtml: string): void {
     for (const host of document.querySelectorAll<HTMLElement>(selector)) {
       patchSlideCanvas(host, fragmentHtml)
     }
@@ -819,8 +835,254 @@ export function Studio() {
 
   createEffect(() => {
     for (const slide of render.manifest()?.slides ?? []) {
-      patchSlideCanvases(slide.key, render.canvasFragmentOf(slide.key))
+      patchSlideCanvases(`[data-slide-canvas-key="${CSS.escape(slide.key)}"]:not([data-preview-host])`, render.canvasFragmentOf(slide.key))
     }
+  })
+
+  createEffect(() => {
+    const key = selectedSlideKey()
+    if (key !== null) patchSlideCanvases(`[data-preview-host][data-slide-canvas-key="${CSS.escape(key)}"]`, render.previewFragmentOf(key))
+  })
+
+  // --- Comments for the Coding Agent (todo/review-comment-ui.md) ---
+  // A click on the preview opens the comment box; added comments wait,
+  // unsent, until "Send to Agent" hands them all to the agent waiting in
+  // crit (starting the deck's crit session with the first one). What was
+  // sent — replies, resolved state — is read back from crit.
+  const critIpc = createTauriCritIpc()
+  const review = createReviewStore()
+
+  // Each slide's comment key and span in the source the preview shows.
+  const renderedSlideSpans = createMemo(() => slideSpans(render.renderedSource(), render.manifest()?.slides ?? []))
+
+  function slideNumberOf(key: string): number {
+    return renderedSlideSpans().findIndex(slide => slide.key === key) + 1
+  }
+
+  let reviewGeneration = 0
+  // Reads the session and its comments back from crit. Quiet on failure —
+  // without crit (a dev build that never ran `crit:fetch`) there is simply
+  // no session; acting on one is what reports errors.
+  async function refreshReview(): Promise<void> {
+    const generation = ++reviewGeneration
+    try {
+      const session = (await critIpc.sessionStatus()) ?? { kind: 'none' as const }
+      const comments = session.kind === 'found' ? (await critIpc.listComments()) ?? [] : []
+      if (generation !== reviewGeneration) return
+      review.setSession(session)
+      review.setComments(comments)
+    } catch {
+      if (generation !== reviewGeneration) return
+      review.setSession({ kind: 'none' })
+      review.setComments([])
+    }
+  }
+
+  async function startReviewSession(): Promise<void> {
+    const session = review.session()
+    if (review.busy() !== 'idle' || (session !== null && session.kind !== 'none')) return
+    review.setBusy('starting')
+    review.setError(null)
+    try {
+      review.setSession(await critIpc.startSession())
+    } catch (err) {
+      review.setError(settings.messages().reviewFailed(String(err)))
+    } finally {
+      review.setBusy('idle')
+    }
+  }
+
+  function openCommentBox(click: PreviewClick): void {
+    const key = selectedSlideKey()
+    if (key === null) return
+    const slide = renderedSlideSpans().find(s => s.key === key)
+    const target = commentTargetOf(render.renderedSource(), slide?.span ?? null, click.hit)
+    const at = clampMenuPosition(click.at, { width: 336, height: 180 }, { width: window.innerWidth, height: window.innerHeight }, 8)
+    review.openBox(key, target, click.pin, at)
+    focusCommentBox()
+  }
+
+  // A pin clicked on the preview: its comment, not a new one — the
+  // comments column scrolls to its thread and lights it up for a moment.
+  const [highlightedThread, setHighlightedThread] = createSignal<string | null>(null)
+  let highlightTimer: number | undefined
+  function showPinnedThread(pinId: string): void {
+    const thread = threadOfPin(pinId)
+    if (thread === null) return
+    setHighlightedThread(thread)
+    revealReviewThread(thread)
+    window.clearTimeout(highlightTimer)
+    highlightTimer = window.setTimeout(() => setHighlightedThread(null), 2000)
+  }
+
+  function addComment(): void {
+    if (review.commitBox() !== null) void startReviewSession()
+  }
+
+  const commentBoxLabel = createMemo(() => {
+    const box = review.box()
+    return box.kind === 'open' ? targetLabel(slideNumberOf(box.slideKey), box.target) : ''
+  })
+
+  const commentBoxAt = createMemo(() => {
+    const box = review.box()
+    return box.kind === 'open' ? box.at : { x: 0, y: 0 }
+  })
+
+  // Hands every unsent comment and reply to the agent waiting in crit and
+  // finishes the round. Lines are worked out against the deck as saved
+  // (what crit and the agent read), so an unsaved edit is saved first.
+  async function sendReview(): Promise<void> {
+    if (review.availability().kind !== 'ready') return
+    // Send what the user sees: a rewrite still open goes in as it reads.
+    review.commitEdit()
+    review.setBusy('sending')
+    review.setError(null)
+    try {
+      if (editor.isDirty()) await handleSave()
+      const source = editor.fullSource()
+      const slides = slideSpans(source, render.manifest()?.slides ?? [])
+      const pending = review.pending()
+      const comments = pending.map(comment => {
+        const index = slides.findIndex(slide => slide.key === comment.slideKey)
+        return newReviewComment(comment, source, slides[index]?.span ?? null, index + 1 || slideNumberOf(comment.slideKey))
+      })
+      const sendable = review.sendableReplies()
+      const replies = sendable.map(reply => ({ commentId: reply.commentId, body: reply.body, author: REVIEW_AUTHOR }))
+      if (comments.length > 0) await critIpc.addComments(comments)
+      if (replies.length > 0) await critIpc.addReplies(replies)
+      await critIpc.finish()
+      review.markSent(pending, comments.map(comment => comment.body), sendable)
+    } catch (err) {
+      review.setError(settings.messages().reviewFailed(String(err)))
+    } finally {
+      review.setBusy('idle')
+    }
+    await refreshReview()
+  }
+
+  async function resolveReviewComment(id: string): Promise<void> {
+    try {
+      review.setComments(await critIpc.resolveComment(id))
+    } catch (err) {
+      review.setError(settings.messages().reviewFailed(String(err)))
+    }
+  }
+
+  createEffect(() => {
+    review.syncCommentCounts(commentCountsBySlide(render.renderedSource(), renderedSlideSpans(), review.pending(), review.comments()))
+  })
+
+  const previewPins = createMemo(() => {
+    const source = render.renderedSource()
+    const slides = renderedSlideSpans()
+    return previewPinsOf(selectedSlideKey(), review.comments(), review.sentPins(), review.pending(), review.box(), comment => {
+      const index = slideIndexOfComment(source, slides, comment)
+      return index === null ? null : slides[index].key
+    })
+  })
+
+  // The pins as drawn: each anchored one moved onto its element wherever
+  // the slide lays it out (`placePreviewPins`). Placed again whenever the
+  // slide is laid out anew — another slide, another canvas shape, a new
+  // render — two frames on, once the canvas has mounted and laid out; and
+  // again whenever that slide reflows on its own (`watchPreviewLayout`).
+  const [placedPins, setPlacedPins] = createSignal<PreviewPin[]>([])
+  createEffect(() => {
+    const pins = previewPins()
+    const key = selectedSlideKey()
+    if (key !== null) render.previewFragmentOf(key)
+    previewCanvasWidth()
+    previewCanvasHeight()
+    setPlacedPins(pins)
+    let stopWatching = () => {}
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        setPlacedPins(placePreviewPins(pins))
+        if (pins.some(pin => pin.anchor !== null)) stopWatching = watchPreviewLayout(() => setPlacedPins(placePreviewPins(pins)))
+      })
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+      stopWatching()
+    }
+  })
+
+  // See `pollsForAgent`: an agent that connected can be missed by the
+  // event alone, so the session is re-read until one is seen waiting.
+  createEffect(() => {
+    // Only with a deck open: the session is the open deck's.
+    if (!deck.deckPath() || !pollsForAgent(review.availability())) return
+    const timer = window.setInterval(() => { void refreshReview() }, REVIEW_POLL_MS)
+    return () => window.clearInterval(timer)
+  })
+
+  // The connect card's prompt and command name the bundled crit by its full
+  // path; without one (a dev build that never ran `crit:fetch`) they fall
+  // back to plain `crit` on the agent's PATH.
+  const [bundledCritPath, setBundledCritPath] = createSignal<string | null>(null)
+  critIpc.bundledCritPath().then(setBundledCritPath, () => setBundledCritPath(null))
+  const connectPrompt = createMemo(() => agentConnectPrompt(deck.deckPath(), bundledCritPath() ?? 'crit', settings.language()))
+  const connectCommand = createMemo(() => agentConnectCommand(deck.deckPath(), bundledCritPath() ?? 'crit'))
+  const [connectCopied, setConnectCopied] = createSignal<'prompt' | 'command' | null>(null)
+  let connectCopiedTimer: number | undefined
+  async function copyConnectText(which: 'prompt' | 'command'): Promise<void> {
+    try {
+      await editorIpc.writeClipboardText(which === 'prompt' ? connectPrompt() : connectCommand())
+    } catch (err) {
+      review.setError(settings.messages().reviewFailed(String(err)))
+      return
+    }
+    setConnectCopied(which)
+    window.clearTimeout(connectCopiedTimer)
+    connectCopiedTimer = window.setTimeout(() => setConnectCopied(null), 1500)
+  }
+
+  const reviewPanelRows = createMemo(() => {
+    const source = render.renderedSource()
+    const slides = renderedSlideSpans()
+    const now = new Date()
+    return reviewRows({
+      comments: review.comments(),
+      unsentReplies: review.pendingReplies(),
+      unsent: review.pending().map(comment => {
+        const number = slideNumberOf(comment.slideKey)
+        return { id: comment.id, label: targetLabel(number, comment.target), body: comment.body, createdAt: comment.createdAt, slideIndex: number > 0 ? number - 1 : null }
+      }),
+      showResolved: review.showResolved(),
+      replyingTo: review.replyDraft()?.commentId ?? null,
+      slideOf: comment => slideIndexOfComment(source, slides, comment),
+    }).map(row => ({ ...row, time: formatReviewTime(row.createdAt, now), editing: isUnsentEditing(row, review.unsentEdit()?.id ?? null) }))
+  })
+  const reviewResolvedCount = createMemo(() => resolvedCount(review.comments()))
+
+  // An agent seen waiting and now at work on what it was sent. crit can't
+  // tell that from one whose session was closed, so a long silence (no
+  // reply, no comment change, no edit to the deck) counts as gone and
+  // brings the connect card back (`agentGoneQuiet`).
+  const agentWorking = createMemo(() => review.availability().kind === 'agent-not-waiting' && review.agentSeen())
+  let lastAgentActivity = Date.now()
+  function noteAgentActivity(): void {
+    lastAgentActivity = Date.now()
+  }
+  createEffect(() => {
+    if (!agentWorking()) return
+    noteAgentActivity()
+    const timer = window.setInterval(() => {
+      if (agentGoneQuiet(lastAgentActivity, Date.now())) review.forgetAgent()
+    }, 10_000)
+    return () => window.clearInterval(timer)
+  })
+
+  // The connect card, until an agent is seen waiting in this session (one
+  // at work on a round it was sent is not a missing agent).
+  const connectShown = createMemo(() => showsConnectGuide(review.availability(), review.agentSeen()) && review.busy() !== 'starting')
+  const reviewStatus = createMemo(() => {
+    // The card already asks for the agent; the line would only repeat it.
+    if (connectShown() && review.availability().kind === 'agent-not-waiting') return ''
+    return reviewStatusText(
+      settings.messages(), review.availability(), review.unsentCount(), review.busy() === 'starting', review.agentSeen(), reviewPanelRows().length > 0,
+    )
   })
 
   // `renderPayload`, when given, is applied together with the exact
@@ -1744,6 +2006,8 @@ export function Studio() {
     })()
 
     const unlistenFileChanged = deckIpc.onDeckFileChanged(() => {
+      // An agent editing the deck is an agent at work.
+      noteAgentActivity()
       void handleExternalChange()
     })
 
@@ -1783,6 +2047,12 @@ export function Studio() {
       void replayHistory(direction)
     }
     const unlistenFileDrop = imageIpc.onFileDrop(drop => { void dropFiles(drop) })
+    // Whatever crit reports — the agent's next round, a reply, the round
+    // reaching the agent, the session ending — is read back whole.
+    const unlistenReview = critIpc.onReviewEvent(() => {
+      noteAgentActivity()
+      void refreshReview()
+    })
     const unlistenMenuUndo = deckIpc.onMenuUndo(() => { onMenuHistory('undo') })
     const unlistenMenuRedo = deckIpc.onMenuRedo(() => { onMenuHistory('redo') })
 
@@ -1897,6 +2167,7 @@ export function Studio() {
       unlistenSettingsChanged()
       unlistenClipboard()
       unlistenFileDrop()
+      unlistenReview()
       unlistenMenuUndo()
       unlistenMenuRedo()
       unlistenMenuDeckSetting()
@@ -2019,6 +2290,7 @@ export function Studio() {
           canvasHeight={render.canvasHeight()}
           canvasFragmentOf={render.canvasFragmentOf}
           slideStylesheet={getSlideStylesheet}
+          commentCountOf={review.commentCountOf}
           onContextMenu={openContextMenu}
           onDragStart={startSlideDrag}
           onSelectSlide={index => selectSlide(index)}
@@ -2049,22 +2321,83 @@ export function Studio() {
           onMouseDown={startColumnResize(ui.editorWidth, ui.setEditorWidth, 1)}
         />
 
-        <SlidePreview
-          language={settings.language()}
-          selectedSlideKey={selectedSlideKey()}
-          hasDeck={Boolean(render.assetBaseUrl())}
-          canvasFragmentOf={render.canvasFragmentOf}
-          slideStylesheet={getSlideStylesheet}
-          viewportMode={ui.viewportMode()}
-          onToggleViewportMode={ui.toggleViewportMode}
-          phoneShape={ui.phoneShape()}
-          phoneShapeMenuOpen={ui.phoneShapeMenuOpen()}
-          onTogglePhoneShapeMenu={ui.togglePhoneShapeMenu}
-          onClosePhoneShapeMenu={ui.closePhoneShapeMenu}
-          onSelectPhoneShape={ui.selectPhoneShape}
-          canvasWidth={previewCanvasWidth()}
-          canvasHeight={previewCanvasHeight()}
+        <div className="flex-1 min-w-0 flex flex-col min-h-0">
+          <SlidePreview
+            language={settings.language()}
+            selectedSlideKey={selectedSlideKey()}
+            hasDeck={Boolean(render.assetBaseUrl())}
+            canvasFragmentOf={render.previewFragmentOf}
+            slideStylesheet={getSlideStylesheet}
+            viewportMode={ui.viewportMode()}
+            onToggleViewportMode={ui.toggleViewportMode}
+            phoneShape={ui.phoneShape()}
+            phoneShapeMenuOpen={ui.phoneShapeMenuOpen()}
+            onTogglePhoneShapeMenu={ui.togglePhoneShapeMenu}
+            onClosePhoneShapeMenu={ui.closePhoneShapeMenu}
+            onSelectPhoneShape={ui.selectPhoneShape}
+            canvasWidth={previewCanvasWidth()}
+            canvasHeight={previewCanvasHeight()}
+            pins={placedPins()}
+            onCommentClick={openCommentBox}
+            onPinClick={showPinnedThread}
+          />
+        </div>
+
+        {/* The comments column, rightmost: a fourth column rather than a
+            strip under the preview, so the threads get the window's full
+            height. Hidden with the panel until a deck is open. */}
+        <div
+          hidden={!render.assetBaseUrl()}
+          className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"
+          onMouseDown={startColumnResize(ui.reviewPanelWidth, ui.setReviewPanelWidth, -1)}
         />
+
+        <div
+          hidden={!render.assetBaseUrl()}
+          className="shrink-0 flex flex-col min-h-0 border-l border-border"
+          style={`width: ${ui.reviewPanelWidth()}px`}
+        >
+          <ReviewPanel
+            language={settings.language()}
+            shown={Boolean(render.assetBaseUrl())}
+            status={reviewStatus()}
+            canSend={review.availability().kind === 'ready'}
+            sending={review.busy() === 'sending'}
+            sendCount={review.sendCount()}
+            working={agentWorking()}
+            onReconnect={review.forgetAgent}
+            error={review.error()}
+            rows={reviewPanelRows()}
+            resolvedCount={reviewResolvedCount()}
+            showResolved={review.showResolved()}
+            resolvedToggleLabel={review.showResolved() ? settings.messages().hideResolved : settings.messages().showResolved(reviewResolvedCount())}
+            onToggleResolved={review.toggleShowResolved}
+            onSelectSlide={index => void selectSlide(index)}
+            highlightedThread={highlightedThread()}
+            replyText={review.replyDraft()?.text ?? ''}
+            onSend={() => void sendReview()}
+            onDiscard={review.discard}
+            editText={review.unsentEdit()?.text ?? ''}
+            onStartEdit={id => {
+              review.startEdit(id)
+              focusUnsentEdit()
+            }}
+            onEditInput={review.setEditText}
+            onEditSave={review.commitEdit}
+            onEditCancel={review.cancelEdit}
+            onStartReply={commentId => review.editReply(commentId, '')}
+            onReplyInput={review.setReplyText}
+            onReplyAdd={review.commitReply}
+            onReplyCancel={review.cancelReply}
+            onResolve={id => void resolveReviewComment(id)}
+            connectShown={connectShown()}
+            connectPrompt={connectPrompt()}
+            connectCommand={connectCommand()}
+            copied={connectCopied()}
+            onCopyPrompt={() => void copyConnectText('prompt')}
+            onCopyCommand={() => void copyConnectText('command')}
+          />
+        </div>
       </div>
       )}
 
@@ -2077,6 +2410,18 @@ export function Studio() {
         statusMessage={statusText(settings.messages(), statusMessage())}
         onCopyErrorMessage={() => void copyErrorMessage()}
         onImageSlotFix={applyImageSlotFix}
+      />
+
+      <CommentBox
+        language={settings.language()}
+        open={review.box().kind === 'open'}
+        label={commentBoxLabel()}
+        draft={review.boxDraft()}
+        left={commentBoxAt().x}
+        top={commentBoxAt().y}
+        onDraftInput={review.setBoxDraft}
+        onCancel={review.closeBox}
+        onAdd={addComment}
       />
 
       <SlideContextMenu

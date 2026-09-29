@@ -42,3 +42,28 @@ export function dropPointToCss(point: Point, scale: number, macOS: boolean): Poi
   if (macOS || !(scale > 0) || !Number.isFinite(scale)) return point
   return { x: point.x / scale, y: point.y / scale }
 }
+
+/** Where `point` lies across `rect`, as fractions of its width and height
+ * (0 at the left/top edge, 1 at the right/bottom), clamped to the box.
+ * `null` for a box with no area. */
+export function fractionInRect(point: Point, rect: Rect): Point | null {
+  const width = rect.right - rect.left
+  const height = rect.bottom - rect.top
+  if (!(width > 0) || !(height > 0)) return null
+  const clamp = (value: number) => Math.min(Math.max(value, 0), 1)
+  return { x: clamp((point.x - rect.left) / width), y: clamp((point.y - rect.top) / height) }
+}
+
+/** Where `fraction` (0-1 of `element`'s box) falls on `slide`, as fractions
+ * of the slide's box: a pin anchored to an element, placed wherever the
+ * slide laid that element out. `null` for a slide or an element with no
+ * area (not laid out, or hidden). */
+export function pinInSlide(fraction: Point, element: Rect, slide: Rect): Point | null {
+  const width = slide.right - slide.left
+  const height = slide.bottom - slide.top
+  if (!(width > 0) || !(height > 0)) return null
+  if (!(element.right > element.left) || !(element.bottom > element.top)) return null
+  const x = element.left + fraction.x * (element.right - element.left)
+  const y = element.top + fraction.y * (element.bottom - element.top)
+  return { x: (x - slide.left) / width, y: (y - slide.top) / height }
+}

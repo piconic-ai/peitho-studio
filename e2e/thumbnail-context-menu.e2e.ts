@@ -22,7 +22,8 @@ test('right-clicking a thumbnail enables Cut/Copy/Delete, and each one works', a
   await expect(page.locator('[data-slide-row]')).toHaveCount(2, { timeout: 10_000 })
 
   await page.locator('[data-slide-row="1"]').click({ button: 'right' })
-  const copyBtn = page.getByRole('button', { name: /^Copy/ })
+  // Not the comments column's Copy Prompt / Copy Command.
+  const copyBtn = page.getByRole('button', { name: /^Copy(?! Prompt| Command)/ })
   const cutBtn = page.getByRole('button', { name: /^Cut/ })
   const deleteBtn = page.getByRole('button', { name: /^Delete/ })
   await expect(copyBtn).toBeEnabled()

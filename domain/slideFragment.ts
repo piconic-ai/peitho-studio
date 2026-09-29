@@ -100,3 +100,20 @@ export function hasFixedCanvas(fragmentHtml: string): boolean {
   const attributes = rootSectionAttributes(fragmentHtml)
   return attributes !== null && attributeValue(attributes, 'data-canvas') === 'fixed'
 }
+
+// peitho-core's edit annotations (`EditAnnotations::On`, see
+// `src-tauri/src/engine/pipeline.rs`), exactly as it writes them: a space,
+// the byte span, a space, the Markdown with every `"` encoded.
+const EDIT_ANNOTATION_PATTERN = / data-peitho-src="\d+-\d+" data-peitho-md="[^"]*"/g
+
+/** `html` without peitho-core's edit annotations — what a thumbnail
+ * shows. The byte spans in them shift with every edit above a slide, so
+ * leaving them in would hand every later slide a changed fragment (and a
+ * re-patch) on each keystroke. `<script>` bodies are left alone, as in
+ * `absolutizeFragmentUrls`. */
+export function stripEditAnnotations(html: string): string {
+  return html
+    .split(SCRIPT_BLOCK_PATTERN)
+    .map(part => (SCRIPT_OPEN_TAG_PATTERN.test(part) ? part : part.replace(EDIT_ANNOTATION_PATTERN, '')))
+    .join('')
+}

@@ -196,6 +196,22 @@ mod tests {
     // with just a title and an image fits it *and* `title-body-image`.
     const PHOTO: &str = "<section><h1><slot name=\"title\" accepts=\"inline\" arity=\"1\"></slot></h1><figure><slot name=\"image\" accepts=\"image\" arity=\"1\"></slot></figure></section>";
 
+    /// `html` without its `data-peitho-src="…"` values: those are byte
+    /// offsets into the source, so a slide after an edited one moves along
+    /// without looking any different.
+    fn without_edit_spans(html: &str) -> String {
+        const SRC: &str = "data-peitho-src=\"";
+        let mut out = String::new();
+        let mut rest = html;
+        while let Some(at) = rest.find(SRC) {
+            out.push_str(&rest[..at + SRC.len()]);
+            rest = &rest[at + SRC.len()..];
+            rest = &rest[rest.find('"').unwrap_or(rest.len())..];
+        }
+        out.push_str(rest);
+        out
+    }
+
     /// A deck folder holding `img/photo.png`, the given `layouts/` files
     /// (none: no `layouts/` at all), the given `css/` files (likewise) and
     /// `deck.md` with `source`.
@@ -355,7 +371,7 @@ mod tests {
         let after = render_source(&deck_path, &with_image).unwrap_or_else(|err| panic!("{err}"));
         assert!(after.fragments["cover"].contains("<img"), "{}", after.fragments["cover"]);
         for key in ["just-text", "with-code"] {
-            assert_eq!(after.fragments[key], before.fragments[key], "{key} changed");
+            assert_eq!(without_edit_spans(&after.fragments[key]), without_edit_spans(&before.fragments[key]), "{key} changed");
         }
         assert!(after.css.contains("object-fit: contain"), "the image layout's CSS is loaded");
     }

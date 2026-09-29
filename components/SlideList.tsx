@@ -6,6 +6,7 @@ import { type SlideListEntry } from '../domain/slideList'
 import { type RowVisibility } from '../domain/sectionCollapse'
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
+import { commentKeyOf } from '../domain/reviewComment'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 import { isFocusMovingWithinSectionHeader, showCanonicalValue } from '../dom/sectionHeader'
 
@@ -56,6 +57,9 @@ export interface SlideListProps {
    * meant to be). */
   canvasFragmentOf: (key: string) => string
   slideStylesheet: () => CSSStyleSheet
+  /** How many comments for the agent the slide filed under `key` has
+   * (`domain/reviewComment.ts`'s `commentKeyOf`). */
+  commentCountOf: (key: string) => number
   onContextMenu: (index: number | null, event: MouseEvent) => void
   onDragStart: (index: number) => (event: MouseEvent) => void
   onSelectSlide: (index: number) => void
@@ -356,6 +360,20 @@ export function SlideList(props: SlideListProps) {
                           </span>
                         </span>
                       ) : null}
+                      {/* The slide's comments for the agent (unsent, and
+                          unresolved in crit). Kept mounted and hidden at
+                          zero rather than branched in, like the canvas
+                          toggles elsewhere. */}
+                      <span
+                        data-slide-comment-count={String(props.commentCountOf(commentKeyOf(entry)))}
+                        aria-label={messagesFor(props.language).commentCount(props.commentCountOf(commentKeyOf(entry)))}
+                        className={(props.commentCountOf(commentKeyOf(entry)) > 0 ? 'flex' : 'hidden') + ' absolute left-1 bottom-1 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-semibold bg-[#eab308] text-black pointer-events-none'}
+                      >
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" className="block w-3 h-3">
+                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                        </svg>
+                        {props.commentCountOf(commentKeyOf(entry))}
+                      </span>
                     </span>
                   </span>
                 </button>
