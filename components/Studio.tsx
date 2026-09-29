@@ -2310,6 +2310,7 @@ export function Studio() {
             canSend={review.availability().kind === 'ready'}
             sending={review.busy() === 'sending'}
             sendCount={review.sendCount()}
+            working={review.availability().kind === 'agent-not-waiting' && review.agentSeen()}
             error={review.error()}
             rows={reviewPanelRows()}
             resolvedCount={reviewResolvedCount()}

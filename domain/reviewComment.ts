@@ -352,10 +352,11 @@ export const REVIEW_POLL_MS = 3000
 /** What the panel says, in the agent's voice — empty when there's nothing
  * to say. `starting`: Studio is starting the session. `agentSeen`: an agent
  * has been seen waiting in this session, so one not waiting now is at work
- * on what it was sent (the connect card is for one never seen). `threads`:
+ * on what it was sent — the Send button says so, and the connect card is
+ * for one never seen. `threads`:
  * the panel lists some, so the how-to hint isn't needed. */
 export function reviewStatusText(
-  messages: Pick<Messages, 'startingReview' | 'sendingToAgent' | 'commentHint' | 'sendNeedsSession' | 'sendNeedsAgent' | 'sendNeedsOneSession' | 'agentWorking'>,
+  messages: Pick<Messages, 'startingReview' | 'sendingToAgent' | 'commentHint' | 'sendNeedsSession' | 'sendNeedsAgent' | 'sendNeedsOneSession'>,
   availability: SendAvailability,
   unsent: number,
   starting: boolean,
@@ -370,7 +371,8 @@ export function reviewStatusText(
     case 'sending': return messages.sendingToAgent
     case 'nothing-to-send': return hint
     case 'no-session': return unsent > 0 ? messages.sendNeedsSession : hint
-    case 'agent-not-waiting': return agentSeen ? messages.agentWorking : messages.sendNeedsAgent
+    // An agent at work shows on the Send button, not here.
+    case 'agent-not-waiting': return agentSeen ? '' : messages.sendNeedsAgent
     case 'several-sessions': return messages.sendNeedsOneSession
     default: {
       const exhaustive: never = availability

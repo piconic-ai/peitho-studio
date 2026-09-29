@@ -488,7 +488,7 @@ describe('reviewStatusText', () => {
     ['no-session', 0, false, false, en.commentHint],
     ['no-session', 2, false, false, en.sendNeedsSession],
     ['agent-not-waiting', 1, false, false, en.sendNeedsAgent],
-    ['agent-not-waiting', 0, true, false, en.agentWorking],
+    ['agent-not-waiting', 0, true, false, ''],
     ['several-sessions', 1, false, false, en.sendNeedsOneSession],
   ] as const)('spec: Given %s with %d unsent (agent seen: %p, threads: %p), Then the status is %p', (kind, unsent, agentSeen, threads, text) => {
     expect(reviewStatusText(en, { kind }, unsent, false, agentSeen, threads)).toBe(text)

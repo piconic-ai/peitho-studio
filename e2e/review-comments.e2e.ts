@@ -224,7 +224,10 @@ test('Given the agent replied, When the user replies back and the agent waits ag
   crit.reply('c_1', 'Made it bigger')
   await expect(page.locator('[data-review-row="reply"]')).toHaveCount(1)
 
-  await page.locator('[data-review-row="comment"] [data-review-reply]').click()
+  // Reply sits under the agent's last word, not on the comment.
+  await expect(page.locator('[data-review-row="comment"] [data-review-reply]')).toBeHidden()
+  await page.locator('[data-review-row="reply"] [data-review-reply]').click()
+  await expect(page.locator('[data-review-row="reply"] [data-review-reply]')).toBeHidden()
   // The box opens under the thread it answers: after the agent's reply.
   await expect(page.locator('[data-review-row="reply"] [data-review-reply-box]')).toBeVisible()
   await page.locator('[data-review-reply-box]:visible textarea').fill('Still too small')
@@ -267,7 +270,7 @@ test('Given an unsent reply, When its thread is resolved, Then the reply is not 
   await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
   crit.reply('c_1', 'Made it bigger')
   crit.agentConnects()
-  await page.locator('[data-review-row="comment"] [data-review-reply]').click()
+  await page.locator('[data-review-row="reply"] [data-review-reply]').click()
   await page.locator('[data-review-reply-box]:visible textarea').fill('Still too small')
   await page.locator('[data-review-reply-add]:visible').click()
   await expect(page.locator(SEND)).toBeEnabled()
@@ -295,7 +298,10 @@ test('Given a comment sent while no agent waited, When the agent comes back, The
   await expect(page.locator(SEND)).toBeDisabled()
   await expect(count).toHaveText('1')
   await expect(page.locator(CONNECT)).toBeHidden()
-  await expect(page.locator('[data-review-status]')).toHaveText('Got your comments. Working on them…')
+  // The agent's work shows on the Send button, not as a line.
+  await expect(page.locator(SEND)).toHaveAttribute('data-review-send-state', 'thinking')
+  await expect(page.locator(SEND)).toContainText('Thinking…')
+  await expect(page.locator('[data-review-say]')).toBeHidden()
 
   crit.agentConnects()
 

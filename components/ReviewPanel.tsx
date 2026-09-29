@@ -14,6 +14,9 @@ export interface ReviewPanelProps {
   sending: boolean
   /** How many a send hands the agent: shown as a badge on the button. */
   sendCount: number
+  /** The agent is at work on what it was sent: the button says it's
+   * thinking until the agent is back. */
+  working: boolean
   error: string | null
   /** `domain/reviewPanel.ts`'s `reviewRows`, each with its time worded. */
   rows: PanelRow[]
@@ -192,19 +195,6 @@ export function ReviewPanel(props: ReviewPanelProps) {
                 </span>
                 <button
                   type="button"
-                  data-review-reply=""
-                  aria-label={messagesFor(props.language).reply}
-                  title={messagesFor(props.language).reply}
-                  className={row.kind === 'comment' && !row.resolved ? 'shrink-0 p-0.5 rounded hover:bg-muted hover:text-foreground' : 'hidden'}
-                  onClick={() => props.onStartReply(row.id)}
-                >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M9 14 4 9l5-5" />
-                      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
-                    </svg>
-                </button>
-                <button
-                  type="button"
                   data-review-resolve=""
                   aria-label={messagesFor(props.language).resolveComment}
                   title={messagesFor(props.language).resolveComment}
@@ -258,6 +248,19 @@ export function ReviewPanel(props: ReviewPanelProps) {
                   >
                     {row.body}
                   </p>
+                  {/* Under the agent's last word: what a reply answers. */}
+                  <button
+                    type="button"
+                    data-review-reply=""
+                    className={row.replyHere && !row.replyBoxHere ? 'flex items-center gap-1 px-1 text-xs text-muted-foreground rounded hover:text-foreground hover:bg-muted' : 'hidden'}
+                    onClick={() => props.onStartReply(row.id)}
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M9 14 4 9l5-5" />
+                      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+                    </svg>
+                    {messagesFor(props.language).reply}
+                  </button>
                 </div>
               </div>
                 {/* The reply box sits under the thread it answers. */}
@@ -314,17 +317,29 @@ export function ReviewPanel(props: ReviewPanelProps) {
         <button
           type="button"
           data-review-send=""
+          data-review-send-state={props.sending ? 'sending' : props.working ? 'thinking' : 'idle'}
           disabled={!props.canSend}
           onClick={() => props.onSend()}
-          className="shrink-0 flex items-center gap-2 px-3 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          className={(props.working || props.sending ? 'disabled:opacity-100 ' : 'disabled:opacity-50 ') + 'shrink-0 flex items-center gap-2 px-3 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90'}
         >
+          {/* Sending: a spinner. The agent at work: its icon, breathing. */}
+          <svg aria-hidden="true" viewBox="0 0 24 24" className={props.sending ? 'w-4 h-4 animate-spin' : 'hidden'} fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <path d="M12 3a9 9 0 1 1-9 9" />
+          </svg>
+          <svg aria-hidden="true" viewBox="0 0 24 24" className={props.working && !props.sending ? 'w-4 h-4 animate-pulse' : 'hidden'} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="8" width="16" height="11" rx="3" />
+            <path d="M12 8V4.5" />
+            <circle cx="12" cy="3.5" r="1" />
+            <circle cx="9" cy="13.5" r="1.2" fill="currentColor" stroke="none" />
+            <circle cx="15" cy="13.5" r="1.2" fill="currentColor" stroke="none" />
+          </svg>
           {/* One expression picking the text, not a `? :` of two texts: a
               conditional text child here left `Studio.tsx`'s deck-open
               branch half-entered (its "Loading deck…" never went away). */}
-          <span>{messagesFor(props.language)[props.sending ? 'sendingToAgent' : 'sendToAgent']}</span>
+          <span className={props.working && !props.sending ? 'animate-pulse' : ''}>{messagesFor(props.language)[props.sending ? 'sendingToAgent' : props.working ? 'agentThinking' : 'sendToAgent']}</span>
           <span
             data-review-send-count=""
-            hidden={props.sendCount === 0 || props.sending}
+            hidden={props.sendCount === 0 || props.sending || props.working}
             className="min-w-5 h-5 px-1.5 rounded-full bg-primary-foreground/20 text-xs font-semibold flex items-center justify-center"
           >
             {props.sendCount}
