@@ -210,7 +210,7 @@ fn open_first_round(cli: &CritCli, deck_path: &Path, child: &mut Child) -> Resul
         stop_session(cli, deck_path);
         err
     })?;
-    let finished = FinishedRound { session_id: id.clone(), review_round };
+    let finished = FinishedRound { session_id: id.clone(), port, review_round };
     Ok((DeckSession::Found { id, port, file, review_round, agent_waiting: false }, finished))
 }
 
@@ -630,7 +630,7 @@ mod tests {
         fn wait_until_agent_waits(sandbox: &Sandbox, finished: &FinishedRound) -> DeckSession {
             let deadline = Instant::now() + Duration::from_secs(15);
             loop {
-                let session = shapes::with_finished_round(find_deck_session(&sandbox.cli, &sandbox.deck()).unwrap(), Some(finished));
+                let session = shapes::with_finished_round(find_deck_session(&sandbox.cli, &sandbox.deck()).unwrap(), std::slice::from_ref(finished));
                 if matches!(session, DeckSession::Found { agent_waiting: true, .. }) {
                     return session;
                 }
@@ -649,7 +649,7 @@ mod tests {
             // the comment Studio opened it with is gone.
             assert_eq!(file, "deck.md");
             assert!(!agent_waiting);
-            assert_eq!(finished, FinishedRound { session_id: id.clone(), review_round });
+            assert_eq!(finished, FinishedRound { session_id: id.clone(), port, review_round });
             assert!(list_comments(port, &file).unwrap().is_empty());
             let (sender, signals) = mpsc::channel();
             let _watch = watch_events(port, move |signal| {
@@ -678,8 +678,8 @@ mod tests {
             assert!(handed_over.contains("Make it bigger"), "{handed_over}");
             assert!(!handed_over.contains(SESSION_OPENER_BODY), "{handed_over}");
             // and no agent waits until it comes back for the next round.
-            let finished = FinishedRound { session_id: id, review_round };
-            let now = shapes::with_finished_round(find_deck_session(&sandbox.cli, &sandbox.deck()).unwrap(), Some(&finished));
+            let finished = FinishedRound { session_id: id, port, review_round };
+            let now = shapes::with_finished_round(find_deck_session(&sandbox.cli, &sandbox.deck()).unwrap(), std::slice::from_ref(&finished));
             assert!(matches!(now, DeckSession::Found { agent_waiting: false, .. }), "{now:?}");
             sandbox.agent(&["--session", &finished.session_id]);
             wait_until_agent_waits(&sandbox, &finished);

@@ -123,9 +123,6 @@ fn watch_present_failure(stderr: Option<ChildStderr>, emitted: Arc<AtomicBool>, 
 /// reports.
 #[derive(Default)]
 struct CritReviewState {
-    /// The round Studio last finished, which tells whether an agent waits
-    /// again (`crit_shapes::with_finished_round`).
-    finished: Option<FinishedRound>,
     /// Set while `crit_start_session` starts a session, so a second call
     /// can't start another one beside it.
     starting: bool,
@@ -683,6 +680,32 @@ fn app_data_file(app: &AppHandle, file_name: &str) -> Result<PathBuf, String> {
     Ok(dir.join(file_name))
 }
 
+/// The rounds Studio finished in each crit session, which tell whether an
+/// agent waits again (`crit_shapes::with_finished_round`). Saved to a file,
+/// not kept per window: a session outlives Studio, and after a restart one
+/// Studio had finished a round in would otherwise read as having its agent
+/// waiting.
+fn finished_rounds_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app_data_file(app, "crit_finished_rounds.json")
+}
+
+/// Serializes read-modify-write of the finished rounds across windows.
+static FINISHED_ROUNDS_LOCK: Mutex<()> = Mutex::new(());
+
+fn load_finished_rounds(app: &AppHandle) -> Vec<FinishedRound> {
+    finished_rounds_path(app)
+        .and_then(|path| std::fs::read_to_string(path).map_err(|err| err.to_string()))
+        .map(|json| crit_shapes::parse_finished_rounds(&json))
+        .unwrap_or_default()
+}
+
+fn save_finished_round(app: &AppHandle, finished: FinishedRound) -> Result<(), String> {
+    let _guard = FINISHED_ROUNDS_LOCK.lock().map_err(|_| "finished rounds lock poisoned".to_string())?;
+    let rounds = crit_shapes::record_finished_round(&load_finished_rounds(app), finished);
+    let path = finished_rounds_path(app)?;
+    std::fs::write(&path, crit_shapes::finished_rounds_json(&rounds)).map_err(|err| format!("failed to write {}: {err}", path.display()))
+}
+
 fn recent_decks_path(app: &AppHandle) -> Result<PathBuf, String> {
     app_data_file(app, "recent_decks.json")
 }
@@ -1224,7 +1247,7 @@ pub fn crit_bundled_path() -> Result<String, String> {
 pub fn crit_session_status(window: WebviewWindow, session: State<PeithoSession>) -> Result<DeckSession, String> {
     let found = session_deck_path(&session, window.label())
         .and_then(|deck_path| crit::find_deck_session(&CritCli::bundled()?, &deck_path))
-        .and_then(|found| with_crit_review(&session, window.label(), |review| crit_shapes::with_finished_round(found, review.finished.as_ref())));
+        .map(|found| crit_shapes::with_finished_round(found, &load_finished_rounds(window.app_handle())));
     follow_found_session(&session, &window, found)
 }
 
@@ -1264,20 +1287,20 @@ pub fn crit_start_session(window: WebviewWindow, session: State<PeithoSession>) 
     if already_starting {
         return Err("a crit review session is already starting for this deck".to_string());
     }
-    let started = start_or_find_session(&session, label);
+    let started = start_or_find_session(&session, window.app_handle(), label);
     let _ = with_crit_review(&session, label, |review| review.starting = false);
     follow_found_session(&session, &window, started)
 }
 
-fn start_or_find_session(session: &PeithoSession, label: &str) -> Result<DeckSession, String> {
+fn start_or_find_session(session: &PeithoSession, app: &AppHandle, label: &str) -> Result<DeckSession, String> {
     let cli = CritCli::bundled()?;
     let deck_path = session_deck_path(session, label)?;
     let existing = crit::find_deck_session(&cli, &deck_path)?;
     if existing != DeckSession::None {
-        return with_crit_review(session, label, |review| crit_shapes::with_finished_round(existing, review.finished.as_ref()));
+        return Ok(crit_shapes::with_finished_round(existing, &load_finished_rounds(app)));
     }
     let (started, finished) = crit::start_deck_session(&cli, &deck_path)?;
-    with_crit_review(session, label, |review| review.finished = Some(finished))?;
+    save_finished_round(app, finished)?;
     Ok(started)
 }
 
@@ -1350,8 +1373,7 @@ pub fn crit_resolve_comment(id: String, window: WebviewWindow, session: State<Pe
 pub fn crit_finish(window: WebviewWindow, session: State<PeithoSession>) -> Result<(), String> {
     let target = deck_crit_session(&session, window.label())?;
     crit::finish(target.port)?;
-    let finished = FinishedRound { session_id: target.id, review_round: target.review_round };
-    with_crit_review(&session, window.label(), |review| review.finished = Some(finished))
+    save_finished_round(window.app_handle(), FinishedRound { session_id: target.id, port: target.port, review_round: target.review_round })
 }
 
 /// The comments in the deck's crit session, with their replies.

@@ -158,11 +158,43 @@ pub fn select_deck_session(mut matches: Vec<DeckSessionMatch>) -> DeckSession {
     }
 }
 
-/// The round of a session that Studio last finished.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// The round of a session that Studio last finished. A session is its id
+/// *and* its daemon's port: crit reuses the id when a daemon on the same
+/// deck is started again (by an agent, after the old one stopped), and that
+/// new daemon's rounds say nothing about what Studio finished in the old one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FinishedRound {
     pub session_id: String,
+    pub port: u16,
     pub review_round: u32,
+}
+
+/// How many sessions' finished rounds Studio remembers.
+pub const MAX_FINISHED_ROUNDS: usize = 64;
+
+/// `rounds` with `finished` recorded: it replaces the entry for the same
+/// session and daemon, and only the newest `MAX_FINISHED_ROUNDS` are kept.
+pub fn record_finished_round(rounds: &[FinishedRound], finished: FinishedRound) -> Vec<FinishedRound> {
+    let mut kept: Vec<FinishedRound> = rounds
+        .iter()
+        .filter(|round| !(round.session_id == finished.session_id && round.port == finished.port))
+        .cloned()
+        .collect();
+    kept.push(finished);
+    let excess = kept.len().saturating_sub(MAX_FINISHED_ROUNDS);
+    kept.drain(..excess);
+    kept
+}
+
+/// The finished rounds Studio saved (`finished_rounds_json`); nothing for a
+/// missing, empty or unreadable file — at worst an agent is taken to wait.
+pub fn parse_finished_rounds(json: &str) -> Vec<FinishedRound> {
+    serde_json::from_str(json).unwrap_or_default()
+}
+
+pub fn finished_rounds_json(rounds: &[FinishedRound]) -> String {
+    serde_json::to_string(rounds).unwrap_or_else(|_| "[]".to_string())
 }
 
 /// `session` with whether an agent waits in it, given the round Studio last
@@ -174,13 +206,15 @@ pub struct FinishedRound {
 /// is taken to have its agent waiting: whoever started it runs the `crit`
 /// that waits on its first round. (Studio's own sessions are finished once
 /// right after they start, `crate::crit::start_deck_session`, so they
-/// don't count as waiting until an agent connects.)
-pub fn with_finished_round(session: DeckSession, finished: Option<&FinishedRound>) -> DeckSession {
+/// don't count as waiting until an agent connects.) `rounds` are every
+/// session's, as Studio saved them — kept across restarts of Studio.
+pub fn with_finished_round(session: DeckSession, rounds: &[FinishedRound]) -> DeckSession {
     match session {
         DeckSession::Found { id, port, file, review_round, .. } => {
+            let finished = rounds.iter().rev().find(|round| round.session_id == id && round.port == port);
             let agent_waiting = match finished {
-                Some(finished) if finished.session_id == id => review_round > finished.review_round,
-                _ => true,
+                Some(finished) => review_round > finished.review_round,
+                None => true,
             };
             DeckSession::Found { id, port, file, review_round, agent_waiting }
         }
@@ -762,8 +796,8 @@ mod tests {
 
     // --- with_finished_round ---
 
-    fn found_session(id: &str, review_round: u32) -> DeckSession {
-        DeckSession::Found { id: id.into(), port: 1, file: "deck.md".into(), review_round, agent_waiting: true }
+    fn found_session(id: &str, port: u16, review_round: u32) -> DeckSession {
+        DeckSession::Found { id: id.into(), port, file: "deck.md".into(), review_round, agent_waiting: true }
     }
 
     fn waiting(session: DeckSession) -> Option<bool> {
@@ -773,36 +807,81 @@ mod tests {
         }
     }
 
-    fn finished(id: &str, review_round: u32) -> FinishedRound {
-        FinishedRound { session_id: id.into(), review_round }
+    fn finished(id: &str, port: u16, review_round: u32) -> FinishedRound {
+        FinishedRound { session_id: id.into(), port, review_round }
     }
 
     #[test]
     fn given_studio_finished_the_current_round_then_no_agent_waits_until_the_next_round() {
         // Given Studio finished round 2, When the session is still in round
         // 2, Then the agent is busy; When it moved on to round 3, it waits.
-        assert_eq!(waiting(with_finished_round(found_session("a", 2), Some(&finished("a", 2)))), Some(false));
-        assert_eq!(waiting(with_finished_round(found_session("a", 3), Some(&finished("a", 2)))), Some(true));
+        assert_eq!(waiting(with_finished_round(found_session("a", 1, 2), &[finished("a", 1, 2)])), Some(false));
+        assert_eq!(waiting(with_finished_round(found_session("a", 1, 3), &[finished("a", 1, 2)])), Some(true));
     }
 
     #[test]
     fn given_a_session_studio_never_finished_a_round_of_then_its_agent_is_taken_to_wait() {
-        assert_eq!(waiting(with_finished_round(found_session("a", 1), None)), Some(true));
+        assert_eq!(waiting(with_finished_round(found_session("a", 1, 1), &[])), Some(true));
         // A round finished in another session says nothing about this one.
-        assert_eq!(waiting(with_finished_round(found_session("b", 1), Some(&finished("a", 5)))), Some(true));
+        assert_eq!(waiting(with_finished_round(found_session("b", 1, 1), &[finished("a", 1, 5)])), Some(true));
     }
 
     #[test]
-    fn given_a_round_counter_behind_the_finished_one_then_no_agent_waits() {
-        // A restarted daemon reusing the id would count from 1 again.
-        assert_eq!(waiting(with_finished_round(found_session("a", 1), Some(&finished("a", 4)))), Some(false));
+    fn given_a_daemon_started_again_under_the_same_id_then_its_agent_is_taken_to_wait() {
+        // crit reuses the id for a new daemon on the same deck (an agent ran
+        // `crit` after the old one stopped); only its port tells it apart.
+        assert_eq!(waiting(with_finished_round(found_session("a", 2, 5), &[finished("a", 1, 5)])), Some(true));
+    }
+
+    #[test]
+    fn given_several_saved_rounds_then_the_one_for_this_session_and_daemon_counts() {
+        let rounds = [finished("b", 9, 1), finished("a", 1, 3), finished("a", 2, 7)];
+        assert_eq!(waiting(with_finished_round(found_session("a", 1, 3), &rounds)), Some(false));
+        assert_eq!(waiting(with_finished_round(found_session("a", 2, 8), &rounds)), Some(true));
     }
 
     #[test]
     fn given_no_single_session_then_there_is_nothing_to_mark() {
-        assert_eq!(with_finished_round(DeckSession::None, Some(&finished("a", 1))), DeckSession::None);
+        assert_eq!(with_finished_round(DeckSession::None, &[finished("a", 1, 1)]), DeckSession::None);
         let ambiguous = DeckSession::Ambiguous { ids: vec!["a".into(), "b".into()] };
-        assert_eq!(with_finished_round(ambiguous.clone(), None), ambiguous);
+        assert_eq!(with_finished_round(ambiguous.clone(), &[]), ambiguous);
+    }
+
+    // --- record_finished_round / saved rounds ---
+
+    #[test]
+    fn given_a_round_finished_again_in_the_same_session_then_it_replaces_the_old_one() {
+        let rounds = record_finished_round(&[finished("a", 1, 2), finished("b", 3, 1)], finished("a", 1, 3));
+        assert_eq!(rounds, vec![finished("b", 3, 1), finished("a", 1, 3)]);
+    }
+
+    #[test]
+    fn given_the_same_id_on_another_daemon_then_both_are_kept() {
+        let rounds = record_finished_round(&[finished("a", 1, 2)], finished("a", 2, 1));
+        assert_eq!(rounds, vec![finished("a", 1, 2), finished("a", 2, 1)]);
+    }
+
+    #[test]
+    fn given_more_than_the_limit_then_only_the_newest_are_kept() {
+        let full: Vec<FinishedRound> = (0..MAX_FINISHED_ROUNDS as u16).map(|port| finished("s", port, 1)).collect();
+        let rounds = record_finished_round(&full, finished("new", 1, 1));
+        assert_eq!(rounds.len(), MAX_FINISHED_ROUNDS);
+        assert_eq!(rounds.first(), Some(&finished("s", 1, 1)));
+        assert_eq!(rounds.last(), Some(&finished("new", 1, 1)));
+    }
+
+    #[test]
+    fn saved_rounds_read_back_as_written() {
+        let rounds = vec![finished("a", 1, 2), finished("b", 3, 4)];
+        assert_eq!(parse_finished_rounds(&finished_rounds_json(&rounds)), rounds);
+        assert_eq!(finished_rounds_json(&[finished("a", 1, 2)]), r#"[{"sessionId":"a","port":1,"reviewRound":2}]"#);
+    }
+
+    #[test]
+    fn missing_empty_or_broken_saved_rounds_read_as_none() {
+        for json in ["", "{}", "not json", r#"[{"sessionId":"a"}]"#] {
+            assert_eq!(parse_finished_rounds(json), vec![], "{json}");
+        }
     }
 
     // --- session_opener_id ---
