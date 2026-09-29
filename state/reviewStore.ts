@@ -3,7 +3,7 @@ import type { CritDeckSession, ReviewComment } from '../domain/critReview'
 import { awaitingAgentCount, liveReplies, rewriteUnsent, sendAvailability, unsentBody, type CommentBox, type CommentTarget, type PendingComment, type PendingReply, type PinSpot, type SentPins } from '../domain/reviewComment'
 
 /** The review round trip with the Coding Agent as the comment UI shows it
- * (todo/review-comment-ui.md): what crit last reported (the session and its
+ * (todo/archive/review-comment-ui.md): what crit last reported (the session and its
  * comments — crit is the source of truth for everything already sent), the
  * comments and replies written but not sent yet, the comment box, and
  * what's in flight. Talking to crit (`ipc/critIpc.ts`) and deciding when to

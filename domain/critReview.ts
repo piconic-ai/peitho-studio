@@ -1,7 +1,7 @@
 // The review round trip with a Coding Agent through crit (see
 // src-tauri/src/engine/crit.rs for the Rust side of these shapes, and
 // ipc/critIpc.ts for the commands that carry them). Shared with the
-// preview's comment UI (todo/review-comment-ui.md).
+// preview's comment UI (todo/archive/review-comment-ui.md).
 
 /** Whether an agent is waiting in a crit session on the open deck. */
 export type CritDeckSession =

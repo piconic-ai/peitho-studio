@@ -66,7 +66,7 @@ function isRowControl(target: EventTarget | null): boolean {
 }
 
 /** The comments for the Coding Agent, in the rightmost column
- * (todo/review-comment-ui.md), as a chat: the user's words on the right in
+ * (todo/archive/review-comment-ui.md), as a chat: the user's words on the right in
  * dark bubbles, the agent's on the left in light ones behind its icon, and
  * what the panel has to say (a hint, the state of things, how to connect)
  * in the agent's voice, from the same icon. Threads run in the order they

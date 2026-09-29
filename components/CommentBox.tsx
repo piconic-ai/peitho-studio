@@ -18,7 +18,7 @@ export interface CommentBoxProps {
 }
 
 /** The box a comment is written in, opened by a click on the preview
- * (todo/review-comment-ui.md). In-app rather than `window.prompt()`, which
+ * (todo/archive/review-comment-ui.md). In-app rather than `window.prompt()`, which
  * WKWebView can silently treat as cancelled. Always mounted and toggled
  * with `hidden`, like `ScriptTrustBanner.tsx`; `Studio.tsx` focuses the
  * text field when it opens (`focusCommentBox`). ⌘/Ctrl+Enter adds, Escape

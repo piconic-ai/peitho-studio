@@ -1,4 +1,4 @@
-// The preview's comments for the Coding Agent (todo/review-comment-ui.md):
+// The preview's comments for the Coding Agent (todo/archive/review-comment-ui.md):
 // click a part of the preview, write a comment, send the comments to the
 // agent waiting in crit, and read its replies under them.
 //

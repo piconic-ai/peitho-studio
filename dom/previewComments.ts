@@ -1,5 +1,5 @@
 // Turns a click on the preview canvas into a comment target, with no mode
-// to switch into first (todo/review-comment-ui.md): the slide list already
+// to switch into first (todo/archive/review-comment-ui.md): the slide list already
 // moves between slides, so a click on the preview is free to mean "comment
 // here". What it doesn't take for a comment:
 //
