@@ -14,9 +14,9 @@ tags: [agent, crit, scaffold]
 ある。デッキにエージェント向けの指示ファイルを置けば、Studioから依頼する
 ときもしないときも効く。
 
-3本組のうちの1本。往復の仕組みは`todo/crit-review-bridge.md`、UIは
+3本組のうちの1本。往復の仕組みは`todo/archive/crit-review-bridge.md`、UIは
 `todo/archive/review-comment-ui.md`。**中身の一部(critの呼び方)は
-`todo/crit-review-bridge.md`の要調査1の結論に依存する**(→ (c)に決定済み)ので、その結論が
+`todo/archive/crit-review-bridge.md`の要調査1の結論に依存する**(→ (c)に決定済み)ので、その結論が
 出てから着手する。
 
 ## スコープ
@@ -45,10 +45,10 @@ tags: [agent, crit, scaffold]
     - Studioからのレビューの受け取り方: デッキのフォルダで
       `crit --no-open deck.md`を実行して待つこと。Studioが同梱のcritで
       セッションを先に起動しているので、エージェントのcritはそれに繋がる
-      (`todo/crit-review-bridge.md`の要調査1で(c)に決定)
+      (`todo/archive/crit-review-bridge.md`の要調査1で(c)に決定)
       (Studioはデッキのフォルダの`crit status`でセッションを探すため、
       gitでないフォルダでは別の場所から起動したセッションが見つからない —
-      `todo/crit-review-bridge.md`の要調査3の結論)
+      `todo/archive/crit-review-bridge.md`の要調査3の結論)
 
 ## 背景・要調査
 
