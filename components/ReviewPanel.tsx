@@ -321,20 +321,9 @@ export function ReviewPanel(props: ReviewPanelProps) {
         </button>
       </div>
       {/* Bottom bar: the Send button alone at the right — and, while the
-          agent is taken to be at work, a way back to the connect card
-          right above it, since it's about that state. */}
+          agent is taken to be at work, a quiet way back to the connect
+          card under it, for when something's gone wrong. */}
       <div className="shrink-0 border-t border-border px-3 py-2 flex flex-col items-end gap-1">
-        <p data-review-reconnect-hint="" hidden={!props.working || props.sending} className="text-xs text-muted-foreground">
-          {messagesFor(props.language).reconnectHint}
-          <button
-            type="button"
-            data-review-reconnect=""
-            onClick={() => props.onReconnect()}
-            className="ml-1 underline underline-offset-2 hover:text-foreground"
-          >
-            {messagesFor(props.language).reconnectAgent}
-          </button>
-        </p>
         <button
           type="button"
           data-review-send=""
@@ -366,6 +355,17 @@ export function ReviewPanel(props: ReviewPanelProps) {
             {props.sendCount}
           </span>
         </button>
+        <p data-review-reconnect-hint="" hidden={!props.working || props.sending} className="text-xs text-muted-foreground opacity-70">
+          {messagesFor(props.language).reconnectHint}
+          <button
+            type="button"
+            data-review-reconnect=""
+            onClick={() => props.onReconnect()}
+            className="ml-1 underline underline-offset-2 hover:text-foreground"
+          >
+            {messagesFor(props.language).reconnectAgent}
+          </button>
+        </p>
       </div>
     </section>
   )
