@@ -292,7 +292,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
                             props.onEditSave()
                           }
                         }}
-                        className="w-full resize-none rounded-2xl rounded-tr-sm border-2 border-dashed border-[#eab308] bg-background px-3 py-2"
+                        className="w-full resize-none rounded-2xl rounded-tr-sm border-2 border-dashed border-[#eab308] bg-background px-3 py-2 outline-none"
                       />
                       <div className="flex justify-end gap-2">
                         <button type="button" onClick={() => props.onEditCancel()} className="px-3 py-1 rounded-md hover:bg-accent">
