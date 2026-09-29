@@ -111,6 +111,9 @@ test('Given no agent is connected, Then a card walks through connecting one, wit
   const prompt = page.locator('[data-agent-connect-prompt]')
   await expect(prompt).toContainText(`1. Run: cd /decks/talk && ${CRIT_QUOTED} --no-open deck.md`)
   await expect(prompt).toContainText(`use ${CRIT_QUOTED} instead.`)
+  // The terminal route is folded away until asked for.
+  await expect(page.locator('[data-agent-connect-command]')).toBeHidden()
+  await page.locator('[data-agent-connect-terminal] summary').click()
   await expect(page.locator('[data-agent-connect-command]')).toHaveText(`cd /decks/talk && ${CRIT_QUOTED} --no-open deck.md`)
 })
 
@@ -121,6 +124,7 @@ test('Given the card, When the prompt and then the command are copied, Then each
   await expect(page.locator('[data-agent-connect-copy-prompt]')).toHaveText('Copied')
   await expect.poll(() => deck.clipboardText).toContain('Start a review loop for my Peitho deck.')
 
+  await page.locator('[data-agent-connect-terminal] summary').click()
   await page.locator('[data-agent-connect-copy-command]').click()
   await expect(page.locator('[data-agent-connect-copy-command]')).toHaveText('Copied')
   await expect.poll(() => deck.clipboardText).toBe(`cd /decks/talk && ${CRIT_QUOTED} --no-open deck.md`)

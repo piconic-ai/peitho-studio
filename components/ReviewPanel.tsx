@@ -119,20 +119,25 @@ export function ReviewPanel(props: ReviewPanelProps) {
               </div>
             </li>
           </ol>
-          <div className="border-t border-border pt-2 flex flex-col gap-2 text-xs">
-            <span className="text-muted-foreground">{messagesFor(props.language).connectAgentTerminal}</span>
-            <code data-agent-connect-command="" className="rounded-md border border-border bg-background p-2 font-mono break-words select-text">
-              {props.connectCommand}
-            </code>
-            <button
-              type="button"
-              data-agent-connect-copy-command=""
-              onClick={() => props.onCopyCommand()}
-              className="self-start px-3 py-1 rounded-md border border-border hover:bg-background"
-            >
-              {messagesFor(props.language)[props.copied === 'command' ? 'copiedToClipboard' : 'copyCommand']}
-            </button>
-          </div>
+          {/* The terminal route is the optional one: folded away by default. */}
+          <details data-agent-connect-terminal="" className="border-t border-border pt-2 text-xs">
+            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+              {messagesFor(props.language).connectAgentTerminal}
+            </summary>
+            <div className="pt-2 flex flex-col gap-2">
+              <code data-agent-connect-command="" className="rounded-md border border-border bg-background p-2 font-mono break-words select-text">
+                {props.connectCommand}
+              </code>
+              <button
+                type="button"
+                data-agent-connect-copy-command=""
+                onClick={() => props.onCopyCommand()}
+                className="self-start px-3 py-1 rounded-md border border-border hover:bg-background"
+              >
+                {messagesFor(props.language)[props.copied === 'command' ? 'copiedToClipboard' : 'copyCommand']}
+              </button>
+            </div>
+          </details>
         </div>
         <div role="alert" data-review-error="" hidden={props.error === null} className="px-3 pb-2 text-xs text-destructive">
           {props.error ?? ''}
