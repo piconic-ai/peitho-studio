@@ -461,6 +461,70 @@ test('Given an unsent comment whose element was edited away, When it is sent, Th
   }])
 })
 
+test('Given an unsent comment, When it is edited in place, Then Save puts the new text in, Cancel and Escape keep the old, and the slide does not change', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  await openDeck(page, crit)
+  await comment(page, 'h1', 'Make it bigger')
+  const row = page.locator('[data-review-row="unsent-comment"]')
+  await page.locator('[data-slide-row="1"]').click()
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Second')
+
+  await row.locator('[data-review-edit]').click()
+  await expect(row.locator('[data-review-bubble]')).toBeHidden()
+  await expect(row.locator('[data-review-edit-box] textarea')).toBeFocused()
+  await expect(row.locator('[data-review-edit-box] textarea')).toHaveValue('Make it bigger')
+  await row.locator('[data-review-edit-box] textarea').fill('Make it much bigger')
+  await row.locator('[data-review-edit-save]').click()
+  await expect(row.locator('[data-review-bubble]')).toHaveText('Make it much bigger')
+  await expect(row.locator('[data-review-edit-box]')).toBeHidden()
+  // The editor's own buttons are not a click on the row.
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Second')
+
+  await row.locator('[data-review-edit]').click()
+  await row.locator('[data-review-edit-box] textarea').fill('   ')
+  await expect(row.locator('[data-review-edit-save]')).toBeDisabled()
+  await row.locator('[data-review-edit-box] textarea').press('Escape')
+  await expect(row.locator('[data-review-bubble]')).toHaveText('Make it much bigger')
+
+  await row.locator('[data-review-edit]').click()
+  await row.locator('[data-review-edit-box] textarea').fill('Make it huge')
+  await row.locator('[data-review-edit-box] button', { hasText: 'Cancel' }).click()
+  await expect(row.locator('[data-review-bubble]')).toHaveText('Make it much bigger')
+})
+
+test('Given an unsent comment being edited, When Send is pressed, Then it goes as it reads in the editor', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  await openDeck(page, crit)
+  await comment(page, 'h1', 'Make it bigger')
+  await page.locator('[data-review-row="unsent-comment"] [data-review-edit]').click()
+  await page.locator('[data-review-edit-box]:visible textarea').fill('Make it red')
+  await page.locator(SEND).click()
+  await expect.poll(() => sentComments(crit).map(sent => sent.body)).toEqual(['[Slide 1 › heading "Hello"] Make it red'])
+  await expect(page.locator('[data-review-edit-box]:visible')).toHaveCount(0)
+})
+
+test('Given an unsent reply, When it is edited, Then the new text is what gets sent', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  await openDeck(page, crit)
+  await comment(page, 'h1', 'Make it bigger')
+  await page.locator(SEND).click()
+  crit.reply('c_1', 'Made it bigger')
+  await page.locator('[data-review-row="reply"] [data-review-reply]').click()
+  await page.locator('[data-review-reply-box]:visible textarea').fill('Still small')
+  await page.locator('[data-review-reply-add]:visible').click()
+
+  const row = page.locator('[data-review-row="unsent-reply"]')
+  await row.locator('[data-review-edit]').click()
+  await row.locator('[data-review-edit-box] textarea').fill('Still too small')
+  await row.locator('[data-review-edit-box] textarea').press('Meta+Enter')
+  await expect(row.locator('[data-review-bubble]')).toHaveText('Still too small')
+
+  crit.agentConnects()
+  await page.locator(SEND).click()
+  await expect.poll(() => crit.calls.filter(call => call.method === 'addReplies').map(call => call.args[0]))
+    .toEqual([[{ commentId: 'c_1', body: 'Still too small', author: 'Peitho Studio' }]])
+})
+
 test('Given an unsent comment, When it is discarded, Then it is gone from the panel, the pins and the count', async ({ page }) => {
   await openDeck(page, createFakeCritIpc())
   await comment(page, 'h1', 'Oops')
