@@ -117,6 +117,7 @@ export interface Messages {
   commentCount: (count: number) => string
   sendToAgent: string
   agentThinking: string
+  reconnectAgent: string
   sendingToAgent: string
   startingReview: string
   showResolved: (count: number) => string
@@ -269,6 +270,7 @@ const en: Messages = {
   commentCount: count => (count === 1 ? '1 comment' : `${String(count)} comments`),
   sendToAgent: 'Send',
   agentThinking: 'Thinking…',
+  reconnectAgent: 'Reconnect',
   sendingToAgent: 'Sending…',
   startingReview: 'Getting the review ready…',
   showResolved: count => `Show resolved (${String(count)})`,
@@ -415,6 +417,7 @@ const ja: Messages = {
   commentCount: count => `コメント ${String(count)} 件`,
   sendToAgent: '送信',
   agentThinking: '考え中…',
+  reconnectAgent: '接続し直す',
   sendingToAgent: '送信中…',
   startingReview: 'レビューの準備をしています…',
   showResolved: count => `解決済みも表示（${String(count)}）`,

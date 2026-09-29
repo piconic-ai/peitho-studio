@@ -13,7 +13,7 @@ import {
   slideSpans, targetLabel,
   type PreviewPin,
 } from '../domain/reviewComment'
-import { agentConnectCommand, agentConnectPrompt, showsConnectGuide } from '../domain/agentConnect'
+import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, showsConnectGuide } from '../domain/agentConnect'
 import { formatReviewTime, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
 import { focusCommentBox, placePreviewPins, revealReviewThread, type PreviewClick } from '../dom/previewComments'
 import { createReviewStore } from '../state/reviewStore'
@@ -1039,6 +1039,24 @@ export function Studio() {
   })
   const reviewResolvedCount = createMemo(() => resolvedCount(review.comments()))
 
+  // An agent seen waiting and now at work on what it was sent. crit can't
+  // tell that from one whose session was closed, so a long silence (no
+  // reply, no comment change, no edit to the deck) counts as gone and
+  // brings the connect card back (`agentGoneQuiet`).
+  const agentWorking = createMemo(() => review.availability().kind === 'agent-not-waiting' && review.agentSeen())
+  let lastAgentActivity = Date.now()
+  function noteAgentActivity(): void {
+    lastAgentActivity = Date.now()
+  }
+  createEffect(() => {
+    if (!agentWorking()) return
+    noteAgentActivity()
+    const timer = window.setInterval(() => {
+      if (agentGoneQuiet(lastAgentActivity, Date.now())) review.forgetAgent()
+    }, 10_000)
+    return () => window.clearInterval(timer)
+  })
+
   // The connect card, until an agent is seen waiting in this session (one
   // at work on a round it was sent is not a missing agent).
   const connectShown = createMemo(() => showsConnectGuide(review.availability(), review.agentSeen()) && review.busy() !== 'starting')
@@ -1971,6 +1989,8 @@ export function Studio() {
     })()
 
     const unlistenFileChanged = deckIpc.onDeckFileChanged(() => {
+      // An agent editing the deck is an agent at work.
+      noteAgentActivity()
       void handleExternalChange()
     })
 
@@ -2012,7 +2032,10 @@ export function Studio() {
     const unlistenFileDrop = imageIpc.onFileDrop(drop => { void dropFiles(drop) })
     // Whatever crit reports — the agent's next round, a reply, the round
     // reaching the agent, the session ending — is read back whole.
-    const unlistenReview = critIpc.onReviewEvent(() => { void refreshReview() })
+    const unlistenReview = critIpc.onReviewEvent(() => {
+      noteAgentActivity()
+      void refreshReview()
+    })
     const unlistenMenuUndo = deckIpc.onMenuUndo(() => { onMenuHistory('undo') })
     const unlistenMenuRedo = deckIpc.onMenuRedo(() => { onMenuHistory('redo') })
 
@@ -2324,7 +2347,8 @@ export function Studio() {
             canSend={review.availability().kind === 'ready'}
             sending={review.busy() === 'sending'}
             sendCount={review.sendCount()}
-            working={review.availability().kind === 'agent-not-waiting' && review.agentSeen()}
+            working={agentWorking()}
+            onReconnect={review.forgetAgent}
             error={review.error()}
             rows={reviewPanelRows()}
             resolvedCount={reviewResolvedCount()}

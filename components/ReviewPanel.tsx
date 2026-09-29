@@ -17,6 +17,8 @@ export interface ReviewPanelProps {
   /** The agent is at work on what it was sent: the button says it's
    * thinking until the agent is back. */
   working: boolean
+  /** The agent is taken to be gone: show the connect card again. */
+  onReconnect: () => void
   error: string | null
   /** `domain/reviewPanel.ts`'s `reviewRows`, each with its time worded. */
   rows: PanelRow[]
@@ -319,6 +321,17 @@ export function ReviewPanel(props: ReviewPanelProps) {
           className="text-xs text-muted-foreground hover:text-foreground"
         >
           {props.resolvedToggleLabel}
+        </button>
+        {/* While the agent is taken to be at work: a way back to the
+            connect card if it's gone (its session closed). */}
+        <button
+          type="button"
+          data-review-reconnect=""
+          hidden={!props.working || props.sending}
+          onClick={() => props.onReconnect()}
+          className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+        >
+          {messagesFor(props.language).reconnectAgent}
         </button>
         <span className="flex-1" />
         <button

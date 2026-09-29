@@ -338,6 +338,26 @@ test('Given a pin on a list item, When the preview switches to the phone shape a
   await expect.poll(pinOnItem).toBe(true)
 })
 
+test('Given the agent taken to be at work, When Reconnect is chosen (its session was closed), Then the connect card comes back until it waits again', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  await openDeck(page, crit)
+  await comment(page, 'h1', 'Make it bigger')
+  await page.locator(SEND).click()
+  await expect(page.locator(SEND)).toHaveAttribute('data-review-send-state', 'thinking')
+  const reconnect = page.locator('[data-review-reconnect]')
+  await expect(reconnect).toBeVisible()
+  await expect(page.locator(CONNECT)).toBeHidden()
+
+  await reconnect.click()
+
+  await expect(page.locator(CONNECT)).toBeVisible()
+  await expect(page.locator(SEND)).toHaveAttribute('data-review-send-state', 'idle')
+  await expect(reconnect).toBeHidden()
+
+  crit.agentConnects()
+  await expect(page.locator(CONNECT)).toBeHidden()
+})
+
 test('Given a comment\'s pin on the slide, When it is clicked, Then its thread is shown and lit up, and no new comment starts', async ({ page }) => {
   const crit = createFakeCritIpc()
   await openDeck(page, crit)
