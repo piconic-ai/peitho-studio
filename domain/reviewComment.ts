@@ -94,6 +94,28 @@ export function liveReplies(replies: readonly PendingReply[], comments: readonly
   return replies.filter(reply => open.has(reply.commentId))
 }
 
+/** The unsent comments and replies with the one `id` names now reading
+ * `body` (trimmed). `null` when there's nothing to rewrite: a blank body,
+ * or no unsent comment or reply by that id (it was sent or discarded). */
+export function rewriteUnsent(
+  pending: readonly PendingComment[],
+  replies: readonly PendingReply[],
+  id: string,
+  body: string,
+): { pending: PendingComment[]; replies: PendingReply[] } | null {
+  const text = body.trim()
+  if (text === '' || ![...pending, ...replies].some(item => item.id === id)) return null
+  return {
+    pending: pending.map(comment => (comment.id === id ? { ...comment, body: text } : comment)),
+    replies: replies.map(reply => (reply.id === id ? { ...reply, body: text } : reply)),
+  }
+}
+
+/** The text of the unsent comment or reply `id`, or `null` for none. */
+export function unsentBody(pending: readonly PendingComment[], replies: readonly PendingReply[], id: string): string | null {
+  return [...pending, ...replies].find(item => item.id === id)?.body ?? null
+}
+
 /** The name Studio's comments and replies carry in crit. */
 export const REVIEW_AUTHOR = 'Peitho Studio'
 

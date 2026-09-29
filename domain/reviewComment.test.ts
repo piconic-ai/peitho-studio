@@ -3,10 +3,10 @@ import type { CritDeckSession, ReviewComment } from './critReview'
 import { messagesFor } from './messages'
 import type { ManifestSlide } from './render'
 import {
-  liveReplies,
+  liveReplies, rewriteUnsent, unsentBody,
   agentCommentBody, annotatedSpan, commentSlideKey, explicitSlideKey, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
   awaitingAgentCount, newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, previewPinsOf, relocateTarget, reviewStatusText, sendAvailability, slideIndexOfComment, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
-  utf8OffsetToIndex, type CommentTarget, type PendingComment, type PinSpot,
+  utf8OffsetToIndex, type CommentTarget, type PendingComment, type PendingReply, type PinSpot,
 } from './reviewComment'
 
 const bytes = (text: string) => new TextEncoder().encode(text).length
@@ -658,3 +658,34 @@ describe('liveReplies', () => {
   })
 })
 
+
+describe('rewriteUnsent / unsentBody', () => {
+  const comment: PendingComment = { id: 'pending-1', slideKey: 'a', target: { kind: 'slide', text: '', quote: '', offsetInSlide: 0 }, pin: null, body: 'Old', createdAt: '2026-09-29T00:00:00Z' }
+  const other: PendingComment = { ...comment, id: 'pending-2', body: 'Other' }
+  const reply: PendingReply = { id: 'reply-3', commentId: 'c_1', body: 'Old reply', createdAt: '2026-09-29T00:00:00Z' }
+
+  test('spec: Given an unsent comment, When it is rewritten, Then only it reads the new text, trimmed, and keeps everything else', () => {
+    const next = rewriteUnsent([comment, other], [reply], 'pending-1', '  New\ntext  ')
+    expect(next).toEqual({ pending: [{ ...comment, body: 'New\ntext' }, other], replies: [reply] })
+  })
+
+  test('spec: Given an unsent reply, When it is rewritten, Then only it reads the new text', () => {
+    expect(rewriteUnsent([comment], [reply], 'reply-3', 'New reply')).toEqual({ pending: [comment], replies: [{ ...reply, body: 'New reply' }] })
+  })
+
+  test.each([
+    ['a blank body', 'pending-1', ' \n '],
+    ['an empty body', 'pending-1', ''],
+    ['an id already sent or discarded', 'pending-9', 'New'],
+    ['an empty id', '', 'New'],
+  ])('adversarial: Given %s, Then there is nothing to rewrite', (_label, id, body) => {
+    expect(rewriteUnsent([comment], [reply], id, body)).toBeNull()
+  })
+
+  test('spec: Given an unsent comment or reply, Then its text is found; adversarial: an unknown id finds none', () => {
+    expect(unsentBody([comment], [reply], 'pending-1')).toBe('Old')
+    expect(unsentBody([comment], [reply], 'reply-3')).toBe('Old reply')
+    expect(unsentBody([comment], [reply], 'c_1')).toBeNull()
+    expect(unsentBody([], [], '')).toBeNull()
+  })
+})
