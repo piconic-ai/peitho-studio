@@ -303,10 +303,11 @@ export function sendAvailability(session: CritDeckSession | null, unsent: number
  * `crit` connecting with an event, but the session read on that event can
  * still show the old round (crit advances it asynchronously, next to
  * merging the agent's own writes to the review file), and no further event
- * comes to correct it — so while no agent is known to wait, Studio checks
- * again every `REVIEW_POLL_MS`. */
+ * comes to correct it. With no session at all there's no event to hear:
+ * an agent's own `crit` can start one. So until an agent is seen waiting
+ * in exactly one session, Studio checks again every `REVIEW_POLL_MS`. */
 export function pollsForAgent(availability: SendAvailability): boolean {
-  return availability.kind === 'agent-not-waiting'
+  return availability.kind === 'agent-not-waiting' || availability.kind === 'no-session' || availability.kind === 'several-sessions'
 }
 
 export const REVIEW_POLL_MS = 3000

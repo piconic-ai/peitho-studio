@@ -441,12 +441,14 @@ describe('commentTargetOf', () => {
 })
 
 describe('pollsForAgent', () => {
-  test('spec: Given a session with no agent waiting, Then Studio keeps checking for one', () => {
-    expect(pollsForAgent({ kind: 'agent-not-waiting' })).toBe(true)
+  test('spec: Given no agent seen waiting, with or without a session, Then Studio keeps checking', () => {
+    for (const kind of ['agent-not-waiting', 'no-session', 'several-sessions'] as const) {
+      expect(pollsForAgent({ kind })).toBe(true)
+    }
   })
 
-  test('adversarial: Given any other state, Then nothing is polled', () => {
-    for (const kind of ['ready', 'sending', 'nothing-to-send', 'no-session', 'several-sessions'] as const) {
+  test('adversarial: Given an agent waiting, or a send running, Then nothing is polled', () => {
+    for (const kind of ['ready', 'sending', 'nothing-to-send'] as const) {
       expect(pollsForAgent({ kind })).toBe(false)
     }
   })

@@ -139,6 +139,17 @@ test('Given the card, When the agent connects, Then the card goes away and the p
   await expect(page.locator('[data-review-status]')).toHaveText('The agent is waiting for your comments.')
 })
 
+test('Given no session, When an agent\'s own crit starts one and waits in it, Then within a few seconds the card goes away', async ({ page }) => {
+  const crit = createFakeCritIpc({ session: 'none' })
+  await openDeck(page, crit)
+  await expect(page.locator(CONNECT)).toBeVisible()
+
+  crit.agentStartsSession()
+
+  await expect(page.locator(CONNECT)).toBeHidden({ timeout: 8_000 })
+  await expect(page.locator('[data-review-status]')).toHaveText('Click a part of the preview to comment on it.')
+})
+
 test('Given an agent already waiting, Then no card is shown', async ({ page }) => {
   await openDeck(page, createFakeCritIpc())
   await expect(page.locator('[data-review-status]')).toHaveText('Click a part of the preview to comment on it.')

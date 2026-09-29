@@ -961,7 +961,8 @@ export function Studio() {
   // See `pollsForAgent`: an agent that connected can be missed by the
   // event alone, so the session is re-read until one is seen waiting.
   createEffect(() => {
-    if (!pollsForAgent(review.availability())) return
+    // Only with a deck open: the session is the open deck's.
+    if (!deck.deckPath() || !pollsForAgent(review.availability())) return
     const timer = window.setInterval(() => { void refreshReview() }, REVIEW_POLL_MS)
     return () => window.clearInterval(timer)
   })
