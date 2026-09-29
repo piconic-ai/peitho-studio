@@ -245,6 +245,9 @@ pub struct ReviewComment {
     pub author: String,
     pub resolved: bool,
     pub replies: Vec<ReviewReply>,
+    /// When it was written, as crit recorded it (RFC 3339, UTC); `None`
+    /// when crit gave none.
+    pub created_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -253,6 +256,7 @@ pub struct ReviewReply {
     pub id: String,
     pub body: String,
     pub author: String,
+    pub created_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -271,6 +275,7 @@ struct CommentJson {
     resolved: bool,
     #[serde(default)]
     replies: Vec<ReplyJson>,
+    created_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -280,6 +285,7 @@ struct ReplyJson {
     body: String,
     #[serde(default)]
     author: String,
+    created_at: Option<String>,
 }
 
 /// A line range from crit's numbers: no range for line 0 (or below), and an
@@ -288,6 +294,10 @@ fn line_range(start: i64, end: i64) -> Option<LineRange> {
     let start = u32::try_from(start).ok().filter(|start| *start > 0)?;
     let end = u32::try_from(end).ok().filter(|end| *end >= start).unwrap_or(start);
     Some(LineRange { start, end })
+}
+
+fn nonempty(value: Option<String>) -> Option<String> {
+    value.filter(|value| !value.is_empty())
 }
 
 /// The comments `GET /api/file/comments?path=…` returns. An empty quote is
@@ -305,10 +315,11 @@ pub fn parse_comments(json: &str) -> Result<Vec<ReviewComment>, String> {
             quote: comment.quote.filter(|quote| !quote.is_empty()),
             author: comment.author,
             resolved: comment.resolved,
+            created_at: nonempty(comment.created_at),
             replies: comment
                 .replies
                 .into_iter()
-                .map(|reply| ReviewReply { id: reply.id, body: reply.body, author: reply.author })
+                .map(|reply| ReviewReply { id: reply.id, body: reply.body, author: reply.author, created_at: nonempty(reply.created_at) })
                 .collect(),
         })
         .collect())
@@ -680,7 +691,13 @@ mod tests {
                 quote: Some("# Hello".into()),
                 author: "Studio".into(),
                 resolved: false,
-                replies: vec![ReviewReply { id: "rp_35db49".into(), body: "Made it bigger".into(), author: "Agent".into() }],
+                replies: vec![ReviewReply {
+                    id: "rp_35db49".into(),
+                    body: "Made it bigger".into(),
+                    author: "Agent".into(),
+                    created_at: Some("2026-09-28T14:38:51Z".into()),
+                }],
+                created_at: Some("2026-09-28T14:38:37Z".into()),
             }]
         );
     }
@@ -693,6 +710,15 @@ mod tests {
         assert_eq!(comments[0].quote, None);
         assert_eq!(comments[0].lines, Some(LineRange { start: 2, end: 4 }));
         assert_eq!(comments[1].quote, None);
+    }
+
+    #[test]
+    fn comment_without_or_with_an_empty_time_reads_as_no_time() {
+        let json = r#"[{"id":"c1","start_line":1,"end_line":1,"body":"b","author":"a"},{"id":"c2","start_line":1,"end_line":1,"body":"b","author":"a","created_at":"","replies":[{"id":"r","body":"x","author":"y","created_at":""}]}]"#;
+        let comments = parse_comments(json).unwrap();
+        assert_eq!(comments[0].created_at, None);
+        assert_eq!(comments[1].created_at, None);
+        assert_eq!(comments[1].replies[0].created_at, None);
     }
 
     #[test]
@@ -887,7 +913,7 @@ mod tests {
     // --- session_opener_id ---
 
     fn review_comment(id: &str, body: &str, author: &str) -> ReviewComment {
-        ReviewComment { id: id.into(), lines: None, body: body.into(), quote: None, author: author.into(), resolved: false, replies: vec![] }
+        ReviewComment { id: id.into(), lines: None, body: body.into(), quote: None, author: author.into(), resolved: false, replies: vec![], created_at: None }
     }
 
     #[test]
@@ -981,6 +1007,7 @@ mod tests {
             author: new.author.clone(),
             resolved,
             replies: vec![],
+            created_at: None,
         }
     }
 
@@ -1036,8 +1063,9 @@ mod tests {
             replies: replies
                 .iter()
                 .enumerate()
-                .map(|(i, (author, body))| ReviewReply { id: format!("rp_{i}"), body: (*body).into(), author: (*author).into() })
+                .map(|(i, (author, body))| ReviewReply { id: format!("rp_{i}"), body: (*body).into(), author: (*author).into(), created_at: None })
                 .collect(),
+            created_at: None,
         }
     }
 
