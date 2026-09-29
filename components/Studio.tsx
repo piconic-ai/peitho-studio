@@ -992,7 +992,7 @@ export function Studio() {
   // back to plain `crit` on the agent's PATH.
   const [bundledCritPath, setBundledCritPath] = createSignal<string | null>(null)
   critIpc.bundledCritPath().then(setBundledCritPath, () => setBundledCritPath(null))
-  const connectPrompt = createMemo(() => agentConnectPrompt(deck.deckPath(), bundledCritPath() ?? 'crit'))
+  const connectPrompt = createMemo(() => agentConnectPrompt(deck.deckPath(), bundledCritPath() ?? 'crit', settings.language()))
   const connectCommand = createMemo(() => agentConnectCommand(deck.deckPath(), bundledCritPath() ?? 'crit'))
   const [connectCopied, setConnectCopied] = createSignal<'prompt' | 'command' | null>(null)
   let connectCopiedTimer: number | undefined

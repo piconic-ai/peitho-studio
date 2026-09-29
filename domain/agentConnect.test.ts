@@ -48,15 +48,20 @@ describe('agentConnectCommand', () => {
 
 describe('agentConnectPrompt', () => {
   test('spec: Given the deck and the bundled crit, Then it has the agent run the command and use that crit throughout', () => {
-    const prompt = agentConnectPrompt('/Users/me/Desktop/test/deck.md', CRIT)
+    const prompt = agentConnectPrompt('/Users/me/Desktop/test/deck.md', CRIT, 'en')
     expect(prompt).toContain(`1. Run: cd /Users/me/Desktop/test && '${CRIT}' --no-open deck.md`)
     expect(prompt).toContain(`reply to each one with '${CRIT}' comment --reply-to`)
     expect(prompt).toContain(`say \`crit\`, use '${CRIT}' instead.`)
     expect(prompt).toContain('Repeat until the review is approved.')
   })
 
+  test('spec: Given the UI in Japanese or English, Then the agent is asked to reply in that language', () => {
+    expect(agentConnectPrompt('/d/deck.md', 'crit', 'ja')).toContain('5. Write your replies in Japanese.')
+    expect(agentConnectPrompt('/d/deck.md', 'crit', 'en')).toContain('5. Write your replies in English.')
+  })
+
   test('adversarial: Given no deck path, Then the prompt still names deck.md in the current folder', () => {
-    expect(agentConnectPrompt(null, 'crit')).toContain('1. Run: cd . && crit --no-open deck.md')
+    expect(agentConnectPrompt(null, 'crit', 'en')).toContain('1. Run: cd . && crit --no-open deck.md')
   })
 })
 

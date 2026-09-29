@@ -4,6 +4,7 @@
 // the review loop going. Both name the crit bundled with Studio by its full
 // path, so nothing has to be installed first — and crit's own instructions,
 // which say plain `crit`, are pointed at it too.
+import type { Language } from './language'
 import type { SendAvailability } from './reviewComment'
 
 /** `value` as one POSIX shell word: as is when it's plainly safe, else in
@@ -29,10 +30,14 @@ export function agentConnectCommand(deckPath: string | null, critPath: string): 
   return `cd ${shellQuote(dir)} && ${shellQuote(critPath)} --no-open ${shellQuote(file)}`
 }
 
+/** The language the agent is asked to reply in, by the UI language. */
+const REPLY_LANGUAGE: Record<Language, string> = { en: 'English', ja: 'Japanese' }
+
 /** The prompt asking a Coding Agent to run `agentConnectCommand` and keep
- * answering review rounds. In English whatever the UI language: it's an
- * instruction to the agent, not text for the user. */
-export function agentConnectPrompt(deckPath: string | null, critPath: string): string {
+ * answering review rounds, replying in `language` (the UI language: the
+ * replies are read in the comments column). The prompt itself is English
+ * whatever the UI language: it's an instruction to the agent. */
+export function agentConnectPrompt(deckPath: string | null, critPath: string, language: Language): string {
   const crit = shellQuote(critPath)
   return [
     'Start a review loop for my Peitho deck.',
@@ -44,6 +49,7 @@ export function agentConnectPrompt(deckPath: string | null, critPath: string): s
     '   the command it prints to wait for my next round.',
     `3. Wherever those instructions say \`crit\`, use ${crit} instead.`,
     '4. Repeat until the review is approved.',
+    `5. Write your replies in ${REPLY_LANGUAGE[language]}.`,
   ].join('\n')
 }
 
