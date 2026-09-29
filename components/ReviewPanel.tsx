@@ -12,6 +12,8 @@ export interface ReviewPanelProps {
   status: string
   canSend: boolean
   sending: boolean
+  /** The Send button's label, with how many it hands the agent. */
+  sendLabel: string
   error: string | null
   /** `domain/reviewPanel.ts`'s `reviewRows`, each with its time worded. */
   rows: PanelRow[]
@@ -276,10 +278,10 @@ export function ReviewPanel(props: ReviewPanelProps) {
           onClick={() => props.onSend()}
           className="shrink-0 px-3 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
-          {/* One expression, not a `? :` of two texts: a conditional text
-              child here left `Studio.tsx`'s deck-open branch half-entered
-              (its "Loading deck…" never went away). */}
-          {messagesFor(props.language)[props.sending ? 'sendingToAgent' : 'sendToAgent']}
+          {/* A prop, not a `? :` of two texts: a conditional text child here
+              left `Studio.tsx`'s deck-open branch half-entered (its "Loading
+              deck…" never went away). */}
+          {props.sendLabel}
         </button>
       </div>
     </section>

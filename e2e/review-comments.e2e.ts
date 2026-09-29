@@ -155,12 +155,12 @@ test('Given no session, When an agent\'s own crit starts one and waits in it, Th
   crit.agentStartsSession()
 
   await expect(page.locator(CONNECT)).toBeHidden({ timeout: 8_000 })
-  await expect(page.locator('[data-review-status]')).toHaveText('Click a part of the preview to comment on it.')
+  await expect(page.locator('[data-review-status]')).toHaveText('Click anywhere on the slide to leave a comment.')
 })
 
 test('Given an agent already waiting, Then no card is shown', async ({ page }) => {
   await openDeck(page, createFakeCritIpc())
-  await expect(page.locator('[data-review-status]')).toHaveText('Click a part of the preview to comment on it.')
+  await expect(page.locator('[data-review-status]')).toHaveText('Click anywhere on the slide to leave a comment.')
   await expect(page.locator(CONNECT)).toBeHidden()
 })
 
@@ -279,6 +279,32 @@ test('Given an unsent reply, When its thread is resolved, Then the reply is not 
   await page.locator('[data-review-row="unsent-reply"] [data-review-discard]').click()
   await expect(page.locator('[data-review-row="unsent-reply"]')).toHaveCount(0)
   expect(crit.calls.map(call => call.method)).not.toContain('addReplies')
+})
+
+test('Given a comment sent while no agent waited, When the agent comes back, Then Send hands it over again', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  await openDeck(page, crit)
+  await comment(page, 'h1', 'Make it bigger')
+  await expect(page.locator(SEND)).toHaveText('Send (1)')
+  await page.locator(SEND).click()
+  await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
+  // Handed to nobody: the agent never answers, and while it's away Send
+  // stays closed.
+  await expect(page.locator(SEND)).toBeDisabled()
+  await expect(page.locator(SEND)).toHaveText('Send (1)')
+
+  crit.agentConnects()
+
+  await expect(page.locator(SEND)).toBeEnabled()
+  await page.locator(SEND).click()
+  await expect.poll(() => crit.calls.filter(call => call.method === 'finish').length).toBe(2)
+  expect(crit.calls.filter(call => call.method === 'addComments')).toHaveLength(1)
+
+  // Once the agent answers, nothing waits on it any more.
+  crit.reply('c_1', 'Made it bigger')
+  crit.agentConnects()
+  await expect(page.locator(SEND)).toHaveText('Send')
+  await expect(page.locator(SEND)).toBeDisabled()
 })
 
 test('Given a comment on another slide, When its row is clicked, Then that slide opens; a click on its buttons does not', async ({ page }) => {

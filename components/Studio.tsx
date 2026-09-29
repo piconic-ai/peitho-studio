@@ -2283,6 +2283,7 @@ export function Studio() {
             status={reviewStatus()}
             canSend={review.availability().kind === 'ready'}
             sending={review.busy() === 'sending'}
+            sendLabel={review.busy() === 'sending' ? settings.messages().sendingToAgent : settings.messages().sendToAgent(review.sendCount())}
             error={review.error()}
             rows={reviewPanelRows()}
             resolvedCount={reviewResolvedCount()}

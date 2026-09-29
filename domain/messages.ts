@@ -115,7 +115,7 @@ export interface Messages {
   discardComment: string
   unsentComment: string
   commentCount: (count: number) => string
-  sendToAgent: string
+  sendToAgent: (count: number) => string
   sendingToAgent: string
   startingReview: string
   showResolved: (count: number) => string
@@ -261,13 +261,13 @@ const en: Messages = {
   copyPrompt: 'Copy Prompt',
   copyCommand: 'Copy Command',
   copiedToClipboard: 'Copied',
-  commentHint: 'Click a part of the preview to comment on it.',
+  commentHint: 'Click anywhere on the slide to leave a comment.',
   commentPlaceholder: 'What should the agent change here?',
   addComment: 'Add Comment',
   discardComment: 'Discard',
   unsentComment: 'Not sent yet',
   commentCount: count => (count === 1 ? '1 comment' : `${String(count)} comments`),
-  sendToAgent: 'Send to Agent',
+  sendToAgent: count => (count > 0 ? `Send (${String(count)})` : 'Send'),
   sendingToAgent: 'Sending…',
   startingReview: 'Starting a review session…',
   showResolved: count => `Show resolved (${String(count)})`,
@@ -407,13 +407,13 @@ const ja: Messages = {
   copyPrompt: 'プロンプトをコピー',
   copyCommand: 'コマンドをコピー',
   copiedToClipboard: 'コピーしました',
-  commentHint: 'プレビューの気になる箇所をクリックするとコメントできます。',
+  commentHint: 'スライドをクリックして、気になる箇所にコメントできます。',
   commentPlaceholder: 'ここをどう直してほしいですか?',
   addComment: 'コメントを追加',
   discardComment: '取り消す',
   unsentComment: '未送信',
   commentCount: count => `コメント ${String(count)} 件`,
-  sendToAgent: 'エージェントに送信',
+  sendToAgent: count => (count > 0 ? `送信（${String(count)}）` : '送信'),
   sendingToAgent: '送信中…',
   startingReview: 'レビューのセッションを起動しています…',
   showResolved: count => `解決済みも表示（${String(count)}）`,
