@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { ReviewComment } from './critReview'
 import type { PendingReply } from './reviewComment'
-import { formatReviewTime, resolvedCount, reviewRows, splitCommentLabel, type ReviewRowsInput, type UnsentRowSource } from './reviewPanel'
+import { formatReviewTime, resolvedCount, reviewRows, splitCommentLabel, threadOfPin, type ReviewRowsInput, type UnsentRowSource } from './reviewPanel'
 
 const comment = (id: string, createdAt: string | null, options: Partial<ReviewComment> = {}): ReviewComment => ({
   id, lines: { start: 3, end: 3 }, body: `[Slide 1 › heading "Hello"] ${id} text`, quote: null, author: 'Peitho Studio',
@@ -145,6 +145,28 @@ describe('reviewRows', () => {
       unsent: [unsent('p1', '2026-09-29T09:00:00Z')],
     }))
     expect(new Set(rows.map(row => row.key)).size).toBe(rows.length)
+  })
+})
+
+describe('threadOfPin', () => {
+  test('spec: Given a sent comment\'s pin or an unsent one\'s, Then the thread it stands for', () => {
+    expect(threadOfPin('sent:c_1')).toBe('comment:c_1')
+    expect(threadOfPin('pending-3')).toBe('unsent:pending-3')
+  })
+
+  test('adversarial: Given the pin of the comment being written, an empty id or a bare prefix, Then no thread', () => {
+    expect(threadOfPin('writing')).toBeNull()
+    expect(threadOfPin('')).toBeNull()
+    expect(threadOfPin('sent:')).toBeNull()
+  })
+
+  test('spec: Given the rows, Then every row of a thread carries the key its pin maps to', () => {
+    const rows = reviewRows(input({
+      comments: [comment('c1', '2026-09-29T08:00:00Z', { replies: [{ id: 'r1', body: 'Done', author: 'Claude', createdAt: null }] })],
+      unsent: [unsent('p1', '2026-09-29T09:00:00Z')],
+    }))
+    expect(rows.map(row => row.threadKey)).toEqual(['comment:c1', 'comment:c1', 'unsent:p1'])
+    expect([threadOfPin('sent:c1'), threadOfPin('p1')]).toEqual(['comment:c1', 'unsent:p1'])
   })
 })
 

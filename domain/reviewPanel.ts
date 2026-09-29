@@ -34,13 +34,24 @@ export interface ReviewRow {
    * thread as one card, its first row carrying the card's header. */
   threadStart: boolean
   threadEnd: boolean
+  /** Its thread: the key of the thread's first row (`threadOfPin`). */
+  threadKey: string
 }
 
-type RowDraft = Omit<ReviewRow, 'threadStart' | 'threadEnd'>
+type RowDraft = Omit<ReviewRow, 'threadStart' | 'threadEnd' | 'threadKey'>
 
 /** `threads`' rows in order, each marked with where in its thread it sits. */
 function markThreads(threads: readonly (readonly RowDraft[])[]): ReviewRow[] {
-  return threads.flatMap(rows => rows.map((row, i) => ({ ...row, threadStart: i === 0, threadEnd: i === rows.length - 1 })))
+  return threads.flatMap(rows => rows.map((row, i) => ({ ...row, threadStart: i === 0, threadEnd: i === rows.length - 1, threadKey: rows[0].key })))
+}
+
+/** The thread (`ReviewRow.threadKey`) a preview pin (`previewPinsOf`'s
+ * ids) stands for: a sent comment's, or an unsent one's. `null` for the pin
+ * of the comment being written, which has no thread yet. */
+export function threadOfPin(pinId: string): string | null {
+  if (pinId.startsWith('sent:')) return pinId.length > 'sent:'.length ? `comment:${pinId.slice('sent:'.length)}` : null
+  if (pinId === 'writing' || pinId === '') return null
+  return `unsent:${pinId}`
 }
 
 /** A row as the panel shows it: with its time worded (`formatReviewTime`). */
