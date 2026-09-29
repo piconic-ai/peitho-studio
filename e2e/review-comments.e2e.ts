@@ -307,6 +307,26 @@ test('Given a comment sent while no agent waited, When the agent comes back, The
   await expect(page.locator(SEND)).toBeDisabled()
 })
 
+test('Given a pin on a list item, When the preview switches to the phone shape and back, Then the pin stays on that item', async ({ page }) => {
+  await openDeck(page, createFakeCritIpc())
+  const item = page.locator(`${PREVIEW} li >> nth=1`)
+  await comment(page, 'li >> nth=1', 'Reword this')
+  const pin = page.locator('[data-comment-pin]')
+  // The pin's bottom-left corner is its point; it must sit on the item.
+  async function pinOnItem(): Promise<boolean> {
+    const [p, box] = [await pin.boundingBox(), await item.boundingBox()]
+    if (p === null || box === null) return false
+    const point = { x: p.x, y: p.y + p.height }
+    return point.x >= box.x - 1 && point.x <= box.x + box.width + 1 && point.y >= box.y - 1 && point.y <= box.y + box.height + 1
+  }
+  await expect.poll(pinOnItem).toBe(true)
+
+  await page.getByRole('switch', { name: 'Preview as phone' }).click()
+  await expect.poll(pinOnItem).toBe(true)
+  await page.getByRole('switch', { name: 'Preview as phone' }).click()
+  await expect.poll(pinOnItem).toBe(true)
+})
+
 test('Given a comment on another slide, When its row is clicked, Then that slide opens; a click on its buttons does not', async ({ page }) => {
   await openDeck(page, createFakeCritIpc())
   await page.locator('[data-slide-row="1"]').click()

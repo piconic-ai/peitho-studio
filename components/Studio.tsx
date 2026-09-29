@@ -11,10 +11,11 @@ import { createTauriCritIpc } from '../ipc/critIpc'
 import {
   REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, newReviewComment, pollsForAgent, previewPinsOf, reviewStatusText, slideIndexOfLine,
   slideSpans, targetLabel,
+  type PreviewPin,
 } from '../domain/reviewComment'
 import { agentConnectCommand, agentConnectPrompt, showsConnectGuide } from '../domain/agentConnect'
 import { formatReviewTime, resolvedCount, reviewRows } from '../domain/reviewPanel'
-import { focusCommentBox, type PreviewClick } from '../dom/previewComments'
+import { focusCommentBox, placePreviewPins, type PreviewClick } from '../dom/previewComments'
 import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
 import { ReviewPanel } from './ReviewPanel'
@@ -958,6 +959,24 @@ export function Studio() {
   })
 
   const previewPins = createMemo(() => previewPinsOf(selectedSlideKey(), review.comments(), review.sentPins(), review.pending(), review.box()))
+
+  // The pins as drawn: each anchored one moved onto its element wherever
+  // the slide lays it out (`placePreviewPins`). Placed again whenever the
+  // slide is laid out anew — another slide, another canvas shape, a new
+  // render — two frames on, once the canvas has mounted and laid out.
+  const [placedPins, setPlacedPins] = createSignal<PreviewPin[]>([])
+  createEffect(() => {
+    const pins = previewPins()
+    const key = selectedSlideKey()
+    if (key !== null) render.previewFragmentOf(key)
+    previewCanvasWidth()
+    previewCanvasHeight()
+    setPlacedPins(pins)
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => setPlacedPins(placePreviewPins(pins)))
+    })
+    return () => cancelAnimationFrame(frame)
+  })
 
   // See `pollsForAgent`: an agent that connected can be missed by the
   // event alone, so the session is re-read until one is seen waiting.
@@ -2258,7 +2277,7 @@ export function Studio() {
             onSelectPhoneShape={ui.selectPhoneShape}
             canvasWidth={previewCanvasWidth()}
             canvasHeight={previewCanvasHeight()}
-            pins={previewPins()}
+            pins={placedPins()}
             onCommentClick={openCommentBox}
           />
         </div>

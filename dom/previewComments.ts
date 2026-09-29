@@ -14,14 +14,15 @@
 // Pure reading of what was hit happens in `domain/reviewComment.ts`; not
 // unit-tested (a real DOM), covered by `e2e/review-comments.e2e.ts`.
 
-import { fractionInRect, type Point } from '../domain/geometry'
-import { parseSourceSpan, targetKindOf, type PreviewHit } from '../domain/reviewComment'
+import { fractionInRect, pinInSlide, type Point } from '../domain/geometry'
+import { parseSourceSpan, targetKindOf, type PinSpot, type PreviewHit, type PreviewPin } from '../domain/reviewComment'
 
 export interface PreviewClick {
   /** The annotated element clicked, or `null` for the slide as a whole. */
   hit: PreviewHit | null
-  /** Where on the slide, as fractions of its width and height. */
-  pin: Point | null
+  /** Where on the slide (`PinSpot`: anchored to the element clicked, if
+   * any). */
+  pin: PinSpot | null
   /** Where on screen, for placing the comment box. */
   at: Point
 }
@@ -58,7 +59,12 @@ export function watchCommentClicks(host: HTMLElement, onClick: (click: PreviewCl
     if (!(document.getSelection()?.isCollapsed ?? true)) return
     if (target.closest(LAYOUT_CONTROLS)) return
     const at = { x: event.clientX, y: event.clientY }
-    watched.get(root)?.({ hit: hitOf(target), pin: fractionInRect(at, slide.getBoundingClientRect()), at })
+    const onSlide = fractionInRect(at, slide.getBoundingClientRect())
+    const annotated = annotatedOf(target)
+    const quote = annotated?.getAttribute('data-peitho-md') ?? ''
+    const inElement = annotated === null || quote === '' ? null : fractionInRect(at, annotated.getBoundingClientRect())
+    const pin = onSlide === null ? null : { ...onSlide, anchor: inElement === null ? null : { quote, ...inElement } }
+    watched.get(root)?.({ hit: hitOf(target), pin, at })
   })
 }
 
@@ -66,8 +72,12 @@ export function watchCommentClicks(host: HTMLElement, onClick: (click: PreviewCl
 // click on the heading's empty width lands on the heading itself.
 const HEADINGS = 'h1, h2, h3, h4, h5, h6'
 
+function annotatedOf(target: Element): Element | null {
+  return target.closest('[data-peitho-src]') ?? target.closest(HEADINGS)?.querySelector(':scope > [data-peitho-src]') ?? null
+}
+
 function hitOf(target: Element): PreviewHit | null {
-  const annotated = target.closest('[data-peitho-src]') ?? target.closest(HEADINGS)?.querySelector(':scope > [data-peitho-src]') ?? null
+  const annotated = annotatedOf(target)
   if (annotated === null) return null
   const kind = targetKindOf(annotated.tagName, annotated.parentElement?.tagName ?? null)
   if (kind === 'slide') return null
@@ -83,4 +93,24 @@ function hitOf(target: Element): PreviewHit | null {
 /** Puts the caret in the comment box (`CommentBox.tsx`) once it shows. */
 export function focusCommentBox(): void {
   requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-comment-box] textarea')?.focus())
+}
+
+/** `pins` with each anchored one moved to where its element now sits on the
+ * preview's slide (`pinInSlide`) — a phone-shaped preview reflows the slide,
+ * so the spot a pin was put on as a fraction of the slide no longer holds.
+ * A pin whose element isn't there (edited away, or not rendered yet) keeps
+ * its own `x`/`y`. */
+export function placePreviewPins(pins: readonly PreviewPin[]): PreviewPin[] {
+  const root = document.querySelector('[data-preview-host]')?.shadowRoot ?? null
+  const slide = root?.querySelector('.peitho-slide') ?? null
+  if (root === null || slide === null || pins.every(pin => pin.anchor === null)) return [...pins]
+  const slideRect = slide.getBoundingClientRect()
+  const annotated = Array.from(root.querySelectorAll('[data-peitho-md]'))
+  return pins.map(pin => {
+    const anchor = pin.anchor
+    if (anchor === null) return pin
+    const element = annotated.find(candidate => candidate.getAttribute('data-peitho-md') === anchor.quote)
+    const placed = element === undefined ? null : pinInSlide(anchor, element.getBoundingClientRect(), slideRect)
+    return placed === null ? pin : { ...pin, ...placed }
+  })
 }
