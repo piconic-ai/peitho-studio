@@ -381,6 +381,30 @@ test('Given a pin on the phone-shaped preview, When the slide reflows on its own
   await expect.poll(pinOffset).toBe(offset)
 })
 
+test('Given comments sent before the window reloaded, Then their pins show again, on their element or the slide\'s corner', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  await openDeck(page, crit)
+  await comment(page, 'li >> nth=1', 'Reword this')
+  await comment(page, 'img', 'Swap the photo')
+  await page.locator(SEND).click()
+  await expect(page.locator('[data-review-row="comment"]')).toHaveCount(2)
+
+  await page.reload()
+  await expect(page.locator('[data-slide-row]')).toHaveCount(2, { timeout: 10_000 })
+  await page.locator('[data-slide-row="0"]').click()
+  await expect(page.locator('[data-review-row="comment"]')).toHaveCount(2)
+  const pins = page.locator('[data-comment-pin="sent"]')
+  await expect(pins).toHaveCount(2)
+  // The one on the list item sits on that item's top-left corner.
+  const item = page.locator(`${PREVIEW} li >> nth=1`)
+  await expect.poll(async () => {
+    const [p, box] = [await pins.first().boundingBox(), await item.boundingBox()]
+    return p !== null && box !== null && Math.abs(p.x - box.x) <= 1 && Math.abs(p.y + p.height - box.y) <= 1
+  }).toBe(true)
+  await page.locator('[data-slide-row="1"]').click()
+  await expect(page.locator('[data-comment-pin]')).toHaveCount(0)
+})
+
 test('Given a comment\'s pin on the slide, When it is clicked, Then its thread is shown and lit up, and no new comment starts', async ({ page }) => {
   const crit = createFakeCritIpc()
   await openDeck(page, crit)
