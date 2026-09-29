@@ -64,6 +64,29 @@ describe('the comment box', () => {
   })
 })
 
+describe('polls that find nothing new', () => {
+  test('Given the same session and comments read again, Then nothing downstream reruns; different content does', () => {
+    createRoot(() => {
+      const store = createReviewStore()
+      let sessionRuns = 0
+      let commentRuns = 0
+      createEffect(() => { store.session(); sessionRuns++ })
+      createEffect(() => { store.comments(); commentRuns++ })
+      store.setSession(waiting)
+      store.setComments([thread('c_1')])
+      const [afterFirst, commentsAfterFirst] = [sessionRuns, commentRuns]
+
+      store.setSession({ ...waiting })
+      store.setComments([thread('c_1')])
+      expect([sessionRuns, commentRuns]).toEqual([afterFirst, commentsAfterFirst])
+
+      store.setSession({ ...waiting, reviewRound: 3 })
+      store.setComments([thread('c_2')])
+      expect([sessionRuns, commentRuns]).toEqual([afterFirst + 1, commentsAfterFirst + 1])
+    })
+  })
+})
+
 describe('agent seen', () => {
   test('Given an agent seen waiting, When it is busy after a send, Then it still counts as seen; a new daemon or a reset forgets it', () => {
     createRoot(() => {
