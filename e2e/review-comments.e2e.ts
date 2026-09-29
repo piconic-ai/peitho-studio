@@ -358,6 +358,29 @@ test('Given the agent taken to be at work, When Reconnect is chosen (its session
   await expect(page.locator(CONNECT)).toBeHidden()
 })
 
+test('Given a pin on the phone-shaped preview, When the slide reflows on its own (a web font or an image arriving late), Then the pin follows its element', async ({ page }) => {
+  await openDeck(page, createFakeCritIpc())
+  await page.getByRole('switch', { name: 'Preview as phone' }).click()
+  const item = page.locator(`${PREVIEW} li >> nth=1`)
+  await comment(page, 'li >> nth=1', 'Reword this')
+  const pin = page.locator('[data-comment-pin]')
+  // Where the pin's point (its bottom-left corner) sits against the item.
+  async function pinOffset(): Promise<string> {
+    const [p, box] = [await pin.boundingBox(), await item.boundingBox()]
+    if (p === null || box === null) return ''
+    return `${String(Math.round(p.x - box.x))},${String(Math.round(p.y + p.height - box.y))}`
+  }
+  await expect.poll(pinOffset).not.toBe('')
+  await page.waitForTimeout(300)
+  const offset = await pinOffset()
+  const before = await item.boundingBox()
+
+  // What a late font or image does: the text above the item grows.
+  await page.locator(`${PREVIEW} h1`).evaluate(heading => { (heading as HTMLElement).style.paddingTop = '300px' })
+  await expect.poll(async () => ((await item.boundingBox())?.y ?? 0) - (before?.y ?? 0)).toBeGreaterThan(30)
+  await expect.poll(pinOffset).toBe(offset)
+})
+
 test('Given a comment\'s pin on the slide, When it is clicked, Then its thread is shown and lit up, and no new comment starts', async ({ page }) => {
   const crit = createFakeCritIpc()
   await openDeck(page, crit)
