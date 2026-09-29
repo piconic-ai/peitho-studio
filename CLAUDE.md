@@ -399,14 +399,14 @@ don't bundle everything into one giant commit.
   kept `Studio.tsx`'s "Loading deck…" on screen after the deck opened
   (every mocked e2e failed). One expression that picks the text
   (`messages[props.sending ? 'x' : 'y']`) rendered normally.
-- **In a `.map()` row's JSX text child, an object literal can't have a key
-  named like the row's parameter.** `{items.map(choice => (<b>{f({ key:
-  'x', choice })}</b>))}` — or `{ choice: 1 }` — fails the build with
-  esbuild's `Expected "{" but found "}"`: the compiler rewrites the
-  parameter's name inside the key too. A key named otherwise
-  (`{ a: choice }`) and the same literal inside an event handler are fine.
-  Pass such values as separate arguments (see `newDeckChoiceLabel` in
-  `domain/newDeckSettings.ts`).
+- **A nested `.map()` over a static outer array (a module `const`) never
+  updates the inner rows' reactive attributes** (a reactive outer array is
+  untested). In `KEYS.map(key => (...
+  {picks(key).map(pick => <button aria-checked={props.x === pick.choice
+  ...}/>)}))`, the inner `aria-checked`/`class` are baked into the row
+  template once, with no update effect, so clicks change the state but not
+  the buttons (still so on 0.39.1). Write one `.map()` per group instead
+  (see `components/NewDeckModal.tsx`).
 
 ## Pitfalls hit with UnoCSS (Wind4 preset)
 
