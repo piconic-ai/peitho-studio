@@ -29,6 +29,11 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
       if (next?.kind === 'found' && next.agentWaiting) setSeenAgentIn(sessionKey(next))
     })
   }
+  /** The agent is taken to be gone (closed, or silent too long): the
+   * connect card comes back until one is seen waiting again. */
+  function forgetAgent(): void {
+    setSeenAgentIn(null)
+  }
   const agentSeen = createMemo(() => {
     const current = session()
     return current?.kind === 'found' && seenAgentIn() === sessionKey(current)
@@ -181,7 +186,7 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
   }
 
   return {
-    session, setSession, agentSeen, comments, setComments, pending, pendingReplies, sendableReplies, unsentCount, sendCount, availability,
+    session, setSession, agentSeen, forgetAgent, comments, setComments, pending, pendingReplies, sendableReplies, unsentCount, sendCount, availability,
     box, boxDraft, setBoxDraft, openBox, closeBox, commitBox, discard,
     replyDraft, editReply, setReplyText, cancelReply, commitReply, markSent, sentPins,
     busy, setBusy, error, setError, showResolved, toggleShowResolved: () => setShowResolved(!showResolved()),

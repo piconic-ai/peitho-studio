@@ -64,6 +64,23 @@ describe('the comment box', () => {
   })
 })
 
+describe('forgetting the agent', () => {
+  test('Given an agent seen and now at work, When it is forgotten, Then it counts as unseen until it waits again', () => {
+    createRoot(() => {
+      const store = createReviewStore()
+      store.setSession(waiting)
+      store.setSession({ ...waiting, agentWaiting: false })
+      expect(store.agentSeen()).toBe(true)
+      store.forgetAgent()
+      expect(store.agentSeen()).toBe(false)
+      store.setSession({ ...waiting, agentWaiting: false })
+      expect(store.agentSeen()).toBe(false)
+      store.setSession({ ...waiting, reviewRound: 5 })
+      expect(store.agentSeen()).toBe(true)
+    })
+  })
+})
+
 describe('polls that find nothing new', () => {
   test('Given the same session and comments read again, Then nothing downstream reruns; different content does', () => {
     createRoot(() => {

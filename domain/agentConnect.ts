@@ -60,3 +60,15 @@ export function agentConnectPrompt(deckPath: string | null, critPath: string, la
 export function showsConnectGuide(availability: SendAvailability, agentSeen: boolean): boolean {
   return availability.kind === 'no-session' || (availability.kind === 'agent-not-waiting' && !agentSeen)
 }
+
+/** How long an agent at work may stay silent before it's taken as gone:
+ * crit can't tell a busy agent from one whose session was closed, so a
+ * long silence brings the connect card back. */
+export const AGENT_IDLE_MS = 3 * 60 * 1000
+
+/** Whether an agent at work, last heard from at `lastActivityAt` (a reply,
+ * a comment change, an edit to the deck), has been silent for `idleMs` by
+ * `now`. */
+export function agentGoneQuiet(lastActivityAt: number, now: number, idleMs: number = AGENT_IDLE_MS): boolean {
+  return now - lastActivityAt >= idleMs
+}

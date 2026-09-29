@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { agentConnectCommand, agentConnectPrompt, deckLocation, shellQuote, showsConnectGuide } from './agentConnect'
+import { AGENT_IDLE_MS, agentConnectCommand, agentConnectPrompt, agentGoneQuiet, deckLocation, shellQuote, showsConnectGuide } from './agentConnect'
 
 const CRIT = '/Applications/Peitho Studio.app/Contents/MacOS/crit'
 
@@ -80,5 +80,18 @@ describe('showsConnectGuide', () => {
       expect(showsConnectGuide({ kind }, false)).toBe(false)
       expect(showsConnectGuide({ kind }, true)).toBe(false)
     }
+  })
+})
+
+describe('agentGoneQuiet', () => {
+  test('spec: Given an agent heard from a moment ago, Then it is still taken to be at work; silent past the limit, it is gone', () => {
+    expect(agentGoneQuiet(1_000, 1_000 + 30_000)).toBe(false)
+    expect(agentGoneQuiet(1_000, 1_000 + AGENT_IDLE_MS)).toBe(true)
+  })
+
+  test('adversarial: Given a clock that went backwards, a zero limit, or the limit exactly, Then the edges hold', () => {
+    expect(agentGoneQuiet(5_000, 1_000)).toBe(false)
+    expect(agentGoneQuiet(5_000, 5_000, 0)).toBe(true)
+    expect(agentGoneQuiet(0, 99, 100)).toBe(false)
   })
 })
