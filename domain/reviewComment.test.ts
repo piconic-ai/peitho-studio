@@ -5,7 +5,7 @@ import type { ManifestSlide } from './render'
 import {
   liveReplies, rewriteUnsent, unsentBody,
   agentCommentBody, annotatedSpan, commentSlideKey, explicitSlideKey, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
-  awaitingAgentCount, newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, previewPinsOf, relocateTarget, reviewStatusText, sendAvailability, slideIndexOfComment, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
+  awaitingAgentCount, newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, pinOfQuote, previewPinsOf, relocateTarget, reviewStatusText, sendAvailability, slideIndexOfComment, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
   utf8OffsetToIndex, type CommentTarget, type PendingComment, type PendingReply, type PinSpot,
 } from './reviewComment'
 
@@ -560,6 +560,16 @@ describe('reviewStatusText', () => {
   })
 })
 
+describe('pinOfQuote', () => {
+  test('spec: Given the Markdown commented on, Then the pin sits on its element\'s top-left corner', () => {
+    expect(pinOfQuote('# Hi')).toEqual({ x: 0.02, y: 0.06, anchor: { quote: '# Hi', x: 0, y: 0 } })
+  })
+
+  test.each([['no quote', null], ['an empty quote', '']])('adversarial: Given %s, Then the pin sits on the slide\'s corner', (_label, quote) => {
+    expect(pinOfQuote(quote)).toEqual({ x: 0.02, y: 0.06, anchor: null })
+  })
+})
+
 describe('previewPinsOf', () => {
   const target: CommentTarget = { kind: 'heading', text: 'Hi', quote: 'Hi', offsetInSlide: 0 }
   const unsent = (id: string, slideKey: string, pin: PinSpot | null): PendingComment => ({ id, slideKey, target, pin, body: 'b', createdAt: '2026-09-29T00:00:00Z' })
@@ -589,6 +599,27 @@ describe('previewPinsOf', () => {
     const pending = [unsent('p1', 'b', spot(0, 0)), unsent('p2', 'a', null)]
     expect(previewPinsOf('a', comments, sentPins, pending, { kind: 'closed' })).toEqual([])
     expect(previewPinsOf(null, comments, sentPins, pending, { kind: 'closed' })).toEqual([])
+  })
+
+  test('spec: Given comments in crit this window did not send, Then each shows on the slide it is on, on its Markdown\'s element or the slide\'s corner', () => {
+    const onHeading = { ...inCrit('c1', '[Slide 1] a'), quote: 'Hi' }
+    const onSlide = inCrit('c2', '[Slide 1] b')
+    const elsewhere = { ...inCrit('c3', '[Slide 2] c'), quote: 'There' }
+    const slideKeyOf = (comment: ReviewComment) => (comment.id === 'c3' ? 'b' : 'a')
+    const pins = previewPinsOf('a', [onHeading, onSlide, elsewhere], {}, [], { kind: 'closed' }, slideKeyOf)
+    expect(pins).toEqual([
+      { id: 'sent:c1', ...pinOfQuote('Hi'), number: 1, sent: true },
+      { id: 'sent:c2', ...pinOfQuote(null), number: 2, sent: true },
+    ])
+  })
+
+  test('adversarial: Given a sent comment whose click spot this window knows, Then that spot wins over its Markdown; a resolved or unplaceable one shows none', () => {
+    const known = { '[Slide 1] a': [{ slideKey: 'a', pin: spot(0.7, 0.7) }], '[Slide 1] b': [{ slideKey: 'a', pin: null }] }
+    const comments = [{ ...inCrit('c1', '[Slide 1] a'), quote: 'Hi' }, inCrit('c2', '[Slide 1] b'), inCrit('c3', 'x', true), inCrit('c4', 'y')]
+    const slideKeyOf = (comment: ReviewComment) => (comment.id === 'c4' ? null : 'a')
+    expect(previewPinsOf('a', comments, known, [], { kind: 'closed' }, slideKeyOf).map(p => [p.id, p.x, p.anchor])).toEqual([
+      ['sent:c1', 0.7, null], ['sent:c2', 0.02, null],
+    ])
   })
 
   test('adversarial: Given two sent comments with the same body, Then each keeps its own pin, in crit\'s order', () => {

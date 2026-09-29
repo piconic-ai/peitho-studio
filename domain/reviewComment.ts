@@ -437,16 +437,27 @@ export interface PreviewPin extends PinSpot {
  * in sending order, since two comments can end up with the same body. */
 export type SentPins = Readonly<Record<string, readonly { slideKey: string; pin: PinSpot | null }[]>>
 
+/** Where a sent comment's pin goes when where it was clicked isn't known
+ * (it was sent before this window opened, or not from Studio): on the
+ * top-left corner of the element its Markdown (`quote`) is, else of the
+ * slide. */
+export function pinOfQuote(quote: string | null): PinSpot {
+  const corner = { x: 0.02, y: 0.06 }
+  return quote === null || quote === '' ? { ...corner, anchor: null } : { ...corner, anchor: { quote, x: 0, y: 0 } }
+}
+
 /** The pins slide `slideKey` shows, numbered in order: the unresolved
- * comments sent from this window whose pin is known (`sentPins`; comments
- * sharing a body take its pins in crit's order), the unsent ones, then the
- * one being written. */
+ * comments in crit — where they were clicked when sent from this window
+ * (`sentPins`; comments sharing a body take its pins in crit's order),
+ * else by their Markdown on the slide `slideKeyOf` puts them on
+ * (`pinOfQuote`) — the unsent ones, then the one being written. */
 export function previewPinsOf(
   slideKey: string | null,
   comments: readonly ReviewComment[],
   sentPins: SentPins,
   pending: readonly PendingComment[],
   box: CommentBox,
+  slideKeyOf: (comment: ReviewComment) => string | null = () => null,
 ): PreviewPin[] {
   if (slideKey === null) return []
   const pins: Omit<PreviewPin, 'number'>[] = []
@@ -454,8 +465,13 @@ export function previewPinsOf(
   for (const comment of comments) {
     const nth = taken.get(comment.body) ?? 0
     taken.set(comment.body, nth + 1)
+    if (comment.resolved) continue
     const sent = Object.hasOwn(sentPins, comment.body) ? sentPins[comment.body][nth] : undefined
-    if (!comment.resolved && sent?.pin != null && sent.slideKey === slideKey) pins.push({ id: `sent:${comment.id}`, ...sent.pin, sent: true })
+    if (sent?.pin != null) {
+      if (sent.slideKey === slideKey) pins.push({ id: `sent:${comment.id}`, ...sent.pin, sent: true })
+    } else if (slideKeyOf(comment) === slideKey) {
+      pins.push({ id: `sent:${comment.id}`, ...pinOfQuote(comment.quote), sent: true })
+    }
   }
   for (const comment of pending) {
     if (comment.slideKey === slideKey && comment.pin !== null) pins.push({ id: comment.id, ...comment.pin, sent: false })

@@ -973,7 +973,14 @@ export function Studio() {
     review.syncCommentCounts(commentCountsBySlide(render.renderedSource(), renderedSlideSpans(), review.pending(), review.comments()))
   })
 
-  const previewPins = createMemo(() => previewPinsOf(selectedSlideKey(), review.comments(), review.sentPins(), review.pending(), review.box()))
+  const previewPins = createMemo(() => {
+    const source = render.renderedSource()
+    const slides = renderedSlideSpans()
+    return previewPinsOf(selectedSlideKey(), review.comments(), review.sentPins(), review.pending(), review.box(), comment => {
+      const index = slideIndexOfComment(source, slides, comment)
+      return index === null ? null : slides[index].key
+    })
+  })
 
   // The pins as drawn: each anchored one moved onto its element wherever
   // the slide lays it out (`placePreviewPins`). Placed again whenever the
