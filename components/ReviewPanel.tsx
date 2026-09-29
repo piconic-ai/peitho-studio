@@ -162,98 +162,106 @@ export function ReviewPanel(props: ReviewPanelProps) {
         <div role="alert" data-review-error="" hidden={props.error === null} className="px-3 pb-2 text-xs text-destructive">
           {props.error ?? ''}
         </div>
-        <ul className="px-3 pb-3 flex flex-col gap-2">
+        <ul className="px-3 pb-3 flex flex-col">
           {props.rows.map(row => (
             <li
               key={row.key}
               data-review-row={row.kind}
               data-review-slide={row.slideIndex ?? ''}
+              data-review-thread-start={row.threadStart ? 'true' : 'false'}
               onClick={e => {
                 if (!isRowControl(e.target) && row.slideIndex !== null) props.onSelectSlide(row.slideIndex)
               }}
-              className={(row.kind === 'comment' || row.kind === 'unsent-comment' ? 'mt-3 ' : '') + (row.byAgent ? 'justify-start ' : 'justify-end ') + (row.resolved ? 'opacity-60 ' : '') + (row.slideIndex === null ? '' : 'cursor-pointer ') + 'flex items-start gap-2'}
+              className={(row.threadStart ? 'mt-3 pt-2 border-t rounded-t-xl ' : 'pt-2 ') + (row.threadEnd ? 'pb-3 border-b rounded-b-xl ' : '') + (row.resolved ? 'opacity-60 ' : '') + (row.slideIndex === null ? '' : 'cursor-pointer ') + 'px-3 border-x border-border bg-background flex flex-col gap-2'}
             >
-              <span data-review-agent-icon="" aria-hidden="true" className={row.byAgent ? 'w-7 h-7 shrink-0 rounded-full bg-muted text-foreground flex items-center justify-center' : 'hidden'}>
-                <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              {/* Each thread is one card: its first row carries the card's
+                  header — what it's on, and what can be done with it. */}
+              <div data-review-thread-header="" className={row.threadStart && row.target !== null ? 'flex items-center gap-1.5 text-xs text-muted-foreground min-w-0' : 'hidden'}>
+                <span data-review-target="" className="flex-1 min-w-0 truncate">{row.target ?? ''}</span>
+                <span
+                  data-review-resolved=""
+                  role="img"
+                  aria-label={messagesFor(props.language).resolvedComment}
+                  title={messagesFor(props.language).resolvedComment}
+                  className={row.kind === 'comment' && row.resolved ? 'shrink-0 text-[#16a34a]' : 'hidden'}
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="m8.5 12.5 2.5 2.5 4.5-5" />
+                    </svg>
+                </span>
+                <button
+                  type="button"
+                  data-review-reply=""
+                  aria-label={messagesFor(props.language).reply}
+                  title={messagesFor(props.language).reply}
+                  className={row.kind === 'comment' && !row.resolved ? 'shrink-0 p-0.5 rounded hover:bg-muted hover:text-foreground' : 'hidden'}
+                  onClick={() => props.onStartReply(row.id)}
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M9 14 4 9l5-5" />
+                      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+                    </svg>
+                </button>
+                <button
+                  type="button"
+                  data-review-resolve=""
+                  aria-label={messagesFor(props.language).resolveComment}
+                  title={messagesFor(props.language).resolveComment}
+                  className={row.kind === 'comment' && !row.resolved ? 'shrink-0 p-0.5 rounded hover:bg-muted hover:text-[#16a34a]' : 'hidden'}
+                  onClick={() => props.onResolve(row.id)}
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="m5 12.5 4.5 4.5L19 7.5" />
+                    </svg>
+                </button>
+              </div>
+              <div className={(row.byAgent ? 'justify-start' : 'justify-end') + ' flex items-start gap-2'}>
+                <span data-review-agent-icon="" aria-hidden="true" className={row.byAgent ? 'w-7 h-7 shrink-0 rounded-full bg-muted text-foreground flex items-center justify-center' : 'hidden'}>
+                  <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                   <rect x="4" y="8" width="16" height="11" rx="3" />
                   <path d="M12 8V4.5" />
                   <circle cx="12" cy="3.5" r="1" />
                   <circle cx="9" cy="13.5" r="1.2" fill="currentColor" stroke="none" />
                   <circle cx="15" cy="13.5" r="1.2" fill="currentColor" stroke="none" />
                 </svg>
-              </span>
-              <div className={(row.byAgent ? 'items-start ' : 'items-end ') + 'min-w-0 max-w-[85%] flex flex-col gap-1'}>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0 max-w-full">
-                  <span data-review-agent="" className={row.byAgent ? 'shrink-0 font-semibold text-foreground' : 'hidden'}>{row.author}</span>
-                  <span data-review-target="" className={row.target === null ? 'hidden' : 'truncate'}>{row.target ?? ''}</span>
-                  <span className={row.kind === 'unsent-comment' || row.kind === 'unsent-reply' ? 'shrink-0 rounded-sm px-1 bg-[#eab308] text-black' : 'hidden'}>
-                    {messagesFor(props.language).unsentComment}
-                  </span>
-                  <span data-review-time="" className="shrink-0">{row.time}</span>
-                  <span
-                    data-review-resolved=""
-                    role="img"
-                    aria-label={messagesFor(props.language).resolvedComment}
-                    title={messagesFor(props.language).resolvedComment}
-                    className={row.kind === 'comment' && row.resolved ? 'shrink-0 text-[#16a34a]' : 'hidden'}
-                  >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="9" />
-                      <path d="m8.5 12.5 2.5 2.5 4.5-5" />
-                    </svg>
-                  </span>
-                  <button
-                    type="button"
-                    data-review-reply=""
-                    aria-label={messagesFor(props.language).reply}
-                    title={messagesFor(props.language).reply}
-                    className={row.kind === 'comment' && !row.resolved ? 'shrink-0 p-0.5 rounded hover:bg-muted hover:text-foreground' : 'hidden'}
-                    onClick={() => props.onStartReply(row.id)}
-                  >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M9 14 4 9l5-5" />
-                      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    data-review-resolve=""
-                    aria-label={messagesFor(props.language).resolveComment}
-                    title={messagesFor(props.language).resolveComment}
-                    className={row.kind === 'comment' && !row.resolved ? 'shrink-0 p-0.5 rounded hover:bg-muted hover:text-[#16a34a]' : 'hidden'}
-                    onClick={() => props.onResolve(row.id)}
-                  >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="m5 12.5 4.5 4.5L19 7.5" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    data-review-discard=""
-                    aria-label={messagesFor(props.language).discardComment}
-                    title={messagesFor(props.language).discardComment}
-                    className={row.kind === 'unsent-comment' || row.kind === 'unsent-reply' ? 'shrink-0 p-0.5 rounded hover:bg-muted hover:text-destructive' : 'hidden'}
-                    onClick={() => props.onDiscard(row.id)}
-                  >
-                    <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                </span>
+                <div className={(row.byAgent ? 'items-start ' : 'items-end ') + 'min-w-0 max-w-[85%] flex flex-col gap-1'}>
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span data-review-agent="" className={row.byAgent ? 'shrink-0 font-semibold text-foreground' : 'hidden'}>{row.author}</span>
+                    <span className={row.kind === 'unsent-comment' || row.kind === 'unsent-reply' ? 'shrink-0 rounded-sm px-1 bg-[#eab308] text-black' : 'hidden'}>
+                      {messagesFor(props.language).unsentComment}
+                    </span>
+                    <span data-review-time="" className="shrink-0">{row.time}</span>
+                    <button
+                      type="button"
+                      data-review-discard=""
+                      aria-label={messagesFor(props.language).discardComment}
+                      title={messagesFor(props.language).discardComment}
+                      className={row.kind === 'unsent-comment' || row.kind === 'unsent-reply' ? 'shrink-0 p-0.5 rounded hover:bg-muted hover:text-destructive' : 'hidden'}
+                      onClick={() => props.onDiscard(row.id)}
+                    >
+                      <svg aria-hidden="true" viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M6 6l12 12M18 6 6 18" />
                     </svg>
-                  </button>
+                    </button>
+                  </div>
+                  {/* The user's words on the right, dark; the agent's on the
+                      left, light; not sent yet, outlined. */}
+                  <p
+                    data-review-bubble=""
+                    className={(row.byAgent
+                      ? 'rounded-tl-sm bg-muted text-foreground '
+                      : row.kind === 'unsent-comment' || row.kind === 'unsent-reply'
+                        ? 'rounded-tr-sm border-2 border-dashed border-[#eab308] bg-background text-foreground '
+                        : 'rounded-tr-sm bg-primary text-primary-foreground ') + 'rounded-2xl px-3 py-2 whitespace-pre-wrap break-words'}
+                  >
+                    {row.body}
+                  </p>
                 </div>
-                {/* The user's words on the right, dark; the agent's on the
-                    left, light; not sent yet, outlined. */}
-                <p
-                  data-review-bubble=""
-                  className={(row.byAgent
-                    ? 'rounded-tl-sm bg-muted text-foreground '
-                    : row.kind === 'unsent-comment' || row.kind === 'unsent-reply'
-                      ? 'rounded-tr-sm border-2 border-dashed border-[#eab308] bg-background text-foreground '
-                      : 'rounded-tr-sm bg-primary text-primary-foreground ') + 'rounded-2xl px-3 py-2 whitespace-pre-wrap break-words'}
-                >
-                  {row.body}
-                </p>
+              </div>
                 {/* The reply box sits under the thread it answers. */}
-                <div data-review-reply-box="" hidden={!row.replyBoxHere} className="mt-1 w-full flex flex-col gap-2">
+                <div data-review-reply-box="" hidden={!row.replyBoxHere} className="w-full flex flex-col gap-2">
                   <textarea
                     rows={2}
                     value={props.replyText}
@@ -285,7 +293,6 @@ export function ReviewPanel(props: ReviewPanelProps) {
                     </button>
                   </div>
                 </div>
-              </div>
             </li>
           ))}
         </ul>
