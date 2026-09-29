@@ -3,7 +3,7 @@
 // Edit menu (`DECK_SETTING_CHOICES`), which can change them later, and
 // `create_deck` (`src-tauri/src/peitho.rs`) writes only the ones that
 // aren't peitho-core's default into the starter deck's frontmatter.
-import { type DeckSettingChoice, type DeckSettingPick, defaultChoiceOf } from './deckSettings'
+import { DECK_SETTING_CHOICES, type DeckSettingChoice, type DeckSettingPick, defaultChoiceOf } from './deckSettings'
 import { LANGUAGE_NAMES } from './messages'
 
 /** The settings the dialog offers, in its order. */
@@ -31,8 +31,14 @@ export function applyNewDeckSettingPick(settings: NewDeckSettings, pick: NewDeck
  * deck language the UI has no name for stops compiling here. */
 const DECK_LANGUAGE_NAMES: Readonly<Record<DeckSettingChoice<'lang'>, string>> = LANGUAGE_NAMES
 
+/** Every choice the dialog offers for `key`, as picks, in the Edit menu's
+ * order. */
+export function newDeckSettingPicks(key: NewDeckSettingKey): NewDeckSettingPick[] {
+  return DECK_SETTING_CHOICES[key].map(choice => ({ key, choice }) as NewDeckSettingPick)
+}
+
 /** How a choice reads in the dialog, in every UI language: a ratio as
  * written, a language in its own name. */
-export function newDeckChoiceLabel<K extends NewDeckSettingKey>(key: K, choice: DeckSettingChoice<K>): string {
-  return key === 'lang' ? DECK_LANGUAGE_NAMES[choice as DeckSettingChoice<'lang'>] : choice
+export function newDeckChoiceLabel(pick: NewDeckSettingPick): string {
+  return pick.key === 'lang' ? DECK_LANGUAGE_NAMES[pick.choice] : pick.choice
 }

@@ -6,6 +6,7 @@ import {
   applyNewDeckSettingPick,
   defaultNewDeckSettings,
   newDeckChoiceLabel,
+  newDeckSettingPicks,
 } from './newDeckSettings'
 
 const ALL_PICKS: NewDeckSettingPick[] = NEW_DECK_SETTING_KEYS.flatMap(key =>
@@ -51,14 +52,28 @@ describe('applyNewDeckSettingPick', () => {
 
 describe('newDeckChoiceLabel', () => {
   test('spec: given a ratio, then it reads as written; given a language, then in its own name', () => {
-    expect(ALL_PICKS.map(pick => newDeckChoiceLabel(pick.key, pick.choice))).toEqual(['16:9', '4:3', 'English', '日本語'])
+    expect(ALL_PICKS.map(pick => newDeckChoiceLabel(pick))).toEqual(['16:9', '4:3', 'English', '日本語'])
   })
 
   test('adversarial: given every choice, then no label is empty and no two labels of a key collide', () => {
     for (const key of NEW_DECK_SETTING_KEYS) {
-      const labels = ALL_PICKS.filter(pick => pick.key === key).map(pick => newDeckChoiceLabel(pick.key, pick.choice))
+      const labels = ALL_PICKS.filter(pick => pick.key === key).map(pick => newDeckChoiceLabel(pick))
       expect(labels.every(label => label.trim() !== '')).toBe(true)
       expect(new Set(labels).size).toBe(labels.length)
     }
   })
 })
+
+describe('newDeckSettingPicks', () => {
+  test('spec: given a setting, then its picks are the Edit menu\'s choices for it, in order', () => {
+    expect(newDeckSettingPicks('aspect_ratio')).toEqual([{ key: 'aspect_ratio', choice: '16:9' }, { key: 'aspect_ratio', choice: '4:3' }])
+    expect(newDeckSettingPicks('lang')).toEqual([{ key: 'lang', choice: 'en' }, { key: 'lang', choice: 'ja' }])
+  })
+
+  test('adversarial: given every setting, then together the picks are every choice once, each under its own key', () => {
+    const picks = NEW_DECK_SETTING_KEYS.flatMap(newDeckSettingPicks)
+    expect(picks).toEqual(ALL_PICKS)
+    for (const key of NEW_DECK_SETTING_KEYS) expect(newDeckSettingPicks(key).every(pick => pick.key === key)).toBe(true)
+  })
+})
+

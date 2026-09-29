@@ -2,8 +2,7 @@
 
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
-import { DECK_SETTING_CHOICES } from '../domain/deckSettings'
-import { newDeckChoiceLabel, type NewDeckSettingPick, type NewDeckSettings } from '../domain/newDeckSettings'
+import { newDeckChoiceLabel, newDeckSettingPicks, type NewDeckSettingPick, type NewDeckSettings } from '../domain/newDeckSettings'
 // Props here are values (`isBusy={isBusy()}`), not signal getters — see
 // `components/WelcomeScreen.tsx` for why (BF044). `isOpen` gates rendering
 // inside this component (a single sibling condition, not a nested
@@ -67,22 +66,24 @@ export function NewDeckModal(props: NewDeckModalProps) {
           </div>
           {/* Buttons rather than a `<select>`, as in SettingsPanel's language
               picker: with two choices each, both stay in view, and the
-              choices are the Edit menu's own (`DECK_SETTING_CHOICES`). */}
+              choices are the Edit menu's own (`DECK_SETTING_CHOICES`). Two
+              groups rather than one `.map()` over the settings: see
+              CLAUDE.md's BarefootJS pitfall on nested static `.map()`s. */}
           <div className="mb-3 flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
               <span id="new-deck-aspect-ratio-label" className="text-xs text-muted-foreground">{messagesFor(props.language).newDeckAspectRatio}</span>
               <div role="radiogroup" aria-labelledby="new-deck-aspect-ratio-label" className="flex rounded-md border border-border overflow-hidden">
-                {DECK_SETTING_CHOICES.aspect_ratio.map(choice => (
+                {newDeckSettingPicks('aspect_ratio').map(pick => (
                   <button
                     type="button"
-                    key={choice}
+                    key={pick.choice}
                     role="radio"
-                    aria-checked={props.settings.aspect_ratio === choice ? 'true' : 'false'}
+                    aria-checked={props.settings.aspect_ratio === pick.choice ? 'true' : 'false'}
                     disabled={props.isBusy}
-                    onClick={() => props.onSettingChange({ key: 'aspect_ratio', choice })}
-                    className={(props.settings.aspect_ratio === choice ? 'bg-primary text-primary-foreground ' : 'hover:bg-accent ') + 'px-3 py-1 text-xs disabled:opacity-50'}
+                    onClick={() => props.onSettingChange(pick)}
+                    className={(props.settings.aspect_ratio === pick.choice ? 'bg-primary text-primary-foreground ' : 'hover:bg-accent ') + 'px-3 py-1 text-xs disabled:opacity-50'}
                   >
-                    {newDeckChoiceLabel('aspect_ratio', choice)}
+                    {newDeckChoiceLabel(pick)}
                   </button>
                 ))}
               </div>
@@ -90,17 +91,17 @@ export function NewDeckModal(props: NewDeckModalProps) {
             <div className="flex items-center justify-between gap-3">
               <span id="new-deck-language-label" className="text-xs text-muted-foreground">{messagesFor(props.language).newDeckLanguage}</span>
               <div role="radiogroup" aria-labelledby="new-deck-language-label" className="flex rounded-md border border-border overflow-hidden">
-                {DECK_SETTING_CHOICES.lang.map(choice => (
+                {newDeckSettingPicks('lang').map(pick => (
                   <button
                     type="button"
-                    key={choice}
+                    key={pick.choice}
                     role="radio"
-                    aria-checked={props.settings.lang === choice ? 'true' : 'false'}
+                    aria-checked={props.settings.lang === pick.choice ? 'true' : 'false'}
                     disabled={props.isBusy}
-                    onClick={() => props.onSettingChange({ key: 'lang', choice })}
-                    className={(props.settings.lang === choice ? 'bg-primary text-primary-foreground ' : 'hover:bg-accent ') + 'px-3 py-1 text-xs disabled:opacity-50'}
+                    onClick={() => props.onSettingChange(pick)}
+                    className={(props.settings.lang === pick.choice ? 'bg-primary text-primary-foreground ' : 'hover:bg-accent ') + 'px-3 py-1 text-xs disabled:opacity-50'}
                   >
-                    {newDeckChoiceLabel('lang', choice)}
+                    {newDeckChoiceLabel(pick)}
                   </button>
                 ))}
               </div>
