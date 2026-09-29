@@ -98,7 +98,7 @@ jobs:
         run: bunx tauri build --target "$TARGET" --bundles dmg
       # tauri deletes the intermediate .app once the dmg is built, so check
       # the app as users get it: from inside the mounted dmg.
-      - name: Verify the signature, notarization and window layout
+      - name: Verify the signature, notarization, bundled crit and window layout
         run: |
           dmgs=(src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg)
           if [ "${#dmgs[@]}" -ne 1 ] || [ ! -f "${dmgs[0]}" ]; then
@@ -114,6 +114,24 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app"
           spctl --assess --type execute --verbose=2 "$app"
           xcrun stapler validate "$app"
+          # The bundled crit (bundle.externalBin) ships ad-hoc signed; it has
+          # to come out re-signed like the app itself — same team, hardened
+          # runtime — for notarization to cover it, and still run.
+          crit="$app/Contents/MacOS/crit"
+          codesign --verify --strict --verbose=2 "$crit"
+          team_of() { codesign -dv "$1" 2>&1 | sed -n 's/^TeamIdentifier=//p'; }
+          app_team=$(team_of "$app")
+          crit_team=$(team_of "$crit")
+          if [ -z "$app_team" ] || [ "$app_team" = "not set" ] || [ "$crit_team" != "$app_team" ]; then
+            echo "crit is signed by team '$crit_team', the app by '$app_team'" >&2
+            exit 1
+          fi
+          if ! codesign -dv "$crit" 2>&1 | grep -q '^CodeDirectory .*flags=.*runtime'; then
+            echo "crit is not signed with the hardened runtime" >&2
+            exit 1
+          fi
+          "$crit" --version
+          test -f "$app/Contents/Resources/licenses/crit/LICENSE"
           # bundle_dmg's Finder step saves the window layout in .DS_Store.
           test -f "$mnt/.background/background.tiff"
           test -f "$mnt/.DS_Store"
