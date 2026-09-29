@@ -93,7 +93,11 @@ test('Given no review session, When the first comment is added, Then Studio star
 
   await expect(page.locator('[data-slide-row="0"] [data-slide-comment-count]')).toHaveText('1')
   await expect(page.locator('[data-slide-row="1"] [data-slide-comment-count]')).toBeHidden()
-  await expect(page.locator('[data-review-row="unsent-comment"]')).toContainText('[Slide 1 › heading "Hello"] Make it bigger')
+  const unsentRow = page.locator('[data-review-row="unsent-comment"]')
+  await expect(unsentRow.locator('[data-review-target]')).toHaveText('Slide 1 › heading "Hello"')
+  await expect(unsentRow).toContainText('Make it bigger')
+  await expect(unsentRow.locator('[data-review-agent]')).toBeHidden()
+  await expect(unsentRow.locator('[data-review-time]')).toHaveText(/^\d\d:\d\d$/)
   await expect.poll(() => crit.calls.map(call => call.method)).toContain('startSession')
   await expect(page.locator('[data-review-status]')).toHaveText('Connect your Coding Agent to send comments.')
   await expect(page.locator('[data-agent-connect]')).toBeVisible()
@@ -140,7 +144,7 @@ test('Given the card, When the agent connects, Then the card goes away and the p
   crit.agentConnects()
 
   await expect(page.locator(CONNECT)).toBeHidden()
-  await expect(page.locator('[data-review-status]')).toHaveText('The agent is waiting for your comments.')
+  await expect(page.locator('[data-review-status]')).toBeHidden()
 })
 
 test('Given no session, When an agent\'s own crit starts one and waits in it, Then within a few seconds the card goes away', async ({ page }) => {
@@ -174,7 +178,7 @@ test('Given an agent connects without Studio hearing an event, Then within a few
   crit.agentConnects({ silent: true })
 
   await expect(page.locator(SEND)).toBeEnabled({ timeout: 8_000 })
-  await expect(page.locator('[data-review-status]')).toHaveText('The agent is waiting for your comments.')
+  await expect(page.locator('[data-review-status]')).toBeHidden()
 })
 
 test('Given an agent connects and waits, When the comments are sent, Then crit gets their lines, Markdown and labels, and the agent\'s reply shows under the comment', async ({ page }) => {
@@ -186,7 +190,7 @@ test('Given an agent connects and waits, When the comments are sent, Then crit g
 
   crit.agentConnects()
   await expect(page.locator(SEND)).toBeEnabled()
-  await expect(page.locator('[data-review-status]')).toHaveText('The agent is waiting for your comments.')
+  await expect(page.locator('[data-review-status]')).toBeHidden()
   await page.locator(SEND).click()
 
   await expect.poll(() => crit.calls.map(call => call.method)).toContain('finish')
@@ -203,7 +207,11 @@ test('Given an agent connects and waits, When the comments are sent, Then crit g
   await expect(page.locator('[data-slide-row="0"] [data-slide-comment-count]')).toHaveText('2')
 
   crit.reply('c_1', 'Made it bigger')
-  await expect(page.locator('[data-review-row="reply"]')).toContainText('Made it bigger')
+  const replyRow = page.locator('[data-review-row="reply"]')
+  await expect(replyRow).toContainText('Made it bigger')
+  // The agent's words carry its icon and name.
+  await expect(replyRow.locator('[data-review-agent]')).toBeVisible()
+  await expect(replyRow.locator('[data-review-agent]')).toHaveText('Agent')
 })
 
 test('Given the agent replied, When the user replies back and the agent waits again, Then the reply goes to that comment', async ({ page }) => {
@@ -216,8 +224,10 @@ test('Given the agent replied, When the user replies back and the agent waits ag
   await expect(page.locator('[data-review-row="reply"]')).toHaveCount(1)
 
   await page.locator('[data-review-row="comment"] [data-review-reply]').click()
-  await page.locator('[data-review-reply-box] textarea').fill('Still too small')
-  await page.locator('[data-review-reply-add]').click()
+  // The box opens under the thread it answers: after the agent's reply.
+  await expect(page.locator('[data-review-row="reply"] [data-review-reply-box]')).toBeVisible()
+  await page.locator('[data-review-reply-box]:visible textarea').fill('Still too small')
+  await page.locator('[data-review-reply-add]:visible').click()
   await expect(page.locator('[data-review-row="unsent-reply"]')).toContainText('Still too small')
   await expect(page.locator(SEND)).toBeDisabled()
 
@@ -235,8 +245,49 @@ test('Given a sent comment, When it is resolved, Then crit marks it resolved and
   await page.locator(SEND).click()
   await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
   await page.locator('[data-review-row="comment"] [data-review-resolve]').click()
-  await expect(page.locator('[data-review-row="comment"]')).toContainText('Resolved')
   await expect(page.locator('[data-slide-row="0"] [data-slide-comment-count]')).toBeHidden()
+  // Resolved threads are left out until asked for.
+  await expect(page.locator('[data-review-row="comment"]')).toHaveCount(0)
+  const toggle = page.locator('[data-review-show-resolved]')
+  await expect(toggle).toHaveText('Show resolved (1)')
+  await toggle.click()
+  await expect(page.locator('[data-review-row="comment"] [data-review-resolved]')).toBeVisible()
+  await expect(page.locator('[data-review-row="comment"] [data-review-resolve]')).toBeHidden()
+  await expect(toggle).toHaveText('Hide resolved')
+  await toggle.click()
+  await expect(page.locator('[data-review-row="comment"]')).toHaveCount(0)
+})
+
+test('Given a comment on another slide, When its row is clicked, Then that slide opens; a click on its buttons does not', async ({ page }) => {
+  await openDeck(page, createFakeCritIpc())
+  await page.locator('[data-slide-row="1"]').click()
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Second')
+  await comment(page, 'h1', 'Retitle')
+  await page.locator('[data-slide-row="0"]').click()
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Hello')
+
+  await page.locator('[data-review-row="unsent-comment"] [data-review-discard]').hover()
+  await page.locator('[data-review-row="unsent-comment"] p').click()
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Second')
+
+  await page.locator('[data-slide-row="0"]').click()
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Hello')
+  await page.locator('[data-review-row="unsent-comment"] [data-review-discard]').click()
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Hello')
+})
+
+test('Given comments sent at different times, Then they read oldest first', async ({ page }) => {
+  let minute = 0
+  const crit = createFakeCritIpc({ now: () => new Date(Date.UTC(2026, 8, 29, 1, minute++)).toISOString() })
+  await openDeck(page, crit)
+  await comment(page, 'h1', 'First')
+  await page.locator(SEND).click()
+  await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
+  crit.agentConnects()
+  await comment(page, 'li >> nth=0', 'Second')
+  await page.locator(SEND).click()
+  await expect(page.locator('[data-review-row="comment"]')).toHaveCount(2)
+  await expect(page.locator('[data-review-row="comment"] p')).toHaveText(['First', 'Second'])
 })
 
 test('Given an unsent comment, When lines are added above its element before sending, Then it is sent at the element\'s new line', async ({ page }) => {

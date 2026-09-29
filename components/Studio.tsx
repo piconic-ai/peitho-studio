@@ -9,10 +9,11 @@ import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
-  REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, newReviewComment, pollsForAgent, previewPinsOf, reviewRows, reviewStatusText,
+  REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, newReviewComment, pollsForAgent, previewPinsOf, reviewStatusText, slideIndexOfLine,
   slideSpans, targetLabel,
 } from '../domain/reviewComment'
 import { agentConnectCommand, agentConnectPrompt, showsConnectGuide } from '../domain/agentConnect'
+import { formatReviewTime, resolvedCount, reviewRows } from '../domain/reviewPanel'
 import { focusCommentBox, type PreviewClick } from '../dom/previewComments'
 import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
@@ -988,11 +989,23 @@ export function Studio() {
     connectCopiedTimer = window.setTimeout(() => setConnectCopied(null), 1500)
   }
 
-  const reviewPanelRows = createMemo(() => reviewRows(
-    review.comments(),
-    review.pendingReplies(),
-    review.pending().map(comment => ({ id: comment.id, label: targetLabel(slideNumberOf(comment.slideKey), comment.target), body: comment.body })),
-  ))
+  const reviewPanelRows = createMemo(() => {
+    const source = render.renderedSource()
+    const spans = renderedSlideSpans().map(slide => slide.span)
+    const now = new Date()
+    return reviewRows({
+      comments: review.comments(),
+      unsentReplies: review.pendingReplies(),
+      unsent: review.pending().map(comment => {
+        const number = slideNumberOf(comment.slideKey)
+        return { id: comment.id, label: targetLabel(number, comment.target), body: comment.body, createdAt: comment.createdAt, slideIndex: number > 0 ? number - 1 : null }
+      }),
+      showResolved: review.showResolved(),
+      replyingTo: review.replyDraft()?.commentId ?? null,
+      slideOfLine: line => slideIndexOfLine(source, spans, line),
+    }).map(row => ({ ...row, time: formatReviewTime(row.createdAt, now) }))
+  })
+  const reviewResolvedCount = createMemo(() => resolvedCount(review.comments()))
 
   const reviewStatus = createMemo(() => reviewStatusText(
     settings.messages(), review.availability(), review.unsentCount(), review.busy() === 'starting',
@@ -2272,7 +2285,11 @@ export function Studio() {
             sending={review.busy() === 'sending'}
             error={review.error()}
             rows={reviewPanelRows()}
-            replyingTo={review.replyDraft()?.commentId ?? null}
+            resolvedCount={reviewResolvedCount()}
+            showResolved={review.showResolved()}
+            resolvedToggleLabel={review.showResolved() ? settings.messages().hideResolved : settings.messages().showResolved(reviewResolvedCount())}
+            onToggleResolved={review.toggleShowResolved}
+            onSelectSlide={index => void selectSlide(index)}
             replyText={review.replyDraft()?.text ?? ''}
             onSend={() => void sendReview()}
             onDiscard={review.discard}

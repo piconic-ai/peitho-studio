@@ -118,7 +118,8 @@ export interface Messages {
   sendToAgent: string
   sendingToAgent: string
   startingReview: string
-  agentWaiting: string
+  showResolved: (count: number) => string
+  hideResolved: string
   nothingToSend: string
   sendNeedsSession: string
   /** `command`: what to ask the agent to run in the deck's folder. */
@@ -269,7 +270,8 @@ const en: Messages = {
   sendToAgent: 'Send to Agent',
   sendingToAgent: 'Sending…',
   startingReview: 'Starting a review session…',
-  agentWaiting: 'The agent is waiting for your comments.',
+  showResolved: count => `Show resolved (${String(count)})`,
+  hideResolved: 'Hide resolved',
   nothingToSend: 'Nothing new to send.',
   sendNeedsSession: 'No review session yet. Adding a comment starts one.',
   sendNeedsAgent: 'Connect your Coding Agent to send comments.',
@@ -414,7 +416,8 @@ const ja: Messages = {
   sendToAgent: 'エージェントに送信',
   sendingToAgent: '送信中…',
   startingReview: 'レビューのセッションを起動しています…',
-  agentWaiting: 'エージェントがコメントを待っています。',
+  showResolved: count => `解決済みも表示（${String(count)}）`,
+  hideResolved: '解決済みを隠す',
   nothingToSend: '新しく送るものはありません。',
   sendNeedsSession: 'レビューのセッションがまだありません。コメントを追加すると起動します。',
   sendNeedsAgent: 'コメントを送るには、Coding Agent を接続してください。',
