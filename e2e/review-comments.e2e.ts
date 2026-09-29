@@ -396,6 +396,26 @@ test('Given a comment on another slide, When its row is clicked, Then that slide
   await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Hello')
 })
 
+test('Given a sent comment on a slide that sets its key, When crit moves its lines onto another slide, Then it stays on its own slide', async ({ page }) => {
+  // crit carries a comment forward from the deck as the round began, so a
+  // slide added in Studio before commenting can shift it onto the next one.
+  const crit = createFakeCritIpc()
+  const source = '<!-- {"key":"hello"} -->\n# Hello\n\nSome text\n\n---\n\n<!-- {"key":"second"} -->\n# Second\n\nAnother paragraph\n'
+  await openDeck(page, crit, source)
+  await comment(page, 'h1', 'Make it bigger')
+  await page.locator(SEND).click()
+  await expect.poll(() => sentComments(crit).map(sent => sent.body)).toEqual(['[Slide 1 (key: hello) › heading "Hello"] Make it bigger'])
+  await expect(page.locator('[data-review-row="comment"] [data-review-target]')).toHaveText('Slide 1 › heading "Hello"')
+
+  crit.moveComment('c_1', { start: 9, end: 9 })
+  await page.locator('[data-slide-row="1"]').click()
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Second')
+  await expect(page.locator('[data-slide-row="0"] [data-slide-comment-count]')).toHaveText('1')
+  await expect(page.locator('[data-slide-row="1"] [data-slide-comment-count]')).toBeHidden()
+  await page.locator('[data-review-row="comment"] p').click()
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Hello')
+})
+
 test('Given comments sent at different times, Then they read oldest first', async ({ page }) => {
   let minute = 0
   const crit = createFakeCritIpc({ now: () => new Date(Date.UTC(2026, 8, 29, 1, minute++)).toISOString() })

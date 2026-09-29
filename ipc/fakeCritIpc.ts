@@ -25,6 +25,9 @@ export interface FakeCritIpc extends CritIpc {
   agentStartsSession(): void
   /** Adds the agent's reply under comment `id` (emits `commentsChanged`). */
   reply(id: string, body: string, author?: string): void
+  /** crit carries comment `id` forward to `lines`, as it does when the deck
+   * changes between rounds (emits `commentsChanged`). */
+  moveComment(id: string, lines: { start: number; end: number }): void
 }
 
 export interface FakeCritOptions {
@@ -155,6 +158,10 @@ export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
     },
     reply: (id, body, author = 'Agent') => {
       commentById(id).replies.push({ id: `rp_${String(nextId++)}`, body, author, createdAt: now() })
+      emit('commentsChanged')
+    },
+    moveComment: (id, lines) => {
+      commentById(id).lines = lines
       emit('commentsChanged')
     },
   }
