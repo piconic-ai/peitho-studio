@@ -59,6 +59,26 @@ describe('reviewRows', () => {
     expect(resolvedCount(comments)).toBe(1)
   })
 
+  test('spec: Given the agent spoke last in an open thread, Then the Reply button sits under its last word only', () => {
+    const rows = reviewRows(input({
+      comments: [comment('c1', '2026-09-29T08:00:00Z', { replies: [{ id: 'r1', body: 'Done', author: 'Claude', createdAt: null }, { id: 'r2', body: 'More', author: 'Claude', createdAt: null }] })],
+    }))
+    expect(rows.map(row => [row.key, row.replyHere])).toEqual([['comment:c1', false], ['reply:c1:r1', false], ['reply:c1:r2', true]])
+  })
+
+  test('adversarial: Given a thread the agent hasn\'t answered, one where Studio spoke last, or a resolved one, Then no Reply button', () => {
+    const rows = reviewRows(input({
+      comments: [
+        comment('fresh', '2026-09-29T08:00:00Z'),
+        comment('mine-last', '2026-09-29T09:00:00Z', { replies: [{ id: 'r1', body: 'Done', author: 'Claude', createdAt: null }, { id: 'r2', body: 'Again', author: 'Peitho Studio', createdAt: null }] }),
+        comment('closed', '2026-09-29T10:00:00Z', { resolved: true, replies: [{ id: 'r1', body: 'Done', author: 'Claude', createdAt: null }] }),
+      ],
+      unsentReplies: [],
+      showResolved: true,
+    }))
+    expect(rows.filter(row => row.replyHere)).toEqual([])
+  })
+
   test('spec: Given two threads, Then each row knows whether it starts or ends its thread', () => {
     const rows = reviewRows(input({
       comments: [

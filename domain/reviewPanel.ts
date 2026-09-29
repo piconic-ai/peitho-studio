@@ -27,6 +27,9 @@ export interface ReviewRow {
   /** The reply box opens right under this row: the thread's last row,
    * while a reply to it is being written. */
   replyBoxHere: boolean
+  /** The Reply button goes under this row: the agent's last word in an
+   * open thread, which is what a reply answers. */
+  replyHere: boolean
   /** The first and the last row of its thread: the panel draws each
    * thread as one card, its first row carrying the card's header. */
   threadStart: boolean
@@ -91,12 +94,12 @@ export function reviewRows(input: ReviewRowsInput): ReviewRow[] {
     const slideIndex = comment.lines === null ? null : input.slideOfLine(comment.lines.start)
     const rows: RowDraft[] = [{
       key: `comment:${comment.id}`, kind: 'comment', id: comment.id, byAgent: comment.author !== REVIEW_AUTHOR, author: comment.author,
-      target, body: text, createdAt: comment.createdAt, resolved: comment.resolved, slideIndex, replyBoxHere: false,
+      target, body: text, createdAt: comment.createdAt, resolved: comment.resolved, slideIndex, replyBoxHere: false, replyHere: false,
     }]
     for (const reply of comment.replies) {
       rows.push({
         key: `reply:${comment.id}:${reply.id}`, kind: 'reply', id: comment.id, byAgent: reply.author !== REVIEW_AUTHOR, author: reply.author,
-        target: null, body: reply.body, createdAt: reply.createdAt, resolved: comment.resolved, slideIndex, replyBoxHere: false,
+        target: null, body: reply.body, createdAt: reply.createdAt, resolved: comment.resolved, slideIndex, replyBoxHere: false, replyHere: false,
       })
     }
     // Only an open thread holds its unsent replies; one resolved meanwhile
@@ -105,9 +108,11 @@ export function reviewRows(input: ReviewRowsInput): ReviewRow[] {
       if (reply.commentId !== comment.id) continue
       rows.push({
         key: `unsent-reply:${reply.id}`, kind: 'unsent-reply', id: reply.id, byAgent: false, author: REVIEW_AUTHOR,
-        target: null, body: reply.body, createdAt: reply.createdAt, resolved: comment.resolved, slideIndex, replyBoxHere: false,
+        target: null, body: reply.body, createdAt: reply.createdAt, resolved: comment.resolved, slideIndex, replyBoxHere: false, replyHere: false,
       })
     }
+    const last = rows[rows.length - 1]
+    if (!comment.resolved && last.byAgent) rows[rows.length - 1] = { ...last, replyHere: true }
     if (input.replyingTo === comment.id) rows[rows.length - 1] = { ...rows[rows.length - 1], replyBoxHere: true }
     threads.push({ time: timeOf(comment.createdAt), order, rows })
   })
@@ -117,7 +122,7 @@ export function reviewRows(input: ReviewRowsInput): ReviewRow[] {
       order: input.comments.length + i,
       rows: [{
         key: `unsent:${comment.id}`, kind: 'unsent-comment', id: comment.id, byAgent: false, author: REVIEW_AUTHOR,
-        target: comment.label, body: comment.body.trim(), createdAt: comment.createdAt, resolved: false, slideIndex: comment.slideIndex, replyBoxHere: false,
+        target: comment.label, body: comment.body.trim(), createdAt: comment.createdAt, resolved: false, slideIndex: comment.slideIndex, replyBoxHere: false, replyHere: false,
       }],
     })
   })
@@ -129,7 +134,7 @@ export function reviewRows(input: ReviewRowsInput): ReviewRow[] {
     // Each on its own: its thread is gone or closed.
     groups.push([{
       key: `unsent-reply:${reply.id}`, kind: 'unsent-reply', id: reply.id, byAgent: false, author: REVIEW_AUTHOR,
-      target: null, body: reply.body, createdAt: reply.createdAt, resolved: false, slideIndex: null, replyBoxHere: false,
+      target: null, body: reply.body, createdAt: reply.createdAt, resolved: false, slideIndex: null, replyBoxHere: false, replyHere: false,
     }])
   }
   return markThreads(groups)
