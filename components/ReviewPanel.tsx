@@ -271,7 +271,6 @@ export function ReviewPanel(props: ReviewPanelProps) {
                   <textarea
                     rows={2}
                     value={props.replyText}
-                    placeholder={messagesFor(props.language).replyPlaceholder}
                     onInput={e => props.onReplyInput(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === 'Escape') {

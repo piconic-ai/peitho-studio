@@ -128,7 +128,6 @@ export interface Messages {
   sendNeedsOneSession: string
   reviewFailed: (error: string) => string
   reply: string
-  replyPlaceholder: string
   resolveComment: string
   resolvedComment: string
 
@@ -280,7 +279,6 @@ const en: Messages = {
   sendNeedsOneSession: 'Several crit review sessions are open on this deck. Stop all but one (`crit stop`).',
   reviewFailed: error => `Could not reach the review session: ${error}`,
   reply: 'Reply',
-  replyPlaceholder: 'Reply to the agent…',
   resolveComment: 'Resolve',
   resolvedComment: 'Resolved',
 
@@ -427,7 +425,6 @@ const ja: Messages = {
   sendNeedsOneSession: 'このデッキにcritのレビューのセッションが複数あります。1つを残して止めてください(`crit stop`)。',
   reviewFailed: error => `レビューのセッションに接続できませんでした: ${error}`,
   reply: '返信',
-  replyPlaceholder: 'エージェントに返信…',
   resolveComment: '解決済みにする',
   resolvedComment: '解決済み',
 
