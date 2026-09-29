@@ -115,6 +115,32 @@ export function placePreviewPins(pins: readonly PreviewPin[]): PreviewPin[] {
   })
 }
 
+/** Calls `onChange` whenever the preview's slide lays out anew on its own
+ * — a web font or an image arriving after the slide mounted reflows its
+ * text, most of all on a narrow phone-shaped canvas — until the returned
+ * function stops it. Watches the slide as it is now; a new slide or render
+ * needs a new watch. */
+export function watchPreviewLayout(onChange: () => void): () => void {
+  const root = document.querySelector('[data-preview-host]')?.shadowRoot ?? null
+  const slide = root?.querySelector('.peitho-slide') ?? null
+  if (root === null || slide === null) return () => {}
+  let frame = 0
+  const schedule = () => {
+    cancelAnimationFrame(frame)
+    frame = requestAnimationFrame(onChange)
+  }
+  const resized = new ResizeObserver(schedule)
+  for (const element of [slide, ...Array.from(slide.querySelectorAll('*'))]) resized.observe(element, { box: 'border-box' })
+  root.addEventListener('load', schedule, true)
+  document.fonts.addEventListener('loadingdone', schedule)
+  return () => {
+    cancelAnimationFrame(frame)
+    resized.disconnect()
+    root.removeEventListener('load', schedule, true)
+    document.fonts.removeEventListener('loadingdone', schedule)
+  }
+}
+
 /** Scrolls the comments column to `threadKey`'s card
  * (`data-review-thread`), for a pin clicked on the preview. */
 /** Puts the caret at the end of the unsent comment or reply being

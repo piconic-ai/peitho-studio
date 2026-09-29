@@ -15,7 +15,7 @@ import {
 } from '../domain/reviewComment'
 import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, showsConnectGuide } from '../domain/agentConnect'
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
-import { focusCommentBox, focusUnsentEdit, placePreviewPins, revealReviewThread, type PreviewClick } from '../dom/previewComments'
+import { focusCommentBox, focusUnsentEdit, placePreviewPins, revealReviewThread, watchPreviewLayout, type PreviewClick } from '../dom/previewComments'
 import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
 import { ReviewPanel } from './ReviewPanel'
@@ -978,7 +978,8 @@ export function Studio() {
   // The pins as drawn: each anchored one moved onto its element wherever
   // the slide lays it out (`placePreviewPins`). Placed again whenever the
   // slide is laid out anew — another slide, another canvas shape, a new
-  // render — two frames on, once the canvas has mounted and laid out.
+  // render — two frames on, once the canvas has mounted and laid out; and
+  // again whenever that slide reflows on its own (`watchPreviewLayout`).
   const [placedPins, setPlacedPins] = createSignal<PreviewPin[]>([])
   createEffect(() => {
     const pins = previewPins()
@@ -987,10 +988,17 @@ export function Studio() {
     previewCanvasWidth()
     previewCanvasHeight()
     setPlacedPins(pins)
+    let stopWatching = () => {}
     let frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => setPlacedPins(placePreviewPins(pins)))
+      frame = requestAnimationFrame(() => {
+        setPlacedPins(placePreviewPins(pins))
+        if (pins.some(pin => pin.anchor !== null)) stopWatching = watchPreviewLayout(() => setPlacedPins(placePreviewPins(pins)))
+      })
     })
-    return () => cancelAnimationFrame(frame)
+    return () => {
+      cancelAnimationFrame(frame)
+      stopWatching()
+    }
   })
 
   // See `pollsForAgent`: an agent that connected can be missed by the
