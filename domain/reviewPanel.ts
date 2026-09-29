@@ -27,6 +27,17 @@ export interface ReviewRow {
   /** The reply box opens right under this row: the thread's last row,
    * while a reply to it is being written. */
   replyBoxHere: boolean
+  /** The first and the last row of its thread: the panel draws each
+   * thread as one card, its first row carrying the card's header. */
+  threadStart: boolean
+  threadEnd: boolean
+}
+
+type RowDraft = Omit<ReviewRow, 'threadStart' | 'threadEnd'>
+
+/** `threads`' rows in order, each marked with where in its thread it sits. */
+function markThreads(threads: readonly (readonly RowDraft[])[]): ReviewRow[] {
+  return threads.flatMap(rows => rows.map((row, i) => ({ ...row, threadStart: i === 0, threadEnd: i === rows.length - 1 })))
 }
 
 /** A row as the panel shows it: with its time worded (`formatReviewTime`). */
@@ -72,13 +83,13 @@ function timeOf(createdAt: string | null): number {
  * `showResolved`. Unsent replies that can't be sent — their comment is
  * gone or was resolved (`liveReplies`) — come last, to be discarded. */
 export function reviewRows(input: ReviewRowsInput): ReviewRow[] {
-  type Thread = { time: number; order: number; rows: ReviewRow[] }
+  type Thread = { time: number; order: number; rows: RowDraft[] }
   const threads: Thread[] = []
   input.comments.forEach((comment, order) => {
     if (comment.resolved && !input.showResolved) return
     const { target, text } = splitCommentLabel(comment.body)
     const slideIndex = comment.lines === null ? null : input.slideOfLine(comment.lines.start)
-    const rows: ReviewRow[] = [{
+    const rows: RowDraft[] = [{
       key: `comment:${comment.id}`, kind: 'comment', id: comment.id, byAgent: comment.author !== REVIEW_AUTHOR, author: comment.author,
       target, body: text, createdAt: comment.createdAt, resolved: comment.resolved, slideIndex, replyBoxHere: false,
     }]
@@ -111,16 +122,17 @@ export function reviewRows(input: ReviewRowsInput): ReviewRow[] {
     })
   })
   threads.sort((a, b) => (a.time === b.time ? a.order - b.order : a.time < b.time ? -1 : 1))
-  const rows = threads.flatMap(thread => thread.rows)
+  const groups: RowDraft[][] = threads.map(thread => thread.rows)
   const live = new Set(liveReplies(input.unsentReplies, input.comments))
   for (const reply of input.unsentReplies) {
     if (live.has(reply)) continue
-    rows.push({
+    // Each on its own: its thread is gone or closed.
+    groups.push([{
       key: `unsent-reply:${reply.id}`, kind: 'unsent-reply', id: reply.id, byAgent: false, author: REVIEW_AUTHOR,
       target: null, body: reply.body, createdAt: reply.createdAt, resolved: false, slideIndex: null, replyBoxHere: false,
-    })
+    }])
   }
-  return rows
+  return markThreads(groups)
 }
 
 /** How many resolved threads `showResolved` would add. */

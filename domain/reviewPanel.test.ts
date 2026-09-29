@@ -59,6 +59,23 @@ describe('reviewRows', () => {
     expect(resolvedCount(comments)).toBe(1)
   })
 
+  test('spec: Given two threads, Then each row knows whether it starts or ends its thread', () => {
+    const rows = reviewRows(input({
+      comments: [
+        comment('c1', '2026-09-29T08:00:00Z', { replies: [{ id: 'r1', body: 'Done', author: 'Claude', createdAt: null }, { id: 'r2', body: 'More', author: 'Claude', createdAt: null }] }),
+        comment('c2', '2026-09-29T09:00:00Z'),
+      ],
+    }))
+    expect(rows.map(row => [row.key, row.threadStart, row.threadEnd])).toEqual([
+      ['comment:c1', true, false], ['reply:c1:r1', false, false], ['reply:c1:r2', false, true], ['comment:c2', true, true],
+    ])
+  })
+
+  test('adversarial: Given unsent replies that can\'t be sent, Then each stands as a thread of its own', () => {
+    const rows = reviewRows(input({ unsentReplies: [reply('u1', 'gone'), reply('u2', 'gone')] }))
+    expect(rows.map(row => [row.key, row.threadStart, row.threadEnd])).toEqual([['unsent-reply:u1', true, true], ['unsent-reply:u2', true, true]])
+  })
+
   test('spec: Given a reply being written, Then the box opens under the last row of that thread only', () => {
     const rows = reviewRows(input({
       comments: [comment('c1', '2026-09-29T08:00:00Z', { replies: [{ id: 'r1', body: 'Done', author: 'Claude', createdAt: null }] }), comment('c2', '2026-09-29T09:00:00Z')],
