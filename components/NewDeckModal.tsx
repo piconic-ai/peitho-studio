@@ -67,8 +67,9 @@ export function NewDeckModal(props: NewDeckModalProps) {
           {/* Buttons rather than a `<select>`, as in SettingsPanel's language
               picker: with two choices each, both stay in view, and the
               choices are the Edit menu's own (`DECK_SETTING_CHOICES`). Two
-              groups rather than one `.map()` over the settings: see
-              CLAUDE.md's BarefootJS pitfall on nested static `.map()`s. */}
+              groups rather than one `.map()` over the settings: nested
+              inside this `isOpen` branch, the inner rows would never update
+              (piconic-ai/barefootjs#3274). */}
           <div className="mb-3 flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3">
               <span id="new-deck-aspect-ratio-label" className="text-xs text-muted-foreground">{messagesFor(props.language).newDeckAspectRatio}</span>

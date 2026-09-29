@@ -399,14 +399,17 @@ don't bundle everything into one giant commit.
   kept `Studio.tsx`'s "Loading deck…" on screen after the deck opened
   (every mocked e2e failed). One expression that picks the text
   (`messages[props.sending ? 'x' : 'y']`) rendered normally.
-- **A nested `.map()` over a static outer array (a module `const`) never
-  updates the inner rows' reactive attributes** (a reactive outer array is
-  untested). In `KEYS.map(key => (...
-  {picks(key).map(pick => <button aria-checked={props.x === pick.choice
-  ...}/>)}))`, the inner `aria-checked`/`class` are baked into the row
-  template once, with no update effect, so clicks change the state but not
-  the buttons (still so on 0.39.1). Write one `.map()` per group instead
-  (see `components/NewDeckModal.tsx`).
+- **A nested `.map()` inside a conditional branch never updates its inner
+  rows** (reported as
+  [piconic-ai/barefootjs#3274](https://github.com/piconic-ai/barefootjs/issues/3274),
+  still so on 0.39.1). In `cond ? <div>{KEYS.map(key => (...{picks(key)
+  .map(pick => <button aria-checked={props.x === pick.choice ...}/>)}))}</div>
+  : null`, the inner rows' reactive attributes and text are rendered once and
+  never updated, whether either array is a `const` or a signal: clicks
+  change the state but not the buttons. The same loops outside a branch, and
+  a single `.map()` inside one, are fine. Write one `.map()` per group (see
+  `components/NewDeckModal.tsx`), or keep the loops mounted and toggle a
+  `hidden` class.
 
 ## Pitfalls hit with UnoCSS (Wind4 preset)
 
