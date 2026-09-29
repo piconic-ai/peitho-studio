@@ -1,6 +1,6 @@
 import { batch, createMemo, createSignal } from '@barefootjs/client'
 import type { CritDeckSession, ReviewComment } from '../domain/critReview'
-import { awaitingAgentCount, liveReplies, sendAvailability, type CommentBox, type CommentTarget, type PendingComment, type PendingReply, type SentPins } from '../domain/reviewComment'
+import { awaitingAgentCount, liveReplies, sendAvailability, type CommentBox, type CommentTarget, type PendingComment, type PendingReply, type PinSpot, type SentPins } from '../domain/reviewComment'
 
 /** The review round trip with the Coding Agent as the comment UI shows it
  * (todo/review-comment-ui.md): what crit last reported (the session and its
@@ -34,7 +34,7 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
   const sendCount = createMemo(() => unsentCount() + awaitingAgentCount(comments()))
   const availability = createMemo(() => sendAvailability(session(), sendCount(), busy() === 'sending'))
 
-  function openBox(slideKey: string, target: CommentTarget, pin: { x: number; y: number } | null, at: { x: number; y: number }): void {
+  function openBox(slideKey: string, target: CommentTarget, pin: PinSpot | null, at: { x: number; y: number }): void {
     batch(() => {
       setBox({ kind: 'open', slideKey, target, pin, at })
       setBoxDraft('')

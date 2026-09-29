@@ -6,7 +6,7 @@ import {
   liveReplies,
   agentCommentBody, annotatedSpan, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
   awaitingAgentCount, newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, previewPinsOf, relocateTarget, reviewStatusText, sendAvailability, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
-  utf8OffsetToIndex, type CommentTarget, type PendingComment,
+  utf8OffsetToIndex, type CommentTarget, type PendingComment, type PinSpot,
 } from './reviewComment'
 
 const bytes = (text: string) => new TextEncoder().encode(text).length
@@ -503,7 +503,8 @@ describe('reviewStatusText', () => {
 
 describe('previewPinsOf', () => {
   const target: CommentTarget = { kind: 'heading', text: 'Hi', quote: 'Hi', offsetInSlide: 0 }
-  const unsent = (id: string, slideKey: string, pin: { x: number; y: number } | null): PendingComment => ({ id, slideKey, target, pin, body: 'b', createdAt: '2026-09-29T00:00:00Z' })
+  const unsent = (id: string, slideKey: string, pin: PinSpot | null): PendingComment => ({ id, slideKey, target, pin, body: 'b', createdAt: '2026-09-29T00:00:00Z' })
+  const spot = (x: number, y: number): PinSpot => ({ x, y, anchor: null })
   const inCrit = (id: string, body: string, resolved = false): ReviewComment => ({
     id, lines: { start: 1, end: 1 }, body, quote: null, author: 'Peitho Studio', resolved, replies: [], createdAt: null,
   })
@@ -512,39 +513,45 @@ describe('previewPinsOf', () => {
     const pins = previewPinsOf(
       'a',
       [inCrit('c1', '[Slide 1] sent')],
-      { '[Slide 1] sent': [{ slideKey: 'a', pin: { x: 0.1, y: 0.2 } }] },
-      [unsent('p1', 'a', { x: 0.3, y: 0.4 })],
-      { kind: 'open', slideKey: 'a', target, pin: { x: 0.5, y: 0.6 }, at: { x: 0, y: 0 } },
+      { '[Slide 1] sent': [{ slideKey: 'a', pin: spot(0.1, 0.2) }] },
+      [unsent('p1', 'a', spot(0.3, 0.4))],
+      { kind: 'open', slideKey: 'a', target, pin: spot(0.5, 0.6), at: { x: 0, y: 0 } },
     )
     expect(pins).toEqual([
-      { id: 'sent:c1', x: 0.1, y: 0.2, number: 1, sent: true },
-      { id: 'p1', x: 0.3, y: 0.4, number: 2, sent: false },
-      { id: 'writing', x: 0.5, y: 0.6, number: 3, sent: false },
+      { id: 'sent:c1', x: 0.1, y: 0.2, anchor: null, number: 1, sent: true },
+      { id: 'p1', x: 0.3, y: 0.4, anchor: null, number: 2, sent: false },
+      { id: 'writing', x: 0.5, y: 0.6, anchor: null, number: 3, sent: false },
     ])
   })
 
   test('adversarial: Given comments on other slides, resolved ones, ones without a pin, and no selection, Then none of them shows', () => {
-    const sentPins = { gone: [{ slideKey: 'a', pin: { x: 0, y: 0 } }], other: [{ slideKey: 'b', pin: { x: 0, y: 0 } }] }
+    const sentPins = { gone: [{ slideKey: 'a', pin: spot(0, 0) }], other: [{ slideKey: 'b', pin: spot(0, 0) }] }
     const comments = [inCrit('c1', 'gone', true), inCrit('c2', 'other'), inCrit('c3', 'unknown body')]
-    const pending = [unsent('p1', 'b', { x: 0, y: 0 }), unsent('p2', 'a', null)]
+    const pending = [unsent('p1', 'b', spot(0, 0)), unsent('p2', 'a', null)]
     expect(previewPinsOf('a', comments, sentPins, pending, { kind: 'closed' })).toEqual([])
     expect(previewPinsOf(null, comments, sentPins, pending, { kind: 'closed' })).toEqual([])
   })
 
   test('adversarial: Given two sent comments with the same body, Then each keeps its own pin, in crit\'s order', () => {
-    const sentPins = { '[Slide 1] Fix': [{ slideKey: 'a', pin: { x: 0.1, y: 0.1 } }, { slideKey: 'a', pin: { x: 0.9, y: 0.9 } }] }
+    const sentPins = { '[Slide 1] Fix': [{ slideKey: 'a', pin: spot(0.1, 0.1) }, { slideKey: 'a', pin: spot(0.9, 0.9) }] }
     const pins = previewPinsOf('a', [inCrit('c1', '[Slide 1] Fix'), inCrit('c2', '[Slide 1] Fix')], sentPins, [], { kind: 'closed' })
     expect(pins.map(p => [p.id, p.x])).toEqual([['sent:c1', 0.1], ['sent:c2', 0.9]])
   })
 
   test('adversarial: Given the first of two same-bodied comments had no pin, Then the second still gets its own', () => {
-    const sentPins = { same: [{ slideKey: 'a', pin: null }, { slideKey: 'a', pin: { x: 0.9, y: 0.9 } }] }
+    const sentPins = { same: [{ slideKey: 'a', pin: null }, { slideKey: 'a', pin: spot(0.9, 0.9) }] }
     const pins = previewPinsOf('a', [inCrit('c1', 'same'), inCrit('c2', 'same')], sentPins, [], { kind: 'closed' })
     expect(pins.map(p => p.id)).toEqual(['sent:c2'])
   })
 
   test('adversarial: Given a comment body like an object property name, Then it is not taken for a known pin', () => {
     expect(previewPinsOf('a', [inCrit('c1', 'constructor')], {}, [], { kind: 'closed' })).toEqual([])
+  })
+
+  test('spec: Given a pin anchored to an element, Then the pin carries its anchor to be placed on that element', () => {
+    const anchored: PinSpot = { x: 0.2, y: 0.3, anchor: { quote: 'Hi', x: 0.5, y: 0.5 } }
+    const pins = previewPinsOf('a', [], {}, [unsent('p1', 'a', anchored)], { kind: 'closed' })
+    expect(pins).toEqual([{ id: 'p1', ...anchored, number: 1, sent: false }])
   })
 })
 

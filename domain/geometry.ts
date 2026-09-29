@@ -53,3 +53,17 @@ export function fractionInRect(point: Point, rect: Rect): Point | null {
   const clamp = (value: number) => Math.min(Math.max(value, 0), 1)
   return { x: clamp((point.x - rect.left) / width), y: clamp((point.y - rect.top) / height) }
 }
+
+/** Where `fraction` (0-1 of `element`'s box) falls on `slide`, as fractions
+ * of the slide's box: a pin anchored to an element, placed wherever the
+ * slide laid that element out. `null` for a slide or an element with no
+ * area (not laid out, or hidden). */
+export function pinInSlide(fraction: Point, element: Rect, slide: Rect): Point | null {
+  const width = slide.right - slide.left
+  const height = slide.bottom - slide.top
+  if (!(width > 0) || !(height > 0)) return null
+  if (!(element.right > element.left) || !(element.bottom > element.top)) return null
+  const x = element.left + fraction.x * (element.right - element.left)
+  const y = element.top + fraction.y * (element.bottom - element.top)
+  return { x: (x - slide.left) / width, y: (y - slide.top) / height }
+}

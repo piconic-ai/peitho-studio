@@ -12,10 +12,10 @@ describe('the comment box', () => {
   test('Given a click opened the box on a heading, When a comment is written and added, Then it is filed unsent and the box closes', () => {
     createRoot(() => {
       const store = createReviewStore()
-      store.openBox('hello', heading, { x: 0.2, y: 0.1 }, { x: 100, y: 50 })
+      store.openBox('hello', heading, { x: 0.2, y: 0.1, anchor: null }, { x: 100, y: 50 })
       store.setBoxDraft('  Make it bigger ')
       const filed = store.commitBox()
-      expect(filed).toMatchObject({ slideKey: 'hello', target: heading, pin: { x: 0.2, y: 0.1 }, body: 'Make it bigger' })
+      expect(filed).toMatchObject({ slideKey: 'hello', target: heading, pin: { x: 0.2, y: 0.1, anchor: null }, body: 'Make it bigger' })
       expect(store.pending()).toEqual([filed!])
       expect(store.box()).toEqual({ kind: 'closed' })
     })
@@ -132,7 +132,7 @@ describe('replies and sending', () => {
   test('Given comments were sent, When the send is recorded, Then they and the replies are no longer unsent and their pins are kept by body', () => {
     createRoot(() => {
       const store = createReviewStore()
-      store.openBox('hello', heading, { x: 0.5, y: 0.5 }, { x: 0, y: 0 })
+      store.openBox('hello', heading, { x: 0.5, y: 0.5, anchor: null }, { x: 0, y: 0 })
       store.setBoxDraft('Bigger')
       const sent = store.commitBox()!
       store.openBox('hello', heading, null, { x: 0, y: 0 })
@@ -146,20 +146,20 @@ describe('replies and sending', () => {
       store.markSent([sent], ['[Slide 1 › heading "Hello"] Bigger'], sentReplies)
       expect(store.pending()).toEqual([later])
       expect(store.pendingReplies().map(reply => reply.body)).toEqual(['Written while sending too'])
-      expect(store.sentPins()).toEqual({ '[Slide 1 › heading "Hello"] Bigger': [{ slideKey: 'hello', pin: { x: 0.5, y: 0.5 } }] })
+      expect(store.sentPins()).toEqual({ '[Slide 1 › heading "Hello"] Bigger': [{ slideKey: 'hello', pin: { x: 0.5, y: 0.5, anchor: null } }] })
     })
   })
 
   test('Given two comments with the same body are sent, Then both pins are kept in sending order', () => {
     createRoot(() => {
       const store = createReviewStore()
-      const sent = [{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.9 }].map(pin => {
+      const sent = [{ x: 0.1, y: 0.1, anchor: null }, { x: 0.9, y: 0.9, anchor: null }].map(pin => {
         store.openBox('hello', heading, pin, { x: 0, y: 0 })
         store.setBoxDraft('Fix')
         return store.commitBox()!
       })
       store.markSent(sent, ['same', 'same'], [])
-      expect(store.sentPins().same.map(entry => entry.pin)).toEqual([{ x: 0.1, y: 0.1 }, { x: 0.9, y: 0.9 }])
+      expect(store.sentPins().same.map(entry => entry.pin)).toEqual([{ x: 0.1, y: 0.1, anchor: null }, { x: 0.9, y: 0.9, anchor: null }])
     })
   })
 

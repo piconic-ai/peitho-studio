@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { clampMenuPosition, containScale, isPointInRect, dropPointToCss, fractionInRect } from './geometry'
+import { clampMenuPosition, containScale, isPointInRect, dropPointToCss, fractionInRect, pinInSlide } from './geometry'
 
 describe('clampMenuPosition', () => {
   test('spec: a point that already fits within the viewport is left unchanged', () => {
@@ -125,5 +125,27 @@ describe('fractionInRect', () => {
     ['NaN edges', { left: Number.NaN, top: 0, right: 100, bottom: 100 }],
   ])('adversarial: Given a box with %s, Then there is no fraction', (_label, rect) => {
     expect(fractionInRect({ x: 1, y: 1 }, rect)).toBeNull()
+  })
+})
+
+describe('pinInSlide', () => {
+  const slide = { left: 100, top: 50, right: 500, bottom: 250 }
+
+  test('spec: Given a spot inside an element, Then it is placed at the same spot of that element on the slide', () => {
+    const element = { left: 140, top: 70, right: 340, bottom: 110 }
+    expect(pinInSlide({ x: 0.5, y: 0.5 }, element, slide)).toEqual({ x: 0.35, y: 0.2 })
+  })
+
+  test('spec: Given the element laid out elsewhere (a reflowed slide), Then the pin follows it', () => {
+    expect(pinInSlide({ x: 0, y: 0 }, { left: 100, top: 150, right: 300, bottom: 250 }, slide)).toEqual({ x: 0, y: 0.5 })
+  })
+
+  test('adversarial: Given a slide or an element with no area, Then there is no place', () => {
+    expect(pinInSlide({ x: 0.5, y: 0.5 }, { left: 1, top: 1, right: 1, bottom: 9 }, slide)).toBeNull()
+    expect(pinInSlide({ x: 0.5, y: 0.5 }, { left: 140, top: 70, right: 340, bottom: 110 }, { left: 0, top: 0, right: 0, bottom: 0 })).toBeNull()
+  })
+
+  test('adversarial: Given an element partly off the slide, Then the pin may fall outside 0-1 rather than be moved', () => {
+    expect(pinInSlide({ x: 1, y: 1 }, { left: 400, top: 200, right: 600, bottom: 300 }, slide)).toEqual({ x: 1.25, y: 1.25 })
   })
 })

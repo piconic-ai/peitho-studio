@@ -40,14 +40,31 @@ export interface CommentTarget {
   offsetInSlide: number
 }
 
+/** Where a pin sits: `x`/`y` as fractions (0-1) of the slide's width and
+ * height, and, for a comment on an element, that element and where in it
+ * (`anchor`: its Markdown, as `data-peitho-md` carries it, and fractions of
+ * its own box). The element is found again wherever the slide lays it out
+ * (a phone-shaped preview reflows it), `x`/`y` being the fallback. */
+export interface PinSpot {
+  x: number
+  y: number
+  anchor: PinAnchor | null
+}
+
+export interface PinAnchor {
+  quote: string
+  x: number
+  y: number
+}
+
 /** A comment written on the preview and not yet sent to the agent. */
 export interface PendingComment {
   id: string
   slideKey: string
   target: CommentTarget
-  /** Where the pin sits, as fractions (0-1) of the slide's width and
-   * height — `null` when the click position isn't known. */
-  pin: { x: number; y: number } | null
+  /** Where the pin sits (`PinSpot`) — `null` when the click position
+   * isn't known. */
+  pin: PinSpot | null
   body: string
   /** When it was written (RFC 3339). */
   createdAt: string
@@ -57,7 +74,7 @@ export interface PendingComment {
  * target — with where the pin goes and where on screen the box sits. */
 export type CommentBox =
   | { kind: 'closed' }
-  | { kind: 'open'; slideKey: string; target: CommentTarget; pin: { x: number; y: number } | null; at: { x: number; y: number } }
+  | { kind: 'open'; slideKey: string; target: CommentTarget; pin: PinSpot | null; at: { x: number; y: number } }
 
 /** A reply written under a comment already in crit, not yet sent. */
 export interface PendingReply {
@@ -355,12 +372,10 @@ export function reviewStatusText(
   }
 }
 
-/** A pin on the preview: where on the slide (fractions of its size), the
- * number shown, and whether its comment reached crit yet. */
-export interface PreviewPin {
+/** A pin on the preview: where on the slide (`PinSpot`), the number
+ * shown, and whether its comment reached crit yet. */
+export interface PreviewPin extends PinSpot {
   id: string
-  x: number
-  y: number
   number: number
   sent: boolean
 }
@@ -368,7 +383,7 @@ export interface PreviewPin {
 /** Where the pins of comments sent from this window sat. crit only reports
  * a comment's body back, so they are filed by the body crit got — a list,
  * in sending order, since two comments can end up with the same body. */
-export type SentPins = Readonly<Record<string, readonly { slideKey: string; pin: { x: number; y: number } | null }[]>>
+export type SentPins = Readonly<Record<string, readonly { slideKey: string; pin: PinSpot | null }[]>>
 
 /** The pins slide `slideKey` shows, numbered in order: the unresolved
  * comments sent from this window whose pin is known (`sentPins`; comments
