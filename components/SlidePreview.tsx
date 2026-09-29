@@ -32,6 +32,8 @@ export interface SlidePreviewProps {
   pins: PreviewPin[]
   /** A click on the slide meant as a comment (`dom/previewComments.ts`). */
   onCommentClick: (click: PreviewClick) => void
+  /** A pin was clicked: show its comment rather than start a new one. */
+  onPinClick: (pinId: string) => void
 }
 
 export function SlidePreview(props: SlidePreviewProps) {
@@ -184,8 +186,9 @@ export function SlidePreview(props: SlidePreviewProps) {
             overlay slot (`dom/slideCanvas.ts`): a box the slide's own size,
             centered and scaled exactly as the slide is, so a pin placed at
             a fraction of the slide stays on the spot it was put on. Each
-            pin is scaled back so it keeps one size on screen. They don't
-            take clicks — a click there is a click on the slide. */}
+            pin is scaled back so it keeps one size on screen. A click on a
+            pin shows its comment; a click anywhere else on the overlay goes
+            through to the slide. */}
         <div
           slot="overlay"
           data-comment-overlay
@@ -196,7 +199,8 @@ export function SlidePreview(props: SlidePreviewProps) {
             <span
               key={pin.id}
               data-comment-pin={pin.sent ? 'sent' : 'unsent'}
-              className={(pin.sent ? 'bg-primary text-primary-foreground ' : 'bg-[#eab308] text-black ') + 'flex items-center justify-center w-6 h-6 rounded-full rounded-bl-none text-xs font-semibold shadow-md border-2 border-white'}
+              onClick={() => props.onPinClick(pin.id)}
+              className={(pin.sent ? 'bg-primary text-primary-foreground ' : 'bg-[#eab308] text-black ') + 'pointer-events-auto cursor-pointer flex items-center justify-center w-6 h-6 rounded-full rounded-bl-none text-xs font-semibold shadow-md border-2 border-white'}
               style={`position: absolute; left: ${String(pin.x * 100)}%; top: ${String(pin.y * 100)}%; transform-origin: bottom left; transform: translate(0, -100%) scale(calc(1 / var(--peitho-thumb-scale, 1)))`}
             >
               {pin.number}

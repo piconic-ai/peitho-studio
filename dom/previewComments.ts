@@ -114,3 +114,11 @@ export function placePreviewPins(pins: readonly PreviewPin[]): PreviewPin[] {
     return placed === null ? pin : { ...pin, ...placed }
   })
 }
+
+/** Scrolls the comments column to `threadKey`'s card
+ * (`data-review-thread`), for a pin clicked on the preview. */
+export function revealReviewThread(threadKey: string): void {
+  requestAnimationFrame(() => {
+    document.querySelector(`[data-review-thread="${CSS.escape(threadKey)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  })
+}

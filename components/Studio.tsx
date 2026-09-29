@@ -14,8 +14,8 @@ import {
   type PreviewPin,
 } from '../domain/reviewComment'
 import { agentConnectCommand, agentConnectPrompt, showsConnectGuide } from '../domain/agentConnect'
-import { formatReviewTime, resolvedCount, reviewRows } from '../domain/reviewPanel'
-import { focusCommentBox, placePreviewPins, type PreviewClick } from '../dom/previewComments'
+import { formatReviewTime, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
+import { focusCommentBox, placePreviewPins, revealReviewThread, type PreviewClick } from '../dom/previewComments'
 import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
 import { ReviewPanel } from './ReviewPanel'
@@ -900,6 +900,19 @@ export function Studio() {
     const at = clampMenuPosition(click.at, { width: 336, height: 180 }, { width: window.innerWidth, height: window.innerHeight }, 8)
     review.openBox(key, target, click.pin, at)
     focusCommentBox()
+  }
+
+  // A pin clicked on the preview: its comment, not a new one — the
+  // comments column scrolls to its thread and lights it up for a moment.
+  const [highlightedThread, setHighlightedThread] = createSignal<string | null>(null)
+  let highlightTimer: number | undefined
+  function showPinnedThread(pinId: string): void {
+    const thread = threadOfPin(pinId)
+    if (thread === null) return
+    setHighlightedThread(thread)
+    revealReviewThread(thread)
+    window.clearTimeout(highlightTimer)
+    highlightTimer = window.setTimeout(() => setHighlightedThread(null), 2000)
   }
 
   function addComment(): void {
@@ -2286,6 +2299,7 @@ export function Studio() {
             canvasHeight={previewCanvasHeight()}
             pins={placedPins()}
             onCommentClick={openCommentBox}
+            onPinClick={showPinnedThread}
           />
         </div>
 
@@ -2318,6 +2332,7 @@ export function Studio() {
             resolvedToggleLabel={review.showResolved() ? settings.messages().hideResolved : settings.messages().showResolved(reviewResolvedCount())}
             onToggleResolved={review.toggleShowResolved}
             onSelectSlide={index => void selectSlide(index)}
+            highlightedThread={highlightedThread()}
             replyText={review.replyDraft()?.text ?? ''}
             onSend={() => void sendReview()}
             onDiscard={review.discard}

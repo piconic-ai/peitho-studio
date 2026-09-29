@@ -338,6 +338,26 @@ test('Given a pin on a list item, When the preview switches to the phone shape a
   await expect.poll(pinOnItem).toBe(true)
 })
 
+test('Given a comment\'s pin on the slide, When it is clicked, Then its thread is shown and lit up, and no new comment starts', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  await openDeck(page, crit)
+  await comment(page, 'h1', 'Make it bigger')
+  await comment(page, 'li >> nth=1', 'Reword this')
+  await page.locator(SEND).click()
+  await expect(page.locator('[data-review-row="comment"]')).toHaveCount(2)
+  await expect(page.locator('[data-comment-pin="sent"]')).toHaveCount(2)
+
+  await page.locator('[data-comment-pin="sent"] >> nth=1').click()
+
+  await expect(page.locator(BOX)).toBeHidden()
+  const lit = page.locator('[data-review-row][data-review-highlighted="true"]')
+  await expect(lit).toHaveCount(1)
+  await expect(lit).toContainText('Reword this')
+  await expect(lit).toBeInViewport()
+  // It fades after a moment.
+  await expect(lit).toHaveCount(0, { timeout: 5_000 })
+})
+
 test('Given a comment on another slide, When its row is clicked, Then that slide opens; a click on its buttons does not', async ({ page }) => {
   await openDeck(page, createFakeCritIpc())
   await page.locator('[data-slide-row="1"]').click()

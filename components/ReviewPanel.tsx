@@ -26,6 +26,9 @@ export interface ReviewPanelProps {
   /** The toggle's label (it names the count). */
   resolvedToggleLabel: string
   onToggleResolved: () => void
+  /** The thread shown on a pin's click (`threadOfPin`), lit up for a
+   * moment. */
+  highlightedThread: string | null
   /** A row was clicked: open its slide. */
   onSelectSlide: (index: number) => void
   replyText: string
@@ -172,10 +175,12 @@ export function ReviewPanel(props: ReviewPanelProps) {
               data-review-row={row.kind}
               data-review-slide={row.slideIndex ?? ''}
               data-review-thread-start={row.threadStart ? 'true' : 'false'}
+              data-review-thread={row.threadKey}
+              data-review-highlighted={row.threadKey === props.highlightedThread ? 'true' : 'false'}
               onClick={e => {
                 if (!isRowControl(e.target) && row.slideIndex !== null) props.onSelectSlide(row.slideIndex)
               }}
-              className={(row.threadStart ? 'mt-3 pt-2 border-t rounded-t-xl ' : 'pt-2 ') + (row.threadEnd ? 'pb-3 border-b rounded-b-xl ' : '') + (row.resolved ? 'opacity-60 ' : '') + (row.slideIndex === null ? '' : 'cursor-pointer ') + 'px-3 border-x border-border bg-background flex flex-col gap-2'}
+              className={(row.threadStart ? 'mt-3 pt-2 border-t rounded-t-xl ' : 'pt-2 ') + (row.threadEnd ? 'pb-3 border-b rounded-b-xl ' : '') + (row.resolved ? 'opacity-60 ' : '') + (row.slideIndex === null ? '' : 'cursor-pointer ') + (row.threadKey === props.highlightedThread ? 'bg-[#fef9c3] ' : 'bg-background ') + 'px-3 border-x border-border transition-colors flex flex-col gap-2'}
             >
               {/* Each thread is one card: its first row carries the card's
                   header — what it's on, and what can be done with it. */}
