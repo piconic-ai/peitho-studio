@@ -64,6 +64,25 @@ describe('the comment box', () => {
   })
 })
 
+describe('agent seen', () => {
+  test('Given an agent seen waiting, When it is busy after a send, Then it still counts as seen; a new daemon or a reset forgets it', () => {
+    createRoot(() => {
+      const store = createReviewStore()
+      store.setSession({ ...waiting, agentWaiting: false })
+      expect(store.agentSeen()).toBe(false)
+      store.setSession(waiting)
+      store.setSession({ ...waiting, agentWaiting: false, reviewRound: 3 })
+      expect(store.agentSeen()).toBe(true)
+      store.setSession({ ...waiting, agentWaiting: false, port: 2 })
+      expect(store.agentSeen()).toBe(false)
+      store.setSession(waiting)
+      store.reset()
+      store.setSession({ ...waiting, agentWaiting: false })
+      expect(store.agentSeen()).toBe(false)
+    })
+  })
+})
+
 describe('replies and sending', () => {
   test('Given an open thread still waiting on the agent and nothing unsent, Then Send hands it over again; once answered, nothing is left to send', () => {
     createRoot(() => {

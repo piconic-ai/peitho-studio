@@ -48,7 +48,9 @@ export function agentConnectPrompt(deckPath: string | null, critPath: string): s
 }
 
 /** Whether the comments column shows the card: until an agent is seen
- * waiting (with no session yet, an agent's own `crit` can start one). */
-export function showsConnectGuide(availability: SendAvailability): boolean {
-  return availability.kind === 'agent-not-waiting' || availability.kind === 'no-session'
+ * waiting (with no session yet, an agent's own `crit` can start one).
+ * `agentSeen`: one has been seen waiting in this session — not waiting now,
+ * it is at work on what it was sent, not missing. */
+export function showsConnectGuide(availability: SendAvailability, agentSeen: boolean): boolean {
+  return availability.kind === 'no-session' || (availability.kind === 'agent-not-waiting' && !agentSeen)
 }

@@ -482,21 +482,26 @@ describe('reviewStatusText', () => {
   const en = messagesFor('en')
 
   test.each([
-    ['ready', 0, false, ''],
-    ['sending', 1, false, en.sendingToAgent],
-    ['nothing-to-send', 0, false, en.commentHint],
-    ['no-session', 0, false, en.commentHint],
-    ['no-session', 2, false, en.sendNeedsSession],
-    ['agent-not-waiting', 1, false, en.sendNeedsAgent],
-    ['several-sessions', 1, false, en.sendNeedsOneSession],
-    ['ready', 1, true, en.startingReview],
-  ] as const)('spec: Given %s with %d unsent (starting: %p), Then the status is %p', (kind, unsent, starting, text) => {
-    expect(reviewStatusText(en, { kind }, unsent, starting)).toBe(text)
+    ['ready', 0, false, false, ''],
+    ['sending', 1, false, false, en.sendingToAgent],
+    ['nothing-to-send', 0, false, false, en.commentHint],
+    ['no-session', 0, false, false, en.commentHint],
+    ['no-session', 2, false, false, en.sendNeedsSession],
+    ['agent-not-waiting', 1, false, false, en.sendNeedsAgent],
+    ['agent-not-waiting', 0, true, false, en.agentWorking],
+    ['several-sessions', 1, false, false, en.sendNeedsOneSession],
+  ] as const)('spec: Given %s with %d unsent (agent seen: %p, threads: %p), Then the status is %p', (kind, unsent, agentSeen, threads, text) => {
+    expect(reviewStatusText(en, { kind }, unsent, false, agentSeen, threads)).toBe(text)
+  })
+
+  test('spec: Given threads listed, Then the how-to hint is left out', () => {
+    expect(reviewStatusText(en, { kind: 'nothing-to-send' }, 0, false, true, true)).toBe('')
+    expect(reviewStatusText(en, { kind: 'no-session' }, 0, false, false, true)).toBe('')
   })
 
   test('adversarial: Given Studio still starting the session, Then that wins over every other state', () => {
     for (const kind of ['agent-not-waiting', 'no-session', 'several-sessions'] as const) {
-      expect(reviewStatusText(en, { kind }, 0, true)).toBe(en.startingReview)
+      expect(reviewStatusText(en, { kind }, 0, true, false, false)).toBe(en.startingReview)
     }
   })
 })
@@ -567,6 +572,10 @@ describe('awaitingAgentCount', () => {
       thread('user-replied', [['Claude', 'Done'], ['Peitho Studio', 'Still small']]),
       thread('answered', [['Claude', 'Done']]),
     ])).toBe(2)
+  })
+
+  test('adversarial: Given a waiting thread that also has an unsent reply going out, Then it is not counted twice', () => {
+    expect(awaitingAgentCount([thread('c1', []), thread('c2', [])], new Set(['c1']))).toBe(1)
   })
 
   test('adversarial: Given resolved threads, no threads, or a thread an agent opened, Then none wait', () => {

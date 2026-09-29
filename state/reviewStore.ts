@@ -10,7 +10,22 @@ import { awaitingAgentCount, liveReplies, sendAvailability, type CommentBox, typ
  * stays in `Studio.tsx`; this store only holds and transitions state. */
 /** `now`: the time stamped on each comment and reply written. */
 export function createReviewStore(now: () => string = () => new Date().toISOString()) {
-  const [session, setSession] = createSignal<CritDeckSession | null>(null)
+  const [session, setSessionSignal] = createSignal<CritDeckSession | null>(null)
+  // The session (its id and daemon port) an agent was last seen waiting in.
+  // Not waiting later, that agent is at work on what it was sent — not a
+  // missing agent to connect (`showsConnectGuide`).
+  const [seenAgentIn, setSeenAgentIn] = createSignal<string | null>(null)
+  const sessionKey = (found: { id: string; port: number }) => `${found.id}:${String(found.port)}`
+  function setSession(next: CritDeckSession | null): void {
+    batch(() => {
+      setSessionSignal(next)
+      if (next?.kind === 'found' && next.agentWaiting) setSeenAgentIn(sessionKey(next))
+    })
+  }
+  const agentSeen = createMemo(() => {
+    const current = session()
+    return current?.kind === 'found' && seenAgentIn() === sessionKey(current)
+  })
   const [comments, setComments] = createSignal<ReviewComment[]>([])
   const [pending, setPending] = createSignal<PendingComment[]>([])
   const [pendingReplies, setPendingReplies] = createSignal<PendingReply[]>([])
@@ -31,7 +46,7 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
   const unsentCount = createMemo(() => pending().length + sendableReplies().length)
   // What a send hands the agent: everything unsent, plus open threads still
   // waiting on it (`awaitingAgentCount`) — sending again redelivers those.
-  const sendCount = createMemo(() => unsentCount() + awaitingAgentCount(comments()))
+  const sendCount = createMemo(() => unsentCount() + awaitingAgentCount(comments(), new Set(sendableReplies().map(reply => reply.commentId))))
   const availability = createMemo(() => sendAvailability(session(), sendCount(), busy() === 'sending'))
 
   function openBox(slideKey: string, target: CommentTarget, pin: PinSpot | null, at: { x: number; y: number }): void {
@@ -142,6 +157,7 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
   function reset(): void {
     batch(() => {
       setSession(null)
+      setSeenAgentIn(null)
       setComments([])
       setPending([])
       setPendingReplies([])
@@ -154,7 +170,7 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
   }
 
   return {
-    session, setSession, comments, setComments, pending, pendingReplies, sendableReplies, unsentCount, sendCount, availability,
+    session, setSession, agentSeen, comments, setComments, pending, pendingReplies, sendableReplies, unsentCount, sendCount, availability,
     box, boxDraft, setBoxDraft, openBox, closeBox, commitBox, discard,
     replyDraft, editReply, setReplyText, cancelReply, commitReply, markSent, sentPins,
     busy, setBusy, error, setError, showResolved, toggleShowResolved: () => setShowResolved(!showResolved()),

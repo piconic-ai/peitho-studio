@@ -61,14 +61,19 @@ describe('agentConnectPrompt', () => {
 })
 
 describe('showsConnectGuide', () => {
-  test('spec: Given no agent waiting, with or without a session, Then the card shows', () => {
-    expect(showsConnectGuide({ kind: 'agent-not-waiting' })).toBe(true)
-    expect(showsConnectGuide({ kind: 'no-session' })).toBe(true)
+  test('spec: Given no session, or a session no agent was ever seen waiting in, Then the card shows', () => {
+    expect(showsConnectGuide({ kind: 'no-session' }, false)).toBe(true)
+    expect(showsConnectGuide({ kind: 'agent-not-waiting' }, false)).toBe(true)
   })
 
-  test('adversarial: Given an agent waiting, a send running or several sessions, Then it does not', () => {
+  test('spec: Given an agent seen waiting that is now at work on a sent round, Then no card', () => {
+    expect(showsConnectGuide({ kind: 'agent-not-waiting' }, true)).toBe(false)
+  })
+
+  test('adversarial: Given an agent waiting, a send running or several sessions, Then no card, seen or not', () => {
     for (const kind of ['ready', 'nothing-to-send', 'sending', 'several-sessions'] as const) {
-      expect(showsConnectGuide({ kind })).toBe(false)
+      expect(showsConnectGuide({ kind }, false)).toBe(false)
+      expect(showsConnectGuide({ kind }, true)).toBe(false)
     }
   })
 })

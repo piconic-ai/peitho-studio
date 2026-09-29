@@ -305,10 +305,12 @@ export function commentTargetOf(renderedSource: string, slideSpan: CharSpan | nu
  * Studio's (the comment itself, or a reply to the agent). One can end up
  * there without the agent ever seeing it — a round finished while no agent
  * was waiting is handed to nobody — and crit hands every open comment to
- * the agent on each finish, so sending again delivers it. */
-export function awaitingAgentCount(comments: readonly ReviewComment[]): number {
+ * the agent on each finish, so sending again delivers it. `counted`:
+ * threads already counted elsewhere (they have an unsent reply). */
+export function awaitingAgentCount(comments: readonly ReviewComment[], counted: ReadonlySet<string> = new Set()): number {
   return comments.filter(comment => {
-    if (comment.resolved) return false
+    // A thread already counted — it has an unsent reply going out — counts once.
+    if (comment.resolved || counted.has(comment.id)) return false
     const last = comment.replies.length > 0 ? comment.replies[comment.replies.length - 1] : comment
     return last.author === REVIEW_AUTHOR
   }).length
@@ -347,23 +349,28 @@ export function pollsForAgent(availability: SendAvailability): boolean {
 
 export const REVIEW_POLL_MS = 3000
 
-/** The comments panel's status line — empty when all is ready. `starting`: whether Studio is
- * starting the session. What to do about an agent not waiting is the
- * connect card's (`domain/agentConnect.ts`); this line only names it. */
+/** What the panel says, in the agent's voice — empty when there's nothing
+ * to say. `starting`: Studio is starting the session. `agentSeen`: an agent
+ * has been seen waiting in this session, so one not waiting now is at work
+ * on what it was sent (the connect card is for one never seen). `threads`:
+ * the panel lists some, so the how-to hint isn't needed. */
 export function reviewStatusText(
-  messages: Pick<Messages, 'startingReview' | 'sendingToAgent' | 'commentHint' | 'sendNeedsSession' | 'sendNeedsAgent' | 'sendNeedsOneSession'>,
+  messages: Pick<Messages, 'startingReview' | 'sendingToAgent' | 'commentHint' | 'sendNeedsSession' | 'sendNeedsAgent' | 'sendNeedsOneSession' | 'agentWorking'>,
   availability: SendAvailability,
   unsent: number,
   starting: boolean,
+  agentSeen: boolean,
+  threads: boolean,
 ): string {
   if (starting) return messages.startingReview
+  const hint = threads ? '' : messages.commentHint
   switch (availability.kind) {
     // Nothing to say: the Send button being enabled says it.
     case 'ready': return ''
     case 'sending': return messages.sendingToAgent
-    case 'nothing-to-send': return messages.commentHint
-    case 'no-session': return unsent > 0 ? messages.sendNeedsSession : messages.commentHint
-    case 'agent-not-waiting': return messages.sendNeedsAgent
+    case 'nothing-to-send': return hint
+    case 'no-session': return unsent > 0 ? messages.sendNeedsSession : hint
+    case 'agent-not-waiting': return agentSeen ? messages.agentWorking : messages.sendNeedsAgent
     case 'several-sessions': return messages.sendNeedsOneSession
     default: {
       const exhaustive: never = availability
