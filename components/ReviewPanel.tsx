@@ -238,7 +238,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
                   </div>
                   {/* The user's words on the right, dark; the agent's on the
                       left, light; not sent yet, outlined. */}
-                  <div className="flex items-end gap-1 max-w-full">
+                  <div className="flex flex-col gap-0.5 max-w-full">
                     <p
                       data-review-bubble=""
                       className={(row.byAgent
@@ -249,12 +249,12 @@ export function ReviewPanel(props: ReviewPanelProps) {
                     >
                       {row.body}
                     </p>
-                    {/* Beside the agent's last word, at its foot: what a reply
-                        answers. */}
+                    {/* Under the agent's last word, flush with its right edge:
+                        what a reply answers. */}
                     <button
                       type="button"
                       data-review-reply=""
-                      className={row.replyHere && !row.replyBoxHere ? 'shrink-0 flex items-center gap-1 px-1 py-0.5 text-xs whitespace-nowrap text-muted-foreground rounded hover:text-foreground hover:bg-muted' : 'hidden'}
+                      className={row.replyHere && !row.replyBoxHere ? 'self-end flex items-center gap-1 px-1 py-0.5 text-xs whitespace-nowrap text-muted-foreground rounded hover:text-foreground hover:bg-muted' : 'hidden'}
                       onClick={() => props.onStartReply(row.id)}
                     >
                       <svg aria-hidden="true" viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
