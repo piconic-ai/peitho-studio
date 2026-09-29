@@ -75,15 +75,17 @@ export interface ReviewRowsInput {
   showResolved: boolean
   /** The crit comment a reply is being written under, if any. */
   replyingTo: string | null
-  /** The slide (0-based) deck line `line` (1-based) is in, when known. */
-  slideOfLine: (line: number) => number | null
+  /** The slide (0-based) a sent comment is on, when known. */
+  slideOf: (comment: ReviewComment) => number | null
 }
 
 /** A sent comment's text split back into the label Studio put in front of
- * it (`[Slide 2 › heading "Hi"] Make it bigger`) and the text itself. */
+ * it (`[Slide 2 › heading "Hi"] Make it bigger`) and the text itself. The
+ * slide key a label may carry is for the agent and for finding the slide,
+ * so the target leaves it out. */
 export function splitCommentLabel(body: string): { target: string | null; text: string } {
-  const match = /^\[(Slide \d+[^\n]*?)\] ([\s\S]*)$/.exec(body)
-  return match ? { target: match[1], text: match[2] } : { target: null, text: body }
+  const match = /^\[(Slide \d+)(?: \(key: [A-Za-z0-9_-]+\))?([^\n]*?)\] ([\s\S]*)$/.exec(body)
+  return match ? { target: match[1] + match[2], text: match[3] } : { target: null, text: body }
 }
 
 function timeOf(createdAt: string | null): number {
@@ -102,7 +104,7 @@ export function reviewRows(input: ReviewRowsInput): ReviewRow[] {
   input.comments.forEach((comment, order) => {
     if (comment.resolved && !input.showResolved) return
     const { target, text } = splitCommentLabel(comment.body)
-    const slideIndex = comment.lines === null ? null : input.slideOfLine(comment.lines.start)
+    const slideIndex = input.slideOf(comment)
     const rows: RowDraft[] = [{
       key: `comment:${comment.id}`, kind: 'comment', id: comment.id, byAgent: comment.author !== REVIEW_AUTHOR, author: comment.author,
       target, body: text, createdAt: comment.createdAt, resolved: comment.resolved, slideIndex, replyBoxHere: false, replyHere: false,

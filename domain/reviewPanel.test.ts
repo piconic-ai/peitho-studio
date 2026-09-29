@@ -11,13 +11,18 @@ const unsent = (id: string, createdAt: string): UnsentRowSource => ({ id, label:
 const reply = (id: string, commentId: string): PendingReply => ({ id, commentId, body: `${id} reply`, createdAt: '2026-09-29T09:00:00Z' })
 
 function input(overrides: Partial<ReviewRowsInput>): ReviewRowsInput {
-  return { comments: [], unsentReplies: [], unsent: [], showResolved: false, replyingTo: null, slideOfLine: () => 0, ...overrides }
+  return { comments: [], unsentReplies: [], unsent: [], showResolved: false, replyingTo: null, slideOf: sent => (sent.lines === null ? null : 0), ...overrides }
 }
 
 describe('splitCommentLabel', () => {
   test('spec: Given a comment Studio sent, Then its label and text come apart', () => {
     expect(splitCommentLabel('[Slide 2 › heading "Hi"] Make it bigger')).toEqual({ target: 'Slide 2 › heading "Hi"', text: 'Make it bigger' })
     expect(splitCommentLabel('[Slide 3] Line one\nline two')).toEqual({ target: 'Slide 3', text: 'Line one\nline two' })
+  })
+
+  test('spec: Given a label that names its slide\'s key, Then the target leaves the key out', () => {
+    expect(splitCommentLabel('[Slide 4 (key: new-slide-4) › heading "Hi"] Bigger')).toEqual({ target: 'Slide 4 › heading "Hi"', text: 'Bigger' })
+    expect(splitCommentLabel('[Slide 4 (key: intro)] Bigger')).toEqual({ target: 'Slide 4', text: 'Bigger' })
   })
 
   test('adversarial: Given text with no label, a bracket that is not a slide label, or an empty string, Then the text stays whole', () => {
@@ -107,11 +112,11 @@ describe('reviewRows', () => {
     ])
   })
 
-  test('spec: Given a click target, Then a sent comment opens the slide its first line is in, an unsent one the slide it was written on', () => {
+  test('spec: Given a click target, Then a sent comment opens the slide it is on, an unsent one the slide it was written on', () => {
     const rows = reviewRows(input({
       comments: [comment('c1', null, { lines: { start: 12, end: 14 } })],
       unsent: [unsent('p1', '2026-09-29T09:00:00Z')],
-      slideOfLine: line => (line >= 10 ? 2 : 0),
+      slideOf: sent => (sent.lines !== null && sent.lines.start >= 10 ? 2 : 0),
     }))
     expect(Object.fromEntries(rows.map(row => [row.id, row.slideIndex]))).toEqual({ c1: 2, p1: 1 })
   })

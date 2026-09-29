@@ -215,10 +215,10 @@ const KIND_WORDS: Record<Exclude<TargetKind, 'slide'>, string> = {
 }
 
 /** `Slide 2 › heading "Markdown is the source"`, or `Slide 2` for the
- * whole slide. English on purpose: it also heads the comment the agent
- * reads. */
-export function targetLabel(slideNumber: number, target: Pick<CommentTarget, 'kind' | 'text'>): string {
-  const slide = `Slide ${String(slideNumber)}`
+ * whole slide; with `slideKey`, `Slide 2 (key: intro) › …`. English on
+ * purpose: it also heads the comment the agent reads. */
+export function targetLabel(slideNumber: number, target: Pick<CommentTarget, 'kind' | 'text'>, slideKey: string | null = null): string {
+  const slide = `Slide ${String(slideNumber)}${slideKey === null ? '' : ` (key: ${slideKey})`}`
   if (target.kind === 'slide') return slide
   return `${slide} › ${KIND_WORDS[target.kind]} "${excerpt(target.text)}"`
 }
@@ -226,6 +226,24 @@ export function targetLabel(slideNumber: number, target: Pick<CommentTarget, 'ki
 /** The comment as the agent reads it: the target, then what was written. */
 export function agentCommentBody(label: string, body: string): string {
   return `[${label}] ${body.trim()}`
+}
+
+const SLIDE_KEY = /^[A-Za-z0-9_-]+$/
+
+/** `key` when the slide's own text (`span` of `source`) sets it — the key
+ * a comment's label names, so its slide can be found again however crit
+ * moves its lines. `null` for a key the slide doesn't set (the agent
+ * couldn't find it) or one that couldn't be read back out of a label. */
+export function explicitSlideKey(source: string, span: CharSpan | null, key: string): string | null {
+  if (span === null || !SLIDE_KEY.test(key)) return null
+  const set = /"key"\s*:\s*"([^"\\]*)"/.exec(source.slice(span.start, span.end))
+  return set?.[1] === key ? key : null
+}
+
+/** The slide key a sent comment's label names (`[Slide 4 (key: intro) › …]`),
+ * or `null`. */
+export function commentSlideKey(body: string): string | null {
+  return /^\[Slide \d+ \(key: ([A-Za-z0-9_-]+)\)/.exec(body)?.[1] ?? null
 }
 
 /** `span` without the whitespace (blank lines) at either end — a slide's
@@ -243,14 +261,17 @@ export function trimSpan(source: string, span: CharSpan): CharSpan {
  * `slideSpan` is where its slide is now (`null` when the slide is gone)
  * and `slideNumber` which slide that is. A target whose Markdown was
  * edited away becomes a comment on its slide; one whose slide is gone too
- * lands on line 1 — the label still says what it was about. */
+ * lands on line 1 — the label still says what it was about. The label
+ * names the slide's key when the slide sets one: crit moves a comment's
+ * lines as the deck changes, and against a deck edited mid-round it can
+ * move them onto another slide (`slideIndexOfComment`). */
 export function newReviewComment(pending: PendingComment, source: string, slideSpan: CharSpan | null, slideNumber: number): NewReviewComment {
   const found = pending.target.kind === 'slide' ? null : relocateTarget(source, slideSpan, pending.target)
   const lines = lineRangeOf(source, found ?? (slideSpan && trimSpan(source, slideSpan)) ?? { start: 0, end: 0 })
   return {
     startLine: lines.start,
     endLine: lines.end,
-    body: agentCommentBody(targetLabel(slideNumber, pending.target), pending.body),
+    body: agentCommentBody(targetLabel(slideNumber, pending.target, explicitSlideKey(source, slideSpan, pending.slideKey)), pending.body),
     quote: found === null ? '' : pending.target.quote,
     author: REVIEW_AUTHOR,
   }
@@ -435,8 +456,17 @@ export function slideIndexOfLine(source: string, slides: readonly CharSpan[], li
   return index === -1 ? null : index
 }
 
+/** Which of `slides` a sent comment is on: the slide its label names by key,
+ * else the one its first line is in, else `null`. */
+export function slideIndexOfComment(source: string, slides: readonly { key: string; span: CharSpan }[], comment: Pick<ReviewComment, 'body' | 'lines'>): number | null {
+  const key = commentSlideKey(comment.body)
+  const byKey = key === null ? -1 : slides.findIndex(slide => slide.key === key)
+  if (byKey !== -1) return byKey
+  return comment.lines === null ? null : slideIndexOfLine(source, slides.map(slide => slide.span), comment.lines.start)
+}
+
 /** How many comments each slide has, by slide key: the unsent ones, plus
- * the unresolved ones in crit, placed by their first line. `slides` lists
+ * the unresolved ones in crit, placed by `slideIndexOfComment`. `slides` lists
  * each slide's key and its span in `source` (the deck as saved). */
 export function commentCountsBySlide(
   source: string,
@@ -447,10 +477,9 @@ export function commentCountsBySlide(
   const counts: Record<string, number> = {}
   const bump = (key: string) => { counts[key] = (counts[key] ?? 0) + 1 }
   for (const comment of pending) bump(comment.slideKey)
-  const spans = slides.map(slide => slide.span)
   for (const comment of sent) {
-    if (comment.resolved || comment.lines === null) continue
-    const index = slideIndexOfLine(source, spans, comment.lines.start)
+    if (comment.resolved) continue
+    const index = slideIndexOfComment(source, slides, comment)
     if (index !== null) bump(slides[index].key)
   }
   return counts

@@ -9,7 +9,7 @@ import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
-  REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, newReviewComment, pollsForAgent, previewPinsOf, reviewStatusText, slideIndexOfLine,
+  REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, newReviewComment, pollsForAgent, previewPinsOf, reviewStatusText, slideIndexOfComment,
   slideSpans, targetLabel,
   type PreviewPin,
 } from '../domain/reviewComment'
@@ -1023,7 +1023,7 @@ export function Studio() {
 
   const reviewPanelRows = createMemo(() => {
     const source = render.renderedSource()
-    const spans = renderedSlideSpans().map(slide => slide.span)
+    const slides = renderedSlideSpans()
     const now = new Date()
     return reviewRows({
       comments: review.comments(),
@@ -1034,7 +1034,7 @@ export function Studio() {
       }),
       showResolved: review.showResolved(),
       replyingTo: review.replyDraft()?.commentId ?? null,
-      slideOfLine: line => slideIndexOfLine(source, spans, line),
+      slideOf: comment => slideIndexOfComment(source, slides, comment),
     }).map(row => ({ ...row, time: formatReviewTime(row.createdAt, now) }))
   })
   const reviewResolvedCount = createMemo(() => resolvedCount(review.comments()))

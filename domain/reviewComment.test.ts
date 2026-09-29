@@ -4,8 +4,8 @@ import { messagesFor } from './messages'
 import type { ManifestSlide } from './render'
 import {
   liveReplies,
-  agentCommentBody, annotatedSpan, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
-  awaitingAgentCount, newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, previewPinsOf, relocateTarget, reviewStatusText, sendAvailability, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
+  agentCommentBody, annotatedSpan, commentSlideKey, explicitSlideKey, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
+  awaitingAgentCount, newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, previewPinsOf, relocateTarget, reviewStatusText, sendAvailability, slideIndexOfComment, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
   utf8OffsetToIndex, type CommentTarget, type PendingComment, type PinSpot,
 } from './reviewComment'
 
@@ -317,6 +317,12 @@ describe('newReviewComment', () => {
     expect(comment).toMatchObject({ startLine: 5, endLine: 7, quote: '', body: '[Slide 1] Make it bigger' })
   })
 
+  test('spec: Given a slide that sets its key, When a comment on it is sent, Then its label names the key', () => {
+    const text = '<!-- {"key":"hello"} -->\n# Hello\n'
+    const comment = newReviewComment(pending({ kind: 'heading', text: 'Hello', quote: 'Hello', offsetInSlide: 2 }), text, { start: 0, end: text.length }, 3)
+    expect(comment).toMatchObject({ startLine: 2, endLine: 2, body: '[Slide 3 (key: hello) › heading "Hello"] Make it bigger' })
+  })
+
   test('adversarial: Given the commented Markdown was edited away, When it is sent, Then it falls back to its slide', () => {
     const comment = newReviewComment(pending({ kind: 'paragraph', text: 'Gone', quote: 'Gone', offsetInSlide: 0 }), source, firstSlide, 1)
     expect(comment).toMatchObject({ startLine: 5, endLine: 7, quote: '', body: '[Slide 1 › paragraph "Gone"] Make it bigger' })
@@ -338,6 +344,42 @@ describe('newReviewComment', () => {
     const text = '# T\n\nline one\nline two\n'
     const comment = newReviewComment(pending({ kind: 'paragraph', text: 'line one line two', quote: 'line one\nline two', offsetInSlide: 5 }), text, { start: 0, end: text.length }, 1)
     expect(comment).toMatchObject({ startLine: 3, endLine: 4, quote: 'line one\nline two' })
+  })
+})
+
+describe('explicitSlideKey / commentSlideKey', () => {
+  const source = '<!-- {"key":"intro","time":"1m"} -->\n# Hi\n\n---\n\n# Plain\n'
+  const keyed = { start: 0, end: source.indexOf('---') }
+  const plain = { start: source.indexOf('# Plain'), end: source.length }
+
+  test('spec: Given a slide that sets its key, Then that key is named', () => {
+    expect(explicitSlideKey(source, keyed, 'intro')).toBe('intro')
+    expect(explicitSlideKey('<!-- { "key" : "a_1" } -->\n# A', { start: 0, end: 30 }, 'a_1')).toBe('a_1')
+  })
+
+  test.each([
+    ['a slide that sets no key', plain, 'plain'],
+    ['a key other than the one the slide sets', keyed, 'other'],
+    ['no slide', null, 'intro'],
+    ['a placeholder key', keyed, 'placeholder:0'],
+    ['an empty key', keyed, ''],
+    ['a key that would end the label early', keyed, 'a)b'],
+  ])('adversarial: Given %s, Then no key is named', (_label, span, key) => {
+    expect(explicitSlideKey(source, span, key)).toBeNull()
+  })
+
+  test('spec: Given a label that names a key, Then the key comes back out', () => {
+    expect(commentSlideKey('[Slide 4 (key: new-slide-4) › heading "Hi"] Bigger')).toBe('new-slide-4')
+    expect(commentSlideKey('[Slide 12 (key: intro)] Bigger')).toBe('intro')
+  })
+
+  test.each([
+    ['a label without a key', '[Slide 4 › heading "Hi"] Bigger'],
+    ['a key in the text, not the label', 'Bigger (key: intro)'],
+    ['an empty body', ''],
+    ['a key with a character keys never have', '[Slide 4 (key: a b)] x'],
+  ])('adversarial: Given %s, Then no key is read', (_label, body) => {
+    expect(commentSlideKey(body)).toBeNull()
   })
 })
 
@@ -371,6 +413,18 @@ describe('slideIndexOfLine / commentCountsBySlide', () => {
   test('adversarial: Given resolved, whole-file and out-of-range comments, Then they are not counted', () => {
     const wholeFile: ReviewComment = { ...sent(1), lines: null }
     expect(commentCountsBySlide(source, slides, [], [sent(5, true), wholeFile, sent(99)])).toEqual({})
+  })
+
+  test('spec: Given crit moved a comment\'s lines onto another slide, When its label names its slide\'s key, Then it stays on that slide', () => {
+    const moved: ReviewComment = { ...sent(5), body: '[Slide 1 (key: one)] b' }
+    expect(slideIndexOfComment(source, slides, moved)).toBe(0)
+    expect(commentCountsBySlide(source, slides, [], [moved])).toEqual({ one: 1 })
+  })
+
+  test('adversarial: Given a label naming a key no slide has any more, or a whole-file comment, Then its line decides, or nothing does', () => {
+    expect(slideIndexOfComment(source, slides, { ...sent(5), body: '[Slide 1 (key: gone)] b' })).toBe(1)
+    expect(slideIndexOfComment(source, slides, { ...sent(1), body: '[Slide 1 (key: gone)] b', lines: null })).toBeNull()
+    expect(slideIndexOfComment(source, slides, { ...sent(1), body: '[Slide 1 (key: one)] b', lines: null })).toBe(0)
   })
 
   test('adversarial: Given no slides at all, Then only unsent comments are counted', () => {
