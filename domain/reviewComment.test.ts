@@ -5,7 +5,7 @@ import type { ManifestSlide } from './render'
 import {
   liveReplies,
   agentCommentBody, annotatedSpan, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
-  newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, previewPinsOf, relocateTarget, reviewStatusText, sendAvailability, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
+  awaitingAgentCount, newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, previewPinsOf, relocateTarget, reviewStatusText, sendAvailability, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
   utf8OffsetToIndex, type CommentTarget, type PendingComment,
 } from './reviewComment'
 
@@ -545,6 +545,27 @@ describe('previewPinsOf', () => {
 
   test('adversarial: Given a comment body like an object property name, Then it is not taken for a known pin', () => {
     expect(previewPinsOf('a', [inCrit('c1', 'constructor')], {}, [], { kind: 'closed' })).toEqual([])
+  })
+})
+
+describe('awaitingAgentCount', () => {
+  const thread = (id: string, replies: [string, string][], resolved = false): ReviewComment => ({
+    id, lines: null, body: 'b', quote: null, author: 'Peitho Studio', resolved, createdAt: null,
+    replies: replies.map(([author, body], i) => ({ id: `r${String(i)}`, author, body, createdAt: null })),
+  })
+
+  test('spec: Given open threads where Studio spoke last, Then they wait on the agent; one the agent answered last does not', () => {
+    expect(awaitingAgentCount([
+      thread('no-reply', []),
+      thread('user-replied', [['Claude', 'Done'], ['Peitho Studio', 'Still small']]),
+      thread('answered', [['Claude', 'Done']]),
+    ])).toBe(2)
+  })
+
+  test('adversarial: Given resolved threads, no threads, or a thread an agent opened, Then none wait', () => {
+    expect(awaitingAgentCount([thread('done', [], true)])).toBe(0)
+    expect(awaitingAgentCount([])).toBe(0)
+    expect(awaitingAgentCount([{ ...thread('agent', []), author: 'Claude' }])).toBe(0)
   })
 })
 

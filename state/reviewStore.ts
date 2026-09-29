@@ -1,6 +1,6 @@
 import { batch, createMemo, createSignal } from '@barefootjs/client'
 import type { CritDeckSession, ReviewComment } from '../domain/critReview'
-import { liveReplies, sendAvailability, type CommentBox, type CommentTarget, type PendingComment, type PendingReply, type SentPins } from '../domain/reviewComment'
+import { awaitingAgentCount, liveReplies, sendAvailability, type CommentBox, type CommentTarget, type PendingComment, type PendingReply, type SentPins } from '../domain/reviewComment'
 
 /** The review round trip with the Coding Agent as the comment UI shows it
  * (todo/review-comment-ui.md): what crit last reported (the session and its
@@ -29,7 +29,10 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
   // The unsent replies that can still be sent (`liveReplies`).
   const sendableReplies = createMemo(() => liveReplies(pendingReplies(), comments()))
   const unsentCount = createMemo(() => pending().length + sendableReplies().length)
-  const availability = createMemo(() => sendAvailability(session(), unsentCount(), busy() === 'sending'))
+  // What a send hands the agent: everything unsent, plus open threads still
+  // waiting on it (`awaitingAgentCount`) — sending again redelivers those.
+  const sendCount = createMemo(() => unsentCount() + awaitingAgentCount(comments()))
+  const availability = createMemo(() => sendAvailability(session(), sendCount(), busy() === 'sending'))
 
   function openBox(slideKey: string, target: CommentTarget, pin: { x: number; y: number } | null, at: { x: number; y: number }): void {
     batch(() => {
@@ -151,7 +154,7 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
   }
 
   return {
-    session, setSession, comments, setComments, pending, pendingReplies, sendableReplies, unsentCount, availability,
+    session, setSession, comments, setComments, pending, pendingReplies, sendableReplies, unsentCount, sendCount, availability,
     box, boxDraft, setBoxDraft, openBox, closeBox, commitBox, discard,
     replyDraft, editReply, setReplyText, cancelReply, commitReply, markSent, sentPins,
     busy, setBusy, error, setError, showResolved, toggleShowResolved: () => setShowResolved(!showResolved()),

@@ -65,6 +65,19 @@ describe('the comment box', () => {
 })
 
 describe('replies and sending', () => {
+  test('Given an open thread still waiting on the agent and nothing unsent, Then Send hands it over again; once answered, nothing is left to send', () => {
+    createRoot(() => {
+      const store = createReviewStore()
+      store.setSession(waiting)
+      store.setComments([thread('c_1')])
+      expect(store.sendCount()).toBe(1)
+      expect(store.availability()).toEqual({ kind: 'ready' })
+      store.setComments([{ ...thread('c_1'), replies: [{ id: 'r', body: 'Done', author: 'Claude', createdAt: null }] }])
+      expect(store.sendCount()).toBe(0)
+      expect(store.availability()).toEqual({ kind: 'nothing-to-send' })
+    })
+  })
+
   test('Given an unsent reply to a comment crit no longer has, Then it is neither counted nor sendable, and it can be discarded', () => {
     createRoot(() => {
       const store = createReviewStore()
@@ -72,7 +85,8 @@ describe('replies and sending', () => {
       store.setComments([thread('c_1')])
       store.editReply('c_1', 'Still small')
       store.commitReply()
-      store.setComments([thread('c_9')])
+      // A new session's thread, already answered by the agent.
+      store.setComments([{ ...thread('c_9'), replies: [{ id: 'r', body: 'Done', author: 'Claude', createdAt: null }] }])
       expect(store.unsentCount()).toBe(0)
       expect(store.sendableReplies()).toEqual([])
       expect(store.availability()).toEqual({ kind: 'nothing-to-send' })

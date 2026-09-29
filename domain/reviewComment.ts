@@ -284,6 +284,19 @@ export function commentTargetOf(renderedSource: string, slideSpan: CharSpan | nu
   return { kind: hit.kind, text: hit.text, quote: hit.quote, offsetInSlide: span.start - slideStart }
 }
 
+/** How many open threads wait on the agent: the last word in them is
+ * Studio's (the comment itself, or a reply to the agent). One can end up
+ * there without the agent ever seeing it — a round finished while no agent
+ * was waiting is handed to nobody — and crit hands every open comment to
+ * the agent on each finish, so sending again delivers it. */
+export function awaitingAgentCount(comments: readonly ReviewComment[]): number {
+  return comments.filter(comment => {
+    if (comment.resolved) return false
+    const last = comment.replies.length > 0 ? comment.replies[comment.replies.length - 1] : comment
+    return last.author === REVIEW_AUTHOR
+  }).length
+}
+
 /** Whether the unsent comments can go to the agent now, and if not why. */
 export type SendAvailability =
   | { kind: 'ready' }
