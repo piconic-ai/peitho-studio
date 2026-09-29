@@ -20,7 +20,7 @@ Coding Agentに依頼する**方向に決めた。そのうえで[crit](https://
 仕組みはcrit**(案A)とし、**critはバージョンを固定して同梱する。熟れたら
 critの作者に、外部からUIを作るためのAPIを相談する**と決めた。
 
-3本組のうちの1本(仕組みの側)。UIは`todo/review-comment-ui.md`、デッキに
+3本組のうちの1本(仕組みの側)。UIは`todo/archive/review-comment-ui.md`、デッキに
 置くエージェント向け指示は`todo/deck-agents-md.md`。**このtodoを先に
 進める**(UIはここで作るコマンドを呼ぶ)。
 
@@ -30,7 +30,7 @@ critの作者に、外部からUIを作るためのAPIを相談する**と決め
   に行コメントを登録し、完了を通知し、エージェントの返信を受け取れるように
   する。その前提として、固定バージョンのcritをアプリに同梱する。
 - **やらないこと**:
-  - コメントUI(`todo/review-comment-ui.md`)。
+  - コメントUI(`todo/archive/review-comment-ui.md`)。
   - critの画面(live/preview)をStudioに埋め込むこと(案B、見送り)。
   - critと同等の仕組みの自作(案C)。APIが不安定と分かったときの退路として
     だけ残す。
@@ -115,7 +115,7 @@ critの作者に、外部からUIを作るためのAPIを相談する**と決め
 `crit::tests::round_trip`)で確かめている。
 
 1. **エージェントが使うcritを揃える方法 — (c)に決定(ユーザー、2026-09-29)。**
-   実装は`todo/review-comment-ui.md`で行う(Studioが同梱のcritでセッションを
+   実装は`todo/archive/review-comment-ui.md`で行う(Studioが同梱のcritでセッションを
    起動する)。
    - HTTP APIを答えるのは、そのセッションを最初に起動した`crit`のデーモン。
      同梱の0.21.0で`crit --no-open deck.md`を先に起動しておき、PATH上の
@@ -178,9 +178,9 @@ critの作者に、外部からUIを作るためのAPIを相談する**と決め
    `src-tauri/licenses/crit/LICENSE`(v0.21.0のタグのもの)を
    `bundle.resources`で`.app/Contents/Resources/licenses/crit/LICENSE`に
    入れる。MITの条件(著作権表示と許諾表示を複製に含める)はこれで満たす。
-   About画面への表記は、UIを作る`todo/review-comment-ui.md`の側で検討する。
+   About画面への表記は、UIを作る`todo/archive/review-comment-ui.md`の側で検討する。
 
-実装して分かったこと(`todo/review-comment-ui.md`向け):
+実装して分かったこと(`todo/archive/review-comment-ui.md`向け):
 
 - **完了の通知は、その瞬間に待っている`crit`にしか届かない。** エージェント
   が返信している間(`crit --session <id>`を実行する前)に完了を通知すると、
@@ -196,7 +196,7 @@ critの作者に、外部からUIを作るためのAPIを相談する**と決め
 - 0.21.0では巡が進んでもコメントのIDが保たれた(`carried_forward: true`)が、
   0.20.1では振り直されたので、引き続きIDに頼らない。
 - e2e: まだフロントに呼び出し元(UI)がないため、`mockTauri`でのe2eは
-  `todo/review-comment-ui.md`で書く。フロントの口は`ipc/fakeCritIpc.ts`と
+  `todo/archive/review-comment-ui.md`で書く。フロントの口は`ipc/fakeCritIpc.ts`と
   その単体テストで押さえた。
 
 ## 方針
@@ -225,7 +225,7 @@ critの作者に、外部からUIを作るためのAPIを相談する**と決め
     来たことを知らせるイベントの発行。`lib.rs`で登録。
 - フロント
   - `ipc/critIpc.ts`: 上記コマンドとイベントの型付きの口。
-  - コメントの型は`domain/`に置き、`todo/review-comment-ui.md`と共有する。
+  - コメントの型は`domain/`に置き、`todo/archive/review-comment-ui.md`と共有する。
 
 ## テスト
 
@@ -240,7 +240,7 @@ critの作者に、外部からUIを作るためのAPIを相談する**と決め
   完了 → 返信 → イベント)を確かめる。critの実行ファイルがないCI環境では
   スキップの扱いを決める。
 - e2e(`e2e/`、`mockTauri`): コマンドのモックで、フロントからの呼び出しと
-  イベントの受け取りを確かめる(UIの側は`todo/review-comment-ui.md`)。
+  イベントの受け取りを確かめる(UIの側は`todo/archive/review-comment-ui.md`)。
 
 ## 完了条件
 
@@ -256,7 +256,7 @@ critの作者に、外部からUIを作るためのAPIを相談する**と決め
 - [x] 実機で、Claude Codeなど実際のエージェントとの往復を確認する
   (このPRではまだUIがないため、`crit_*`コマンドを呼ぶ画面の操作はない。
   往復そのものは結合テストが同梱のcritで確かめている。Tauriのコマンド
-  経由・実際のエージェントでの確認は`todo/review-comment-ui.md`のUIが
+  経由・実際のエージェントでの確認は`todo/archive/review-comment-ui.md`のUIが
   できてから — PR #133 の実機確認でClaude Codeとの往復を確かめた)
 
 ## 先送り事項

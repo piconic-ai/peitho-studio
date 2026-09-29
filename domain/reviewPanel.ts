@@ -1,4 +1,4 @@
-// The comments column's list as rows (todo/review-comment-ui.md): each
+// The comments column's list as rows (todo/archive/review-comment-ui.md): each
 // comment with its thread, in the order they were written, resolved ones
 // only when asked for, and what the panel shows of each — what it's on, the
 // text, when, and which slide a click on it opens.

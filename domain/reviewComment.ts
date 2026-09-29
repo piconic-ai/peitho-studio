@@ -1,4 +1,4 @@
-// The preview's comment UI (todo/review-comment-ui.md): what a click on the
+// The preview's comment UI (todo/archive/review-comment-ui.md): what a click on the
 // preview points at in deck.md, how that target is shown ("Slide 2 ›
 // heading …"), and how a comment still waiting to be sent finds its spot
 // again after the deck was edited. The round trip itself goes through crit

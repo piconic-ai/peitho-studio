@@ -15,7 +15,7 @@ tags: [agent, crit, scaffold]
 ときもしないときも効く。
 
 3本組のうちの1本。往復の仕組みは`todo/crit-review-bridge.md`、UIは
-`todo/review-comment-ui.md`。**中身の一部(critの呼び方)は
+`todo/archive/review-comment-ui.md`。**中身の一部(critの呼び方)は
 `todo/crit-review-bridge.md`の要調査1の結論に依存する**(→ (c)に決定済み)ので、その結論が
 出てから着手する。
 
@@ -32,7 +32,7 @@ tags: [agent, crit, scaffold]
 - **受け入れ条件**:
   - New Deckで作ったデッキに、指示ファイルが入っている。
   - 既存のデッキで、指示ファイルがないときに、Studioから1クリックで追加
-    できる(置き場所は`todo/review-comment-ui.md`の送信まわりか、メニュー)。
+    できる(置き場所は`todo/archive/review-comment-ui.md`の送信まわりか、メニュー)。
     既にあるファイルは上書きしない。
   - 指示には少なくとも次が書いてある:
     - Peithoの書き方は`peitho docs`(トピック: `writing-decks`、`layouts`、
@@ -98,7 +98,7 @@ tags: [agent, crit, scaffold]
     (例: `add_agent_instructions`)。`lib.rs`で登録。
 - フロント
   - `ipc/deckIpc.ts`: コマンドの口。
-  - 追加ボタンの置き場所は`todo/review-comment-ui.md`に合わせる。
+  - 追加ボタンの置き場所は`todo/archive/review-comment-ui.md`に合わせる。
   - `domain/messages.ts`: 文言。
 
 ## テスト

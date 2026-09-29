@@ -844,7 +844,7 @@ export function Studio() {
     if (key !== null) patchSlideCanvases(`[data-preview-host][data-slide-canvas-key="${CSS.escape(key)}"]`, render.previewFragmentOf(key))
   })
 
-  // --- Comments for the Coding Agent (todo/review-comment-ui.md) ---
+  // --- Comments for the Coding Agent (todo/archive/review-comment-ui.md) ---
   // A click on the preview opens the comment box; added comments wait,
   // unsent, until "Send to Agent" hands them all to the agent waiting in
   // crit (starting the deck's crit session with the first one). What was

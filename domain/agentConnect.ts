@@ -1,5 +1,5 @@
 // What the comments column's "Connect your Coding Agent" card hands the user
-// to copy (todo/review-comment-ui.md): the command that makes an agent wait
+// to copy (todo/archive/review-comment-ui.md): the command that makes an agent wait
 // for this deck's review, and a prompt asking an agent to run it and keep
 // the review loop going. Both name the crit bundled with Studio by its full
 // path, so nothing has to be installed first — and crit's own instructions,
