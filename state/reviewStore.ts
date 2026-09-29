@@ -9,6 +9,11 @@ import { awaitingAgentCount, liveReplies, sendAvailability, type CommentBox, typ
  * what's in flight. Talking to crit (`ipc/critIpc.ts`) and deciding when to
  * stays in `Studio.tsx`; this store only holds and transitions state. */
 /** `now`: the time stamped on each comment and reply written. */
+// Whether two values read back from crit are the same: plain JSON data.
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
 export function createReviewStore(now: () => string = () => new Date().toISOString()) {
   const [session, setSessionSignal] = createSignal<CritDeckSession | null>(null)
   // The session (its id and daemon port) an agent was last seen waiting in.
@@ -18,7 +23,9 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
   const sessionKey = (found: { id: string; port: number }) => `${found.id}:${String(found.port)}`
   function setSession(next: CritDeckSession | null): void {
     batch(() => {
-      setSessionSignal(next)
+      // A poll that finds nothing new leaves the signal alone, so nothing
+      // downstream reruns every few seconds.
+      if (!sameJson(session(), next)) setSessionSignal(next)
       if (next?.kind === 'found' && next.agentWaiting) setSeenAgentIn(sessionKey(next))
     })
   }
@@ -26,7 +33,11 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
     const current = session()
     return current?.kind === 'found' && seenAgentIn() === sessionKey(current)
   })
-  const [comments, setComments] = createSignal<ReviewComment[]>([])
+  const [comments, setCommentsSignal] = createSignal<ReviewComment[]>([])
+  /** Takes crit's comments, unless they're the same as already held. */
+  function setComments(next: ReviewComment[]): void {
+    if (!sameJson(comments(), next)) setCommentsSignal(next)
+  }
   const [pending, setPending] = createSignal<PendingComment[]>([])
   const [pendingReplies, setPendingReplies] = createSignal<PendingReply[]>([])
   const [box, setBox] = createSignal<CommentBox>({ kind: 'closed' })
