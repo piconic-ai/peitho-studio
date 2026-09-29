@@ -93,6 +93,13 @@ describe('reviewRows', () => {
     ])
   })
 
+  test('adversarial: Given an unsent reply to a thread resolved meanwhile, Then it is listed last to be discarded, shown or not, and never twice', () => {
+    const comments = [comment('c1', '2026-09-29T08:00:00Z', { resolved: true }), comment('c2', '2026-09-29T09:00:00Z')]
+    const unsentReplies = [reply('u1', 'c1')]
+    expect(reviewRows(input({ comments, unsentReplies })).map(row => row.key)).toEqual(['comment:c2', 'unsent-reply:u1'])
+    expect(reviewRows(input({ comments, unsentReplies, showResolved: true })).map(row => row.key)).toEqual(['comment:c1', 'comment:c2', 'unsent-reply:u1'])
+  })
+
   test('adversarial: Given nothing, Then there are no rows; given every kind, Then keys are distinct', () => {
     expect(reviewRows(input({}))).toEqual([])
     const rows = reviewRows(input({

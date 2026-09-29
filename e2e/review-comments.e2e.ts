@@ -258,6 +258,29 @@ test('Given a sent comment, When it is resolved, Then crit marks it resolved and
   await expect(page.locator('[data-review-row="comment"]')).toHaveCount(0)
 })
 
+test('Given an unsent reply, When its thread is resolved, Then the reply is not sent: it stays listed to be discarded and sending closes', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  await openDeck(page, crit)
+  await comment(page, 'h1', 'Make it bigger')
+  await page.locator(SEND).click()
+  await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
+  crit.reply('c_1', 'Made it bigger')
+  crit.agentConnects()
+  await page.locator('[data-review-row="comment"] [data-review-reply]').click()
+  await page.locator('[data-review-reply-box]:visible textarea').fill('Still too small')
+  await page.locator('[data-review-reply-add]:visible').click()
+  await expect(page.locator(SEND)).toBeEnabled()
+
+  await page.locator('[data-review-row="comment"] [data-review-resolve]').click()
+
+  await expect(page.locator('[data-review-row="comment"]')).toHaveCount(0)
+  await expect(page.locator('[data-review-row="unsent-reply"]')).toContainText('Still too small')
+  await expect(page.locator(SEND)).toBeDisabled()
+  await page.locator('[data-review-row="unsent-reply"] [data-review-discard]').click()
+  await expect(page.locator('[data-review-row="unsent-reply"]')).toHaveCount(0)
+  expect(crit.calls.map(call => call.method)).not.toContain('addReplies')
+})
+
 test('Given a comment on another slide, When its row is clicked, Then that slide opens; a click on its buttons does not', async ({ page }) => {
   await openDeck(page, createFakeCritIpc())
   await page.locator('[data-slide-row="1"]').click()

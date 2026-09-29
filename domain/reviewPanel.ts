@@ -69,8 +69,8 @@ function timeOf(createdAt: string | null): number {
 /** The panel's rows: every thread — the comments in crit and those not sent
  * yet — oldest first (one with no time keeps its place after the timed
  * ones), each followed by its replies; resolved threads only with
- * `showResolved`. Unsent replies whose comment crit no longer has come
- * last, to be discarded. */
+ * `showResolved`. Unsent replies that can't be sent — their comment is
+ * gone or was resolved (`liveReplies`) — come last, to be discarded. */
 export function reviewRows(input: ReviewRowsInput): ReviewRow[] {
   type Thread = { time: number; order: number; rows: ReviewRow[] }
   const threads: Thread[] = []
@@ -88,7 +88,9 @@ export function reviewRows(input: ReviewRowsInput): ReviewRow[] {
         target: null, body: reply.body, createdAt: reply.createdAt, resolved: comment.resolved, slideIndex, replyBoxHere: false,
       })
     }
-    for (const reply of input.unsentReplies) {
+    // Only an open thread holds its unsent replies; one resolved meanwhile
+    // lists them last with the other replies that can't be sent.
+    for (const reply of comment.resolved ? [] : input.unsentReplies) {
       if (reply.commentId !== comment.id) continue
       rows.push({
         key: `unsent-reply:${reply.id}`, kind: 'unsent-reply', id: reply.id, byAgent: false, author: REVIEW_AUTHOR,

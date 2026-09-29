@@ -68,12 +68,13 @@ export interface PendingReply {
   createdAt: string
 }
 
-/** Those of `replies` whose comment crit still has. A reply to a comment
- * that's gone (its session ended and a new one began) can't be sent: it
- * stays listed, to be discarded, but isn't counted or sent. */
+/** Those of `replies` whose comment crit still has open. A reply to a
+ * comment that's gone (its session ended and a new one began) or was
+ * resolved meanwhile isn't sent: it stays listed, to be discarded, but
+ * isn't counted or sent. */
 export function liveReplies(replies: readonly PendingReply[], comments: readonly ReviewComment[]): PendingReply[] {
-  const ids = new Set(comments.map(comment => comment.id))
-  return replies.filter(reply => ids.has(reply.commentId))
+  const open = new Set(comments.filter(comment => !comment.resolved).map(comment => comment.id))
+  return replies.filter(reply => open.has(reply.commentId))
 }
 
 /** The name Studio's comments and replies carry in crit. */

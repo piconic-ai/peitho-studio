@@ -556,6 +556,11 @@ describe('liveReplies', () => {
     expect(liveReplies(replies, [comment('c1'), comment('c2')]).map(r => r.id)).toEqual(['r1', 'r3'])
   })
 
+  test('adversarial: Given a reply to a comment resolved after it was written, Then it is not live', () => {
+    const replies = [{ id: 'r1', commentId: 'c1', body: 'a', createdAt: '2026-09-29T00:00:00Z' }]
+    expect(liveReplies(replies, [{ ...comment('c1'), resolved: true }])).toEqual([])
+  })
+
   test('adversarial: Given no comments or no replies, Then nothing is live', () => {
     expect(liveReplies([{ id: 'r1', commentId: 'c1', body: 'a', createdAt: '2026-09-29T00:00:00Z' }], [])).toEqual([])
     expect(liveReplies([], [comment('c1')])).toEqual([])
