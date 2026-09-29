@@ -1026,9 +1026,16 @@ export function Studio() {
   })
   const reviewResolvedCount = createMemo(() => resolvedCount(review.comments()))
 
-  const reviewStatus = createMemo(() => reviewStatusText(
-    settings.messages(), review.availability(), review.unsentCount(), review.busy() === 'starting',
-  ))
+  // The connect card, until an agent is seen waiting in this session (one
+  // at work on a round it was sent is not a missing agent).
+  const connectShown = createMemo(() => showsConnectGuide(review.availability(), review.agentSeen()) && review.busy() !== 'starting')
+  const reviewStatus = createMemo(() => {
+    // The card already asks for the agent; the line would only repeat it.
+    if (connectShown() && review.availability().kind === 'agent-not-waiting') return ''
+    return reviewStatusText(
+      settings.messages(), review.availability(), review.unsentCount(), review.busy() === 'starting', review.agentSeen(), reviewPanelRows().length > 0,
+    )
+  })
 
   // `renderPayload`, when given, is applied together with the exact
   // `source` this same call just read — see `state/renderStore.ts`'s
@@ -2302,7 +2309,7 @@ export function Studio() {
             status={reviewStatus()}
             canSend={review.availability().kind === 'ready'}
             sending={review.busy() === 'sending'}
-            sendLabel={review.busy() === 'sending' ? settings.messages().sendingToAgent : settings.messages().sendToAgent(review.sendCount())}
+            sendCount={review.sendCount()}
             error={review.error()}
             rows={reviewPanelRows()}
             resolvedCount={reviewResolvedCount()}
@@ -2318,7 +2325,7 @@ export function Studio() {
             onReplyAdd={review.commitReply}
             onReplyCancel={review.cancelReply}
             onResolve={id => void resolveReviewComment(id)}
-            connectShown={showsConnectGuide(review.availability()) && review.busy() !== 'starting'}
+            connectShown={connectShown()}
             connectPrompt={connectPrompt()}
             connectCommand={connectCommand()}
             copied={connectCopied()}

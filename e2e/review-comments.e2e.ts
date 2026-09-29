@@ -99,7 +99,8 @@ test('Given no review session, When the first comment is added, Then Studio star
   await expect(unsentRow.locator('[data-review-agent]')).toBeHidden()
   await expect(unsentRow.locator('[data-review-time]')).toHaveText(/^\d\d:\d\d$/)
   await expect.poll(() => crit.calls.map(call => call.method)).toContain('startSession')
-  await expect(page.locator('[data-review-status]')).toHaveText('Connect your Coding Agent to send comments.')
+  // The card asks for the agent; the line doesn't repeat it.
+  await expect(page.locator('[data-review-say]')).toBeHidden()
   await expect(page.locator('[data-agent-connect]')).toBeVisible()
   await expect(page.locator(SEND)).toBeDisabled()
 })
@@ -155,12 +156,12 @@ test('Given no session, When an agent\'s own crit starts one and waits in it, Th
   crit.agentStartsSession()
 
   await expect(page.locator(CONNECT)).toBeHidden({ timeout: 8_000 })
-  await expect(page.locator('[data-review-status]')).toHaveText('Click anywhere on the slide to leave a comment.')
+  await expect(page.locator('[data-review-status]')).toHaveText('Click anything on a slide and tell me what to change.')
 })
 
 test('Given an agent already waiting, Then no card is shown', async ({ page }) => {
   await openDeck(page, createFakeCritIpc())
-  await expect(page.locator('[data-review-status]')).toHaveText('Click anywhere on the slide to leave a comment.')
+  await expect(page.locator('[data-review-status]')).toHaveText('Click anything on a slide and tell me what to change.')
   await expect(page.locator(CONNECT)).toBeHidden()
 })
 
@@ -285,13 +286,16 @@ test('Given a comment sent while no agent waited, When the agent comes back, The
   const crit = createFakeCritIpc()
   await openDeck(page, crit)
   await comment(page, 'h1', 'Make it bigger')
-  await expect(page.locator(SEND)).toHaveText('Send (1)')
+  const count = page.locator('[data-review-send-count]')
+  await expect(count).toHaveText('1')
   await page.locator(SEND).click()
   await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
   // Handed to nobody: the agent never answers, and while it's away Send
-  // stays closed.
+  // stays closed — and the panel says it's at work, not that it's missing.
   await expect(page.locator(SEND)).toBeDisabled()
-  await expect(page.locator(SEND)).toHaveText('Send (1)')
+  await expect(count).toHaveText('1')
+  await expect(page.locator(CONNECT)).toBeHidden()
+  await expect(page.locator('[data-review-status]')).toHaveText('Got your comments. Working on them…')
 
   crit.agentConnects()
 
@@ -303,7 +307,8 @@ test('Given a comment sent while no agent waited, When the agent comes back, The
   // Once the agent answers, nothing waits on it any more.
   crit.reply('c_1', 'Made it bigger')
   crit.agentConnects()
-  await expect(page.locator(SEND)).toHaveText('Send')
+  await expect(count).toBeHidden()
+  await expect(page.locator(SEND).locator('span').first()).toHaveText('Send')
   await expect(page.locator(SEND)).toBeDisabled()
 })
 
