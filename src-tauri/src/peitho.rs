@@ -1278,7 +1278,7 @@ fn with_crit_review<T>(session: &PeithoSession, label: &str, f: impl FnOnce(&mut
 /// `crit_session_status`'s. An agent that then runs `crit --no-open
 /// deck.md` in the deck's folder, with whichever crit it has, connects to
 /// this session's daemon, so Studio always talks to the bundled version
-/// (option (c) in todo/crit-review-bridge.md). See
+/// (option (c) in todo/archive/crit-review-bridge.md). See
 /// `crit::start_deck_session` for how a new session is opened.
 #[tauri::command(async)]
 pub fn crit_start_session(window: WebviewWindow, session: State<PeithoSession>) -> Result<DeckSession, String> {

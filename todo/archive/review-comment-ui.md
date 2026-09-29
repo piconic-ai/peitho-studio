@@ -18,7 +18,7 @@ tags: [agent, crit, preview, ui]
 いう評価だった。**Studioではスライド一覧で移動できるので、プレビューは
 モード切替なしでコメントできるようにする。**
 
-3本組のうちの1本(UIの側)。往復の仕組みは`todo/crit-review-bridge.md`
+3本組のうちの1本(UIの側)。往復の仕組みは`todo/archive/crit-review-bridge.md`
 (**先に進める**)、デッキに置くエージェント向け指示は
 `todo/deck-agents-md.md`。
 
@@ -28,7 +28,7 @@ tags: [agent, crit, preview, ui]
   エージェントに送り、エージェントの返信をそのコメントのスレッドとして
   見られるようにする。
 - **やらないこと**:
-  - critとの通信・同梱(`todo/crit-review-bridge.md`)。
+  - critとの通信・同梱(`todo/archive/crit-review-bridge.md`)。
   - 範囲をドラッグして囲むコメント、スクリーンショットの添付。第1段階の
     後で検討する(「先送り事項」)。
   - サムネイルへのピン表示(件数のバッジは入れる)。
@@ -41,12 +41,12 @@ tags: [agent, crit, preview, ui]
   - ピンのない場所(画像、コードブロック、レイアウトの飾り)をクリックした
     ときは、スライド全体へのコメントになる。
   - コメントには`deck.md`の行範囲と元のMarkdown(引用)が結びつき、送信時に
-    それが`todo/crit-review-bridge.md`のコマンドに渡る。
+    それが`todo/archive/crit-review-bridge.md`のコマンドに渡る。
   - コメントを付けたスライドのサムネイルに件数が出る。
   - 「送信」で未送信のコメントがまとめて送られ、エージェントの返信が来ると
     該当コメントの下に表示される。返信に対してさらにコメントできる。
   - **Studioが同梱のcritでレビューのセッションを起動する**
-    (`todo/crit-review-bridge.md`の要調査1で(c)に決定)。デッキのフォルダで
+    (`todo/archive/crit-review-bridge.md`の要調査1で(c)に決定)。デッキのフォルダで
     同梱のcritに`--no-open deck.md`を渡して起動し、デーモンを立てる。
     エージェントは、どのバージョンのcritで`crit --no-open deck.md`を実行
     しても、この同梱版のデーモンに繋がる(0.21.0と0.20.1で確認済み)。
@@ -182,13 +182,13 @@ tags: [agent, crit, preview, ui]
 - ピンの位置は、クリックした要素の`data-peitho-src`から「`deck.md`の行範囲 +
   引用」を作る。属性のない場所はスライド単位(スライドのキーと番号)に
   する。コメントの識別は、スライドのキーと引用で行う(critのコメントIDは
-  巡ごとに振り直されるため、`todo/crit-review-bridge.md`参照)。
+  巡ごとに振り直されるため、`todo/archive/crit-review-bridge.md`参照)。
 - 対象の表示(`Slide 2 › heading "Markdown is the source"`)は純粋関数で
   作り、コメント本文の先頭にも付けてエージェントに渡す(エージェントが
   どの要素のことか分かるように。試行では`[Slide 2 › heading] …`の形で
   伝わった)。
 - 未送信のコメントはStudioの中に保持し、送信でまとめて
-  `todo/crit-review-bridge.md`のコマンドに渡す。送信後の状態(返信・解決)は
+  `todo/archive/crit-review-bridge.md`のコマンドに渡す。送信後の状態(返信・解決)は
   critの側を正とし、イベントで読み直す。
 - 入力欄はプレビューの上に重ねる。`window.prompt()`は使わない
   (WKWebViewで不安定、CLAUDE.md)。

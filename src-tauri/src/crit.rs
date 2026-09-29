@@ -579,7 +579,7 @@ mod tests {
             // The session is listed once the daemon is up, a moment before
             // the agent's crit starts waiting on it — and a round finished
             // before then never reaches that crit. crit exposes no way to
-            // tell (see todo/crit-review-bridge.md), so give it time.
+            // tell (see todo/archive/crit-review-bridge.md), so give it time.
             std::thread::sleep(Duration::from_secs(2));
             let (sender, signals) = mpsc::channel();
             let _watch = watch_events(port, move |signal| {
