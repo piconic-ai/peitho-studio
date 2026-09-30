@@ -1,5 +1,5 @@
 ---
-status: wip
+status: todo
 description: 画像を受けるスロットのないレイアウトで画像を使ったとき、収まるレイアウトへの変更か、組み込みの画像レイアウトの追加を案内する
 tags: [layout, images, ui, rust-command]
 ---
@@ -193,7 +193,7 @@ tags: [layout, images, ui, rust-command]
   (`e2e/image-slot-layout-fix.e2e.ts`、PR #129)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機での確認(ユーザー自身に依頼する):
+- [x] 実機での確認(ユーザー自身に依頼する):
   - `layouts/`に画像スロットのない既存デッキ(peithoの
     `examples/minimal`など)に画像をドロップ → 案内から画像レイアウトを
     追加 → 画像が描画され、他のスライドの見た目が変わらない
@@ -205,7 +205,7 @@ tags: [layout, images, ui, rust-command]
     `css/title-body-image.css`の`.image`ルールがそのスライドにも効きうる。
     Rustのテストはfragment HTMLが変わらないことまでしか見ていないので、
     CSSの影響は実機で確認する
-- [ ] 案内の文言とボタンの置き場所
+- [x] 案内の文言とボタンの置き場所
 
 ## 実装時の調査結果
 
