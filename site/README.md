@@ -99,6 +99,7 @@ bun run typecheck  # tsc --noEmit
 bun run build      # dist/
 bun run preview    # build, then serve dist/ through wrangler exactly as production would
 bun run deploy     # build, then wrangler deploy (needs a Cloudflare login)
+bun run deploy:preview # build, then upload a version without deploying to production
 ```
 
 ## Deploying
@@ -111,7 +112,7 @@ GitHub Actions workflow. Its settings, for reference:
   directory, so `site/bun.lock` picks bun for the install.
 - Build command: `bun run build`
 - Deploy command: `bunx wrangler deploy`
-- Preview (non-production branch) command: left at its default. It runs on
+- Preview (non-production branch) command: `bun run deploy:preview`. It runs on
   pull requests as a build check only: `preview_urls` is off in
   `wrangler.jsonc`, so the uploaded version gets no URL, and the page has
   no `workers.dev` host at all.
