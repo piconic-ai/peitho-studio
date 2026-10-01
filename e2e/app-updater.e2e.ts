@@ -124,12 +124,17 @@ test('a completed overlapping body save cannot hide an in-flight structural save
 })
 
 test('a successful revised body save clears its older failed snapshot for update-exit', async ({ page }) => {
-  const deck: MockDeck = { source: SOURCE, updateSaveAcks: [], commandError: cmd => cmd === 'save_deck_source' ? 'Disk full' : null }
+  let failures = 0
+  const deck: MockDeck = { source: SOURCE, updateSaveAcks: [], commandError: cmd => {
+    if (cmd !== 'save_deck_source') return null
+    failures++
+    return 'Disk full'
+  } }
   await setup(page, deck)
   await editorContent(page).click()
   await moveToEditorEnd(page)
   await page.keyboard.type(' First unsaved draft')
-  await expect(page.getByRole('button', { name: 'Copy', exact: true })).toBeVisible()
+  await expect.poll(() => failures).toBeGreaterThan(0)
   expect(deck.source).not.toContain('First unsaved draft')
   deck.commandError = undefined
   await page.keyboard.type(' Revised after recovery')
@@ -137,4 +142,41 @@ test('a successful revised body save clears its older failed snapshot for update
   await emit(page, 'updates:changed', { ...initialUpdateStatus(), phase: 'saving' })
   await emit(page, 'updates:before-exit', 14)
   await expect.poll(() => deck.updateSaveAcks).toEqual([{ token: 14, saved: true }])
+})
+
+test('failed draft remains on its slide until a successful save before navigation', async ({ page }) => {
+  let failures = 0
+  const deck: MockDeck = {
+    source: SOURCE + '\n---\n\n<!-- {"key":"two"} -->\n# Slide Two\n', updateSaveAcks: [],
+    commandError: cmd => {
+      if (cmd !== 'save_deck_source') return null
+      failures++
+      return 'Disk full'
+    },
+  }
+  await mockTauri(page, deck)
+  await page.goto('/')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(2)
+  await editorContent(page).click()
+  await moveToEditorEnd(page)
+  await page.keyboard.type(' Retained failed draft')
+  await expect.poll(() => failures).toBeGreaterThan(0)
+  const beforeSwitch = failures
+  await page.locator('[data-slide-row]').nth(1).click()
+  await expect.poll(() => failures).toBeGreaterThan(beforeSwitch)
+  await expect(editorContent(page)).toContainText('Retained failed draft')
+  expect(deck.source).not.toContain('Retained failed draft')
+  await emit(page, 'updates:changed', { ...initialUpdateStatus(), phase: 'saving' })
+  await emit(page, 'updates:before-exit', 15)
+  await expect.poll(() => deck.updateSaveAcks).toEqual([{ token: 15, saved: false }])
+  await emit(page, 'updates:changed', initialUpdateStatus())
+  deck.commandError = undefined
+  await emit(page, 'menu:deck-setting', { key: 'aspect_ratio', choice: '4:3' })
+  await expect.poll(() => deck.source).toContain('aspect_ratio: 4:3')
+  expect(deck.source).toContain('Retained failed draft')
+  await page.locator('[data-slide-row]').nth(1).click()
+  await expect(editorContent(page)).toContainText('Slide Two')
+  await emit(page, 'updates:changed', { ...initialUpdateStatus(), phase: 'saving' })
+  await emit(page, 'updates:before-exit', 16)
+  await expect.poll(() => deck.updateSaveAcks).toEqual([{ token: 15, saved: false }, { token: 16, saved: true }])
 })

@@ -1290,7 +1290,10 @@ export function Studio() {
   // work, never blocking on a dialog the webview won't show.
   async function selectSlide(index: number): Promise<void> {
     if (index === editor.selectedIndex()) return
-    if (editor.isDirty()) await handleSave()
+    if (editor.isDirty() && !await handleSave()) return
+    // Edits may have arrived while the save was in flight. Keep that draft
+    // in its session instead of replacing it with another slide.
+    if (editor.isDirty()) return
     const { rest: withoutNote, note } = extractNote(editor.slideRanges()[index]?.text ?? '')
     const { rest, config } = extractPageComment(withoutNote)
     const fields: SlideFields = { body: rest, note, config }
@@ -1299,10 +1302,10 @@ export function Studio() {
     syncEditorFields({ kind: 'switch', from, to: index })
   }
 
-  async function handleSave(): Promise<void> {
+  async function handleSave(): Promise<boolean> {
     const range = editor.selectedRange()
     const index = editor.selectedIndex()
-    if (!range || index === null) return
+    if (!range || index === null) return false
     const body = editor.bodyDraft()
     const note = editor.noteDraft()
     const newSlideText = buildSlideText(editor.pageConfig(), body, note)
@@ -1311,7 +1314,9 @@ export function Studio() {
     // Typed text can itself re-split the deck (a `---` line, an unclosed code
     // fence), shifting the positions every history step addresses slides by.
     const resplits = splitSlides(nextSource).length !== editor.slideRanges().length
-    if (await commitChange(nextSource, { kind: 'keep' }, { expectedDraft: { body, note } }) && resplits) forgetSlidePositions()
+    const saved = await commitChange(nextSource, { kind: 'keep' }, { expectedDraft: { body, note } })
+    if (saved && resplits) forgetSlidePositions()
+    return saved
   }
 
   // Rebuilds `fullSource` from an ordered list of slide texts, preserving
