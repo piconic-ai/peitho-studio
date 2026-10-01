@@ -6,14 +6,14 @@ import type { Settings } from '../domain/settings'
 // Each test tells settings apart by object identity as well as by value: a
 // distinct object stands for each saved version.
 function version(changes: Partial<Settings> = {}): Settings {
-  return { uiLanguage: 'system', vimMode: false, ...changes }
+  return { uiLanguage: 'system', vimMode: false, autoCheckUpdates: true, autoUpdate: false, ...changes }
 }
 
 describe('settings store', () => {
   test('spec: Given a new window, when nothing has loaded yet, then the settings are the defaults and the panel is closed', () => {
     createRoot(() => {
       const store = createSettingsStore()
-      expect(store.settings()).toEqual({ uiLanguage: 'system', vimMode: false })
+      expect(store.settings()).toEqual({ uiLanguage: 'system', vimMode: false, autoCheckUpdates: true, autoUpdate: false })
       expect(store.panelOpen()).toBe(false)
     })
   })

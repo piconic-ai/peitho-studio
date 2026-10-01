@@ -448,6 +448,7 @@ fn scaffold_deck_files(settings: NewDeckSettings) -> Vec<(&'static str, String)>
 /// the banner to trust it.
 #[tauri::command]
 pub fn create_deck(app: AppHandle, parent_dir: String, name: String, aspect_ratio: Option<String>, lang: Option<String>) -> Result<String, String> {
+    crate::updates::ensure_can_open_deck(&app)?;
     let settings = NewDeckSettings::parse(aspect_ratio.as_deref(), lang.as_deref())?;
     let deck_path = scaffold_deck(&parent_dir, &name, settings)?;
     if let Some(dir) = deck_path.parent() {
@@ -567,6 +568,7 @@ fn variant_to_open(variants: &[DeckVariantPayload], requested: &str) -> Result<S
 /// instead of opening a redundant second copy of it, matching how
 /// re-opening a file already open elsewhere is expected to behave.
 pub(crate) fn open_deck_window_impl(app: &AppHandle, pending: &PendingDecks, session: &PeithoSession, path: String) -> Result<(), String> {
+    crate::updates::ensure_can_open_deck(app)?;
     if let Some(label) = session.window_label_for(&deck_path_for_comparison(&path)) {
         if let Some(window) = app.get_webview_window(&label) {
             let _ = window.unminimize();
@@ -830,6 +832,7 @@ pub fn open_deck(
     window: WebviewWindow,
     session: State<PeithoSession>,
 ) -> Result<DeckSessionInfo, String> {
+    crate::updates::ensure_can_open_deck(&app)?;
     if session.has_session(window.label()) {
         return Err(ALREADY_OPEN_ERROR.to_string());
     }
@@ -858,6 +861,7 @@ pub fn open_deck(
         // Checked again under the lock: `open_deck` is async, so two calls
         // can race past the early check above.
         let mut guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+        crate::updates::ensure_can_open_deck(&app)?;
         insert_first_session(
             &mut *guard,
             window.label(),

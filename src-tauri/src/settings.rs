@@ -40,7 +40,7 @@ const FILE_NAME: &str = "settings.json";
 
 /// Every setting the app has. Adding one is a field here with a
 /// `Default`, plus the matching field in `domain/settings.ts`.
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     /// The UI's language; `System` (the default) follows the OS.
@@ -48,6 +48,22 @@ pub struct Settings {
     /// Vim key bindings in the slide body and notes editors. Off by
     /// default.
     pub vim_mode: bool,
+    pub auto_check_updates: bool,
+    pub auto_update: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self { ui_language: LanguageSetting::System, vim_mode: false, auto_check_updates: true, auto_update: false }
+    }
+}
+
+fn normalize_update_settings(settings: &mut Settings, patch: &Map<String, Value>) {
+    if patch.get("autoCheckUpdates") == Some(&Value::Bool(false)) {
+        settings.auto_update = false;
+    } else if settings.auto_update {
+        settings.auto_check_updates = true;
+    }
 }
 
 /// `base` with each of its fields replaced by `input`'s value for that
@@ -144,8 +160,13 @@ pub fn get_system_locales() -> Vec<String> {
 #[tauri::command]
 pub fn update_settings(app: AppHandle, patch: Map<String, Value>) -> Result<Settings, String> {
     let path = settings_path(&app)?;
-    let next: Settings = apply_patch(&read_settings_file::<Settings>(&path), &patch);
+    let current = read_settings_file::<Settings>(&path);
+    let mut next: Settings = apply_patch(&current, &patch);
+    normalize_update_settings(&mut next, &patch);
     write_settings_file(&path, &next)?;
+    if current.auto_check_updates != next.auto_check_updates || current.auto_update != next.auto_update {
+        crate::updates::settings_changed(&app, &next);
+    }
     // The menu bar's labels follow the UI language; rebuilt whole, as after
     // a Recent-list change (see `build_menu` in lib.rs).
     if let Ok(menu) = crate::build_menu(&app) {
@@ -185,6 +206,18 @@ mod tests {
 
     fn patch(value: Value) -> Map<String, Value> {
         value.as_object().cloned().expect("patch must be an object")
+    }
+
+    #[test]
+    fn update_settings_enable_checks_and_disable_downloads_consistently() {
+        let mut settings = Settings { auto_check_updates: false, auto_update: true, ..Settings::default() };
+        normalize_update_settings(&mut settings, &patch(json!({"autoUpdate": true})));
+        assert!(settings.auto_check_updates);
+        normalize_update_settings(&mut settings, &patch(json!({"autoCheckUpdates": false})));
+        assert!(!settings.auto_update);
+        let current = settings.clone();
+        normalize_update_settings(&mut settings, &patch(json!({"autoCheckUpdates": "false"})));
+        assert_eq!(settings, current);
     }
 
     #[test]
@@ -290,7 +323,7 @@ mod tests {
         // here would silently turn every saved choice back into the default.
         assert_eq!(
             serde_json::to_string(&Settings::default()).unwrap(),
-            r#"{"uiLanguage":"system","vimMode":false}"#
+            r#"{"uiLanguage":"system","vimMode":false,"autoCheckUpdates":true,"autoUpdate":false}"#
         );
     }
 

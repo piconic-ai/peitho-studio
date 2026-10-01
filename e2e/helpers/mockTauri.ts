@@ -1,3 +1,4 @@
+import { initialUpdateStatus, type UpdateStatus } from '../../domain/updates'
 // Stubs window.__TAURI_INTERNALS__.invoke (via page.exposeFunction) so
 // Studio.tsx runs against the plain dev server exactly as it does under a
 // real Tauri window, past the welcome screen this suite used to be capped
@@ -140,6 +141,10 @@ export interface MockDeck {
    * `update_settings` merges its patch into this and, like `settings.rs`,
    * broadcasts the result as `settings:changed`. */
   settings?: unknown
+  updateStatus?: UpdateStatus
+  checkUpdateResult?: UpdateStatus
+  updateSaveAcks?: { token: number; saved: boolean }[]
+  beforeSave?: (source: string) => Promise<void>
   /** What `get_system_locales` answers (the OS's preferred languages) —
    * defaults to `['en-US']`. */
   systemLocales?: unknown
@@ -330,6 +335,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         return renderPayloadFor(args.content as string, deck)
       case 'read_deck_source': return deck.source
       case 'save_deck_source':
+        await deck.beforeSave?.(args.content as string)
         deck.source = args.content as string
         return null
       case 'preview_layouts': return { previews: (deck.layouts ?? []).map(name => ({ name, fragment: deck.layoutFragment ?? '' })), css: '' }
@@ -358,6 +364,20 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         deck.trusted = true
         return null
       case 'plugin:dialog|open': return deck.dialogPath ?? null
+      case 'get_update_status': return deck.updateStatus ?? initialUpdateStatus()
+      case 'check_for_updates': return deck.checkUpdateResult ?? { ...initialUpdateStatus(), phase: 'current' }
+      case 'prepare_update': {
+        deck.updateStatus = { ...(deck.updateStatus ?? initialUpdateStatus()), phase: 'ready', installOnExit: true }
+        return deck.updateStatus
+      }
+      case 'dismiss_update': {
+        const status = deck.updateStatus ?? initialUpdateStatus()
+        deck.updateStatus = { ...status, dismissed: status.security === null }
+        return deck.updateStatus
+      }
+      case 'acknowledge_update_save':
+        (deck.updateSaveAcks ??= []).push({ token: args.token as number, saved: args.saved as boolean })
+        return null
       case 'get_settings': return deck.settings ?? {}
       case 'get_system_locales': return deck.systemLocales ?? ['en-US']
       case 'update_settings': {
@@ -366,6 +386,9 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         // a restart would), and broadcasts the result to every window.
         const saved = typeof deck.settings === 'object' && deck.settings !== null ? deck.settings : {}
         deck.settings = { ...saved, ...(args.patch as Record<string, unknown>) }
+        const normalized = deck.settings as Record<string, unknown>
+        if ((args.patch as Record<string, unknown>).autoCheckUpdates === false) normalized.autoUpdate = false
+        else if (normalized.autoUpdate) normalized.autoCheckUpdates = true
         const payload = deck.settings
         void page.evaluate(settings => {
           (window as unknown as { __mockEmitTauriEvent?: (event: string, payload: unknown) => void }).__mockEmitTauriEvent?.('settings:changed', settings)

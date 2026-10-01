@@ -23,6 +23,8 @@ export interface Settings {
   /** Vim key bindings in the slide body and notes editors
    * (`dom/codeEditor.ts`). Off by default. */
   vimMode: boolean
+  autoCheckUpdates: boolean
+  autoUpdate: boolean
 }
 
 /** Some settings to change, the rest left as they are. */
@@ -35,6 +37,8 @@ export function booleanField(fallback: boolean): FieldSpec<boolean> {
 export const SETTINGS_SCHEMA: SettingsSchema<Settings> = {
   uiLanguage: oneOfField(LANGUAGE_SETTINGS, 'system'),
   vimMode: booleanField(false),
+  autoCheckUpdates: booleanField(true),
+  autoUpdate: booleanField(false),
 }
 
 /** A setting that is one of `values` (e.g. `['en', 'ja']`). */

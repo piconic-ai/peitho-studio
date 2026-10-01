@@ -57,6 +57,16 @@ jobs:
         with:
           workspaces: src-tauri
       - run: bun install --frozen-lockfile
+      - name: Configure authenticated in-app updates
+        env:
+          UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$UPDATER_PUBLIC_KEY" ] || [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "Set TAURI_UPDATER_PUBLIC_KEY variable and TAURI_SIGNING_PRIVATE_KEY secret before releasing" >&2
+            exit 1
+          fi
+          bun -e 'if (JSON.parse(await Bun.file("src-tauri/tauri.conf.json").text()).version !== process.env.TAG.replace(/^v/, "")) throw new Error("Release tag and app version differ"); const c = {bundle: {createUpdaterArtifacts: true}, plugins: {updater: {pubkey: process.env.UPDATER_PUBLIC_KEY.trim()}}}; await Bun.write("src-tauri/updater-build.json", JSON.stringify(c))'
       - name: Check the signing secrets
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -95,7 +105,9 @@ jobs:
           # out the dmg window (bundle.macOS.dmg in tauri.conf.json): no
           # background picture, and the icons in Finder's default order.
           TAURI_BUNDLER_DMG_IGNORE_CI: "true"
-        run: bunx tauri build --target "$TARGET" --bundles dmg
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: bunx tauri build --target "$TARGET" --bundles app,dmg --config src-tauri/updater-build.json
       # tauri deletes the intermediate .app once the dmg is built, so check
       # the app as users get it: from inside the mounted dmg.
       - name: Verify the signature, notarization, bundled crit and window layout
@@ -148,3 +160,27 @@ jobs:
           dest="Peitho-Studio_${version}_aarch64.dmg"
           cp "${dmgs[0]}" "$dest"
           gh release upload "$TAG" "$dest" --clobber --repo "$GITHUB_REPOSITORY"
+
+      # All archives are uploaded first. Publish the signed manifest last;
+      # RCs have artifacts but never become the stable update channel.
+      - name: Upload updater archive and publish signed stable manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          archives=(src-tauri/target/"$TARGET"/release/bundle/macos/*.app.tar.gz)
+          if [ "${#archives[@]}" -ne 1 ] || [ ! -f "${archives[0]}.sig" ]; then
+            echo "Expected one signed updater archive" >&2
+            exit 1
+          fi
+          archive="${archives[0]}"
+          gh release upload "$TAG" "$archive" "$archive.sig" --clobber --repo "$GITHUB_REPOSITORY"
+          version="${TAG#v}"
+          if [[ "$version" == *-* ]]; then
+            exit 0
+          fi
+          gh release view "$TAG" --json body --jq .body --repo "$GITHUB_REPOSITORY" > release-notes.txt
+          bun run scripts/create-update-manifest.ts "$version" "$archive" release-notes.txt latest.json
+          bunx tauri signer sign latest.json
+          gh release upload "$TAG" latest.json latest.json.sig --clobber --repo "$GITHUB_REPOSITORY"

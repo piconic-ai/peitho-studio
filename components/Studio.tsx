@@ -4,6 +4,8 @@ import { createSignal, createMemo, createEffect, onMount, onCleanup, untrack } f
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
+import { createTauriUpdateIpc } from '../ipc/updateIpc'
+import { initialUpdateStatus, canPrepareUpdate, showUpdateNotice, updateBlocksEditing, updateMessages, updateStatusText, type UpdateStatus } from '../domain/updates'
 import { createTauriSettingsIpc } from '../ipc/settingsIpc'
 import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
@@ -61,6 +63,7 @@ import { createRenderStore } from '../state/renderStore'
 import { createEditorStore } from '../state/editorStore'
 import { createDeckStore } from '../state/deckStore'
 import { createHistoryStore } from '../state/historyStore'
+import { createSaveTracker } from '../state/saveTracker'
 import { createSettingsStore } from '../state/settingsStore'
 import {
   splitSlides,
@@ -232,6 +235,23 @@ export function Studio() {
   // of the OS languages is only a first guess, so the first paint is
   // already in the right language where it agrees; `loadSettings` replaces
   // it with the OS's answer, which the native menu bar also goes by.
+  const updateIpc = createTauriUpdateIpc()
+  const [updateStatus, setUpdateStatus] = createSignal<UpdateStatus>(initialUpdateStatus())
+  let heardUpdate = false
+  const applyUpdateStatus = (status: UpdateStatus) => { heardUpdate = true; setUpdateStatus(status) }
+  async function runUpdateAction(action: 'check' | 'prepare' | 'dismiss'): Promise<void> {
+    try { applyUpdateStatus(await updateIpc[action]()) }
+    catch (error) { setUpdateStatus({ ...updateStatus(), phase: 'error', error: String(error) }) }
+  }
+  async function changeUpdateSetting(field: 'autoCheckUpdates' | 'autoUpdate', on: boolean): Promise<boolean> {
+    try {
+      settings.applyChanged(await settingsIpc.updateSettings({ [field]: on }))
+      return true
+    } catch (error) {
+      setErrorMessage(`${updateMessages(settings.language()).saveFailed}: ${String(error)}`)
+      return false
+    }
+  }
   const settingsIpc = createTauriSettingsIpc()
   const settings = createSettingsStore(typeof navigator === 'undefined' ? [] : navigator.languages)
   // Vim mode's ties to the OS: the input source goes to ASCII whenever
@@ -252,7 +272,9 @@ export function Studio() {
   // once a deck is open), but sharing one flag for two unrelated
   // "something is in flight" meanings was exactly the kind of implicit
   // coupling this refactor is trying to remove.
-  const [isSavingSlide, setIsSavingSlide] = createSignal(false)
+  const saves = createSaveTracker()
+  const [activeSaveCount, setActiveSaveCount] = createSignal(0)
+  const isSavingSlide = createMemo(() => activeSaveCount() > 0)
   // What happened, not its text: `StatusBar` words it in the current UI
   // language, so a language change rewords a message already shown.
   const [statusMessage, setStatusMessage] = createSignal<StatusMessage>({ kind: 'none' })
@@ -802,7 +824,7 @@ export function Studio() {
   createEffect(() => {
     editor.bodyDraft()
     editor.noteDraft()
-    if (!editor.isDirty()) return
+    if (!editor.isDirty() || updateBlocksEditing(updateStatus())) return
     let live = true
     let timerId: number
     const attempt = () => {
@@ -1190,7 +1212,9 @@ export function Studio() {
     { expectedDraft, cmd }: { expectedDraft?: { body: string; note: string }; cmd?: SlideCommand } = {},
   ): Promise<boolean> {
     const before = editor.editorSession()
-    setIsSavingSlide(true)
+    const finishSave = saves.begin(nextSource, expectedDraft ? 'draft' : 'structural')
+    setActiveSaveCount(saves.pendingCount())
+    let saved = false
     setErrorMessage(null)
     try {
       const payload = await deckIpc.renderDraft(nextSource)
@@ -1231,12 +1255,14 @@ export function Studio() {
         }
       }
       setStatusMessage({ kind: 'saved' })
+      saved = true
       return true
     } catch (err) {
       setErrorMessage(String(err))
       return false
     } finally {
-      setIsSavingSlide(false)
+      finishSave(saved)
+      setActiveSaveCount(saves.pendingCount())
     }
   }
 
@@ -1264,7 +1290,10 @@ export function Studio() {
   // work, never blocking on a dialog the webview won't show.
   async function selectSlide(index: number): Promise<void> {
     if (index === editor.selectedIndex()) return
-    if (editor.isDirty()) await handleSave()
+    if (editor.isDirty() && !await handleSave()) return
+    // Edits may have arrived while the save was in flight. Keep that draft
+    // in its session instead of replacing it with another slide.
+    if (editor.isDirty()) return
     const { rest: withoutNote, note } = extractNote(editor.slideRanges()[index]?.text ?? '')
     const { rest, config } = extractPageComment(withoutNote)
     const fields: SlideFields = { body: rest, note, config }
@@ -1273,10 +1302,10 @@ export function Studio() {
     syncEditorFields({ kind: 'switch', from, to: index })
   }
 
-  async function handleSave(): Promise<void> {
+  async function handleSave(): Promise<boolean> {
     const range = editor.selectedRange()
     const index = editor.selectedIndex()
-    if (!range || index === null) return
+    if (!range || index === null) return false
     const body = editor.bodyDraft()
     const note = editor.noteDraft()
     const newSlideText = buildSlideText(editor.pageConfig(), body, note)
@@ -1285,7 +1314,9 @@ export function Studio() {
     // Typed text can itself re-split the deck (a `---` line, an unclosed code
     // fence), shifting the positions every history step addresses slides by.
     const resplits = splitSlides(nextSource).length !== editor.slideRanges().length
-    if (await commitChange(nextSource, { kind: 'keep' }, { expectedDraft: { body, note } }) && resplits) forgetSlidePositions()
+    const saved = await commitChange(nextSource, { kind: 'keep' }, { expectedDraft: { body, note } })
+    if (saved && resplits) forgetSlidePositions()
+    return saved
   }
 
   // Rebuilds `fullSource` from an ordered list of slide texts, preserving
@@ -1972,6 +2003,33 @@ export function Studio() {
 
   onMount(() => {
     void refreshRecentDecks()
+    const blockInputDuringUpdate = (event: Event) => {
+      if (updateBlocksEditing(updateStatus())) { event.preventDefault(); event.stopImmediatePropagation() }
+    }
+    const updateInputEvents = ['keydown', 'beforeinput', 'paste', 'drop']
+    for (const event of updateInputEvents) window.addEventListener(event, blockInputDuringUpdate, true)
+    onCleanup(() => { for (const event of updateInputEvents) window.removeEventListener(event, blockInputDuringUpdate, true) })
+    const unlistenUpdates = updateIpc.onChanged(applyUpdateStatus)
+    const unlistenUpdateMenu = updateIpc.onMenuCheck(() => { openSettings(); void runUpdateAction('check') })
+    const unlistenUpdateExit = updateIpc.onBeforeExit(token => {
+      void (async () => {
+        let saved = false
+        try {
+          // Structural actions may still be queued without a dirty body.
+          // Drain their queue and every overlapping commit, then flush the
+          // final draft and acknowledge actual persistence outcomes.
+          await structuralQueue
+          await saves.drain()
+          if (editor.isDirty()) await handleSave()
+          saved = await saves.drain() && !editor.isDirty()
+        } finally {
+          await updateIpc.acknowledgeSave(token, saved).catch(() => {})
+        }
+      })()
+    })
+    void updateIpc.takeMenuCheck().then(check => { if (check) { openSettings(); void runUpdateAction('check') } }).catch(() => {})
+    void updateIpc.getStatus().then(status => { if (!heardUpdate) setUpdateStatus(status) }).catch(() => {})
+    onCleanup(() => { unlistenUpdates(); unlistenUpdateMenu(); unlistenUpdateExit() })
     void loadSettings()
     void loadSystemLocales()
 
@@ -2067,6 +2125,7 @@ export function Studio() {
     })
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (updateBlocksEditing(updateStatus())) { event.preventDefault(); return }
       // While the settings panel is open, Escape closes it and every other
       // shortcut waits, since Delete or an arrow key would otherwise act on
       // the slides behind it.
@@ -2493,10 +2552,30 @@ export function Studio() {
         onConfirm={() => void dispatch({ type: 'create-confirmed' })}
       />
 
+      <div role="status" data-update-notice hidden={!showUpdateNotice(updateStatus())}
+        className="fixed bottom-10 right-4 z-30 max-w-sm rounded-lg border border-border bg-popover text-popover-foreground p-3 shadow-lg">
+        <p className="text-sm font-medium">{updateStatusText(updateStatus(), settings.language())}</p>
+        <p className="text-xs whitespace-pre-wrap mt-2" hidden={!updateStatus().security}>{updateStatus().security ?? ''}</p>
+        <p role="alert" className="text-xs text-destructive mt-2" hidden={!updateStatus().error}>{updateStatus().error ?? ''}</p>
+        <div className="flex gap-3 mt-2 text-sm">
+          <button type="button" hidden={!canPrepareUpdate(updateStatus())} onClick={() => void runUpdateAction('prepare')} className="underline">{updateMessages(settings.language()).prepare}</button>
+          <button type="button" hidden={updateStatus().security !== null} onClick={() => void runUpdateAction('dismiss')}>{updateMessages(settings.language()).later}</button>
+        </div>
+      </div>
+      <div role="alert" hidden={!updateBlocksEditing(updateStatus())} className="fixed top-0 right-0 bottom-0 left-0 z-50 bg-popover text-popover-foreground flex items-center justify-center">
+        <p>{updateStatusText(updateStatus(), settings.language())}</p>
+      </div>
       <SettingsPanel
         isOpen={settings.panelOpen()}
         language={settings.language()}
         vimMode={settings.settings().vimMode}
+        updateStatus={updateStatus()}
+        autoCheckUpdates={settings.settings().autoCheckUpdates}
+        autoUpdate={settings.settings().autoUpdate}
+        onUpdateSettingChange={changeUpdateSetting}
+        onCheckUpdates={() => void runUpdateAction('check')}
+        onPrepareUpdate={() => void runUpdateAction('prepare')}
+        onOpenReleases={() => void updateIpc.openReleases().catch(error => setErrorMessage(String(error)))}
         onClose={closeSettings}
         onChangeLanguage={language => void changeLanguage(language)}
         onVimModeChange={changeVimMode}

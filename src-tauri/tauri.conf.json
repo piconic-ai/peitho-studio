@@ -78,5 +78,13 @@
         }
       }
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/piconic-ai/peitho-studio/releases/latest/download/latest.json"
+      ]
+    }
   }
 }
