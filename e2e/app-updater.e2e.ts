@@ -44,9 +44,9 @@ test('normal updates can be dismissed, while security updates keep their notice 
   await moveToEditorEnd(page)
   await page.keyboard.type(' Still editing')
   await expect(editorContent(page)).toContainText('Still editing')
-  await notice.getByRole('button', { name: 'View update' }).click()
-  await page.getByRole('button', { name: 'Update when I quit', exact: true }).click()
-  await expect(page.locator('[data-update-status]')).toContainText('Quit Peitho Studio')
+  await notice.getByRole('button', { name: 'Update', exact: true }).click()
+  await expect(notice).toContainText('Updates when you quit the app.')
+  await expect(page.getByRole('dialog', { name: 'Settings' })).toBeHidden()
 })
 for (const fails of [false, true]) {
   test(`quit-for-update ${fails ? 'refuses a failed save' : 'flushes unsaved edits'} before acknowledging`, async ({ page }) => {

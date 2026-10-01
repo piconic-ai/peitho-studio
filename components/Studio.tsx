@@ -5,7 +5,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
 import { createTauriUpdateIpc } from '../ipc/updateIpc'
-import { initialUpdateStatus, showUpdateNotice, updateBlocksEditing, updateMessages, updateStatusText, type UpdateStatus } from '../domain/updates'
+import { initialUpdateStatus, canPrepareUpdate, showUpdateNotice, updateBlocksEditing, updateMessages, updateStatusText, type UpdateStatus } from '../domain/updates'
 import { createTauriSettingsIpc } from '../ipc/settingsIpc'
 import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
@@ -2558,7 +2558,7 @@ export function Studio() {
         <p className="text-xs whitespace-pre-wrap mt-2" hidden={!updateStatus().security}>{updateStatus().security ?? ''}</p>
         <p role="alert" className="text-xs text-destructive mt-2" hidden={!updateStatus().error}>{updateStatus().error ?? ''}</p>
         <div className="flex gap-3 mt-2 text-sm">
-          <button type="button" onClick={() => openSettings()} className="underline">{updateMessages(settings.language()).details}</button>
+          <button type="button" hidden={!canPrepareUpdate(updateStatus())} onClick={() => void runUpdateAction('prepare')} className="underline">{updateMessages(settings.language()).prepare}</button>
           <button type="button" hidden={updateStatus().security !== null} onClick={() => void runUpdateAction('dismiss')}>{updateMessages(settings.language()).later}</button>
         </div>
       </div>
