@@ -122,3 +122,19 @@ test('a completed overlapping body save cannot hide an in-flight structural save
   release()
   await expect.poll(() => deck.updateSaveAcks).toEqual([{ token: 13, saved: false }])
 })
+
+test('a successful revised body save clears its older failed snapshot for update-exit', async ({ page }) => {
+  const deck: MockDeck = { source: SOURCE, updateSaveAcks: [], commandError: cmd => cmd === 'save_deck_source' ? 'Disk full' : null }
+  await setup(page, deck)
+  await editorContent(page).click()
+  await moveToEditorEnd(page)
+  await page.keyboard.type(' First unsaved draft')
+  await expect(page.getByRole('button', { name: 'Copy', exact: true })).toBeVisible()
+  expect(deck.source).not.toContain('First unsaved draft')
+  deck.commandError = undefined
+  await page.keyboard.type(' Revised after recovery')
+  await expect.poll(() => deck.source).toContain('Revised after recovery')
+  await emit(page, 'updates:changed', { ...initialUpdateStatus(), phase: 'saving' })
+  await emit(page, 'updates:before-exit', 14)
+  await expect.poll(() => deck.updateSaveAcks).toEqual([{ token: 14, saved: true }])
+})

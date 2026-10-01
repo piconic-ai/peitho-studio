@@ -1212,7 +1212,7 @@ export function Studio() {
     { expectedDraft, cmd }: { expectedDraft?: { body: string; note: string }; cmd?: SlideCommand } = {},
   ): Promise<boolean> {
     const before = editor.editorSession()
-    const finishSave = saves.begin(nextSource)
+    const finishSave = saves.begin(nextSource, expectedDraft ? 'draft' : 'structural')
     setActiveSaveCount(saves.pendingCount())
     let saved = false
     setErrorMessage(null)
