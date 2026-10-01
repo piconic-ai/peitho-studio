@@ -1,5 +1,7 @@
 'use client'
 
+import { UpdateControls } from './UpdateControls'
+import type { UpdateStatus } from '../domain/updates'
 import { LANGUAGES, type Language } from '../domain/language'
 import { LANGUAGE_NAMES, messagesFor } from '../domain/messages'
 
@@ -21,6 +23,13 @@ export interface SettingsPanelProps {
    * nothing is chosen — which the language picker marks as chosen. */
   language: Language
   vimMode: boolean
+  updateStatus: UpdateStatus
+  autoCheckUpdates: boolean
+  autoUpdate: boolean
+  onUpdateSettingChange: (field: 'autoCheckUpdates' | 'autoUpdate', on: boolean) => Promise<boolean>
+  onCheckUpdates: () => void
+  onPrepareUpdate: () => void
+  onOpenReleases: () => void
   onClose: () => void
   /** A language picked in the language picker, to be saved. */
   onChangeLanguage: (language: Language) => void
@@ -42,7 +51,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-panel-title"
-        className="pointer-events-auto w-full max-w-md rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
+        className="pointer-events-auto w-full max-w-md max-h-[90vh] overflow-auto rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h2 id="settings-panel-title" className="text-sm font-medium">{messagesFor(props.language).settings}</h2>
@@ -102,6 +111,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
             </span>
           </label>
         </div>
+        <UpdateControls language={props.language} status={props.updateStatus} autoCheck={props.autoCheckUpdates} autoUpdate={props.autoUpdate}
+          onSettingChange={props.onUpdateSettingChange} onCheck={props.onCheckUpdates} onPrepare={props.onPrepareUpdate} onOpenReleases={props.onOpenReleases} />
       </div>
       </div>
     </>

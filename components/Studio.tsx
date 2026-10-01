@@ -4,6 +4,8 @@ import { createSignal, createMemo, createEffect, onMount, onCleanup, untrack } f
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
+import { createTauriUpdateIpc } from '../ipc/updateIpc'
+import { initialUpdateStatus, showUpdateNotice, updateBlocksEditing, updateMessages, updateStatusText, type UpdateStatus } from '../domain/updates'
 import { createTauriSettingsIpc } from '../ipc/settingsIpc'
 import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
@@ -232,6 +234,23 @@ export function Studio() {
   // of the OS languages is only a first guess, so the first paint is
   // already in the right language where it agrees; `loadSettings` replaces
   // it with the OS's answer, which the native menu bar also goes by.
+  const updateIpc = createTauriUpdateIpc()
+  const [updateStatus, setUpdateStatus] = createSignal<UpdateStatus>(initialUpdateStatus())
+  let heardUpdate = false
+  const applyUpdateStatus = (status: UpdateStatus) => { heardUpdate = true; setUpdateStatus(status) }
+  async function runUpdateAction(action: 'check' | 'prepare' | 'dismiss'): Promise<void> {
+    try { applyUpdateStatus(await updateIpc[action]()) }
+    catch (error) { setUpdateStatus({ ...updateStatus(), phase: 'error', error: String(error) }) }
+  }
+  async function changeUpdateSetting(field: 'autoCheckUpdates' | 'autoUpdate', on: boolean): Promise<boolean> {
+    try {
+      settings.applyChanged(await settingsIpc.updateSettings({ [field]: on }))
+      return true
+    } catch (error) {
+      setErrorMessage(`${updateMessages(settings.language()).saveFailed}: ${String(error)}`)
+      return false
+    }
+  }
   const settingsIpc = createTauriSettingsIpc()
   const settings = createSettingsStore(typeof navigator === 'undefined' ? [] : navigator.languages)
   // Vim mode's ties to the OS: the input source goes to ASCII whenever
@@ -1972,6 +1991,32 @@ export function Studio() {
 
   onMount(() => {
     void refreshRecentDecks()
+    const blockInputDuringUpdate = (event: Event) => {
+      if (updateBlocksEditing(updateStatus())) { event.preventDefault(); event.stopImmediatePropagation() }
+    }
+    const updateInputEvents = ['keydown', 'beforeinput', 'paste', 'drop']
+    for (const event of updateInputEvents) window.addEventListener(event, blockInputDuringUpdate, true)
+    onCleanup(() => { for (const event of updateInputEvents) window.removeEventListener(event, blockInputDuringUpdate, true) })
+    const unlistenUpdates = updateIpc.onChanged(applyUpdateStatus)
+    const unlistenUpdateMenu = updateIpc.onMenuCheck(() => { openSettings(); void runUpdateAction('check') })
+    const unlistenUpdateExit = updateIpc.onBeforeExit(token => {
+      void (async () => {
+        let saved = false
+        try {
+          const deadline = Date.now() + 15_000
+          while (isSavingSlide() && Date.now() < deadline) await new Promise(resolve => window.setTimeout(resolve, 50))
+          if (!isSavingSlide()) {
+            if (editor.isDirty()) await handleSave()
+            saved = !editor.isDirty() && !isSavingSlide()
+          }
+        } finally {
+          await updateIpc.acknowledgeSave(token, saved).catch(() => {})
+        }
+      })()
+    })
+    void updateIpc.takeMenuCheck().then(check => { if (check) { openSettings(); void runUpdateAction('check') } }).catch(() => {})
+    void updateIpc.getStatus().then(status => { if (!heardUpdate) setUpdateStatus(status) }).catch(() => {})
+    onCleanup(() => { unlistenUpdates(); unlistenUpdateMenu(); unlistenUpdateExit() })
     void loadSettings()
     void loadSystemLocales()
 
@@ -2067,6 +2112,7 @@ export function Studio() {
     })
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (updateBlocksEditing(updateStatus())) { event.preventDefault(); return }
       // While the settings panel is open, Escape closes it and every other
       // shortcut waits, since Delete or an arrow key would otherwise act on
       // the slides behind it.
@@ -2493,10 +2539,30 @@ export function Studio() {
         onConfirm={() => void dispatch({ type: 'create-confirmed' })}
       />
 
+      <div role="status" data-update-notice hidden={!showUpdateNotice(updateStatus())}
+        className="fixed bottom-10 right-4 z-30 max-w-sm rounded-lg border border-border bg-popover text-popover-foreground p-3 shadow-lg">
+        <p className="text-sm font-medium">{updateStatusText(updateStatus(), settings.language())}</p>
+        <p className="text-xs whitespace-pre-wrap mt-2" hidden={!updateStatus().security}>{updateStatus().security ?? ''}</p>
+        <p role="alert" className="text-xs text-destructive mt-2" hidden={!updateStatus().error}>{updateStatus().error ?? ''}</p>
+        <div className="flex gap-3 mt-2 text-sm">
+          <button type="button" onClick={() => openSettings()} className="underline">{updateMessages(settings.language()).details}</button>
+          <button type="button" hidden={updateStatus().security !== null} onClick={() => void runUpdateAction('dismiss')}>{updateMessages(settings.language()).later}</button>
+        </div>
+      </div>
+      <div role="alert" hidden={!updateBlocksEditing(updateStatus())} className="fixed top-0 right-0 bottom-0 left-0 z-50 bg-popover text-popover-foreground flex items-center justify-center">
+        <p>{updateStatusText(updateStatus(), settings.language())}</p>
+      </div>
       <SettingsPanel
         isOpen={settings.panelOpen()}
         language={settings.language()}
         vimMode={settings.settings().vimMode}
+        updateStatus={updateStatus()}
+        autoCheckUpdates={settings.settings().autoCheckUpdates}
+        autoUpdate={settings.settings().autoUpdate}
+        onUpdateSettingChange={changeUpdateSetting}
+        onCheckUpdates={() => void runUpdateAction('check')}
+        onPrepareUpdate={() => void runUpdateAction('prepare')}
+        onOpenReleases={() => void updateIpc.openReleases().catch(error => setErrorMessage(String(error)))}
         onClose={closeSettings}
         onChangeLanguage={language => void changeLanguage(language)}
         onVimModeChange={changeVimMode}

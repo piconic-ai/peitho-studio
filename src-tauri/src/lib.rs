@@ -1,3 +1,4 @@
+mod updates;
 mod about;
 mod crit;
 #[cfg(test)]
@@ -131,7 +132,6 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
     // macOS has About in the app menu instead.
     let log_file_separator = PredefinedMenuItem::separator(app)?;
     let log_file = MenuItem::with_id(app, logging::LOG_FILE_MENU_ID, labels.show_log_file, true, None::<&str>)?;
-    #[cfg_attr(target_os = "macos", allow(unused_mut))]
     let mut help_items: Vec<&dyn IsMenuItem<tauri::Wry>> = help_link_items
         .iter()
         .map(|item| item as &dyn IsMenuItem<tauri::Wry>)
@@ -142,6 +142,8 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
     let about_separator = PredefinedMenuItem::separator(app)?;
     #[cfg(not(target_os = "macos"))]
     help_items.extend([&about_separator as &dyn IsMenuItem<tauri::Wry>, &about_item]);
+    let check_update = MenuItem::with_id(app, "check_updates", if language == Language::Ja { "更新を確認…" } else { "Check for Updates…" }, true, None::<&str>)?;
+    help_items.push(&check_update);
     let help_menu = Submenu::with_items(app, labels.help, true, &help_items)?;
 
     Menu::with_items(
@@ -198,6 +200,7 @@ fn build_recent_menu(app: &tauri::AppHandle, recents: &[String], labels: &MenuLa
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // Vim mode's yank/put share the OS clipboard through it
         // (`ipc/editorIpc.ts`). Read from Rust rather than with
         // `navigator.clipboard.readText()`, which WKWebView answers only
@@ -220,11 +223,13 @@ pub fn run() {
     #[cfg(feature = "e2e-testing")]
     let builder = builder.plugin(tauri_plugin_playwright::init());
     builder
+        .manage(updates::AppUpdates::default())
         .manage(PeithoSession::default())
         .manage(PendingDecks::default())
         .manage(DeckMenuState::default())
         .menu(|app| build_menu_with_recents(app, Vec::new(), i18n::system_language(&settings::system_locales())))
         .on_menu_event(|app_handle, event| {
+            if updates::blocks_editing(app_handle) { return; }
             let id = event.id().as_ref();
             if edit_menu::forward(app_handle, id) {
                 // Undo/Redo: handled by the focused window's frontend.
@@ -234,6 +239,8 @@ pub fn run() {
                 // The settings panel is an in-app modal: open it in the
                 // window the user is looking at.
                 edit_menu::emit_to_focused(app_handle, settings::MENU_EVENT, ());
+            } else if id == "check_updates" {
+                if let Err(error) = updates::show_check_window(app_handle) { log::error!("failed to show update window: {error}"); }
             } else if id == about::MENU_ID {
                 if let Err(err) = about::open_window(app_handle) {
                     log::error!("failed to open the About window: {err}");
@@ -278,6 +285,9 @@ pub fn run() {
             // file watcher) — once the window is gone, so is the point of
             // keeping that state around.
             match event {
+                tauri::WindowEvent::CloseRequested { api, .. } if updates::blocks_editing(window.app_handle()) => {
+                    api.prevent_close();
+                }
                 tauri::WindowEvent::Destroyed => {
                     window.state::<PeithoSession>().remove(window.label());
                     peitho::forget_deck_settings(window.app_handle(), window.label());
@@ -304,6 +314,8 @@ pub fn run() {
         .setup(|app| {
             app.handle().plugin(logging::plugin())?;
             logging::install_panic_hook();
+            updates::initialize(app.handle());
+            updates::start(app.handle());
             log::info!("Peitho Studio {} starting", app.package_info().version);
             // Replaces the placeholder menu bar (built with an empty
             // Recent list, since `app.path()` isn't usable yet when
@@ -349,6 +361,13 @@ pub fn run() {
             peitho::crit_resolve_comment,
             peitho::crit_finish,
             peitho::crit_list_comments,
+            updates::get_update_status,
+            updates::take_update_check,
+            updates::open_update_releases,
+            updates::check_for_updates,
+            updates::prepare_update,
+            updates::dismiss_update,
+            updates::acknowledge_update_save,
             settings::get_settings,
             settings::update_settings,
             settings::get_system_locales,
@@ -363,6 +382,9 @@ pub fn run() {
             // running headless in the background.
             if let tauri::RunEvent::Exit = event {
                 app_handle.state::<PeithoSession>().shutdown();
+
+            } else if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                updates::intercept_exit(app_handle, &api);
             } else if let tauri::RunEvent::Opened { urls } = event {
                 // Finder's `.md` double-click / "Open With" (see
                 // `bundle.fileAssociations` in tauri.conf.json), or a file
