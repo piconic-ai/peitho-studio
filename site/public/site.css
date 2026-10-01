@@ -75,7 +75,8 @@ h1, h2 { font-family: var(--serif); font-weight: 400; letter-spacing: -0.03em; }
 .dots i:nth-child(2) { background: #febc2e; }
 .dots i:nth-child(3) { background: #28c840; }
 .window-title { position: absolute; left: 50%; transform: translateX(-50%); font-size: 13px; color: #57534e; white-space: nowrap; }
-.window-shot { width: 100%; height: auto; }
+.window-shot { display: block; width: 100%; height: auto; }
+.demo-caption { text-align: center; color: var(--muted); font-size: 14px; padding: 0 16px; }
 
 @media (prefers-reduced-motion: no-preference) {
   .hero-copy > *, .window { animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }

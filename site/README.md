@@ -8,9 +8,9 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 
 - One static `index.html`, styled by `public/site.css` (light only):
   - a hero with the app icon, "Peitho Studio", "Write slides with Peitho."
-    ("Comment on slides. Let your AI Agent make the changes.") and
-    the download button, above a screenshot of Studio with a deck open,
-    framed as a window (`public/studio.webp`, `studio@2x.webp`);
+    ("Edit Markdown. Preview slides. Bring your AI Agent.") and
+    the download button, above a short, user-controlled demo of commenting on a slide and reviewing an AI Agent revision,
+    framed as a window (`public/studio-demo.mp4`, with `studio.webp` as its poster);
   - a "Built on Peitho" card: Peitho's one-line description and a small
     Markdown-to-slide illustration, linking to
     [peitho.gosu.ke](https://peitho.gosu.ke);
@@ -42,12 +42,11 @@ from the app (its own `package.json` and lockfile), living in `site/`.
   and long-lived caching for Vite's hashed `/assets/*`; `public/404.html` is
   served for unknown paths (`not_found_handling: "404-page"`).
 
-## Hero screenshot
+## Hero demo
 
-`public/studio.webp` (1280×800) and `studio@2x.webp` are the real Studio
-frontend with a sample deck, slide comments, an AI Agent reply and an enabled Send button, opened through the e2e suite's Tauri IPC mock
-(`e2e/helpers/mockTauri.ts`) — not a mock-up. Regenerate them after UI
-changes, from the repository root:
+`public/studio-demo.mp4` (1280×800) records the real Studio frontend: click a title, type a comment, send it, then see an updated title and an Agent reply. The e2e Tauri IPC mock and fake crit session simulate the agent and file change; no live AI service runs during capture. The script asserts the updated preview and reply before exporting the video and the final-frame WebP poster (`studio.webp`, `studio@2x.webp`).
+
+The player has native controls, stays paused until played, and has no audio. A visible caption explains the sequence. The CSP allows local media. Regenerate from the repository root with Chrome and `ffmpeg` installed:
 
 ```sh
 bun install && bun run build

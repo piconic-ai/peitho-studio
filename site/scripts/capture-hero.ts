@@ -1,10 +1,11 @@
-// Regenerates the landing site's hero screenshot (site/public/studio.webp
-// and studio@2x.webp) from the real Studio frontend, driven by the same
+// Records the landing site's hero demo (studio-demo.mp4) and WebP posters
+// from the real Studio frontend, driven by the same
 // Tauri IPC mock the e2e suite uses (e2e/helpers/mockTauri.ts).
 //
 // From the repository root, with the app's dependencies installed:
 //   bun run build && PORT=3013 bun run start &   # serve the Studio frontend
-//   bun site/scripts/capture-hero.ts             # CHROME_PATH=... to pick a browser
+//   bun site/scripts/capture-hero.ts             # requires ffmpeg; CHROME_PATH=...
+import { spawnSync } from 'node:child_process'
 import { chromium, expect } from '@playwright/test'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -29,6 +30,7 @@ const SOURCE = [
 
 const BODIES: Record<string, string> = {
   'Markdown Decks': '<p class="sub">Write slides the way you write notes.</p>',
+  'Why Markdown works': '<ul><li>One file, any editor</li><li>Diffs you can review</li><li>Nothing locked in</li></ul>',
   'Why plain text': '<ul><li>One file, any editor</li><li>Diffs you can review</li><li>Nothing locked in</li></ul>',
   'The layout is the schema': '<ul><li>Slots declare what fits</li><li>Broken decks fail at build</li></ul>',
   'Live preview': '<ul><li>Rendered by peitho-core</li><li>PC or phone canvas</li></ul>',
@@ -54,7 +56,7 @@ const crit = createFakeCritIpc({ now: () => '2026-10-02T10:00:00Z' })
 const deck: MockDeck = { source: SOURCE, fragmentFor, css, editAnnotations: true, trusted: true, crit }
 
 const b = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chrome' })
-const ctx = await b.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2, locale: 'en-US' })
+const ctx = await b.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2, locale: 'en-US', recordVideo: { dir: OUT, size: { width: 1280, height: 800 } } })
 const page = await ctx.newPage()
 page.on('pageerror', e => console.log('pageerror', String(e)))
 await mockTauri(page as never, deck)
@@ -70,20 +72,28 @@ await page.addInitScript(() => {
 await page.goto(STUDIO_URL)
 await page.locator('[data-slide-row]').first().waitFor({ timeout: 15000 })
 await page.locator('[data-slide-row="1"]').click()
+await page.evaluate(() => document.fonts.ready)
+await page.waitForTimeout(1200)
 await page.locator('[data-preview-host] h1').click()
-await page.locator('[data-comment-box] textarea').fill('Make the title more specific to AI collaboration.')
+await page.waitForTimeout(700)
+await page.locator('[data-comment-box] textarea').pressSequentially('Rename this title to “Why Markdown works”.', { delay: 45 })
+await page.waitForTimeout(1000)
 await page.locator('[data-comment-add]').click()
+await page.waitForTimeout(1800)
 await page.locator('[data-review-send]').click()
 await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
-crit.reply('c_1', 'I can rename it to “Write slides with your AI Agent”. Want a shorter title?', 'AI Agent')
+await page.waitForTimeout(2000)
+// Simulate the external agent's file edit through Studio's real file-change flow.
+deck.source = deck.source.replace('# Why plain text', '# Why Markdown works')
+await page.evaluate(() => {
+  (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown) => void })
+    .__mockEmitTauriEvent('deck-file-changed', null)
+})
+await expect(page.locator('[data-preview-host] h1')).toHaveText('Why Markdown works')
+crit.reply('c_1', 'Updated the title in deck.md. The rest of the slide is unchanged.', 'AI Agent')
 crit.agentConnects()
 await expect(page.locator('[data-review-agent]')).toContainText(['AI Agent'])
-await page.locator('[data-preview-host] li').first().click()
-await page.locator('[data-comment-box] textarea').fill('Add an example of an agent editing the deck.')
-await page.locator('[data-comment-add]').click()
-await expect(page.locator('[data-review-send]')).toBeEnabled()
-await page.evaluate(() => document.fonts.ready)
-await page.waitForTimeout(500)
+await page.waitForTimeout(4500)
 await page.screenshot({ path: `${OUT}/studio-raw.png` })
 // Encode WebP at 2x and 1x in the page itself, so no image tooling is needed.
 const png = 'data:image/png;base64,' + readFileSync(`${OUT}/studio-raw.png`).toString('base64')
@@ -96,4 +106,10 @@ const out = await page.evaluate(async (src) => {
 writeFileSync(`${SITE}/studio@2x.webp`, Buffer.from(out.x2.split(',')[1], 'base64'))
 writeFileSync(`${SITE}/studio.webp`, Buffer.from(out.x1.split(',')[1], 'base64'))
 console.log(`wrote ${SITE}/studio.webp and studio@2x.webp`)
+const video = page.video()!
+await ctx.close()
+const recorded = await video.path()
+const encoded = spawnSync('ffmpeg', ['-y', '-i', recorded, '-an', '-c:v', 'libx264', '-preset', 'slow', '-crf', '25', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', `${SITE}/studio-demo.mp4`], { encoding: 'utf8' })
+if (encoded.status !== 0) throw new Error(encoded.stderr)
+console.log(`wrote ${SITE}/studio-demo.mp4`)
 await b.close()
