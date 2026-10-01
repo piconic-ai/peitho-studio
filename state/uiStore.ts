@@ -122,6 +122,12 @@ export function createUiStore() {
   // and says so, like `presentPending` above.
   const [imageLayoutAdding, setImageLayoutAdding] = createSignal(false)
 
+  // Panel contents stay mounted; folding only changes their visibility.
+  const [slidesOpen, setSlidesOpen] = createSignal(true)
+  const [editorOpen, setEditorOpen] = createSignal(true)
+  const [previewOpen, setPreviewOpen] = createSignal(true)
+  const [reviewOpen, setReviewOpen] = createSignal(true)
+
   const [slideListWidth, setSlideListWidth] = createSignal(SLIDE_LIST_WIDTH)
   const [editorWidth, setEditorWidth] = createSignal(EDITOR_WIDTH)
   const [reviewPanelWidth, setReviewPanelWidth] = createSignal(REVIEW_PANEL_WIDTH)
@@ -195,6 +201,7 @@ export function createUiStore() {
     presentMenuOpen, setPresentMenuOpen, presentPending, setPresentPending,
     imageLayoutAdding, setImageLayoutAdding,
     variantMenuOpen, setVariantMenuOpen,
+    slidesOpen, setSlidesOpen, editorOpen, setEditorOpen, previewOpen, setPreviewOpen, reviewOpen, setReviewOpen,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth, reviewPanelWidth, setReviewPanelWidth,
     editingSectionIndex, setEditingSectionIndex,
     collapsedSectionKeys, toggleSectionCollapsed,

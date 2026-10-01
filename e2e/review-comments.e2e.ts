@@ -414,8 +414,12 @@ test('Given a comment\'s pin on the slide, When it is clicked, Then its thread i
   await expect(page.locator('[data-review-row="comment"]')).toHaveCount(2)
   await expect(page.locator('[data-comment-pin="sent"]')).toHaveCount(2)
 
+  await page.locator('[data-panel="review"] [data-panel-toggle]').click()
+  await expect(page.locator('[data-panel="review"]')).toBeHidden()
   await page.locator('[data-comment-pin="sent"] >> nth=1').click()
 
+  await expect(page.locator('[data-panel="review"]')).toBeVisible()
+  await expect(page.locator('[data-panel-rail]')).toBeHidden()
   await expect(page.locator(BOX)).toBeHidden()
   const lit = page.locator('[data-review-row][data-review-highlighted="true"]')
   await expect(lit).toHaveCount(1)
@@ -544,6 +548,9 @@ test('Given an unsent comment being edited, When Send is pressed, Then it goes a
   await openDeck(page, crit)
   await comment(page, 'h1', 'Make it bigger')
   await page.locator('[data-review-row="unsent-comment"] [data-review-edit]').click()
+  // The application focuses and positions the caret on the next frame.
+  // Let that finish before Playwright selects and replaces the field.
+  await expect(page.locator('[data-review-edit-box]:visible textarea')).toBeFocused()
   await page.locator('[data-review-edit-box]:visible textarea').fill('Make it red')
   await page.locator(SEND).click()
   await expect.poll(() => sentComments(crit).map(sent => sent.body)).toEqual(['[Slide 1 › heading "Hello"] Make it red'])
