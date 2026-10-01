@@ -41,7 +41,7 @@
         <img class="hero-icon" src="../brand/app-icon.svg" alt="" width="128" height="128">
         <h1 id="title">Peitho Studio</h1>
         <p class="hero-lede">Write slides with <a href="https://peitho.gosu.ke">Peitho</a>.</p>
-        <p class="hero-sub">Plain Markdown and HTML, so AI can help you.</p>
+        <p class="hero-sub">Edit Markdown. Preview slides. Bring your AI Agent.</p>
         <div id="download-button" class="download">
           <!-- Replaced by the DownloadPanel island; kept as the no-JS fallback. -->
           <a class="btn btn-big" href="https://github.com/piconic-ai/peitho-studio/releases/latest">Download</a>
@@ -53,13 +53,14 @@
           <span class="dots"><i></i><i></i><i></i></span>
           <span class="window-title">deck.md — Peitho Studio</span>
         </div>
-        <img class="window-shot"
-             src="/studio.webp"
-             srcset="/studio.webp 1280w, /studio@2x.webp 2560w"
-             sizes="(min-width: 1140px) 1080px, 100vw"
-             width="1280" height="800"
-             alt="Peitho Studio with a deck open: the slide list with sections on the left, the Markdown editor and speaker notes in the middle, and the live slide preview on the right.">
+        <video id="demo" class="window-shot" controls muted playsinline preload="none"
+               poster="/studio.webp" width="1280" height="800"
+               aria-label="Demo: comment on a slide, send feedback to an AI Agent, and see the updated title and reply.">
+          <source src="/studio-demo.mp4" type="video/mp4">
+          <a href="/studio-demo.mp4">Watch the AI Agent collaboration demo</a>
+        </video>
       </figure>
+      <p class="demo-caption">Click a slide → leave a comment → send to your AI Agent → review the changes.</p>
     </section>
 
     <section class="peitho" aria-labelledby="peitho-title">
