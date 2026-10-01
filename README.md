@@ -4,6 +4,34 @@ An editor for [Peitho](https://github.com/mizzy/peitho) decks, built with [Tauri
 
 Peitho decks are plain Markdown. Peitho Studio adds a 3-column GUI (slide list / editor / live preview) on top of Peitho, while leaving the deck file editable by other tools at the same time (it watches the file on disk and reloads automatically). It currently ships as a desktop app.
 
+## Install
+
+On Apple Silicon with macOS 13 (Ventura) or later:
+
+```sh
+brew install --cask piconic-ai/tap/peitho-studio
+```
+
+## Homebrew releases
+
+After `release-build` successfully uploads the release artifacts, `homebrew-cask`
+opens an update PR in [piconic-ai/homebrew-tap](https://github.com/piconic-ai/homebrew-tap).
+It updates only the Cask's version and SHA-256, calculating the checksum from the
+published DMG. This includes RC releases. Older versions are skipped, unchanged
+releases create no PR, and retries update the existing open PR for that tag.
+Tap PRs are merged manually.
+
+Set the `HOMEBREW_TAP_TOKEN` Actions secret in this repository to a fine-grained
+personal access token with access to **piconic-ai/homebrew-tap** and **Contents:
+Read and write** and **Pull requests: Read and write** permissions. If the
+organization requires approval for tokens, approve it before running the workflow.
+The normal `GITHUB_TOKEN` cannot write to the separate tap repository. Without
+this secret the Homebrew job fails with a setup message; already uploaded release
+artifacts remain available.
+
+To retry a tap update without rebuilding the app, run the `homebrew-cask` workflow
+manually on `main`, with the published release tag as its `tag` input.
+
 ## Layout scripts
 
 A deck's layout HTML can include `<script>`, and `peitho present` and `peitho build` run it. Peitho Studio runs it only once you trust the deck's folder.

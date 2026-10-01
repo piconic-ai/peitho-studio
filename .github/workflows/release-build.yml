@@ -184,3 +184,12 @@ jobs:
           bun run scripts/create-update-manifest.ts "$version" "$archive" release-notes.txt latest.json
           bunx tauri signer sign latest.json
           gh release upload "$TAG" latest.json latest.json.sig --clobber --repo "$GITHUB_REPOSITORY"
+
+  update-homebrew-cask:
+    needs: build-macos
+    permissions:
+      contents: read
+    uses: ./.github/workflows/homebrew-cask.yml
+    secrets: inherit
+    with:
+      tag: ${{ inputs.tag }}
