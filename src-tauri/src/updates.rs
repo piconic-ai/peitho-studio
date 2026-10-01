@@ -353,7 +353,12 @@ pub fn settings_changed(app: &AppHandle, settings: &crate::settings::Settings) {
 #[tauri::command]
 pub fn open_update_releases(app: AppHandle) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
-    app.opener().open_url("https://github.com/piconic-ai/peitho-studio/releases", None::<&str>).map_err(|error| error.to_string())
+    let version = app.state::<AppUpdates>().inner.lock().unwrap().status.version.clone();
+    let url = match version.as_deref().and_then(|value| Version::parse(value).ok()) {
+        Some(version) => format!("https://github.com/piconic-ai/peitho-studio/releases/tag/v{version}"),
+        None => "https://github.com/piconic-ai/peitho-studio/releases".to_string(),
+    };
+    app.opener().open_url(url, None::<&str>).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
