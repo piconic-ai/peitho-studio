@@ -122,9 +122,13 @@ GitHub Actions workflow. Its settings, for reference:
 
 `bun run deploy` from a logged-in machine still works as a manual fallback.
 
-`deploy:preview` temporarily enables Wrangler debug logging inside the script
-to diagnose the Workers Builds identity-check failure. This does not depend on
-dashboard build variables. Remove `env WRANGLER_LOG=debug` after diagnosis.
+`deploy:preview` temporarily unsets `WRANGLER_CI_MATCH_TAG` to work around
+[Workers Builds issue #15682](https://github.com/cloudflare/workers-sdk/issues/15682).
+Debug logs confirmed that CI supplied a different tag from the existing Worker's
+tag even though its name matched and the API lookup succeeded. This skips the
+CI identity check, so the command explicitly pins the account ID and Worker name.
+It only uploads a version; production deployment keeps the normal identity check.
+Remove the workaround after Cloudflare fixes the preview build trigger.
 
 ## Release assets
 
