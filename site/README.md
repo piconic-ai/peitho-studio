@@ -8,7 +8,7 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 
 - One static `index.html`, styled by `public/site.css` (light only):
   - a hero with the app icon, "Peitho Studio", "Write slides with Peitho."
-    ("Plain Markdown and HTML, so AI can help you.") and
+    ("Comment on slides. Let your AI Agent make the changes.") and
     the download button, above a screenshot of Studio with a deck open,
     framed as a window (`public/studio.webp`, `studio@2x.webp`);
   - a "Built on Peitho" card: Peitho's one-line description and a small
@@ -45,7 +45,7 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 ## Hero screenshot
 
 `public/studio.webp` (1280×800) and `studio@2x.webp` are the real Studio
-frontend with a sample deck, opened through the e2e suite's Tauri IPC mock
+frontend with a sample deck, slide comments, an AI Agent reply and an enabled Send button, opened through the e2e suite's Tauri IPC mock
 (`e2e/helpers/mockTauri.ts`) — not a mock-up. Regenerate them after UI
 changes, from the repository root:
 

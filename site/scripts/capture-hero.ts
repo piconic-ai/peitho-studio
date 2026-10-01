@@ -5,11 +5,13 @@
 // From the repository root, with the app's dependencies installed:
 //   bun run build && PORT=3013 bun run start &   # serve the Studio frontend
 //   bun site/scripts/capture-hero.ts             # CHROME_PATH=... to pick a browser
-import { chromium } from '@playwright/test'
+import { chromium, expect } from '@playwright/test'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { mockTauri, type MockDeck } from '../../e2e/helpers/mockTauri'
+
+import { createFakeCritIpc } from '../../ipc/fakeCritIpc'
 
 const STUDIO_URL = process.env.STUDIO_URL ?? 'http://localhost:3013/'
 const OUT = mkdtempSync(join(tmpdir(), 'peitho-hero-'))
@@ -48,7 +50,8 @@ const css = `
 .peitho-slide.cover h1::after { background: #fff; }
 .peitho-slide .sub { margin: 0; font-size: 40px; color: #d6d3d1; }
 `
-const deck: MockDeck = { source: SOURCE, fragmentFor, css }
+const crit = createFakeCritIpc({ now: () => '2026-10-02T10:00:00Z' })
+const deck: MockDeck = { source: SOURCE, fragmentFor, css, editAnnotations: true, trusted: true, crit }
 
 const b = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chrome' })
 const ctx = await b.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2, locale: 'en-US' })
@@ -67,7 +70,20 @@ await page.addInitScript(() => {
 await page.goto(STUDIO_URL)
 await page.locator('[data-slide-row]').first().waitFor({ timeout: 15000 })
 await page.locator('[data-slide-row="1"]').click()
-await page.waitForTimeout(1500)
+await page.locator('[data-preview-host] h1').click()
+await page.locator('[data-comment-box] textarea').fill('Make the title more specific to AI collaboration.')
+await page.locator('[data-comment-add]').click()
+await page.locator('[data-review-send]').click()
+await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
+crit.reply('c_1', 'I can rename it to “Write slides with your AI Agent”. Want a shorter title?', 'AI Agent')
+crit.agentConnects()
+await expect(page.locator('[data-review-agent]')).toContainText(['AI Agent'])
+await page.locator('[data-preview-host] li').first().click()
+await page.locator('[data-comment-box] textarea').fill('Add an example of an agent editing the deck.')
+await page.locator('[data-comment-add]').click()
+await expect(page.locator('[data-review-send]')).toBeEnabled()
+await page.evaluate(() => document.fonts.ready)
+await page.waitForTimeout(500)
 await page.screenshot({ path: `${OUT}/studio-raw.png` })
 // Encode WebP at 2x and 1x in the page itself, so no image tooling is needed.
 const png = 'data:image/png;base64,' + readFileSync(`${OUT}/studio-raw.png`).toString('base64')
