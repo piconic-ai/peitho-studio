@@ -144,6 +144,7 @@ export interface MockDeck {
   updateStatus?: UpdateStatus
   checkUpdateResult?: UpdateStatus
   updateSaveAcks?: { token: number; saved: boolean }[]
+  beforeSave?: (source: string) => Promise<void>
   /** What `get_system_locales` answers (the OS's preferred languages) —
    * defaults to `['en-US']`. */
   systemLocales?: unknown
@@ -334,6 +335,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         return renderPayloadFor(args.content as string, deck)
       case 'read_deck_source': return deck.source
       case 'save_deck_source':
+        await deck.beforeSave?.(args.content as string)
         deck.source = args.content as string
         return null
       case 'preview_layouts': return { previews: (deck.layouts ?? []).map(name => ({ name, fragment: deck.layoutFragment ?? '' })), css: '' }

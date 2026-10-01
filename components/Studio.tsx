@@ -63,6 +63,7 @@ import { createRenderStore } from '../state/renderStore'
 import { createEditorStore } from '../state/editorStore'
 import { createDeckStore } from '../state/deckStore'
 import { createHistoryStore } from '../state/historyStore'
+import { createSaveTracker } from '../state/saveTracker'
 import { createSettingsStore } from '../state/settingsStore'
 import {
   splitSlides,
@@ -271,7 +272,9 @@ export function Studio() {
   // once a deck is open), but sharing one flag for two unrelated
   // "something is in flight" meanings was exactly the kind of implicit
   // coupling this refactor is trying to remove.
-  const [isSavingSlide, setIsSavingSlide] = createSignal(false)
+  const saves = createSaveTracker()
+  const [activeSaveCount, setActiveSaveCount] = createSignal(0)
+  const isSavingSlide = createMemo(() => activeSaveCount() > 0)
   // What happened, not its text: `StatusBar` words it in the current UI
   // language, so a language change rewords a message already shown.
   const [statusMessage, setStatusMessage] = createSignal<StatusMessage>({ kind: 'none' })
@@ -821,7 +824,7 @@ export function Studio() {
   createEffect(() => {
     editor.bodyDraft()
     editor.noteDraft()
-    if (!editor.isDirty()) return
+    if (!editor.isDirty() || updateBlocksEditing(updateStatus())) return
     let live = true
     let timerId: number
     const attempt = () => {
@@ -1209,7 +1212,9 @@ export function Studio() {
     { expectedDraft, cmd }: { expectedDraft?: { body: string; note: string }; cmd?: SlideCommand } = {},
   ): Promise<boolean> {
     const before = editor.editorSession()
-    setIsSavingSlide(true)
+    const finishSave = saves.begin(nextSource)
+    setActiveSaveCount(saves.pendingCount())
+    let saved = false
     setErrorMessage(null)
     try {
       const payload = await deckIpc.renderDraft(nextSource)
@@ -1250,12 +1255,14 @@ export function Studio() {
         }
       }
       setStatusMessage({ kind: 'saved' })
+      saved = true
       return true
     } catch (err) {
       setErrorMessage(String(err))
       return false
     } finally {
-      setIsSavingSlide(false)
+      finishSave(saved)
+      setActiveSaveCount(saves.pendingCount())
     }
   }
 
@@ -2003,12 +2010,13 @@ export function Studio() {
       void (async () => {
         let saved = false
         try {
-          const deadline = Date.now() + 15_000
-          while (isSavingSlide() && Date.now() < deadline) await new Promise(resolve => window.setTimeout(resolve, 50))
-          if (!isSavingSlide()) {
-            if (editor.isDirty()) await handleSave()
-            saved = !editor.isDirty() && !isSavingSlide()
-          }
+          // Structural actions may still be queued without a dirty body.
+          // Drain their queue and every overlapping commit, then flush the
+          // final draft and acknowledge actual persistence outcomes.
+          await structuralQueue
+          await saves.drain()
+          if (editor.isDirty()) await handleSave()
+          saved = await saves.drain() && !editor.isDirty()
         } finally {
           await updateIpc.acknowledgeSave(token, saved).catch(() => {})
         }

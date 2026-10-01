@@ -67,3 +67,58 @@ for (const fails of [false, true]) {
     await expect(editorContent(page)).toContainText('Continue')
   })
 }
+
+test('a failed deck-setting save blocks update-exit even with a clean editor, and a successful retry clears it', async ({ page }) => {
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  let entered = false
+  const deck: MockDeck = {
+    source: SOURCE, updateSaveAcks: [],
+    beforeSave: async () => { entered = true; await gate; throw new Error('Disk full') },
+  }
+  await setup(page, deck)
+  const pick = { key: 'aspect_ratio', choice: '4:3' }
+  await emit(page, 'menu:deck-setting', pick)
+  await expect.poll(() => entered).toBe(true)
+  await emit(page, 'updates:changed', { ...initialUpdateStatus(), phase: 'saving' })
+  await emit(page, 'updates:before-exit', 11)
+  expect(deck.updateSaveAcks).toEqual([])
+  release()
+  await expect.poll(() => deck.updateSaveAcks).toEqual([{ token: 11, saved: false }])
+  expect(deck.source).not.toContain('aspect_ratio: 4:3')
+  await emit(page, 'updates:changed', { ...initialUpdateStatus(), phase: 'ready', error: 'Save failed' })
+  deck.beforeSave = undefined
+  await emit(page, 'menu:deck-setting', pick)
+  await expect.poll(() => deck.source).toContain('aspect_ratio: 4:3')
+  await emit(page, 'updates:changed', { ...initialUpdateStatus(), phase: 'saving' })
+  await emit(page, 'updates:before-exit', 12)
+  await expect.poll(() => deck.updateSaveAcks).toEqual([{ token: 11, saved: false }, { token: 12, saved: true }])
+})
+
+test('a completed overlapping body save cannot hide an in-flight structural save or its failure', async ({ page }) => {
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  let structuralStarted = false
+  const deck: MockDeck = {
+    source: SOURCE + '\n---\n\n<!-- {"key":"two"} -->\n# Slide Two\n', updateSaveAcks: [],
+    beforeSave: async source => {
+      if (source.includes('aspect_ratio: 4:3')) { structuralStarted = true; await gate; throw new Error('Structural save failed') }
+    },
+  }
+  await mockTauri(page, deck)
+  await page.goto('/')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(2)
+  await editorContent(page).click()
+  await moveToEditorEnd(page)
+  await page.keyboard.type(' Pending body')
+  await emit(page, 'menu:deck-setting', { key: 'aspect_ratio', choice: '4:3' })
+  await expect.poll(() => structuralStarted).toBe(true)
+  await page.locator('[data-slide-row]').nth(1).click()
+  await expect.poll(() => deck.source).toContain('Pending body')
+  expect(deck.source).not.toContain('aspect_ratio: 4:3')
+  await emit(page, 'updates:changed', { ...initialUpdateStatus(), phase: 'saving' })
+  await emit(page, 'updates:before-exit', 13)
+  expect(deck.updateSaveAcks).toEqual([])
+  release()
+  await expect.poll(() => deck.updateSaveAcks).toEqual([{ token: 13, saved: false }])
+})
