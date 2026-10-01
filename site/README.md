@@ -122,6 +122,10 @@ GitHub Actions workflow. Its settings, for reference:
 
 `bun run deploy` from a logged-in machine still works as a manual fallback.
 
+`deploy:preview` temporarily enables Wrangler debug logging inside the script
+to diagnose the Workers Builds identity-check failure. This does not depend on
+dashboard build variables. Remove `env WRANGLER_LOG=debug` after diagnosis.
+
 ## Release assets
 
 The download panel classifies assets by file extension, matching what
