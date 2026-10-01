@@ -20,6 +20,7 @@ test('manual checks show current and failure; update settings remain coherent', 
   await expect(page.locator('[data-update-status]')).toContainText('up to date')
   const panel = page.getByRole('dialog', { name: 'Settings' })
   await panel.locator('[data-setting=auto-check-updates]').uncheck()
+  await expect(panel.getByText('Security update notifications are also off.')).toBeVisible()
   await panel.locator('[data-setting=auto-update]').check()
   await expect(panel.locator('[data-setting=auto-check-updates]')).toBeChecked()
   await panel.locator('[data-setting=auto-check-updates]').uncheck()

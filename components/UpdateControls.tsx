@@ -22,7 +22,7 @@ export function UpdateControls(props: UpdateControlsProps) {
             const box = e.target as HTMLInputElement
             void props.onSettingChange('autoCheckUpdates', box.checked).then(saved => { if (!saved) box.checked = props.autoCheck })
           }} />
-        <span><span className="block">{updateMessages(props.language).autoCheck}</span></span>
+        <span><span className="block">{updateMessages(props.language).autoCheck}</span><span hidden={props.autoCheck} className="block text-xs text-muted-foreground">{updateMessages(props.language).autoCheckOff}</span></span>
       </label>
       <label className="flex items-start gap-3 text-sm mb-3 cursor-pointer">
         <input type="checkbox" data-setting="auto-update" checked={props.autoUpdate} className="mt-0.5"
