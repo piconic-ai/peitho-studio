@@ -99,6 +99,7 @@ bun run typecheck  # tsc --noEmit
 bun run build      # dist/
 bun run preview    # build, then serve dist/ through wrangler exactly as production would
 bun run deploy     # build, then wrangler deploy (needs a Cloudflare login)
+bun run deploy:preview # build, then upload a version without deploying to production
 ```
 
 ## Deploying
@@ -111,7 +112,7 @@ GitHub Actions workflow. Its settings, for reference:
   directory, so `site/bun.lock` picks bun for the install.
 - Build command: `bun run build`
 - Deploy command: `bunx wrangler deploy`
-- Preview (non-production branch) command: left at its default. It runs on
+- Preview (non-production branch) command: `bun run deploy:preview`. It runs on
   pull requests as a build check only: `preview_urls` is off in
   `wrangler.jsonc`, so the uploaded version gets no URL, and the page has
   no `workers.dev` host at all.
@@ -120,6 +121,14 @@ GitHub Actions workflow. Its settings, for reference:
   app doesn't need a build.
 
 `bun run deploy` from a logged-in machine still works as a manual fallback.
+
+`deploy:preview` temporarily unsets `WRANGLER_CI_MATCH_TAG` to work around
+[Workers Builds issue #15682](https://github.com/cloudflare/workers-sdk/issues/15682).
+Debug logs confirmed that CI supplied a different tag from the existing Worker's
+tag even though its name matched and the API lookup succeeded. This skips the
+CI identity check, so the command explicitly pins the account ID and Worker name.
+It only uploads a version; production deployment keeps the normal identity check.
+Remove the workaround after Cloudflare fixes the preview build trigger.
 
 ## Release assets
 

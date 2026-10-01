@@ -7,6 +7,7 @@
     "build": "vite build",
     "preview": "vite build && wrangler dev",
     "deploy": "vite build && wrangler deploy",
+    "deploy:preview": "bun run build && env -u WRANGLER_CI_MATCH_TAG CLOUDFLARE_ACCOUNT_ID=e680616185a3b617a32987a6571991b7 wrangler versions upload --name peitho-studio-site",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
