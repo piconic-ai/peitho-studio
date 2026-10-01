@@ -18,6 +18,7 @@ import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfP
 import { focusCommentBox, focusUnsentEdit, placePreviewPins, revealReviewThread, watchPreviewLayout, type PreviewClick } from '../dom/previewComments'
 import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
+import { PanelToggle } from './PanelToggle'
 import { ReviewPanel } from './ReviewPanel'
 import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
@@ -2267,136 +2268,157 @@ export function Studio() {
         </div>
       ) : (
       <div className="flex-1 flex min-h-0">
-        <SlideList
-          language={settings.language()}
-          manifest={render.manifest()}
-          entries={slideEntries()}
-          slideListWidth={ui.slideListWidth()}
-          draggedIndex={ui.draggedIndex()}
-          dragOverGap={ui.dragOverGap()}
-          dragDeltaY={ui.dragDeltaY()}
-          selectedIndex={editor.selectedIndex()}
-          sectionStartByIndex={sectionStarts()}
-          rowVisibility={rowVisibility()}
-          lastVisibleRow={lastShownRow()}
-          onToggleSectionCollapse={toggleSectionAt}
-          sectionDraftOf={index => {
-            const manifestIndex = manifestIndexAt(slideEntries(), index)
-            return manifestIndex === null ? { name: '', timeMs: 0 } : render.sectionDraftOf(manifestIndex)
-          }}
-          editingSectionIndex={ui.editingSectionIndex()}
-          onEditSection={openSectionEditor}
-          canvasWidth={render.canvasWidth()}
-          canvasHeight={render.canvasHeight()}
-          canvasFragmentOf={render.canvasFragmentOf}
-          slideStylesheet={getSlideStylesheet}
-          commentCountOf={review.commentCountOf}
-          onContextMenu={openContextMenu}
-          onDragStart={startSlideDrag}
-          onSelectSlide={index => selectSlide(index)}
-          onSectionNameInput={onSectionNameInput}
-          onSectionTimeInput={onSectionTimeInput}
-          onCommitSectionEdit={closeSectionEditor}
-        />
+        <div data-panel-rail="" className="panel-rail" hidden={ui.slidesOpen() && ui.editorOpen() && ui.previewOpen() && (ui.reviewOpen() || !render.assetBaseUrl())}>
+          <PanelToggle panel="slides" language={settings.language()} hidden={ui.slidesOpen()} open={false} onToggle={() => ui.setSlidesOpen(true)} />
+          <PanelToggle panel="editor" language={settings.language()} hidden={ui.editorOpen()} open={false} onToggle={() => ui.setEditorOpen(true)} />
+          <PanelToggle panel="preview" language={settings.language()} hidden={ui.previewOpen()} open={false} onToggle={() => ui.setPreviewOpen(true)} />
+          <PanelToggle panel="review" language={settings.language()} hidden={ui.reviewOpen() || !render.assetBaseUrl()} open={false} onToggle={() => ui.setReviewOpen(true)} />
+        </div>
+        <div data-panel="slides" hidden={!ui.slidesOpen()} className="studio-panel">
+          <PanelToggle panel="slides" language={settings.language()} open={true} onToggle={() => { ui.closeContextMenu(); ui.setSlidesOpen(!ui.slidesOpen()) }} />
+          <div id="panel-slides" className={ui.slidesOpen() ? 'panel-content' : 'hidden'}>
+            <SlideList
+              language={settings.language()}
+              manifest={render.manifest()}
+              entries={slideEntries()}
+              slideListWidth={ui.slideListWidth()}
+              draggedIndex={ui.draggedIndex()}
+              dragOverGap={ui.dragOverGap()}
+              dragDeltaY={ui.dragDeltaY()}
+              selectedIndex={editor.selectedIndex()}
+              sectionStartByIndex={sectionStarts()}
+              rowVisibility={rowVisibility()}
+              lastVisibleRow={lastShownRow()}
+              onToggleSectionCollapse={toggleSectionAt}
+              sectionDraftOf={index => {
+                const manifestIndex = manifestIndexAt(slideEntries(), index)
+                return manifestIndex === null ? { name: '', timeMs: 0 } : render.sectionDraftOf(manifestIndex)
+              }}
+              editingSectionIndex={ui.editingSectionIndex()}
+              onEditSection={openSectionEditor}
+              canvasWidth={render.canvasWidth()}
+              canvasHeight={render.canvasHeight()}
+              canvasFragmentOf={render.canvasFragmentOf}
+              slideStylesheet={getSlideStylesheet}
+              commentCountOf={review.commentCountOf}
+              onContextMenu={openContextMenu}
+              onDragStart={startSlideDrag}
+              onSelectSlide={index => selectSlide(index)}
+              onSectionNameInput={onSectionNameInput}
+              onSectionTimeInput={onSectionTimeInput}
+              onCommitSectionEdit={closeSectionEditor}
+            />
+          </div>
+        </div>
 
         <div
+          hidden={!ui.slidesOpen()}
           className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"
           onMouseDown={startColumnResize(ui.slideListWidth, ui.setSlideListWidth, 1)}
         />
 
-        <div
-          className="shrink-0 flex flex-col border-r border-border min-h-0"
-          style={`width: ${ui.editorWidth()}px`}
-        >
-          <SlideEditor
-            language={settings.language()}
-            hasSelection={editor.selectedRange() !== null}
-            onBodyHost={onBodyEditorHost}
-            onNoteHost={onNoteEditorHost}
-          />
+        <div data-panel="editor" hidden={!ui.editorOpen()} className="studio-panel" style={ui.editorOpen() && !ui.previewOpen() ? 'flex: 1; min-width: 0' : ''}>
+          <PanelToggle panel="editor" language={settings.language()} open={true} onToggle={() => ui.setEditorOpen(!ui.editorOpen())} />
+          <div id="panel-editor"
+            className={ui.editorOpen() ? 'panel-content border-r border-border' : 'hidden'}
+            style={ui.previewOpen() ? `width: ${ui.editorWidth()}px` : 'width: 100%'}
+          >
+            <SlideEditor
+              language={settings.language()}
+              hasSelection={editor.selectedRange() !== null}
+              onBodyHost={onBodyEditorHost}
+              onNoteHost={onNoteEditorHost}
+            />
+          </div>
         </div>
 
         <div
+          hidden={!ui.editorOpen() || !ui.previewOpen()}
           className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"
           onMouseDown={startColumnResize(ui.editorWidth, ui.setEditorWidth, 1)}
         />
 
-        <div className="flex-1 min-w-0 flex flex-col min-h-0">
-          <SlidePreview
-            language={settings.language()}
-            selectedSlideKey={selectedSlideKey()}
-            hasDeck={Boolean(render.assetBaseUrl())}
-            canvasFragmentOf={render.previewFragmentOf}
-            slideStylesheet={getSlideStylesheet}
-            viewportMode={ui.viewportMode()}
-            onToggleViewportMode={ui.toggleViewportMode}
-            phoneShape={ui.phoneShape()}
-            phoneShapeMenuOpen={ui.phoneShapeMenuOpen()}
-            onTogglePhoneShapeMenu={ui.togglePhoneShapeMenu}
-            onClosePhoneShapeMenu={ui.closePhoneShapeMenu}
-            onSelectPhoneShape={ui.selectPhoneShape}
-            canvasWidth={previewCanvasWidth()}
-            canvasHeight={previewCanvasHeight()}
-            pins={placedPins()}
-            onCommentClick={openCommentBox}
-            onPinClick={showPinnedThread}
-          />
+        <div data-panel="preview" hidden={!ui.previewOpen()} className="studio-panel preview-panel">
+          <PanelToggle panel="preview" language={settings.language()} open={true} onToggle={() => { ui.closePhoneShapeMenu(); review.closeBox(); ui.setPreviewOpen(!ui.previewOpen()) }} />
+          <div id="panel-preview" className={ui.previewOpen() ? 'panel-content' : 'hidden'}>
+            <SlidePreview
+              language={settings.language()}
+              selectedSlideKey={selectedSlideKey()}
+              hasDeck={Boolean(render.assetBaseUrl())}
+              canvasFragmentOf={render.previewFragmentOf}
+              slideStylesheet={getSlideStylesheet}
+              viewportMode={ui.viewportMode()}
+              onToggleViewportMode={ui.toggleViewportMode}
+              phoneShape={ui.phoneShape()}
+              phoneShapeMenuOpen={ui.phoneShapeMenuOpen()}
+              onTogglePhoneShapeMenu={ui.togglePhoneShapeMenu}
+              onClosePhoneShapeMenu={ui.closePhoneShapeMenu}
+              onSelectPhoneShape={ui.selectPhoneShape}
+              canvasWidth={previewCanvasWidth()}
+              canvasHeight={previewCanvasHeight()}
+              pins={placedPins()}
+              onCommentClick={openCommentBox}
+              onPinClick={showPinnedThread}
+            />
+          </div>
         </div>
 
         {/* The comments column, rightmost: a fourth column rather than a
             strip under the preview, so the threads get the window's full
             height. Hidden with the panel until a deck is open. */}
         <div
-          hidden={!render.assetBaseUrl()}
+          hidden={!render.assetBaseUrl() || !ui.reviewOpen()}
           className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"
           onMouseDown={startColumnResize(ui.reviewPanelWidth, ui.setReviewPanelWidth, -1)}
         />
 
-        <div
-          hidden={!render.assetBaseUrl()}
-          className="shrink-0 flex flex-col min-h-0 border-l border-border"
-          style={`width: ${ui.reviewPanelWidth()}px`}
-        >
-          <ReviewPanel
-            language={settings.language()}
-            shown={Boolean(render.assetBaseUrl())}
-            status={reviewStatus()}
-            canSend={review.availability().kind === 'ready'}
-            sending={review.busy() === 'sending'}
-            sendCount={review.sendCount()}
-            working={agentWorking()}
-            onReconnect={review.forgetAgent}
-            error={review.error()}
-            rows={reviewPanelRows()}
-            resolvedCount={reviewResolvedCount()}
-            showResolved={review.showResolved()}
-            resolvedToggleLabel={review.showResolved() ? settings.messages().hideResolved : settings.messages().showResolved(reviewResolvedCount())}
-            onToggleResolved={review.toggleShowResolved}
-            onSelectSlide={index => void selectSlide(index)}
-            highlightedThread={highlightedThread()}
-            replyText={review.replyDraft()?.text ?? ''}
-            onSend={() => void sendReview()}
-            onDiscard={review.discard}
-            editText={review.unsentEdit()?.text ?? ''}
-            onStartEdit={id => {
-              review.startEdit(id)
-              focusUnsentEdit()
-            }}
-            onEditInput={review.setEditText}
-            onEditSave={review.commitEdit}
-            onEditCancel={review.cancelEdit}
-            onStartReply={commentId => review.editReply(commentId, '')}
-            onReplyInput={review.setReplyText}
-            onReplyAdd={review.commitReply}
-            onReplyCancel={review.cancelReply}
-            onResolve={id => void resolveReviewComment(id)}
-            connectShown={connectShown()}
-            connectPrompt={connectPrompt()}
-            connectCommand={connectCommand()}
-            copied={connectCopied()}
-            onCopyPrompt={() => void copyConnectText('prompt')}
-            onCopyCommand={() => void copyConnectText('command')}
-          />
+        <div hidden={!render.assetBaseUrl() || !ui.reviewOpen()} data-panel="review" className="studio-panel" style={ui.reviewOpen() && !ui.previewOpen() && !ui.editorOpen() ? 'flex: 1; min-width: 0' : ''}>
+          <PanelToggle panel="review" language={settings.language()} open={true} onToggle={() => ui.setReviewOpen(!ui.reviewOpen())} />
+          <div id="panel-review"
+            className={ui.reviewOpen() ? 'panel-content border-l border-border' : 'hidden'}
+            style={!ui.previewOpen() && !ui.editorOpen() ? 'width: 100%' : `width: ${ui.reviewPanelWidth()}px`}
+          >
+            <ReviewPanel
+              language={settings.language()}
+              shown={Boolean(render.assetBaseUrl())}
+              status={reviewStatus()}
+              canSend={review.availability().kind === 'ready'}
+              sending={review.busy() === 'sending'}
+              sendCount={review.sendCount()}
+              working={agentWorking()}
+              onReconnect={review.forgetAgent}
+              error={review.error()}
+              rows={reviewPanelRows()}
+              resolvedCount={reviewResolvedCount()}
+              showResolved={review.showResolved()}
+              resolvedToggleLabel={review.showResolved() ? settings.messages().hideResolved : settings.messages().showResolved(reviewResolvedCount())}
+              onToggleResolved={review.toggleShowResolved}
+              onSelectSlide={index => void selectSlide(index)}
+              highlightedThread={highlightedThread()}
+              replyText={review.replyDraft()?.text ?? ''}
+              onSend={() => void sendReview()}
+              onDiscard={review.discard}
+              editText={review.unsentEdit()?.text ?? ''}
+              onStartEdit={id => {
+                review.startEdit(id)
+                focusUnsentEdit()
+              }}
+              onEditInput={review.setEditText}
+              onEditSave={review.commitEdit}
+              onEditCancel={review.cancelEdit}
+              onStartReply={commentId => review.editReply(commentId, '')}
+              onReplyInput={review.setReplyText}
+              onReplyAdd={review.commitReply}
+              onReplyCancel={review.cancelReply}
+              onResolve={id => void resolveReviewComment(id)}
+              connectShown={connectShown()}
+              connectPrompt={connectPrompt()}
+              connectCommand={connectCommand()}
+              copied={connectCopied()}
+              onCopyPrompt={() => void copyConnectText('prompt')}
+              onCopyCommand={() => void copyConnectText('command')}
+            />
+          </div>
         </div>
       </div>
       )}

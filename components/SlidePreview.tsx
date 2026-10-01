@@ -47,7 +47,7 @@ export function SlidePreview(props: SlidePreviewProps) {
           shape menu — the split-button shape `DeckHeader.tsx`'s Present
           uses. The segments are icons, so the switch's `aria-label` and each
           segment's `title` carry the words. */}
-      <div className={(props.selectedSlideKey === null ? 'hidden ' : '') + 'shrink-0 h-9 flex items-center justify-end px-3'}>
+      <div className={(props.selectedSlideKey === null ? 'hidden ' : '') + 'shrink-0 h-9 flex items-center justify-start px-3'}>
         <div className="relative">
           <div className="flex rounded-full border border-border overflow-hidden">
             <button
@@ -112,7 +112,7 @@ export function SlidePreview(props: SlidePreviewProps) {
             role="menu"
             data-phone-shape-menu
             aria-label={messagesFor(props.language).phoneCanvasShape}
-            className={(props.phoneShapeMenuOpen ? '' : 'hidden ') + 'absolute right-0 top-full mt-2 w-96 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg py-1 z-20'}
+            className={(props.phoneShapeMenuOpen ? '' : 'hidden ') + 'absolute left-0 top-full mt-2 w-96 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg py-1 z-20'}
           >
             <button
               type="button"

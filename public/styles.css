@@ -10,3 +10,16 @@ html, body {
 #app {
   height: 100vh;
 }
+
+/* Folding hides contents rather than recreating editors or slide canvases. */
+.studio-panel { position: relative; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
+.preview-panel { flex: 1; min-width: 0; }
+.panel-content { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.panel-rail { display: flex; flex-direction: column; width: 36px; flex-shrink: 0; padding-top: 4px; gap: 4px; border-right: 1px solid var(--border); }
+.panel-toggle { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 4px; color: var(--muted-foreground); background: var(--background); cursor: pointer; }
+.panel-toggle:hover { color: var(--foreground); background: var(--muted); }
+.panel-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.panel-close { position: absolute; top: 2px; right: 2px; width: 24px; height: 24px; z-index: 10; opacity: 0; transition: opacity 120ms; }
+.panel-close:hover, .panel-close:focus-visible { opacity: 1; }
+.panel-open { margin: 0 auto; }
+@media (hover: none) { .panel-close { opacity: 1; } }
