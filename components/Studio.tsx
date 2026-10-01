@@ -910,6 +910,7 @@ export function Studio() {
   function showPinnedThread(pinId: string): void {
     const thread = threadOfPin(pinId)
     if (thread === null) return
+    ui.setReviewOpen(true)
     setHighlightedThread(thread)
     revealReviewThread(thread)
     window.clearTimeout(highlightTimer)
