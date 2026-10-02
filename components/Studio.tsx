@@ -447,6 +447,7 @@ export function Studio() {
       ...vimEditorOptions(),
       monospace: true,
       spellcheck: false,
+      lineWrapping: false,
       onChange: text => { layouts.typeInEditor(field, text) },
     })
   }

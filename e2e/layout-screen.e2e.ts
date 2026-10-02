@@ -688,3 +688,15 @@ test.describe('the layout editor in vim mode', () => {
     expect(slideConfigs(deck.source)[0]).toEqual({ key: 'cover', layout: 'quote' })
   })
 })
+
+test('Given a long line in the layout HTML, then it is not wrapped but scrolls sideways, while the slide body still wraps', async ({ page }) => {
+  const long = `<section class="peitho-slide layout-quote">${'<span>wide</span>'.repeat(60)}</section>`
+  await openLayoutScreen(page, deckOf({ layoutFiles: { quote: { html: long, css: null } } }))
+  await row(page, 'quote').click()
+  await expect.poll(() => editorText(page, 'layout-html')).toBe(long)
+
+  await expect(editorContent(page, 'layout-html')).not.toHaveClass(/cm-lineWrapping/)
+  const scroller = page.locator('[data-editor="layout-html"] .cm-scroller')
+  await expect.poll(() => scroller.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
+  await expect(editorContent(page, 'body')).toHaveClass(/cm-lineWrapping/)
+})
