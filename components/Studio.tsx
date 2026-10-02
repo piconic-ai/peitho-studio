@@ -39,7 +39,7 @@ import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isL
 import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
 import { type LayoutNameProblem, type StudioMode, layoutRows, layoutUsage, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
-import { editorDraft } from '../domain/layoutEditor'
+import { editorDraft, editorLayoutName, type LayoutField } from '../domain/layoutEditor'
 import { layoutDisplayName } from '../domain/standardLayouts'
 import type { Messages } from '../domain/messages'
 import { type ImageSlotFix, imageLayoutPin, imageSlotFixFor, parseImageSlotError, shownImageSlotFix } from '../domain/imageSlot'
@@ -54,8 +54,8 @@ import { type ScriptTrust, type ScriptTrustEvent, nextScriptTrust, scriptTrustOn
 import { takesCommandKeys, type VimMode } from '../domain/vimMode'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
-import { blurEditorFieldOnRowPress, isInCodeEditor, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
-import { canReplayCodeEditorGroup, codeEditorPositionAt, codeEditorSelection, createCodeEditor, insertIntoCodeEditor, isolateCodeEditorHistory, replayCodeEditorGroup, replayFocusedCodeEditorHistory, restoreCodeEditor, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, snapshotCodeEditor, type CodeEditorOptions, type CodeEditorSnapshot } from '../dom/codeEditor'
+import { blurEditorFieldOnRowPress, isFocusWithin, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
+import { canReplayCodeEditorGroup, codeEditorPositionAt, codeEditorSelection, createCodeEditor, insertIntoCodeEditor, isolateCodeEditorHistory, replayCodeEditorGroup, replayFocusedCodeEditorHistory, resetCodeEditorText, restoreCodeEditor, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, snapshotCodeEditor, type CodeEditorOptions, type CodeEditorSnapshot } from '../dom/codeEditor'
 import { createEditorSlideStates } from '../dom/editorSlideStates'
 import { createVimClipboardBridge, onClipboardMayHaveChanged } from '../dom/vimClipboard'
 import { readPastedImage } from '../dom/imagePaste'
@@ -317,6 +317,11 @@ export function Studio() {
   // reactive binding (see the note above it).
   let bodyEditor: ReturnType<typeof createCodeEditor> | undefined
   let noteEditor: ReturnType<typeof createCodeEditor> | undefined
+  // The layout screen's HTML and CSS editors (`createLayoutCodeEditor`), and
+  // the layout their text (and undo history) belongs to.
+  let layoutHtmlEditor: ReturnType<typeof createCodeEditor> | undefined
+  let layoutCssEditor: ReturnType<typeof createCodeEditor> | undefined
+  let layoutEditorsShow: string | null = null
   // Both editors' states for each slide the user has left, so going back
   // to one brings back its undo history (`dom/editorSlideStates.ts`).
   // Positional like the structural history: `forgetSlidePositions` drops
@@ -423,9 +428,49 @@ export function Studio() {
 
   createEffect(() => {
     const on = settings.settings().vimMode
-    if (bodyEditor) setCodeEditorVimMode(bodyEditor, on)
-    if (noteEditor) setCodeEditorVimMode(noteEditor, on)
+    for (const view of [bodyEditor, noteEditor, layoutHtmlEditor, layoutCssEditor]) {
+      if (view) setCodeEditorVimMode(view, on)
+    }
   })
+
+  // The layout screen's HTML and CSS editors: the same editor as the slide
+  // body, vim mode included, but off the app's undo timeline — their typing
+  // is undone in the editor itself (see `onMenuHistory`), since it changes
+  // no slide. Uncontrolled like the body: typing reaches the layout store
+  // through `onChange`, and the app writes back only when the files shown
+  // change from outside (`syncLayoutEditors`).
+  function createLayoutCodeEditor(el: HTMLElement, previous: ReturnType<typeof createCodeEditor> | undefined, field: LayoutField): ReturnType<typeof createCodeEditor> {
+    previous?.destroy()
+    layoutEditorsShow = null
+    return createCodeEditor(el, untrack(() => editorDraft(layouts.editor())[field]), {
+      ...vimEditorOptions(),
+      monospace: true,
+      spellcheck: false,
+      onChange: text => { layouts.typeInEditor(field, text) },
+    })
+  }
+
+  // Pushes the files shown into the layout editors: another layout's start
+  // fresh (no undo history from the last one); the same layout's (read
+  // again after a save, or reverted) change only where they differ,
+  // keeping the cursor and the undo history.
+  function syncLayoutEditors(): void {
+    const shown = layouts.editor()
+    const name = editorLayoutName(shown)
+    const texts = editorDraft(shown)
+    const same = name === layoutEditorsShow
+    for (const [view, text] of [[layoutHtmlEditor, texts.html], [layoutCssEditor, texts.css]] as const) {
+      if (!view) continue
+      if (same) setCodeEditorText(view, text)
+      else resetCodeEditorText(view, text)
+    }
+    layoutEditorsShow = name
+  }
+
+  function revertShownLayout(): void {
+    layouts.revertEditor()
+    syncLayoutEditors()
+  }
 
   // A host remounts only with the whole editor pane (a deck-lifecycle
   // branch), so the previous editor, if any, is already detached.
@@ -1885,6 +1930,7 @@ export function Studio() {
     layouts.editorLoading(name)
     try {
       layouts.editorLoaded(name, await deckIpc.readLayout(name))
+      syncLayoutEditors()
     } catch (err) {
       layouts.editorUnavailable(name, String(err))
     }
@@ -2491,6 +2537,11 @@ export function Studio() {
     // as vim's `u` would.
     const onMenuHistory = (direction: 'undo' | 'redo') => {
       if (replayFocusedFieldHistory(direction)) return
+      // The layout editors' typing isn't on the timeline: it undoes there.
+      if (isFocusWithin('[data-layout-editor-host]')) {
+        replayFocusedCodeEditorHistory(direction)
+        return
+      }
       if (settings.panelOpen()) return
       if (ui.phoneShapeMenuOpen()) {
         replayFocusedCodeEditorHistory(direction)
@@ -2538,10 +2589,9 @@ export function Studio() {
         }
         return
       }
-      // Escape typed into an editor is the editor's own (vim's back-to-normal
-      // mode); the layout menu can't be open then anyway, since pressing
-      // into the editor closed it.
-      if (event.key === 'Escape' && layouts.menu().kind !== 'closed' && !isInCodeEditor(event.target)) {
+      // Like the slide menu just below: also when focus stayed in an editor
+      // through the right-click (see vim-mode.e2e.ts).
+      if (event.key === 'Escape' && layouts.menu().kind !== 'closed') {
         event.preventDefault()
         layouts.closeMenu()
         return
@@ -2932,13 +2982,12 @@ export function Studio() {
           onEditorTab={layouts.setEditorTab}
           editorReady={layouts.editor().kind === 'ready'}
           editorMessage={layoutEditorMessage()}
-          editorHtml={editorDraft(layouts.editor()).html}
-          editorCss={editorDraft(layouts.editor()).css}
           editorDirty={layouts.editorDirty()}
           editorSaving={layoutEditorSaving()}
-          onType={layouts.typeInEditor}
+          onHtmlEditorHost={el => { layoutHtmlEditor = createLayoutCodeEditor(el, layoutHtmlEditor, 'html') }}
+          onCssEditorHost={el => { layoutCssEditor = createLayoutCodeEditor(el, layoutCssEditor, 'css') }}
           onSave={() => void saveShownLayout()}
-          onRevert={layouts.revertEditor}
+          onRevert={revertShownLayout}
         />
       </div>
       )}

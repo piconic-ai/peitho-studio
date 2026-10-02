@@ -17,10 +17,11 @@ function focusedTypingElement(): HTMLElement | null {
   return active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active.isContentEditable ? active : null
 }
 
-/** Whether `target` (a key event's) is inside a CodeMirror editor — where
- * a key such as Escape is the editor's own (vim's back-to-normal-mode). */
-export function isInCodeEditor(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest('.cm-editor') !== null
+/** Whether keyboard focus is inside an element matching `selector` (the
+ * layout screen's HTML/CSS editors, say). */
+export function isFocusWithin(selector: string): boolean {
+  const active = document.activeElement
+  return active instanceof Element && active.closest(selector) !== null
 }
 
 /** Whether keyboard focus is in a field that takes typing, where a plain

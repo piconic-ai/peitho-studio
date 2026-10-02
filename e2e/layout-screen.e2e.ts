@@ -10,7 +10,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 import type { LayoutVerdict } from '../domain/layoutFit'
-import { editorContent, moveToEditorEnd } from './helpers/codeEditor'
+import { editorContent, editorText, fillEditor, moveToEditorEnd } from './helpers/codeEditor'
 
 const SOURCE = [
   '<!-- {"key":"cover","layout":"title-slide"} -->\n# Cover',
@@ -64,7 +64,7 @@ test('Given layouts named like Object prototype members, when the screen opens, 
   await expect(row(page, 'constructor').locator('[data-layout-usage]')).toHaveText('1 slide')
   await expect(row(page, 'toString').locator('[data-layout-usage]')).toHaveText('Unused')
   await row(page, 'toString').click()
-  await expect(page.locator('[data-layout-html]')).toHaveValue('<section class="peitho-slide layout-toString"></section>')
+  await expect.poll(() => editorText(page, 'layout-html')).toBe('<section class="peitho-slide layout-toString"></section>')
 })
 
 function layoutMenu(page: Page) {
@@ -405,20 +405,20 @@ test('Given a layout\'s CSS edited, when saved, then the files are written and S
   await openLayoutScreen(page, deck)
 
   await row(page, 'quote').click()
-  await expect(page.locator('[data-layout-html]')).toHaveValue('<section class="peitho-slide layout-quote"></section>')
+  await expect.poll(() => editorText(page, 'layout-html')).toBe('<section class="peitho-slide layout-quote"></section>')
   await page.locator('[data-layout-tab="css"]').click()
-  await page.locator('[data-layout-css]').fill('.peitho-slide.layout-quote { color: red; }')
+  await fillEditor(page, '.peitho-slide.layout-quote { color: red; }', 'layout-css')
   await page.locator('[data-save-layout]').click()
 
   await expect.poll(() => deck.layoutFiles?.quote.css).toBe('.peitho-slide.layout-quote { color: red; }')
   await expect(page.locator('[data-save-layout]')).toBeDisabled()
 
   await page.locator('[data-layout-tab="html"]').click()
-  await page.locator('[data-layout-html]').fill('<div>no section</div>')
+  await fillEditor(page, '<div>no section</div>', 'layout-html')
   await page.locator('[data-save-layout]').click()
 
   await expect(page.locator('[data-layout-editor-message]')).toContainText('a layout needs a <section> element')
-  await expect(page.locator('[data-layout-html]')).toHaveValue('<div>no section</div>')
+  await expect.poll(() => editorText(page, 'layout-html')).toBe('<div>no section</div>')
   expect(deck.layoutFiles?.quote.html).toBe('<section class="peitho-slide layout-quote"></section>')
 })
 
@@ -432,11 +432,11 @@ test('Given an edit that would stop a slide from building, when saved, then the 
   await openLayoutScreen(page, deck)
 
   await row(page, 'title-body').click()
-  await page.locator('[data-layout-html]').fill('<section class="peitho-slide layout-title-body"><h1>no body</h1></section>')
+  await fillEditor(page, '<section class="peitho-slide layout-title-body"><h1>no body</h1></section>', 'layout-html')
   await page.locator('[data-save-layout]').click()
 
   await expect(page.locator('[data-layout-editor-message]')).toContainText("would stop slide 2 ('intro') from building")
-  await expect(page.locator('[data-layout-html]')).toHaveValue('<section class="peitho-slide layout-title-body"><h1>no body</h1></section>')
+  await expect.poll(() => editorText(page, 'layout-html')).toBe('<section class="peitho-slide layout-title-body"><h1>no body</h1></section>')
   await expect(page.locator('[data-save-layout]')).toBeEnabled()
   expect(saves).toEqual([{ content: SOURCE, name: 'title-body', html: '<section class="peitho-slide layout-title-body"><h1>no body</h1></section>', css: '' }])
   expect(deck.layoutFiles?.['title-body'].html).toBe('<section class="peitho-slide layout-title-body"></section>')
@@ -471,7 +471,7 @@ test('Given a slide draft that cannot be saved, when a layout edit is saved, the
   await openWithUnsavableDraft(page, deck)
 
   await row(page, 'quote').click()
-  await page.locator('[data-layout-html]').fill('<section class="peitho-slide layout-quote"><h1>edited</h1></section>')
+  await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>edited</h1></section>', 'layout-html')
   await page.locator('[data-save-layout]').click()
 
   await expect(page.locator('[data-layout-editor-message]')).toContainText('could not be saved')
@@ -514,7 +514,7 @@ test('Given a slide draft that saves, when a layout edit is saved, then the draf
   await page.keyboard.type(' Typed')
   await page.locator('[data-studio-mode-option="layouts"]').click()
   await row(page, 'quote').click()
-  await page.locator('[data-layout-html]').fill('<section class="peitho-slide layout-quote"><h1>edited</h1></section>')
+  await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>edited</h1></section>', 'layout-html')
   await page.locator('[data-save-layout]').click()
 
   await expect.poll(() => saves.length).toBe(1)
@@ -526,7 +526,7 @@ test('Given unsaved edits to a layout, when another layout is clicked, then the 
   await openLayoutScreen(page, deckOf())
 
   await row(page, 'quote').click()
-  await page.locator('[data-layout-html]').fill('<section>edited</section>')
+  await fillEditor(page, '<section>edited</section>', 'layout-html')
   await row(page, 'title-slide').click()
 
   await expect(row(page, 'quote')).toHaveAttribute('aria-current', 'true')
@@ -541,14 +541,14 @@ test('Given unsaved edits to a layout, when a new layout is created, then nothin
   await openLayoutScreen(page, deck)
 
   await row(page, 'quote').click()
-  await page.locator('[data-layout-html]').fill('<section>edited</section>')
+  await fillEditor(page, '<section>edited</section>', 'layout-html')
   await page.locator('[data-new-layout]').click()
   await page.locator('[data-new-layout-name]').fill('pull-quote')
   await page.locator('[data-create-layout]').click()
 
   await expect(page.locator('[data-layout-notice]')).toContainText('Save or revert')
   await expect(row(page, 'quote')).toHaveAttribute('aria-current', 'true')
-  await expect(page.locator('[data-layout-html]')).toHaveValue('<section>edited</section>')
+  await expect.poll(() => editorText(page, 'layout-html')).toBe('<section>edited</section>')
   expect(deck.invokedCommands).not.toContain('create_layout')
 })
 
@@ -564,4 +564,87 @@ test('Given the layout screen, when Delete or an arrow key is pressed outside a 
   await page.locator('[data-studio-mode-option="slides"]').click()
   await expect(page.locator('[data-slide-row]')).toHaveCount(3)
   expect(deck.source).toBe(SOURCE)
+})
+
+// The layout editor is the same CodeMirror editor as the slide body
+// (`dom/codeEditor.ts`), so vim mode reaches it too.
+test.describe('the layout editor in vim mode', () => {
+  const QUOTE_FILES = { quote: { html: '<section class="peitho-slide layout-quote">\n  <h1>quote</h1>\n</section>', css: '.peitho-slide.layout-quote {}' } }
+
+  function vimStatus(page: Page, which: 'layout-html' | 'layout-css' = 'layout-html') {
+    return page.locator(`[data-editor="${which}"] .cm-vim-panel`)
+  }
+
+  async function emitEvent(page: Page, event: string, payload: unknown): Promise<void> {
+    await page.evaluate(({ event, payload }) => {
+      (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, toWindow?: string) => void })
+        .__mockEmitTauriEvent(event, payload, 'main')
+    }, { event, payload })
+  }
+
+  test('Given vim mode is on, when "dd" is typed in the layout HTML, then vim deletes the line and the layout has unsaved changes', async ({ page }) => {
+    await openLayoutScreen(page, deckOf({ settings: { vimMode: true }, layoutFiles: QUOTE_FILES }))
+    await row(page, 'quote').click()
+    await expect.poll(() => editorText(page, 'layout-html')).toBe(QUOTE_FILES.quote.html)
+
+    await editorContent(page, 'layout-html').click()
+    await page.keyboard.type('gg0dd')
+
+    await expect.poll(() => editorText(page, 'layout-html')).toBe('  <h1>quote</h1>\n</section>')
+    await expect(vimStatus(page)).toBeVisible()
+    await expect(page.locator('[data-save-layout]')).toBeEnabled()
+  })
+
+  test('Given the layout editor, when vim mode is turned on and off from Settings, then the change takes effect at once', async ({ page }) => {
+    await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE_FILES }))
+    await row(page, 'quote').click()
+    await page.locator('[data-layout-tab="css"]').click()
+    await editorContent(page, 'layout-css').click()
+    await expect(vimStatus(page, 'layout-css')).toHaveCount(0)
+
+    await emitEvent(page, 'settings:changed', { vimMode: true })
+    await expect(vimStatus(page, 'layout-css')).toBeVisible()
+
+    await emitEvent(page, 'settings:changed', { vimMode: false })
+    await expect(vimStatus(page, 'layout-css')).toHaveCount(0)
+    await editorContent(page, 'layout-css').click()
+    await page.keyboard.press('ControlOrMeta+End')
+    await page.keyboard.type('dd')
+    await expect.poll(() => editorText(page, 'layout-css')).toBe('.peitho-slide.layout-quote {}dd')
+  })
+
+  test('Given vim mode is on and a delete waiting to be confirmed, when Escape leaves insert mode in the layout editor, then only vim reacts', async ({ page }) => {
+    await openLayoutScreen(page, deckOf({ settings: { vimMode: true }, layoutFiles: QUOTE_FILES }))
+    await row(page, 'quote').click()
+    await page.locator('[data-delete-layout]').click()
+    await page.locator('[data-new-layout]').click()
+    await expect(page.locator('[data-delete-layout-panel]')).toBeVisible()
+
+    await editorContent(page, 'layout-html').click()
+    await page.keyboard.type('i')
+    await expect(vimStatus(page)).toContainText('INSERT')
+    await page.keyboard.press('Escape')
+
+    await expect(vimStatus(page)).not.toContainText('INSERT')
+    await expect(page.locator('[data-delete-layout-panel]')).toBeVisible()
+    await expect(page.locator('[data-new-layout-form]')).toBeVisible()
+    await expect(row(page, 'quote')).toBeVisible()
+  })
+
+  test('Given typing in the layout editor after a slide change, when Edit > Undo is chosen there, then the typing is undone and the slide change stays', async ({ page }) => {
+    const deck = deckOf({ layoutFiles: QUOTE_FILES })
+    await openLayoutScreen(page, deck)
+    await row(page, 'quote').click()
+    await page.locator('[data-apply-layout]').click()
+    await expect.poll(() => slideConfigs(deck.source)[0]).toEqual({ key: 'cover', layout: 'quote' })
+
+    await editorContent(page, 'layout-html').click()
+    await page.keyboard.press('ControlOrMeta+End')
+    await page.keyboard.type('X')
+    await expect.poll(() => editorText(page, 'layout-html')).toBe(QUOTE_FILES.quote.html + 'X')
+    await pressUndo(page)
+
+    await expect.poll(() => editorText(page, 'layout-html')).toBe(QUOTE_FILES.quote.html)
+    expect(slideConfigs(deck.source)[0]).toEqual({ key: 'cover', layout: 'quote' })
+  })
 })

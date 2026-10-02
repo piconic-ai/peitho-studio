@@ -69,11 +69,14 @@ export interface LayoutScreenProps {
   editorReady: boolean
   /** Why they aren't (or the last save's refusal), `''` for nothing. */
   editorMessage: string
-  editorHtml: string
-  editorCss: string
   editorDirty: boolean
   editorSaving: boolean
-  onType: (field: LayoutField, text: string) => void
+  /** The HTML and CSS editors' host elements: `Studio.tsx` creates a
+   * CodeMirror editor (`dom/codeEditor.ts`) in each, as for the slide
+   * body, so vim mode reaches them too. Typing comes back through the
+   * editors' own `onChange`. */
+  onHtmlEditorHost: (el: HTMLElement) => void
+  onCssEditorHost: (el: HTMLElement) => void
   onSave: () => void
   onRevert: () => void
 }
@@ -232,23 +235,20 @@ export function LayoutScreen(props: LayoutScreenProps) {
           </button>
         </div>
         <p role="alert" data-layout-editor-message hidden={props.editorMessage === ''} className="shrink-0 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words border-b border-border">{props.editorMessage}</p>
-        <textarea
-          data-layout-html
-          hidden={props.editorTab !== 'html'}
-          disabled={!props.editorReady}
-          value={props.editorHtml}
-          spellcheck={false}
-          onInput={event => props.onType('html', event.target.value)}
-          className="flex-1 min-h-0 w-full p-3 resize-none bg-background font-mono text-xs leading-relaxed outline-none"
+        {/* Hidden, not disabled, while the files aren't open: an editor
+            can't be typed into then. Both stay mounted (CLAUDE.md's
+            BarefootJS pitfalls on branches). */}
+        <div
+          ref={el => props.onHtmlEditorHost(el)}
+          data-editor="layout-html"
+          data-layout-editor-host
+          className={(props.editorReady && props.editorTab === 'html' ? '' : 'hidden ') + 'flex-1 min-h-0 bg-background text-foreground'}
         />
-        <textarea
-          data-layout-css
-          hidden={props.editorTab !== 'css'}
-          disabled={!props.editorReady}
-          value={props.editorCss}
-          spellcheck={false}
-          onInput={event => props.onType('css', event.target.value)}
-          className="flex-1 min-h-0 w-full p-3 resize-none bg-background font-mono text-xs leading-relaxed outline-none"
+        <div
+          ref={el => props.onCssEditorHost(el)}
+          data-editor="layout-css"
+          data-layout-editor-host
+          className={(props.editorReady && props.editorTab === 'css' ? '' : 'hidden ') + 'flex-1 min-h-0 bg-background text-foreground'}
         />
       </div>
 
