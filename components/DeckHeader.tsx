@@ -3,6 +3,7 @@
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
 import type { VariantOption } from '../domain/deckVariants'
+import type { StudioMode } from '../domain/layoutScreen'
 
 // Props here are values (`presentMenuOpen={presentMenuOpen()}`), not signal
 // getters — see `components/WelcomeScreen.tsx` for why (BF044).
@@ -24,6 +25,13 @@ export interface DeckHeaderProps {
   onTogglePresentMenu: () => void
   onClosePresentMenu: () => void
   onPresent: (rehearsal: boolean) => void
+  /** Which screen the window shows: the slides or the deck's layouts. */
+  studioMode: StudioMode
+  onStudioMode: (mode: StudioMode) => void
+}
+
+function modeClass(active: boolean): string {
+  return (active ? 'bg-primary text-primary-foreground ' : 'text-muted-foreground hover:bg-accent ') + 'px-3 py-1 text-xs font-medium'
 }
 
 export function DeckHeader(props: DeckHeaderProps) {
@@ -88,6 +96,30 @@ export function DeckHeader(props: DeckHeaderProps) {
         </div>
       </div>
       <div className="flex-1" />
+      {/* The Slides / Layouts switch: both screens stay mounted below it
+          (`Studio.tsx`), so switching keeps each one's state. */}
+      <div role="radiogroup" data-studio-mode className="shrink-0 flex rounded-full border border-border overflow-hidden">
+        <button
+          type="button"
+          role="radio"
+          data-studio-mode-option="slides"
+          aria-checked={props.studioMode === 'slides' ? 'true' : 'false'}
+          onClick={() => props.onStudioMode('slides')}
+          className={modeClass(props.studioMode === 'slides')}
+        >
+          {messagesFor(props.language).studioModeSlides}
+        </button>
+        <button
+          type="button"
+          role="radio"
+          data-studio-mode-option="layouts"
+          aria-checked={props.studioMode === 'layouts' ? 'true' : 'false'}
+          onClick={() => props.onStudioMode('layouts')}
+          className={modeClass(props.studioMode === 'layouts')}
+        >
+          {messagesFor(props.language).studioModeLayouts}
+        </button>
+      </div>
       <div className="relative">
         <div
           className={

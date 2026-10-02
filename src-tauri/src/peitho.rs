@@ -33,6 +33,7 @@ use crate::engine::builtin;
 use crate::engine::crit::{self as crit_shapes, DeckSession, FinishedRound, NewReviewComment, NewReviewReply, ReviewComment, ReviewUpdate};
 use crate::engine::image_layout;
 use crate::engine::images;
+use crate::engine::layout_files;
 use crate::engine::layout_fit::{self, LayoutVerdict};
 use crate::engine::layout_preview;
 use crate::engine::pipeline::{self, RenderOutput};
@@ -1123,6 +1124,100 @@ pub fn add_image_layout(
     session: State<PeithoSession>,
 ) -> Result<Vec<&'static str>, String> {
     image_layout::add_image_layout(&session_deck_path(&session, window.label())?, &content, slide_index)
+}
+
+// The layout screen's commands. Each works on this window's deck folder
+// only, takes `content` (the deck source as the frontend has it) where it
+// has to judge the slides, and touches no shared state — so all are
+// `async`, off the UI thread. See `engine::layout_files`.
+
+/// Creates layout `name` in this window's deck from `template` (`None`:
+/// blank, otherwise a standard layout's name) and returns the name saved.
+/// Writes nothing when the name is invalid or taken, or when the new
+/// layout would change how another slide builds.
+#[tauri::command(async)]
+pub fn create_layout(
+    content: String,
+    name: String,
+    template: Option<String>,
+    window: WebviewWindow,
+    session: State<PeithoSession>,
+) -> Result<String, String> {
+    let template = layout_files::LayoutTemplate::parse(template.as_deref())?;
+    layout_files::create_layout(&session_deck_path(&session, window.label())?, &content, &name, template)
+}
+
+/// Copies layout `name` of this window's deck (`<name>-copy`, numbered
+/// when taken) and returns the copy's name.
+#[tauri::command(async)]
+pub fn duplicate_layout(content: String, name: String, window: WebviewWindow, session: State<PeithoSession>) -> Result<String, String> {
+    layout_files::duplicate_layout(&session_deck_path(&session, window.label())?, &content, &name)
+}
+
+/// Whether layout `name` can be deleted from this window's deck once the
+/// slides on it are re-pinned as in `repinned` (`original` re-pinned).
+/// Writes nothing — the frontend checks before it re-pins.
+#[tauri::command(async)]
+pub fn check_layout_removal(
+    original: String,
+    repinned: String,
+    name: String,
+    window: WebviewWindow,
+    session: State<PeithoSession>,
+) -> Result<(), String> {
+    layout_files::check_layout_removal(&session_deck_path(&session, window.label())?, &original, &repinned, &name)
+}
+
+/// Deletes layout `name`'s files from this window's deck, its slides
+/// already moved off it in `content`.
+#[tauri::command(async)]
+pub fn delete_layout(content: String, name: String, window: WebviewWindow, session: State<PeithoSession>) -> Result<(), String> {
+    layout_files::delete_layout(&session_deck_path(&session, window.label())?, &content, &name)
+}
+
+/// Layout `name`'s placeholder preview rendered from the editor's unsaved
+/// `html` and `css`, for the layout screen's live preview. Writes nothing.
+/// The files the draft references are served beside the saved deck's
+/// (`AssetServer::add_draft_assets` — additive, never touching what a deck
+/// render serves), so its URLs resolve against the same asset server.
+/// `async`, unlike `render_draft`: that one replaces the served deck, so
+/// concurrent runs could leave an older render up; adding draft assets
+/// can't.
+#[tauri::command(async)]
+pub fn preview_layout_draft(
+    name: String,
+    html: String,
+    css: String,
+    window: WebviewWindow,
+    session: State<PeithoSession>,
+) -> Result<layout_files::LayoutDraftPreview, String> {
+    let preview = layout_files::preview_layout_draft(&session_deck_path(&session, window.label())?, &name, &html, &css)?;
+    let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+    if let Some(state) = guard.get(window.label()) {
+        state.asset_server.add_draft_assets(&preview.image_assets);
+    }
+    Ok(preview)
+}
+
+/// Layout `name`'s HTML and own CSS, for the layout screen's editor.
+#[tauri::command(async)]
+pub fn read_layout(name: String, window: WebviewWindow, session: State<PeithoSession>) -> Result<layout_files::LayoutSource, String> {
+    layout_files::read_layout(&session_deck_path(&session, window.label())?, &name)
+}
+
+/// Overwrites layout `name`'s HTML and CSS in this window's deck — nothing
+/// is written when the HTML doesn't parse as a layout, or when the edit
+/// would stop the deck (`content`, its source now) from building.
+#[tauri::command(async)]
+pub fn save_layout(
+    content: String,
+    name: String,
+    html: String,
+    css: String,
+    window: WebviewWindow,
+    session: State<PeithoSession>,
+) -> Result<(), String> {
+    layout_files::save_layout(&session_deck_path(&session, window.label())?, &content, &name, &html, &css)
 }
 
 #[tauri::command]

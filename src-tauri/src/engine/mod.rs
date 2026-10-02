@@ -27,6 +27,7 @@ pub mod builtin;
 pub mod crit;
 pub mod image_layout;
 pub mod images;
+pub mod layout_files;
 pub mod layout_fit;
 pub mod layout_preview;
 pub mod pipeline;

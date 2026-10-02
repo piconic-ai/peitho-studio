@@ -94,10 +94,18 @@ pub fn parse_source(deck_path: &Path, source: &str) -> Result<ParsedSource, Stri
 }
 
 pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, String> {
+    render_parsed(deck_path, parse_source(deck_path, source)?)
+}
+
+/// The second half of `render_source`: renders a deck already parsed by
+/// `parse_source`. Taking the `ParsedSource` lets a caller render against
+/// assets other than the ones on disk — `engine::layout_files` checks a
+/// layout deletion this way, with the layout and its CSS left out, before
+/// removing any file.
+pub fn render_parsed(deck_path: &Path, parsed_source: ParsedSource) -> Result<RenderOutput, String> {
     let deck_dir = deck_dir_of(deck_path);
 
-    let ParsedSource { deck: parsed, assets: ResolvedAssets { layouts, css: css_files, highlighter, fonts_dir } } =
-        parse_source(deck_path, source)?;
+    let ParsedSource { deck: parsed, assets: ResolvedAssets { layouts, css: css_files, highlighter, fonts_dir } } = parsed_source;
     let highlighter = highlighter.get();
 
     let slide_layouts = slide_layouts(&parsed, &layouts);

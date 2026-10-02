@@ -3,7 +3,8 @@
 // `toHaveValue`/`fill` don't apply to their `contenteditable` content.
 import type { Locator, Page } from '@playwright/test'
 
-export type EditorName = 'body' | 'note'
+/** The slide body and notes, and the layout screen's HTML and CSS. */
+export type EditorName = 'body' | 'note' | 'layout-html' | 'layout-css'
 
 /** The editor's `contenteditable` element — what takes focus and typing. */
 export function editorContent(page: Page, which: EditorName = 'body'): Locator {

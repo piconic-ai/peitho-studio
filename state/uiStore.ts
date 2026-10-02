@@ -5,6 +5,7 @@ import { type LayoutNotice, type LayoutVerdict } from '../domain/layoutFit'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { type PhoneShape, type ViewportMode, toggledViewportMode } from '../domain/viewport'
 import { toggleCollapsedKey } from '../domain/sectionCollapse'
+import { type StudioMode } from '../domain/layoutScreen'
 
 const SLIDE_LIST_WIDTH = 176
 const EDITOR_WIDTH = 420
@@ -192,7 +193,21 @@ export function createUiStore() {
     setPhoneShapeMenuOpen(false)
   }
 
+  // Which screen the deck window shows: the slides, or the deck's layouts
+  // (the header's Slides / Layouts switch). Session-only. Both screens stay
+  // mounted; this only toggles which one is visible. Switching closes the
+  // overlays that belong to the slides screen (the context menu, the phone
+  // shape menu), which would otherwise act on slides out of sight.
+  const [studioMode, setStudioModeSignal] = createSignal<StudioMode>('slides')
+  function setStudioMode(mode: StudioMode): void {
+    if (mode === studioMode()) return
+    setContextMenu({ kind: 'closed' })
+    setPhoneShapeMenuOpen(false)
+    setStudioModeSignal(mode)
+  }
+
   return {
+    studioMode, setStudioMode,
     dragState, setDragState, draggedIndex, dragOverGap, dragDeltaY,
     contextMenu, setContextMenu, closeContextMenu, toggleLayoutPicker, contextMenuAppendIndex,
     openSlideContextMenu, settleLayoutFit, showLayoutNotice,

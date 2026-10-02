@@ -83,6 +83,42 @@ export interface Messages {
   layoutChecking: string
   layoutMismatch: (layout: string, reason: string) => string
 
+  // Layout screen (the header's Slides / Layouts switch)
+  studioModeSlides: string
+  studioModeLayouts: string
+  layoutList: string
+  newLayout: string
+  newLayoutName: string
+  newLayoutFrom: string
+  blankLayout: string
+  layoutNameEmpty: string
+  layoutNameTooLong: string
+  layoutNameInvalid: string
+  layoutNameStart: string
+  layoutNameTaken: string
+  applyLayoutToSlide: string
+  /** Why Apply is off: no slide is selected in the slides screen. */
+  applyLayoutNeedsSlide: string
+  editLayout: string
+  duplicateLayout: string
+  deleteLayout: string
+  layoutUsage: (count: number) => string
+  /** Why Delete is off for the deck's only layout. */
+  onlyLayoutCannotBeDeleted: string
+  deleteLayoutConfirm: (layout: string) => string
+  deleteLayoutMoveSlides: (layout: string, count: number) => string
+  deleteLayoutMoveTo: string
+  deleting: string
+  saveLayout: string
+  savingLayout: string
+  revertLayout: string
+  layoutUnsaved: string
+  /** Why another layout can't be opened yet: this one has unsaved edits. */
+  layoutSaveFirst: string
+  layoutActionFailed: (error: string) => string
+  deckChangeFailed: string
+  layoutDeckUnsaved: string
+
   // Slide preview
   previewAsPhone: string
   previewPc: string
@@ -166,6 +202,12 @@ export interface Messages {
   imageSlotAddLayout: string
   imageSlotAddingLayout: string
   imageLayoutAdded: string
+  layoutCreated: (layout: string) => string
+  layoutDeleted: (layout: string) => string
+  layoutDeletedHistoryCleared: (layout: string) => string
+  layoutSaved: (layout: string) => string
+  layoutApplied: (layout: string) => string
+  layoutAlreadyApplied: (layout: string) => string
   imageLayoutAddFailed: (error: string) => string
 
   // About window
@@ -243,6 +285,38 @@ const en: Messages = {
   layoutChecking: 'Still checking which layouts fit this slide — try again in a moment.',
   layoutMismatch: (layout, reason) => `"${layout}" doesn't fit this slide: ${reason}`,
 
+  studioModeSlides: 'Slides',
+  studioModeLayouts: 'Layouts',
+  layoutList: 'Layouts',
+  newLayout: 'New Layout',
+  newLayoutName: 'Layout name (a-z, 0-9, -, _)',
+  newLayoutFrom: 'Start from',
+  blankLayout: 'Blank (title only)',
+  layoutNameEmpty: 'Enter a name for the layout',
+  layoutNameTooLong: 'The name is too long',
+  layoutNameInvalid: 'Use only letters a-z, digits, "-" and "_"',
+  layoutNameStart: 'Start the name with a letter or a digit',
+  layoutNameTaken: 'The deck already has a layout with this name',
+  applyLayoutToSlide: 'Apply to Slide',
+  applyLayoutNeedsSlide: 'Select a slide in Slides first',
+  editLayout: 'Edit Layout',
+  duplicateLayout: 'Duplicate Layout',
+  deleteLayout: 'Delete Layout',
+  layoutUsage: count => (count === 0 ? 'Unused' : count === 1 ? '1 slide' : `${String(count)} slides`),
+  onlyLayoutCannotBeDeleted: "The deck's only layout can't be deleted",
+  deleteLayoutConfirm: layout => `Delete "${layout}"? Its files are removed from layouts/ and css/.`,
+  deleteLayoutMoveSlides: (layout, count) => `${count === 1 ? '1 slide uses' : `${String(count)} slides use`} "${layout}". Move ${count === 1 ? 'it' : 'them'} to another layout before it is deleted.`,
+  deleteLayoutMoveTo: 'Move to',
+  deleting: 'Deleting…',
+  saveLayout: 'Save',
+  savingLayout: 'Saving…',
+  revertLayout: 'Revert',
+  layoutUnsaved: 'Unsaved changes',
+  layoutSaveFirst: 'Save or revert the changes to this layout before opening another',
+  layoutActionFailed: error => `Could not change the layouts: ${error}`,
+  deckChangeFailed: 'deck.md could not be updated',
+  layoutDeckUnsaved: 'the slides have changes that could not be saved to deck.md. Layouts are checked against the saved deck, so save the slides first',
+
   previewAsPhone: 'Preview as phone',
   previewPc: 'PC',
   previewPhone: 'Phone',
@@ -316,6 +390,12 @@ const en: Messages = {
   imageSlotAddLayout: 'Add an Image Layout',
   imageSlotAddingLayout: 'Adding the Image Layout…',
   imageLayoutAdded: 'Added the title-body-image layout to layouts/',
+  layoutCreated: layout => `Added the ${layout} layout`,
+  layoutDeleted: layout => `Deleted the ${layout} layout`,
+  layoutDeletedHistoryCleared: layout => `Deleted the ${layout} layout — undo history cleared, since it pointed slides at it`,
+  layoutSaved: layout => `Saved the ${layout} layout`,
+  layoutApplied: layout => `Applied the ${layout} layout to the slide`,
+  layoutAlreadyApplied: layout => `The slide already uses the ${layout} layout`,
   imageLayoutAddFailed: error => `Could not add the image layout: ${error}`,
 
   // Same words as the site's (site/index.html).
@@ -393,6 +473,38 @@ const ja: Messages = {
   layoutChecking: 'このスライドに合うレイアウトを確認しています。少し待ってからもう一度選んでください。',
   layoutMismatch: (layout, reason) => `「${layout}」はこのスライドに合いません: ${reason}`,
 
+  studioModeSlides: 'スライド',
+  studioModeLayouts: 'レイアウト',
+  layoutList: 'レイアウト一覧',
+  newLayout: '新規レイアウト',
+  newLayoutName: 'レイアウト名(英数字・-・_)',
+  newLayoutFrom: '元にするレイアウト',
+  blankLayout: '空白(タイトルのみ)',
+  layoutNameEmpty: 'レイアウト名を入力してください',
+  layoutNameTooLong: '名前が長すぎます',
+  layoutNameInvalid: '英字(a-z)・数字・「-」「_」だけを使ってください',
+  layoutNameStart: '名前は英字か数字で始めてください',
+  layoutNameTaken: '同じ名前のレイアウトがすでにあります',
+  applyLayoutToSlide: 'スライドに適用',
+  applyLayoutNeedsSlide: '先にスライド画面でスライドを選択してください',
+  editLayout: 'レイアウトを編集',
+  duplicateLayout: 'レイアウトを複製',
+  deleteLayout: 'レイアウトを削除',
+  layoutUsage: count => (count === 0 ? '未使用' : `${String(count)}枚で使用中`),
+  onlyLayoutCannotBeDeleted: 'デッキに1つしかないレイアウトは削除できません',
+  deleteLayoutConfirm: layout => `「${layout}」を削除しますか? layouts/ と css/ からファイルが削除されます。`,
+  deleteLayoutMoveSlides: (layout, count) => `「${layout}」は${String(count)}枚のスライドで使われています。削除する前に、別のレイアウトへ移してください。`,
+  deleteLayoutMoveTo: '移動先',
+  deleting: '削除中…',
+  saveLayout: '保存',
+  savingLayout: '保存中…',
+  revertLayout: '元に戻す',
+  layoutUnsaved: '未保存の変更があります',
+  layoutSaveFirst: '別のレイアウトを開く前に、このレイアウトの変更を保存するか元に戻してください',
+  layoutActionFailed: error => `レイアウトを変更できませんでした: ${error}`,
+  deckChangeFailed: 'deck.md を更新できませんでした',
+  layoutDeckUnsaved: 'deck.md に保存できていないスライドの変更があります。レイアウトは保存済みのデッキに対して確認するため、先にスライドを保存してください',
+
   previewAsPhone: 'スマートフォン表示でプレビュー',
   previewPc: 'PC',
   previewPhone: 'スマートフォン',
@@ -466,6 +578,12 @@ const ja: Messages = {
   imageSlotAddLayout: '画像用レイアウトを追加',
   imageSlotAddingLayout: '画像用レイアウトを追加しています…',
   imageLayoutAdded: '画像用レイアウト title-body-image を layouts/ に追加しました',
+  layoutCreated: layout => `レイアウト ${layout} を追加しました`,
+  layoutDeleted: layout => `レイアウト ${layout} を削除しました`,
+  layoutDeletedHistoryCleared: layout => `レイアウト ${layout} を削除しました。このレイアウトを指していた取り消し履歴は消去しました`,
+  layoutSaved: layout => `レイアウト ${layout} を保存しました`,
+  layoutApplied: layout => `スライドにレイアウト ${layout} を適用しました`,
+  layoutAlreadyApplied: layout => `スライドはすでにレイアウト ${layout} を使っています`,
   imageLayoutAddFailed: error => `画像用レイアウトを追加できませんでした: ${error}`,
 
   aboutDescription: 'Peithoでスライドを書く。素のMarkdownとHTMLなので、AIに手伝ってもらえます。',

@@ -77,6 +77,11 @@ export type StepOutcome =
   // It ran and the commit failed; the error is already shown.
   | { kind: 'failed' }
 
+/** How a slide operation ended, for a caller that reports it: as its step
+ * did (`StepOutcome`), or `unchanged` when there was nothing to change and
+ * no step ran. */
+export type SlideChange = StepOutcome['kind'] | 'unchanged'
+
 /** Oldest entries past this many are dropped, so a long session can't grow
  * the undo stack without bound. Each group of typing takes an entry, so
  * this is well above what slide operations alone would need. The text
@@ -302,4 +307,76 @@ export function inverseFrontmatterStep(source: string, step: FrontmatterStep): F
  * and without any trailing comment it had; its value is the same. */
 export function applyFrontmatterStep(source: string, step: FrontmatterStep): string {
   return setFrontmatterKey(source, step.key, step.value)
+}
+
+/** Several slides' `"layout"` set at once — the layout screen moving every
+ * slide off a layout it deletes. Each pin names a slide by position and
+ * the layout to write (`undefined`: no `"layout"` field). Not a history
+ * step: the move is part of the deletion, which can't be undone, and its
+ * inverse would pin the slides back to a layout whose file is gone. The
+ * inverse (`inverseLayoutPinsStep`) moves the slides back when the
+ * deletion itself then fails. */
+export interface LayoutPinsStep {
+  kind: 'layout-pins'
+  pins: readonly { index: number; layout: string | undefined }[]
+}
+
+/** The step that pins every slide at `indices` to `layout`. */
+export function layoutPinsStepFor(indices: readonly number[], layout: string): LayoutPinsStep {
+  return { kind: 'layout-pins', pins: indices.map(index => ({ index, layout })) }
+}
+
+/** The step that puts back the `"layout"` each slide `step` pins has in
+ * `texts` now. A pin naming no slide is left out. */
+export function inverseLayoutPinsStep(texts: readonly string[], step: LayoutPinsStep): LayoutPinsStep {
+  return {
+    kind: 'layout-pins',
+    pins: step.pins
+      .filter(pin => Number.isInteger(pin.index) && pin.index >= 0 && pin.index < texts.length)
+      .map(pin => ({ index: pin.index, layout: slideConfigOfText(texts[pin.index]).layout })),
+  }
+}
+
+/** `texts` with each pin of `step` written. Only a slide whose `"layout"`
+ * has to change is rewritten, so every other slide's text stays byte for
+ * byte as it was. A position past the end, negative, or not an integer
+ * names no slide and is ignored; for a repeated one, the last pin wins. */
+export function applyLayoutPinsStep(texts: readonly string[], step: LayoutPinsStep): string[] {
+  const wanted = new Map<number, string | undefined>()
+  for (const pin of step.pins) wanted.set(pin.index, pin.layout)
+  return texts.map((text, i) => {
+    if (!wanted.has(i)) return text
+    const layout = wanted.get(i)
+    if (slideConfigOfText(text).layout === layout) return text
+    return updatePageComment(text, { layout }).trim()
+  })
+}
+
+/** Whether running `step` would write `"layout": layout` onto a slide — a
+ * layout change (or its undo) naming it, a re-pin to it, or a slide put
+ * back (insert/replace) whose text names it. Once the layout's files are
+ * deleted such a step can never succeed again: every replay would fail the
+ * render and be put back on the stack. */
+export function stepPinsLayout(step: HistoryStep, layout: string): boolean {
+  switch (step.kind) {
+    case 'config':
+      return step.patch.layout === layout
+    case 'slides':
+      return (step.cmd.type === 'insert' || step.cmd.type === 'replace') && slideConfigOfText(step.cmd.text).layout === layout
+    case 'page-numbers':
+    case 'frontmatter':
+    case 'text':
+      return false
+    default: {
+      const _exhaustive: never = step
+      throw new Error(`Unhandled HistoryStep: ${JSON.stringify(_exhaustive)}`)
+    }
+  }
+}
+
+/** Whether any undo or redo step would pin a slide to `layout`
+ * (`stepPinsLayout`) — after deleting that layout, such a history no
+ * longer matches the deck and has to be forgotten. */
+export function historyPinsLayout(history: EditorHistory, layout: string): boolean {
+  return [...history.undo, ...history.redo].some(step => stepPinsLayout(step, layout))
 }

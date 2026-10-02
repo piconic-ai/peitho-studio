@@ -136,6 +136,28 @@ export interface MockDeck {
    * fix the size whatever the source says. peitho-core only produces those
    * two sizes. */
   canvas?: Size
+  /** The layout screen's files, by layout name — what `read_layout`
+   * answers and `save_layout` / `create_layout` / `duplicate_layout` /
+   * `delete_layout` change (with `layouts`, which they keep in step).
+   * Defaults to none: a layout read without an entry gets a bare
+   * `<section>` and no CSS. Stands in for `engine::layout_files`, modeling
+   * only what the frontend relies on: a name taken is refused, a copy is
+   * `<name>-copy`, `check_layout_removal` refuses while a slide of
+   * `repinned` still names the layout, and `save_layout` refuses HTML with
+   * no `<section`. */
+  layoutFiles?: Record<string, { html: string; css: string | null }>
+  /** Milliseconds `preview_layout_draft` waits for the given draft HTML —
+   * defaults to 0. Make an earlier draft slower than a later one to
+   * deliver the answers out of order. */
+  layoutDraftPreviewDelayMs?: (html: string) => number
+  /** Milliseconds `delete_layout` waits before resolving/rejecting —
+   * defaults to 0. Set this to act (e.g. Undo) while a deletion is in
+   * flight. */
+  deleteLayoutDelayMs?: number
+  /** When set, `render_draft` fails for a source with a slide naming a
+   * layout `layouts` doesn't list — as peitho-core does once a layout's
+   * file is gone. Off by default: most tests name layouts freely. */
+  rejectUnknownLayouts?: boolean
   /** The fragment every `preview_layouts` entry carries — defaults to an
    * empty one (the picker then draws name-only cards and mounts no canvas).
    * Set it to give the picker real slide canvases to inspect. */
@@ -315,6 +337,13 @@ function renderPayloadFor(source: string, deck: MockDeck): RenderPayload {
   return { manifest, fragments, slideLayouts, headingLayouts, assetBaseUrl: 'http://localhost:9/', css: deck.css ?? DEFAULT_CSS }
 }
 
+/** Layout `name`'s files in `deck.layoutFiles` — an own entry only, so a
+ * layout named like an `Object` prototype member (`constructor`) isn't
+ * handed the prototype's value. */
+function layoutFileOf(deck: MockDeck, name: string): { html: string; css: string | null } | undefined {
+  return deck.layoutFiles && Object.hasOwn(deck.layoutFiles, name) ? deck.layoutFiles[name] : undefined
+}
+
 /** Wires `page` up to open `deck.source` as a fake deck on load, and keeps
  * `deck.source` in sync with every `save_deck_source` call — so a test can
  * read it back afterward to assert on the persisted content. Call before
@@ -337,6 +366,8 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
     if (cmd === 'open_deck' && deck.openDeckDelayMs) await sleep(deck.openDeckDelayMs)
     if (cmd === 'check_slide_layouts' && deck.checkSlideLayoutsDelayMs) await sleep(deck.checkSlideLayoutsDelayMs)
     if (cmd === 'render_draft' && deck.renderDraftDelayMs) await sleep(deck.renderDraftDelayMs)
+    if (cmd === 'delete_layout' && deck.deleteLayoutDelayMs) await sleep(deck.deleteLayoutDelayMs)
+    if (cmd === 'preview_layout_draft' && deck.layoutDraftPreviewDelayMs) await sleep(deck.layoutDraftPreviewDelayMs(args.html as string))
     if (cmd.startsWith('import_deck_image_') && deck.importImageDelayMs) await sleep(deck.importImageDelayMs)
     deck.onInvoke?.(cmd, args)
     if (error !== null && error !== undefined) throw new Error(error)
@@ -353,18 +384,74 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'open_deck':
         return { deckPath: deck.deckPath ?? deck.source, deckDir: '/fake', trusted: deck.trusted ?? false, render: renderPayloadFor(deck.source, deck) }
       case 'render_draft':
+        if (deck.rejectUnknownLayouts) {
+          splitSlides(args.content as string).forEach((range, i) => {
+            const layout = extractPageComment(range.text).config.layout
+            if (layout !== undefined && !(deck.layouts ?? []).includes(layout)) throw new Error(`slide ${String(i + 1)} names layout '${layout}', which the deck doesn't have`)
+          })
+        }
         return renderPayloadFor(args.content as string, deck)
       case 'read_deck_source': return deck.source
       case 'save_deck_source':
         await deck.beforeSave?.(args.content as string)
         deck.source = args.content as string
         return null
+      // Stands in for `engine::layout_files::preview_layout_draft`: the draft
+      // HTML itself is the preview's fragment, and its CSS the CSS; HTML with
+      // no `<section` is refused, as `save_layout` is here.
+      case 'preview_layout_draft': {
+        const html = args.html as string
+        if (!html.includes('<section')) throw new Error('a layout needs a <section> element')
+        return { fragment: html, css: args.css as string }
+      }
       case 'preview_layouts': return { previews: (deck.layouts ?? []).map(name => ({ name, fragment: deck.layoutFragment ?? '' })), css: '' }
       case 'list_deck_variants': return deck.deckVariants ?? []
       case 'check_slide_layouts':
         return deck.layoutVerdicts?.(args.content as string, args.slideIndex as number) ?? null
       case 'add_image_layout':
         return deck.addImageLayout?.(args.content as string, args.slideIndex as number) ?? []
+      case 'read_layout': {
+        const name = args.name as string
+        return layoutFileOf(deck, name) ?? { html: `<section class="peitho-slide layout-${name}"></section>`, css: null }
+      }
+      case 'create_layout': {
+        const name = (args.name as string).trim()
+        const layouts = deck.layouts ??= []
+        if (layouts.some(taken => taken.toLowerCase() === name.toLowerCase())) throw new Error(`the deck already has a layout named '${name}'`)
+        layouts.push(name)
+        ;(deck.layoutFiles ??= {})[name] = { html: `<section class="peitho-slide layout-${name}"></section>`, css: `.peitho-slide.layout-${name} {\n}\n` }
+        return name
+      }
+      case 'duplicate_layout': {
+        const name = args.name as string
+        const layouts = deck.layouts ??= []
+        let copy = `${name}-copy`
+        for (let n = 2; layouts.includes(copy); n++) copy = `${name}-copy-${String(n)}`
+        layouts.push(copy)
+        const files = layoutFileOf(deck, name)
+        if (files) (deck.layoutFiles ??= {})[copy] = files
+        return copy
+      }
+      case 'check_layout_removal': {
+        const name = args.name as string
+        splitSlides(args.repinned as string).forEach((range, i) => {
+          if (extractPageComment(range.text).config.layout === name) throw new Error(`slide ${String(i + 1)} is on '${name}' — pick another layout for it first`)
+        })
+        if ((deck.layouts ?? []).length < 2) throw new Error(`'${name}' is the deck's only layout`)
+        return null
+      }
+      case 'delete_layout': {
+        const name = args.name as string
+        deck.layouts = (deck.layouts ?? []).filter(layout => layout !== name)
+        if (deck.layoutFiles) delete deck.layoutFiles[name]
+        return null
+      }
+      case 'save_layout': {
+        const html = args.html as string
+        if (!html.includes('<section')) throw new Error('a layout needs a <section> element')
+        ;(deck.layoutFiles ??= {})[args.name as string] = { html, css: args.css as string }
+        return null
+      }
       case 'present_deck':
         // Fires after the spawn itself resolves, matching real timing —
         // `watch_present_readiness`/`watch_present_failure` (peitho.rs)

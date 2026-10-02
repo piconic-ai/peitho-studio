@@ -17,6 +17,13 @@ function focusedTypingElement(): HTMLElement | null {
   return active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active.isContentEditable ? active : null
 }
 
+/** Whether keyboard focus is inside an element matching `selector` (the
+ * layout screen's HTML/CSS editors, say). */
+export function isFocusWithin(selector: string): boolean {
+  const active = document.activeElement
+  return active instanceof Element && active.closest(selector) !== null
+}
+
 /** Whether keyboard focus is in a field that takes typing, where a plain
  * key (an arrow, Delete) edits text instead of acting on slides. */
 export function isTypingInField(): boolean {

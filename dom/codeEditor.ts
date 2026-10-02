@@ -33,6 +33,10 @@ export interface CodeEditorOptions {
   spellcheck?: boolean
   /** Monospace for the body, the page font for the notes. */
   monospace?: boolean
+  /** Long lines wrap (the default, for the slide body and notes); `false`
+   * keeps each on one line, scrolling sideways — for the layout screen's
+   * HTML and CSS, where wrapped markup is harder to read. */
+  lineWrapping?: boolean
   /** Starts with vim key bindings on (see `setCodeEditorVimMode`). */
   vimMode?: boolean
   /** Vim mode only: the editor entered `mode` (`<Esc>` back to normal,
@@ -198,7 +202,7 @@ function editorExtensions(options: CodeEditorOptions, vimOn: boolean): Extension
     // at hasn't been dropped here.
     history({ minDepth: MAX_HISTORY_DEPTH }),
     keymap.of(defaultKeymap),
-    EditorView.lineWrapping,
+    options.lineWrapping === false ? [] : EditorView.lineWrapping,
     EditorView.contentAttributes.of({ spellcheck: options.spellcheck === false ? 'false' : 'true' }),
     editorTheme(options.monospace ?? false),
     placeholderSlot.of(placeholderExtension(options.placeholder ?? '')),
