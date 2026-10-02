@@ -2036,7 +2036,7 @@ export function Studio() {
     const texts = editorDraft(shown)
     layouts.editorSaving()
     try {
-      await deckIpc.saveLayout(name, texts.html, texts.css)
+      await deckIpc.saveLayout(liveSource(), name, texts.html, texts.css)
     } catch (err) {
       layouts.editorSaveFailed(name, String(err))
       return

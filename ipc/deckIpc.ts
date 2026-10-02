@@ -102,8 +102,9 @@ export interface DeckIpc {
   deleteLayout(content: string, name: string): Promise<void>
   readLayout(name: string): Promise<LayoutFiles>
   /** Overwrites layout `name`'s HTML and CSS; refuses HTML that doesn't
-   * parse as a layout. */
-  saveLayout(name: string, html: string, css: string): Promise<void>
+   * parse as a layout, and an edit that would stop `content` (the deck
+   * source now) from building as it does. */
+  saveLayout(content: string, name: string, html: string, css: string): Promise<void>
   presentDeck(rehearsal: boolean): Promise<void>
   /** Tells the Edit menu's deck settings what this window's deck holds
    * (checks and current-value labels), shown while this window is in
@@ -181,7 +182,7 @@ export function createTauriDeckIpc(): DeckIpc {
     checkLayoutRemoval: (original, repinned, name) => invoke('check_layout_removal', { original, repinned, name }),
     deleteLayout: (content, name) => invoke('delete_layout', { content, name }),
     readLayout: name => invoke('read_layout', { name }),
-    saveLayout: (name, html, css) => invoke('save_layout', { name, html, css }),
+    saveLayout: (content, name, html, css) => invoke('save_layout', { content, name, html, css }),
     presentDeck: rehearsal => invoke('present_deck', { rehearsal }),
     reportDeckSettings: settings => invoke('report_deck_settings', { settings }),
     trustOpenDeck: () => invoke('trust_open_deck'),

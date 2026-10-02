@@ -296,6 +296,26 @@ test('Given a layout\'s CSS edited, when saved, then the files are written and S
   expect(deck.layoutFiles?.quote.html).toBe('<section class="peitho-slide layout-quote"></section>')
 })
 
+test('Given an edit that would stop a slide from building, when saved, then the deck source goes along for the check, and its refusal shows in the editor with the edit kept unsaved', async ({ page }) => {
+  const saves: unknown[] = []
+  const deck = deckOf({
+    layoutFiles: { 'title-body': { html: '<section class="peitho-slide layout-title-body"></section>', css: null } },
+    onInvoke: (cmd, args) => { if (cmd === 'save_layout') saves.push(args) },
+    commandError: cmd => (cmd === 'save_layout' ? "this edit to the 'title-body' layout would stop slide 2 ('intro') from building on 'title-body'" : null),
+  })
+  await openLayoutScreen(page, deck)
+
+  await row(page, 'title-body').click()
+  await page.locator('[data-layout-html]').fill('<section class="peitho-slide layout-title-body"><h1>no body</h1></section>')
+  await page.locator('[data-save-layout]').click()
+
+  await expect(page.locator('[data-layout-editor-message]')).toContainText("would stop slide 2 ('intro') from building")
+  await expect(page.locator('[data-layout-html]')).toHaveValue('<section class="peitho-slide layout-title-body"><h1>no body</h1></section>')
+  await expect(page.locator('[data-save-layout]')).toBeEnabled()
+  expect(saves).toEqual([{ content: SOURCE, name: 'title-body', html: '<section class="peitho-slide layout-title-body"><h1>no body</h1></section>', css: '' }])
+  expect(deck.layoutFiles?.['title-body'].html).toBe('<section class="peitho-slide layout-title-body"></section>')
+})
+
 test('Given unsaved edits to a layout, when another layout is clicked, then the edits stay open and a notice says to save or revert first', async ({ page }) => {
   await openLayoutScreen(page, deckOf())
 

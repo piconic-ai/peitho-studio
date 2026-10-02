@@ -1182,10 +1182,18 @@ pub fn read_layout(name: String, window: WebviewWindow, session: State<PeithoSes
 }
 
 /// Overwrites layout `name`'s HTML and CSS in this window's deck — nothing
-/// is written when the HTML doesn't parse as a layout.
+/// is written when the HTML doesn't parse as a layout, or when the edit
+/// would stop the deck (`content`, its source now) from building.
 #[tauri::command(async)]
-pub fn save_layout(name: String, html: String, css: String, window: WebviewWindow, session: State<PeithoSession>) -> Result<(), String> {
-    layout_files::save_layout(&session_deck_path(&session, window.label())?, &name, &html, &css)
+pub fn save_layout(
+    content: String,
+    name: String,
+    html: String,
+    css: String,
+    window: WebviewWindow,
+    session: State<PeithoSession>,
+) -> Result<(), String> {
+    layout_files::save_layout(&session_deck_path(&session, window.label())?, &content, &name, &html, &css)
 }
 
 #[tauri::command]

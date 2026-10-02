@@ -18,7 +18,7 @@
 
 use std::path::{Path, PathBuf};
 
-use peitho_core::{parse_layout, Layout, Layouts};
+use peitho_core::{parse_layout, CssFile, Layout, Layouts};
 use serde::Serialize;
 
 use super::assets::ResolvedAssets;
@@ -323,20 +323,74 @@ pub fn read_layout(deck_path: &Path, name: &str) -> Result<LayoutSource, String>
     Ok(LayoutSource { html, css })
 }
 
+/// The deck's CSS files as they will be once layout `name`'s own CSS is
+/// saved as `css` (see `save_layout`): `css/<name>.css` replaced, or added
+/// when `css` isn't blank. `css_exists` says whether that file is there
+/// now (a blank save then empties it rather than removing it), and
+/// `has_css_dir` whether the deck has a `css/` at all — without one, `css`
+/// that isn't blank brings the scaffolded theme in place of the built-in
+/// one, as `save_layout` writes it. Sorted by name, as `assets::resolve`
+/// reads them.
+fn css_with_layout_css(current: Vec<CssFile>, name: &str, css: &str, css_exists: bool, has_css_dir: bool) -> Vec<CssFile> {
+    let own_css = format!("{name}.css");
+    let written = css_exists || !css.trim().is_empty();
+    if !has_css_dir && !written {
+        return current;
+    }
+    let mut files: Vec<CssFile> = if has_css_dir {
+        current.into_iter().filter(|file| file.name != own_css).collect()
+    } else {
+        vec![CssFile { name: "base.css".to_string(), content: builtin::scaffolded_base_css() }]
+    };
+    if written {
+        files.push(CssFile { name: own_css, content: css.to_string() });
+    }
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    files
+}
+
+/// Whether saving `layout` (layout `name`'s new HTML, parsed) with `css`
+/// keeps `deck_path`'s deck building as it does for `content`, the deck
+/// source now: every slide that builds today stays on the same layout
+/// (`check_layout_set_change`), and the deck as a whole still renders with
+/// the edited layout and CSS in place — checked before anything is
+/// written, so an edit that would leave the deck unable to open is refused.
+/// A deck that doesn't build today isn't held to the render.
+fn check_layout_edit(deck_path: &Path, content: &str, layout: Layout, css: &str, css_exists: bool, has_css_dir: bool) -> Result<(), String> {
+    let name = layout.name().to_string();
+    let parsed = pipeline::parse_source(deck_path, content)?;
+    let next = Layouts::new(parsed.assets.layouts.iter().map(|current| if current.name() == name { layout.clone() } else { current.clone() }).collect())
+        .map_err(|err| err.to_string())?;
+    check_layout_set_change(deck_path, content, content, &next, None, &format!("this edit to the '{name}' layout"))?;
+    if pipeline::render_source(deck_path, content).is_err() {
+        return Ok(());
+    }
+    let mut edited = parsed;
+    let css_files = std::mem::take(&mut edited.assets.css);
+    edited.assets.css = css_with_layout_css(css_files, &name, css, css_exists, has_css_dir);
+    edited.assets.layouts = next;
+    pipeline::render_parsed(deck_path, edited)
+        .map(|_| ())
+        .map_err(|err| format!("this edit to the '{name}' layout would stop the deck from building: {err}"))
+}
+
 /// Saves `html` and `css` as layout `name`'s files in `deck_path`'s deck —
 /// the one place a layout file is overwritten. Nothing is written unless
-/// the HTML parses as a layout, and the layout must already exist. Its CSS
-/// file is created only for CSS that isn't blank (along with the built-in
-/// theme when the deck has no `css/`, as in `layout_files`).
-pub fn save_layout(deck_path: &Path, name: &str, html: &str, css: &str) -> Result<(), String> {
+/// the HTML parses as a layout, the layout already exists, and the deck
+/// (`content`, its source now) keeps building as it does
+/// (`check_layout_edit`). Its CSS file is created only for CSS that isn't
+/// blank (along with the built-in theme when the deck has no `css/`, as in
+/// `layout_files`).
+pub fn save_layout(deck_path: &Path, content: &str, name: &str, html: &str, css: &str) -> Result<(), String> {
     let deck_dir = pipeline::deck_dir_of(deck_path);
     let (html_path, css_path) = layout_paths(deck_dir, name)?;
     if !html_path.is_file() {
         return Err(format!("'{name}' is not a layout file of this deck"));
     }
-    parse_layout(name, html).map_err(|err| err.to_string())?;
+    let layout = parse_layout(name, html).map_err(|err| err.to_string())?;
     let css_exists = css_path.is_file();
     let has_css_dir = deck_dir.join("css").is_dir();
+    check_layout_edit(deck_path, content, layout, css, css_exists, has_css_dir)?;
     if !css_exists && !css.trim().is_empty() && !has_css_dir {
         let mut written = Written::default();
         write_new_file(&deck_dir.join("css/base.css"), &builtin::scaffolded_base_css(), &mut written)?;
@@ -834,7 +888,7 @@ mod tests {
         let html = "<section class=\"peitho-slide layout-title-slide edited\"><h1><slot name=\"title\" accepts=\"inline\" arity=\"1\"></slot></h1><div><slot name=\"body\" accepts=\"blocks\" arity=\"0..1\"></slot></div></section>";
         let css = ".peitho-slide.layout-title-slide { color: rebeccapurple; }";
 
-        save_layout(&deck_path, "title-slide", html, css).unwrap();
+        save_layout(&deck_path, PINNED, "title-slide", html, css).unwrap();
 
         assert_eq!(std::fs::read_to_string(dir.path().join("layouts/title-slide.html")).unwrap(), html);
         let output = render_source(&deck_path, PINNED).unwrap_or_else(|err| panic!("{err}"));
@@ -855,7 +909,7 @@ mod tests {
             "<section><slot name=\"title\" accepts=\"nonsense\" arity=\"1\"></slot></section>",
             "<div>no section</div>",
         ] {
-            assert!(save_layout(&deck_path, "title-slide", html, "x {}").is_err(), "{html:?}");
+            assert!(save_layout(&deck_path, PINNED, "title-slide", html, "x {}").is_err(), "{html:?}");
         }
         assert_eq!(std::fs::read_to_string(dir.path().join("layouts/title-slide.html")).unwrap(), before_html);
         assert_eq!(std::fs::read_to_string(dir.path().join("css/title-slide.css")).unwrap(), before_css);
@@ -866,7 +920,7 @@ mod tests {
         let (dir, deck_path) = standard_deck(PINNED);
         let before = files_under(dir.path());
         for name in ["nope", "../deck", ""] {
-            assert!(save_layout(&deck_path, name, COVER, "").is_err(), "{name:?}");
+            assert!(save_layout(&deck_path, PINNED, name, COVER, "").is_err(), "{name:?}");
         }
         assert_eq!(files_under(dir.path()), before);
     }
@@ -876,12 +930,91 @@ mod tests {
         let source = "<!-- {\"key\":\"a\",\"layout\":\"cover\"} -->\n# A\n";
         let (dir, deck_path) = deck_with(&[("cover", COVER), ("statement", STATEMENT)], source);
 
-        save_layout(&deck_path, "cover", COVER, "  \n").unwrap();
+        save_layout(&deck_path, source, "cover", COVER, "  \n").unwrap();
         assert!(!dir.path().join("css").exists());
 
-        save_layout(&deck_path, "cover", COVER, "h1 { color: red; }").unwrap();
+        save_layout(&deck_path, source, "cover", COVER, "h1 { color: red; }").unwrap();
         assert_eq!(std::fs::read_to_string(dir.path().join("css/cover.css")).unwrap(), "h1 { color: red; }");
         assert!(dir.path().join("css/base.css").is_file(), "the built-in theme comes along with the first css/ file");
+    }
+
+    #[test]
+    fn adversarial_an_edit_that_parses_but_drops_a_slot_a_slide_uses_is_refused_and_nothing_is_written() {
+        // `intro` and `more` are title+body slides pinned to `title-body`;
+        // without its body slot they'd stop building — and the deck with
+        // them, so Studio couldn't open it again.
+        let (dir, deck_path) = standard_deck(PINNED);
+        let before = files_under(dir.path());
+        let before_html = std::fs::read_to_string(dir.path().join("layouts/title-body.html")).unwrap();
+        let title_only = "<section class=\"peitho-slide layout-title-body\"><h1><slot name=\"title\" accepts=\"inline\" arity=\"1\"></slot></h1></section>";
+
+        let err = save_layout(&deck_path, PINNED, "title-body", title_only, "").unwrap_err();
+
+        assert!(err.contains("slide 2 ('intro')"), "{err}");
+        assert_eq!(files_under(dir.path()), before);
+        assert_eq!(std::fs::read_to_string(dir.path().join("layouts/title-body.html")).unwrap(), before_html);
+        assert!(render_source(&deck_path, PINNED).is_ok());
+    }
+
+    #[test]
+    fn adversarial_css_that_would_break_the_build_is_refused_and_nothing_is_written() {
+        // A theme naming a slot class no layout has is refused by peitho-core.
+        let (dir, deck_path) = standard_deck(PINNED);
+        let before_css = std::fs::read_to_string(dir.path().join("css/title-slide.css")).unwrap();
+        let html = std::fs::read_to_string(dir.path().join("layouts/title-slide.html")).unwrap();
+
+        let err = save_layout(&deck_path, PINNED, "title-slide", &html, ".slot-nowhere { color: red; }").unwrap_err();
+
+        assert!(err.contains("stop the deck from building"), "{err}");
+        assert_eq!(std::fs::read_to_string(dir.path().join("css/title-slide.css")).unwrap(), before_css);
+    }
+
+    #[test]
+    fn adversarial_a_deck_that_does_not_build_today_can_still_save_an_edit_that_keeps_its_slides() {
+        let (dir, deck_path) = standard_deck(PINNED);
+        let broken = PINNED.replace("\"layout\":\"title-slide\"", "\"layout\":\"quote\"");
+        assert!(render_source(&deck_path, &broken).is_err());
+        let css = ".peitho-slide.layout-big-number { color: teal; }";
+        let html = std::fs::read_to_string(dir.path().join("layouts/big-number.html")).unwrap();
+
+        save_layout(&deck_path, &broken, "big-number", &html, css).unwrap();
+
+        assert_eq!(std::fs::read_to_string(dir.path().join("css/big-number.css")).unwrap(), css);
+    }
+
+    // --- css_with_layout_css ---
+
+    fn css_file(name: &str, content: &str) -> CssFile {
+        CssFile { name: name.to_string(), content: content.to_string() }
+    }
+
+    fn css_pairs(files: &[CssFile]) -> Vec<(&str, &str)> {
+        files.iter().map(|file| (file.name.as_str(), file.content.as_str())).collect()
+    }
+
+    #[test]
+    fn given_a_deck_with_css_when_a_layouts_css_is_saved_then_only_its_file_changes_or_appears() {
+        let current = vec![css_file("base.css", "b"), css_file("quote.css", "old"), css_file("quote-copy.css", "c")];
+        assert_eq!(
+            css_pairs(&css_with_layout_css(current.clone(), "quote", "new", true, true)),
+            vec![("base.css", "b"), ("quote-copy.css", "c"), ("quote.css", "new")],
+        );
+        let current = vec![css_file("base.css", "b")];
+        assert_eq!(css_pairs(&css_with_layout_css(current, "cover", "x", false, true)), vec![("base.css", "b"), ("cover.css", "x")]);
+    }
+
+    #[test]
+    fn adversarial_blank_css_empties_an_existing_file_but_adds_none_and_a_deck_without_css_dir_gets_the_theme() {
+        let current = vec![css_file("base.css", "b"), css_file("quote.css", "old")];
+        assert_eq!(css_pairs(&css_with_layout_css(current, "quote", " \n", true, true)), vec![("base.css", "b"), ("quote.css", " \n")]);
+
+        let builtin = vec![css_file("base.css (built-in)", "t")];
+        assert_eq!(css_pairs(&css_with_layout_css(builtin.clone(), "cover", "", false, false)), vec![("base.css (built-in)", "t")]);
+        let scaffolded = builtin::scaffolded_base_css();
+        assert_eq!(
+            css_pairs(&css_with_layout_css(builtin, "cover", "h1 {}", false, false)),
+            vec![("base.css", scaffolded.as_str()), ("cover.css", "h1 {}")],
+        );
     }
 
     // --- check_layout_removal / delete_layout ---
