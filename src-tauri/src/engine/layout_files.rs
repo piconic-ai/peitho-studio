@@ -58,14 +58,29 @@ pub fn validate_layout_name(name: &str, existing: &[&str]) -> Result<String, Str
 
 /// The name a copy of `name` gets: `<name>-copy`, or `<name>-copy-2`,
 /// `-copy-3`, ... when that's taken (case aside, as in
-/// `validate_layout_name`).
+/// `validate_layout_name`). A name too long to take the suffix within
+/// `MAX_NAME_LEN` is cut short first, so the copy is always a name the
+/// deck can open, save and delete.
 pub fn duplicate_name(name: &str, existing: &[&str]) -> String {
     let taken = |candidate: &str| existing.iter().any(|name| name.eq_ignore_ascii_case(candidate));
-    let first = format!("{name}-copy");
+    let with_suffix = |suffix: String| format!("{}{suffix}", truncated(name, MAX_NAME_LEN.saturating_sub(suffix.len())));
+    let first = with_suffix("-copy".to_string());
     if !taken(&first) {
         return first;
     }
-    (2..).map(|n| format!("{name}-copy-{n}")).find(|candidate| !taken(candidate)).expect("an unbounded range always finds a free name")
+    (2..)
+        .map(|n| with_suffix(format!("-copy-{n}")))
+        .find(|candidate| !taken(candidate))
+        .expect("an unbounded range always finds a free name")
+}
+
+/// `text` cut to at most `max_len` bytes, on a character boundary.
+fn truncated(text: &str, max_len: usize) -> &str {
+    if text.len() <= max_len {
+        return text;
+    }
+    let end = (0..=max_len).rev().find(|&at| text.is_char_boundary(at)).unwrap_or(0);
+    &text[..end]
 }
 
 /// `text` with every `layout-<from>` class token renamed `layout-<to>` —
@@ -268,7 +283,8 @@ pub fn create_layout(deck_path: &Path, content: &str, name: &str, template: Layo
 pub fn duplicate_layout(deck_path: &Path, content: &str, name: &str) -> Result<String, String> {
     let names = layout_names(deck_path, content)?;
     let source = read_layout(deck_path, name).or_else(|err| builtin_layout_source(deck_path, name).ok_or(err))?;
-    let copy = duplicate_name(name, &names.iter().map(String::as_str).collect::<Vec<_>>());
+    let names = names.iter().map(String::as_str).collect::<Vec<_>>();
+    let copy = validate_layout_name(&duplicate_name(name, &names), &names)?;
     let source = LayoutSource {
         html: retarget_layout_class(&source.html, name, &copy),
         css: source.css.map(|css| retarget_layout_class(&css, name, &copy)),
@@ -486,6 +502,40 @@ mod tests {
         assert_eq!(duplicate_name("x", &["X-COPY"]), "x-copy-2");
         assert_eq!(duplicate_name("x-copy", &["x", "x-copy"]), "x-copy-copy");
         assert_eq!(duplicate_name("", &[]), "-copy");
+    }
+
+    #[test]
+    fn given_a_name_too_long_for_the_suffix_when_duplicated_then_it_is_cut_short_so_the_copy_is_a_valid_name() {
+        let longest = "a".repeat(MAX_NAME_LEN);
+        let copy = duplicate_name(&longest, &[&longest]);
+        assert_eq!(copy, format!("{}-copy", "a".repeat(MAX_NAME_LEN - "-copy".len())));
+        assert!(validate_layout_name(&copy, &[&longest]).is_ok(), "{copy}");
+
+        // One that just fits keeps its whole name.
+        let fits = "b".repeat(MAX_NAME_LEN - "-copy".len());
+        assert_eq!(duplicate_name(&fits, &[]), format!("{fits}-copy"));
+    }
+
+    #[test]
+    fn adversarial_numbered_copies_of_a_long_name_stay_within_the_limit_and_never_collide() {
+        let longest = "a".repeat(MAX_NAME_LEN);
+        let mut existing = vec![longest.clone()];
+        for _ in 0..12 {
+            let refs: Vec<&str> = existing.iter().map(String::as_str).collect();
+            let copy = duplicate_name(&longest, &refs);
+            assert!(copy.len() <= MAX_NAME_LEN, "{copy}");
+            assert!(validate_layout_name(&copy, &refs).is_ok(), "{copy}");
+            existing.push(copy);
+        }
+        assert!(existing.contains(&format!("{}-copy-10", "a".repeat(MAX_NAME_LEN - "-copy-10".len()))));
+    }
+
+    #[test]
+    fn adversarial_truncation_never_splits_a_character() {
+        assert_eq!(truncated("ab", 5), "ab");
+        assert_eq!(truncated("abc", 0), "");
+        assert_eq!(truncated("aé", 2), "a");
+        assert_eq!(truncated("", 3), "");
     }
 
     // --- retarget_layout_class ---
@@ -721,6 +771,19 @@ mod tests {
         duplicate_layout(&deck_path, source, "cover").unwrap();
 
         assert_eq!(files_under(dir.path()), ["deck.md", "layouts/cover-copy.html", "layouts/cover.html", "layouts/statement.html"]);
+    }
+
+    #[test]
+    fn given_a_layout_with_the_longest_name_when_duplicated_then_the_copy_can_be_read_and_deleted() {
+        let source = "<!-- {\"key\":\"a\",\"layout\":\"statement\"} -->\n# A\n\nBody.\n";
+        let longest = "c".repeat(MAX_NAME_LEN);
+        let (dir, deck_path) = deck_with(&[(longest.as_str(), COVER), ("statement", STATEMENT)], source);
+
+        let copy = duplicate_layout(&deck_path, source, &longest).unwrap_or_else(|err| panic!("{err}"));
+
+        assert!(copy.len() <= MAX_NAME_LEN, "{copy}");
+        assert!(dir.path().join(format!("layouts/{copy}.html")).is_file());
+        assert!(read_layout(&deck_path, &copy).is_ok());
     }
 
     #[test]
