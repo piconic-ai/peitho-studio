@@ -8,6 +8,9 @@ import {
 } from '../domain/layoutEditor'
 import { type LayoutNameProblem, layoutNameProblem } from '../domain/layoutScreen'
 
+const LIST_WIDTH = 220
+const EDITOR_WIDTH = 420
+
 /** The layout screen's own state (Studio's "Layouts" mode): which layout is
  * shown, the New Layout form, a delete in progress, the HTML/CSS editor,
  * and a notice for the last refused operation. Which *mode* the window is
@@ -19,6 +22,11 @@ import { type LayoutNameProblem, layoutNameProblem } from '../domain/layoutScree
  * A factory, so every window and every test gets its own instance. */
 export function createLayoutScreenStore() {
   const [selectedLayout, setSelectedLayout] = createSignal<string | null>(null)
+
+  // The list and editor columns' widths (`dom/columnResize.ts`), session-only
+  // like the slides screen's.
+  const [listWidth, setListWidth] = createSignal(LIST_WIDTH)
+  const [editorWidth, setEditorWidth] = createSignal(EDITOR_WIDTH)
 
   // Bumped whenever a fresh set of layout previews arrives, so the list's
   // rows get new keys and redraw their thumbnails (see `layoutRows`).
@@ -110,6 +118,7 @@ export function createLayoutScreenStore() {
 
   return {
     selectedLayout, setSelectedLayout,
+    listWidth, setListWidth, editorWidth, setEditorWidth,
     previewGeneration, bumpPreviewGeneration,
     newLayoutOpen, newLayoutName, setNewLayoutName, newLayoutTemplate, setNewLayoutTemplate,
     openNewLayout, closeNewLayout, newLayoutNameProblem,

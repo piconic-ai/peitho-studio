@@ -112,6 +112,8 @@ export interface Messages {
   savingLayout: string
   revertLayout: string
   layoutUnsaved: string
+  /** Why another layout can't be opened yet: this one has unsaved edits. */
+  layoutSaveFirst: string
   layoutActionFailed: (error: string) => string
 
   // Slide preview
@@ -292,8 +294,8 @@ const en: Messages = {
   layoutNameTaken: 'The deck already has a layout with this name',
   applyLayoutToSlide: 'Apply to Slide',
   applyLayoutNeedsSlide: 'Select a slide in Slides first',
-  duplicateLayout: 'Duplicate',
-  deleteLayout: 'Delete',
+  duplicateLayout: 'Duplicate Layout',
+  deleteLayout: 'Delete Layout',
   layoutUsage: count => (count === 0 ? 'Unused' : count === 1 ? '1 slide' : `${String(count)} slides`),
   onlyLayoutCannotBeDeleted: "The deck's only layout can't be deleted",
   deleteLayoutConfirm: layout => `Delete "${layout}"? Its files are removed from layouts/ and css/.`,
@@ -304,6 +306,7 @@ const en: Messages = {
   savingLayout: 'Saving…',
   revertLayout: 'Revert',
   layoutUnsaved: 'Unsaved changes',
+  layoutSaveFirst: 'Save or revert the changes to this layout before opening another',
   layoutActionFailed: error => `Could not change the layouts: ${error}`,
 
   previewAsPhone: 'Preview as phone',
@@ -474,8 +477,8 @@ const ja: Messages = {
   layoutNameTaken: '同じ名前のレイアウトがすでにあります',
   applyLayoutToSlide: 'スライドに適用',
   applyLayoutNeedsSlide: '先にスライド画面でスライドを選択してください',
-  duplicateLayout: '複製',
-  deleteLayout: '削除',
+  duplicateLayout: 'レイアウトを複製',
+  deleteLayout: 'レイアウトを削除',
   layoutUsage: count => (count === 0 ? '未使用' : `${String(count)}枚で使用中`),
   onlyLayoutCannotBeDeleted: 'デッキに1つしかないレイアウトは削除できません',
   deleteLayoutConfirm: layout => `「${layout}」を削除しますか? layouts/ と css/ からファイルが削除されます。`,
@@ -486,6 +489,7 @@ const ja: Messages = {
   savingLayout: '保存中…',
   revertLayout: '元に戻す',
   layoutUnsaved: '未保存の変更があります',
+  layoutSaveFirst: '別のレイアウトを開く前に、このレイアウトの変更を保存するか元に戻してください',
   layoutActionFailed: error => `レイアウトを変更できませんでした: ${error}`,
 
   previewAsPhone: 'スマートフォン表示でプレビュー',
