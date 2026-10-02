@@ -1523,9 +1523,10 @@ pub fn crit_resolve_comment(id: String, window: WebviewWindow, session: State<Pe
 }
 
 /// The layout folders (`layouts`, `css`) this window's deck has, which a
-/// review session on it covers too (`crit::session_args`): the agent's
-/// `crit` names the same ones to join Studio's session
-/// (`domain/agentConnect.ts`).
+/// review session on it covers too (`crit::session_args`): with no session
+/// running yet, the agent's `crit` names the same ones, so that Studio's
+/// session and the agent's are one (`domain/agentConnect.ts`; a running
+/// session is joined by its id instead).
 #[tauri::command]
 pub fn crit_session_dirs(window: WebviewWindow, session: State<PeithoSession>) -> Result<Vec<String>, String> {
     Ok(crit::session_args(&session_deck_path(&session, window.label())?)?.into_iter().skip(1).collect())

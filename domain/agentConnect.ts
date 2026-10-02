@@ -5,6 +5,7 @@
 // path, so nothing has to be installed first — and crit's own instructions,
 // which say plain `crit`, are pointed at it too.
 import type { Language } from './language'
+import type { CritDeckSession } from './critReview'
 import type { SendAvailability } from './reviewComment'
 
 /** `value` as one POSIX shell word: as is when it's plainly safe, else in
@@ -24,15 +25,28 @@ export function deckLocation(deckPath: string | null): { dir: string; file: stri
   return { dir, file }
 }
 
-/** The command that makes an agent wait for the deck's review. `dirs`:
- * the layout folders the deck has (`layouts`, `css` — `critIpc.sessionDirs`),
- * named after the deck file exactly as Studio starts its session
- * (`engine::crit::session_args`): crit tells sessions apart by these
- * arguments, so naming fewer starts another session instead of joining
- * Studio's. */
-export function agentConnectCommand(deckPath: string | null, critPath: string, dirs: readonly string[] = []): string {
+/** Which crit session the agent's `crit` waits in: the deck's running
+ * session, joined by its id, or — with none yet — the one `crit` starts
+ * on the deck file and the layout folders it has (`layouts`, `css` —
+ * `critIpc.sessionDirs`), named exactly as Studio starts its own
+ * (`engine::crit::session_args`). crit tells sessions apart by their
+ * arguments, so a running session is joined by id: the deck's folders
+ * may have changed since it started (a first layout created), and naming
+ * them would start a second session on the deck. */
+export type ConnectTarget = { kind: 'session'; id: string } | { kind: 'new'; dirs: readonly string[] }
+
+/** The target for the session Studio last found on the deck (`null`: not
+ * asked yet). Several sessions can't be told apart, so none is joined. */
+export function connectTargetOf(session: CritDeckSession | null, dirs: readonly string[]): ConnectTarget {
+  return session?.kind === 'found' ? { kind: 'session', id: session.id } : { kind: 'new', dirs }
+}
+
+/** The command that makes an agent wait for the deck's review, in
+ * `target`'s session. */
+export function agentConnectCommand(deckPath: string | null, critPath: string, target: ConnectTarget = { kind: 'new', dirs: [] }): string {
   const { dir, file } = deckLocation(deckPath)
-  return [`cd ${shellQuote(dir)} && ${shellQuote(critPath)} --no-open ${shellQuote(file)}`, ...dirs.map(shellQuote)].join(' ')
+  const args = target.kind === 'session' ? ['--session', target.id] : [file, ...target.dirs]
+  return `cd ${shellQuote(dir)} && ${[critPath, '--no-open', ...args].map(shellQuote).join(' ')}`
 }
 
 /** The language the agent is asked to reply in, by the UI language. */
@@ -42,12 +56,12 @@ const REPLY_LANGUAGE: Record<Language, string> = { en: 'English', ja: 'Japanese'
  * answering review rounds, replying in `language` (the UI language: the
  * replies are read in the comments column). The prompt itself is English
  * whatever the UI language: it's an instruction to the agent. */
-export function agentConnectPrompt(deckPath: string | null, critPath: string, language: Language, dirs: readonly string[] = []): string {
+export function agentConnectPrompt(deckPath: string | null, critPath: string, language: Language, target: ConnectTarget = { kind: 'new', dirs: [] }): string {
   const crit = shellQuote(critPath)
   return [
     'Start a review loop for my Peitho deck.',
     '',
-    `1. Run: ${agentConnectCommand(deckPath, critPath, dirs)}`,
+    `1. Run: ${agentConnectCommand(deckPath, critPath, target)}`,
     '   It waits until I send review comments from Peitho Studio.',
     '2. When it returns, follow the instructions it prints: address each comment',
     '   in the deck — or, for a comment on a layout, in the layout files it names',

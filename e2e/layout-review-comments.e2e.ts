@@ -148,3 +148,10 @@ test('Given a deck with layout folders and no agent yet, Then the connect comman
   await openLayoutScreen(page, createFakeCritIpc({ session: 'none', sessionDirs: ['layouts', 'css'] }))
   await expect(page.locator('[data-agent-connect-prompt]')).toContainText(`1. Run: cd /decks/talk && '${FAKE_CRIT_PATH}' --no-open deck.md layouts css`)
 })
+
+test('Given Studio started the deck\'s session before the deck had layout folders, Then the connect command joins that session by id rather than naming the folders', async ({ page }) => {
+  await openLayoutScreen(page, createFakeCritIpc({ session: 'none', sessionDirs: ['layouts', 'css'] }))
+  // The first comment starts Studio's session.
+  await commentOnLayout(page, 'cover', 'Darker title')
+  await expect(page.locator('[data-agent-connect-prompt]')).toContainText(`1. Run: cd /decks/talk && '${FAKE_CRIT_PATH}' --no-open --session fake-session`)
+})

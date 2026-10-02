@@ -812,6 +812,28 @@ mod tests {
         }
 
         #[test]
+        fn given_layout_folders_created_after_the_session_started_an_agent_joining_by_id_lands_in_it() {
+            // Given Studio's session on a deck with no layout folders yet,
+            let mut sandbox = Sandbox::new();
+            let (session, finished) = start_deck_session(&sandbox.cli, &sandbox.deck()).unwrap();
+            let DeckSession::Found { port, file, id, .. } = session else { panic!("{session:?}") };
+            // When the deck gets its first layout (layouts/ and css/ appear)
+            // and an agent joins by the session's id (`domain/agentConnect.ts`),
+            with_layout_files(&sandbox);
+            let agent = sandbox.agent(&["--no-open", "--session", &id]);
+            // Then it waits in Studio's session — no second one on the deck,
+            wait_until_agent_waits(&sandbox, &finished);
+            assert_eq!(sandbox.cli.status(&sandbox.deck_dir).unwrap().len(), 1);
+            // and a comment on the new layout reaches it.
+            let on_cover = NewLayoutComment { layout: Some("cover".into()), body: "[Layout cover] Darker".into(), author: STUDIO_AUTHOR.into() };
+            let place = shapes::layout_comment_place(&on_cover, |path| sandbox.deck_dir.join(path).is_file()).unwrap();
+            add_layout_comment(port, &file, &on_cover, &place).unwrap();
+            finish(port).unwrap();
+            let handed_over = sandbox.agent_output(agent);
+            assert!(handed_over.contains("\"path\":\"layouts/cover.html\""), "{handed_over}");
+        }
+
+        #[test]
         fn a_deck_without_layout_folders_is_reviewed_on_its_file_alone() {
             // Given a deck with no layouts/ or css/, Then crit is started on the deck file only,
             let sandbox = Sandbox::new();

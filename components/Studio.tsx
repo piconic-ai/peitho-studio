@@ -15,7 +15,7 @@ import {
   previewPinsOf, reviewStatusText, slideIndexOfComment, slideSpans, targetLabel,
   type LayoutCommentTarget, type PreviewPin,
 } from '../domain/reviewComment'
-import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, showsConnectGuide } from '../domain/agentConnect'
+import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, connectTargetOf, showsConnectGuide } from '../domain/agentConnect'
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
 import { focusCommentBox, focusUnsentEdit, placePreviewPins, revealReviewThread, watchPreviewLayout, type PreviewClick } from '../dom/previewComments'
 import { createReviewStore } from '../state/reviewStore'
@@ -996,8 +996,8 @@ export function Studio() {
   // sent — replies, resolved state — is read back from crit.
   const critIpc = createTauriCritIpc()
   const review = createReviewStore()
-  // The layout folders the deck has, which its crit session covers
-  // (`critIpc.sessionDirs`): the connect card's command names them too.
+  // The layout folders the deck has (`critIpc.sessionDirs`): with no
+  // session yet, the connect card's command names them (`connectTargetOf`).
   const [sessionDirs, setSessionDirs] = createSignal<string[]>([])
 
   // Each slide's comment key and span in the source the preview shows.
@@ -1190,8 +1190,9 @@ export function Studio() {
   // back to plain `crit` on the agent's PATH.
   const [bundledCritPath, setBundledCritPath] = createSignal<string | null>(null)
   critIpc.bundledCritPath().then(setBundledCritPath, () => setBundledCritPath(null))
-  const connectPrompt = createMemo(() => agentConnectPrompt(deck.deckPath(), bundledCritPath() ?? 'crit', settings.language(), sessionDirs()))
-  const connectCommand = createMemo(() => agentConnectCommand(deck.deckPath(), bundledCritPath() ?? 'crit', sessionDirs()))
+  const connectTarget = createMemo(() => connectTargetOf(review.session(), sessionDirs()))
+  const connectPrompt = createMemo(() => agentConnectPrompt(deck.deckPath(), bundledCritPath() ?? 'crit', settings.language(), connectTarget()))
+  const connectCommand = createMemo(() => agentConnectCommand(deck.deckPath(), bundledCritPath() ?? 'crit', connectTarget()))
   const [connectCopied, setConnectCopied] = createSignal<'prompt' | 'command' | null>(null)
   let connectCopiedTimer: number | undefined
   async function copyConnectText(which: 'prompt' | 'command'): Promise<void> {
