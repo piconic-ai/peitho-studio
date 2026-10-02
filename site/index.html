@@ -55,12 +55,12 @@
         </div>
         <video id="demo" class="window-shot" controls muted playsinline preload="none"
                poster="/studio.webp" width="1280" height="800"
-               aria-label="Demo: comment on a slide, send feedback to an AI Agent, and see the updated title and reply.">
+               aria-label="Demo: edit Markdown and see the HTML preview update, then ask an AI Agent to research data and add a JavaScript-animated chart.">
           <source src="/studio-demo.mp4" type="video/mp4">
           <a href="/studio-demo.mp4">Watch the AI Agent collaboration demo</a>
         </video>
       </figure>
-      <p class="demo-caption">Click a slide → leave a comment → send to your AI Agent → review the changes.</p>
+      <p class="demo-caption">Edit Markdown → see the HTML preview update → ask your AI Agent for research and an animated chart.</p>
     </section>
 
     <section class="peitho" aria-labelledby="peitho-title">
@@ -86,6 +86,11 @@
 
     <section id="download" class="downloads" aria-labelledby="download-title">
       <h2 id="download-title">Download</h2>
+      <div class="homebrew-install">
+        <h3>Install with Homebrew</h3>
+        <p>For Apple Silicon Macs running macOS 13 or later.</p>
+        <pre><code>brew install --cask piconic-ai/tap/peitho-studio</code></pre>
+      </div>
       <div id="download-list">
         <!-- Replaced by the DownloadPanel island; kept as the no-JS fallback. -->
         <p class="acc-empty">Builds for macOS, Windows and Linux are on <a href="https://github.com/piconic-ai/peitho-studio/releases">GitHub Releases</a>.</p>
