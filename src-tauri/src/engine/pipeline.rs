@@ -8,11 +8,12 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
+use peitho_core::domain::{Accepts, SlotContract};
 use peitho_core::phase::Parsed;
 use peitho_core::{
     build_manifest, build_theme_css, check_deck, dispatch_by_convention, explain_dispatch, manifest_json, DispatchResult,
     parse_deck_and_transform, parse_frontmatter, render_deck, resolve_image_paths, BuildError, Deck,
-    EditAnnotations, ImageRequest, LayoutAssets, Layouts, ResolvedImageAsset, ResolvedImagePath,
+    EditAnnotations, ImageRequest, Layout, LayoutAssets, Layouts, ResolvedImageAsset, ResolvedImagePath,
 };
 
 use super::assets::{self, ResolvedAssets};
@@ -31,9 +32,10 @@ pub struct RenderOutput {
     /// by its `"layout"`, or picked by peitho-core when it names none. Not
     /// part of `manifest_json`, which carries no layouts.
     pub slide_layouts: HashMap<String, String>,
-    /// Every layout the deck has (its `layouts/` files, or the built-in
-    /// fallback), by name.
-    pub layout_names: Vec<String>,
+    /// The deck's layouts (its `layouts/` files, or the built-in fallback)
+    /// that a slide holding only a heading builds on, by name — see
+    /// `takes_bare_heading`.
+    pub heading_layouts: Vec<String>,
     pub css: String,
     pub has_math: bool,
     /// `assets/<hash>-<name>` (as referenced from `css`/fragment HTML) ->
@@ -99,7 +101,7 @@ pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, Str
     let highlighter = highlighter.get();
 
     let slide_layouts = slide_layouts(&parsed, &layouts);
-    let layout_names = layouts.names().into_iter().map(str::to_string).collect();
+    let heading_layouts = layouts.iter().filter(|layout| takes_bare_heading(layout)).map(|layout| layout.name().to_string()).collect();
     let mapped = dispatch_by_convention(parsed, &layouts).map_err(|err| err.to_string())?;
     let checked = check_deck(mapped).map_err(|err| err.to_string())?;
 
@@ -148,13 +150,23 @@ pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, Str
         manifest_json,
         fragments,
         slide_layouts,
-        layout_names,
+        heading_layouts,
         css,
         has_math,
         image_assets,
         fonts_dir,
         deck_dir: deck_dir.to_path_buf(),
     })
+}
+
+/// Whether a slide holding nothing but one heading builds on `layout` when
+/// it names it: the heading goes to a `title` slot taking exactly one
+/// heading, and every other slot may stay empty.
+pub fn takes_bare_heading(layout: &Layout) -> bool {
+    let is_title = |slot: &SlotContract| slot.name.as_str() == "title";
+    let slots = layout.slots().values();
+    slots.clone().any(|slot| is_title(slot) && matches!(slot.accepts, Accepts::Inline | Accepts::Blocks) && slot.arity.allows(1))
+        && slots.filter(|slot| !is_title(slot)).all(|slot| slot.arity.allows(0))
 }
 
 /// The layout peitho-core's dispatch gives each slide of `parsed`, by slide
@@ -411,7 +423,7 @@ mod tests {
                 ("picked-by-structure".to_string(), "title-body-code".to_string()),
             ])
         );
-        assert_eq!(output.layout_names, ["cover", "title-body-code"]);
+        assert_eq!(output.heading_layouts, ["cover", "title-body-code"]);
     }
 
     #[test]
@@ -420,7 +432,90 @@ mod tests {
         let deck_path = dir.path().join("deck.md");
         let output = render_source(&deck_path, "# One\n\n---\n\n# Two\n").unwrap_or_else(|err| panic!("{err}"));
         assert_eq!(output.slide_layouts.values().collect::<Vec<_>>(), ["title-body-code", "title-body-code"]);
-        assert_eq!(output.layout_names, ["title-body-code"]);
+        assert_eq!(output.heading_layouts, ["title-body-code"]);
+    }
+
+    #[test]
+    fn given_the_layouts_a_new_deck_has_then_only_the_image_and_titleless_ones_refuse_a_bare_heading() {
+        use crate::engine::builtin;
+        let mut takes: Vec<&str> = builtin::STANDARD_LAYOUTS
+            .iter()
+            .filter(|layout| takes_bare_heading(&peitho_core::parse_layout(layout.name, layout.html).unwrap()))
+            .map(|layout| layout.name)
+            .collect();
+        takes.sort();
+        assert_eq!(
+            takes,
+            ["big-number", "main-point", "one-column-text", "section-header", "section-title-description", "title-body", "title-only", "title-slide", "two-column"]
+        );
+        assert!(!takes_bare_heading(&peitho_core::parse_layout("title-body-image", builtin::IMAGE_LAYOUT_HTML).unwrap()));
+        assert!(takes_bare_heading(&peitho_core::parse_layout("title-body-code", builtin::LAYOUT_HTML).unwrap()));
+    }
+
+    #[test]
+    fn given_each_layout_takes_bare_heading_judges_when_a_heading_only_slide_names_it_then_the_build_agrees() {
+        // The judgement from slot contracts must match what peitho-core does.
+        use crate::engine::builtin;
+        let html_of = |name: &str| match name {
+            "title-body-image" => builtin::IMAGE_LAYOUT_HTML,
+            other => builtin::STANDARD_LAYOUTS.iter().find(|layout| layout.name == other).unwrap().html,
+        };
+        let names: Vec<&str> = builtin::STANDARD_LAYOUTS.iter().map(|layout| layout.name).chain(["title-body-image"]).collect();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("layouts")).unwrap();
+        for name in &names {
+            std::fs::write(dir.path().join("layouts").join(format!("{name}.html")), html_of(name)).unwrap();
+        }
+        std::fs::create_dir(dir.path().join("css")).unwrap();
+        let deck_path = dir.path().join("deck.md");
+        for name in names {
+            let builds = render_source(&deck_path, &format!("<!-- {{\"layout\":\"{name}\"}} -->\n# New Slide\n")).is_ok();
+            assert_eq!(takes_bare_heading(&peitho_core::parse_layout(name, html_of(name)).unwrap()), builds, "{name}");
+        }
+    }
+
+    /// A 1x1 PNG.
+    const TINY_PNG: &[u8] = &[
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41,
+        0x54, 0x78, 0x9c, 0x63, 0x60, 0x00, 0x02, 0x00, 0x00, 0x05, 0x00, 0x01, 0xe9, 0xfa, 0xdc, 0xd8, 0x00, 0x00, 0x00, 0x00,
+        0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ];
+
+    #[test]
+    fn given_a_deck_scaffolded_before_standard_layouts_when_new_slide_follows_an_image_slide_then_a_bare_heading_still_builds() {
+        // The shape New Deck used to write: title-body-code next to the
+        // image layout. The image slide is built on title-body-image, which
+        // `heading_layouts` leaves out, so New Slide names no layout and
+        // peitho-core picks title-body-code for the heading as it always did.
+        use crate::engine::builtin;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("layouts")).unwrap();
+        std::fs::write(dir.path().join("layouts/title-body-code.html"), builtin::LAYOUT_HTML).unwrap();
+        std::fs::write(dir.path().join("layouts/title-body-image.html"), builtin::IMAGE_LAYOUT_HTML).unwrap();
+        let deck_path = dir.path().join("deck.md");
+        crate::engine::images::import_image(dir.path(), "photo.png", TINY_PNG).unwrap();
+        let before = "# Photo\n\n![](img/photo.png)\n";
+
+        let output = render_source(&deck_path, before).unwrap_or_else(|err| panic!("{err}"));
+        assert_eq!(output.slide_layouts["photo"], "title-body-image");
+        assert_eq!(output.heading_layouts, ["title-body-code"]);
+
+        let after = format!("{before}\n---\n\n<!-- {{\"key\":\"new-slide\"}} -->\n# New Slide\n");
+        let output = render_source(&deck_path, &after).unwrap_or_else(|err| panic!("{err}"));
+        assert_eq!(output.slide_layouts["new-slide"], "title-body-code");
+        let pinned = format!("{before}\n---\n\n<!-- {{\"key\":\"new-slide\",\"layout\":\"title-body-image\"}} -->\n# New Slide\n");
+        assert!(render_source(&deck_path, &pinned).is_err(), "pinning the image layout is what must not happen");
+    }
+
+    #[test]
+    fn adversarial_takes_bare_heading_refuses_a_title_that_wants_more_or_takes_no_heading() {
+        let judge = |html: &str| takes_bare_heading(&peitho_core::parse_layout("x", html).unwrap());
+        assert!(!judge("<section></section>"));
+        assert!(!judge("<section><slot name=\"title\" accepts=\"inline\" arity=\"0..1\"></slot><slot name=\"body\" accepts=\"blocks\" arity=\"1..*\"></slot></section>"));
+        assert!(!judge("<section><slot name=\"title\" accepts=\"code\" arity=\"1\"></slot></section>"));
+        assert!(judge("<section><slot name=\"title\" accepts=\"inline\" arity=\"1..*\"></slot></section>"));
+        assert!(judge("<section><slot name=\"title\" accepts=\"blocks\" arity=\"0..*\"></slot><slot name=\"aside\" accepts=\"list\" arity=\"0..1\"></slot></section>"));
     }
 
     #[test]

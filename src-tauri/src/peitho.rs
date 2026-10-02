@@ -278,8 +278,9 @@ pub struct RenderPayload {
     /// The layout each slide was built on, per slide key — what the
     /// manifest leaves out (see `RenderOutput::slide_layouts`).
     slide_layouts: std::collections::HashMap<String, String>,
-    /// Every layout the deck has, by name.
-    layout_names: Vec<String>,
+    /// The deck's layouts a heading-only slide builds on (see
+    /// `RenderOutput::heading_layouts`) — the ones New Slide may name.
+    heading_layouts: Vec<String>,
     /// Base URL for the in-process asset server (peitho.css, fonts, images)
     /// — resolves relative `url(...)`/`src="assets/..."` references inside
     /// `css`/`fragments`.
@@ -296,7 +297,7 @@ fn to_payload(output: RenderOutput, asset_base_url: String) -> Result<RenderPayl
         manifest,
         fragments: output.fragments,
         slide_layouts: output.slide_layouts,
-        layout_names: output.layout_names,
+        heading_layouts: output.heading_layouts,
         asset_base_url,
         css: output.css,
     })
@@ -2340,7 +2341,7 @@ Start writing your slides here.\n";
             manifest_json: manifest_json.to_string(),
             fragments: HashMap::from([("slide-1".to_string(), "<section>one</section>".to_string())]),
             slide_layouts: HashMap::from([("slide-1".to_string(), "title-body".to_string())]),
-            layout_names: vec!["title-body".to_string(), "title-slide".to_string()],
+            heading_layouts: vec!["title-body".to_string(), "title-slide".to_string()],
             css: css.to_string(),
             has_math: false,
             image_assets: HashMap::new(),
@@ -2359,7 +2360,7 @@ Start writing your slides here.\n";
         assert_eq!(payload.manifest["title"], "Deck");
         assert_eq!(payload.fragments["slide-1"], "<section>one</section>");
         assert_eq!(payload.slide_layouts["slide-1"], "title-body");
-        assert_eq!(payload.layout_names, ["title-body", "title-slide"]);
+        assert_eq!(payload.heading_layouts, ["title-body", "title-slide"]);
         assert_eq!(payload.css, ".peitho-slide { color: red; }");
         assert_eq!(payload.asset_base_url, "http://127.0.0.1:1234/");
     }
@@ -2369,7 +2370,7 @@ Start writing your slides here.\n";
         let payload = to_payload(render_output(r#"{"title":""}"#, ""), String::new()).unwrap();
         let json = serde_json::to_value(&payload).unwrap();
         assert_eq!(json["slideLayouts"]["slide-1"], "title-body");
-        assert_eq!(json["layoutNames"], serde_json::json!(["title-body", "title-slide"]));
+        assert_eq!(json["headingLayouts"], serde_json::json!(["title-body", "title-slide"]));
     }
 
     #[test]

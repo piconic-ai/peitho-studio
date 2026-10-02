@@ -31,14 +31,9 @@ export const STANDARD_LAYOUTS: readonly StandardLayout[] = [
 /** The layout a new slide falls back to when nothing else says which. */
 export const DEFAULT_LAYOUT = 'title-body'
 
-/** The standard layouts with no title slot: a heading on one of them
- * doesn't build. */
-const TITLELESS_LAYOUTS: readonly string[] = ['caption', 'blank']
-
-/** Standard layouts a slide added after one of them doesn't take on:
- * the titleless ones (a new slide opens with a heading), and the title
- * slide (a deck has one; what follows is its content). */
-const NOT_CARRIED_OVER: readonly string[] = ['title-slide', ...TITLELESS_LAYOUTS]
+/** The title slide: a deck has one, so a slide added after it takes
+ * `DEFAULT_LAYOUT` instead (what follows a title is its content). */
+const TITLE_SLIDE = 'title-slide'
 
 /** What the UI calls layout `name`: a standard layout's label in
  * `language`, or the name itself for any other (a deck's own layout). */
@@ -46,19 +41,23 @@ export function layoutDisplayName(name: string, language: Language): string {
   return STANDARD_LAYOUTS.find(layout => layout.name === name)?.label[language] ?? name
 }
 
-/** The layout a new slide, added after a slide on layout `previous` (or
- * after none, `null`), is written with in a deck whose layouts are
- * `deckLayouts` — `null` to write none:
+/** The layout a new slide — which holds only a heading — added after a
+ * slide on layout `previous` (or after none, `null`), is written with,
+ * `headingLayouts` being the deck's layouts a heading-only slide builds on
+ * (`RenderPayload.headingLayouts`); `null` to write none:
  * - the previous slide's layout, so a run of slides stays on one layout,
- * - except `DEFAULT_LAYOUT` instead of one in `NOT_CARRIED_OVER`, or when
- *   there's no previous layout to go on,
- * - but never `DEFAULT_LAYOUT` when the deck doesn't have it: a deck
- *   without the standard layouts keeps what it had (a layout carried over,
- *   or none), as before they existed.
+ *   as long as the new slide builds on it — not, say, the image layout
+ *   (its image is required) or `blank` (it has no title),
+ * - otherwise `DEFAULT_LAYOUT`, also in place of the title slide, as long
+ *   as the deck has it,
+ * - otherwise none, leaving the slide to peitho-core's own matching, as
+ *   before Studio named layouts — in a deck without the standard layouts
+ *   that's what still finds one (`title-body-code` next to an image
+ *   layout).
  * An empty name counts as none. */
-export function newSlideLayout(previous: string | null, deckLayouts: readonly string[]): string | null {
-  const known = previous === null || previous === '' ? null : previous
-  const hasDefault = deckLayouts.includes(DEFAULT_LAYOUT)
-  if (known !== null && !(hasDefault && NOT_CARRIED_OVER.includes(known))) return known
+export function newSlideLayout(previous: string | null, headingLayouts: readonly string[]): string | null {
+  const hasDefault = headingLayouts.includes(DEFAULT_LAYOUT)
+  const carried = previous !== null && previous !== '' && headingLayouts.includes(previous) && !(hasDefault && previous === TITLE_SLIDE)
+  if (carried) return previous
   return hasDefault ? DEFAULT_LAYOUT : null
 }

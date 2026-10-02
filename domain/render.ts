@@ -58,8 +58,9 @@ export interface RenderPayload {
   /** The layout each slide was built on, by slide key — the manifest
    * itself names none. */
   slideLayouts: Record<string, string>
-  /** Every layout the deck has, by name. */
-  layoutNames: string[]
+  /** The deck's layouts a slide holding only a heading builds on — the
+   * ones New Slide (which inserts just `# New Slide`) may name. */
+  headingLayouts: string[]
   assetBaseUrl: string
   css: string
 }

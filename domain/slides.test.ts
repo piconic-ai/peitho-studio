@@ -286,9 +286,10 @@ describe('uniqueSlideKey', () => {
 })
 
 describe('newSlideConfig', () => {
-  // The layouts of a deck created by New Deck (the standard ones plus the
-  // image layout), and of a deck with two layouts of its own.
-  const STANDARD_DECK = ['big-number', 'blank', 'caption', 'main-point', 'one-column-text', 'section-header', 'section-title-description', 'title-body', 'title-body-image', 'title-only', 'title-slide', 'two-column']
+  // The layouts a heading-only slide builds on (`headingLayouts`) in a deck
+  // created by New Deck — every standard one but `caption`/`blank`, and not
+  // the image layout — and in a deck with two layouts of its own.
+  const STANDARD_DECK = ['big-number', 'main-point', 'one-column-text', 'section-header', 'section-title-description', 'title-body', 'title-only', 'title-slide', 'two-column']
   const OWN_DECK = ['cover', 'title-body-code']
 
   test('spec: Given the previous slide names a layout, When a slide is added after it, Then the new slide names the same layout', () => {
@@ -298,7 +299,16 @@ describe('newSlideConfig', () => {
 
   test('spec: Given the previous slide names no layout but was built on one, When a slide is added, Then the new slide names that layout', () => {
     expect(newSlideConfig({}, 'new-slide', 'title-body-code', OWN_DECK)).toEqual({ key: 'new-slide', layout: 'title-body-code' })
-    expect(newSlideConfig({}, 'new-slide', 'title-body-image', STANDARD_DECK)).toEqual({ key: 'new-slide', layout: 'title-body-image' })
+    expect(newSlideConfig({}, 'new-slide', 'two-column', STANDARD_DECK)).toEqual({ key: 'new-slide', layout: 'two-column' })
+  })
+
+  test('spec: Given the previous slide is on the image layout, When a slide is added, Then the new slide (no image) does not take it', () => {
+    // New deck: title and body instead.
+    expect(newSlideConfig({}, 'new-slide', 'title-body-image', STANDARD_DECK)).toEqual({ key: 'new-slide', layout: 'title-body' })
+    expect(newSlideConfig({ layout: 'title-body-image' }, 'new-slide', 'title-body-image', STANDARD_DECK)).toEqual({ key: 'new-slide', layout: 'title-body' })
+    // A deck from before the standard layouts: no layout, so peitho-core
+    // still finds title-body-code for the heading, as it always did.
+    expect(newSlideConfig({}, 'new-slide', 'title-body-image', ['title-body-code'])).toEqual({ key: 'new-slide' })
   })
 
   test('spec: Given the previous slide names a layout and was built on it, Then the named one is what counts', () => {

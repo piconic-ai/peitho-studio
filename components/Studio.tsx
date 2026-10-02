@@ -1831,7 +1831,7 @@ export function Studio() {
     const insertAt = Math.min(index + 1, texts.length)
     const key = uniqueSlideKey(slugifyTitle('New Slide'), existingSlideKeys())
     const { config: previousConfig } = extractPageComment(texts[index] ?? '')
-    const config = newSlideConfig(previousConfig, key, renderedLayoutAt(slideEntries(), render.slideLayouts(), index), render.layoutNames())
+    const config = newSlideConfig(previousConfig, key, renderedLayoutAt(slideEntries(), render.slideLayouts(), index), render.headingLayouts())
     await perform({ kind: 'slides', cmd: { type: 'insert', at: insertAt, text: buildSlideText(config, NEW_SLIDE_MARKDOWN, '') } })
   }
 

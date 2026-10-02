@@ -21,7 +21,7 @@ function payload(overrides: Partial<RenderPayload> = {}): RenderPayload {
     manifest: { title: 'Deck', slideCount: 1, canvasWidth: 1280, canvasHeight: 720, sections: [], slides: [slide()] },
     fragments: { 'slide-1': '<div class="peitho-slide">one</div>' },
     slideLayouts: { 'slide-1': 'title-body' },
-    layoutNames: ['title-body', 'title-slide'],
+    headingLayouts: ['title-body', 'title-slide'],
     assetBaseUrl: 'asset://base/',
     css: '',
     ...overrides,
@@ -45,10 +45,10 @@ describe('applyRenderPayload', () => {
     createRoot(() => {
       const store = createRenderStore()
       expect(store.slideLayouts()).toEqual({})
-      expect(store.layoutNames()).toEqual([])
+      expect(store.headingLayouts()).toEqual([])
       store.applyRenderPayload(payload(), 'source')
       expect(store.slideLayouts()).toEqual({ 'slide-1': 'title-body' })
-      expect(store.layoutNames()).toEqual(['title-body', 'title-slide'])
+      expect(store.headingLayouts()).toEqual(['title-body', 'title-slide'])
     })
   })
 
@@ -56,9 +56,9 @@ describe('applyRenderPayload', () => {
     createRoot(() => {
       const store = createRenderStore()
       store.applyRenderPayload(payload(), 'source')
-      store.applyRenderPayload(payload({ slideLayouts: {}, layoutNames: [] }), 'source 2')
+      store.applyRenderPayload(payload({ slideLayouts: {}, headingLayouts: [] }), 'source 2')
       expect(store.slideLayouts()).toEqual({})
-      expect(store.layoutNames()).toEqual([])
+      expect(store.headingLayouts()).toEqual([])
     })
   })
 

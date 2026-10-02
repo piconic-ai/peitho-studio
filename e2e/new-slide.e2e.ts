@@ -92,6 +92,29 @@ test('New Slide after a new deck\'s title slide writes the title-and-body layout
   expect(secondSlide).toContain('<!-- {"key":"new-slide","layout":"title-body"} -->')
 })
 
+// Given a new deck whose last slide is on the image layout (an image is
+// required there), when "New Slide" is used after it, then the new slide —
+// a lone heading — is written with title-body, which it builds on, not the
+// image layout, which it wouldn't.
+test('New Slide after an image slide writes title-and-body, not the image layout', async ({ page }) => {
+  const deck: MockDeck = {
+    source: '<!-- {"key":"photo","layout":"title-body-image"} -->\n# Photo\n',
+    layouts: NEW_DECK_LAYOUTS,
+    headingLayouts: NEW_DECK_LAYOUTS.filter(name => !['blank', 'caption', 'title-body-image'].includes(name)),
+  }
+  await mockTauri(page, deck)
+
+  await page.goto('/')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(1, { timeout: 10_000 })
+
+  await page.locator('[data-slide-row="0"]').click({ button: 'right' })
+  await page.getByText('New Slide', { exact: true }).click()
+
+  await expect(page.locator('[data-slide-row]')).toHaveCount(2, { timeout: 5_000 })
+  const secondSlide = deck.source.split(/^---$/m)[1] ?? ''
+  expect(secondSlide).toContain('<!-- {"key":"new-slide","layout":"title-body"} -->')
+})
+
 // Given a slide that names no layout but was built on one (here, the
 // deck's only layout), when "New Slide" is used after it, then the new
 // slide names that layout — read from the render, not the slide's text.

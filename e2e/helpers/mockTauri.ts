@@ -92,8 +92,12 @@ export interface MockDeck {
   onInvoke?: (cmd: string, args: Record<string, unknown>) => void
   /** Layout names `preview_layouts` lists (each with `layoutFragment`,
    * empty by default, so the picker shows name-only cards) — defaults to
-   * none ("No layouts found"). Also every render's `layoutNames`. */
+   * none ("No layouts found"). */
   layouts?: string[]
+  /** Every render's `headingLayouts` (the layouts a heading-only slide
+   * builds on) — defaults to `layouts` plus any layout a slide names, i.e.
+   * every layout taking a lone heading. */
+  headingLayouts?: string[]
   /** What `check_slide_layouts` answers for the given source/slide index —
    * defaults to `null` (nothing to judge, every layout stays choosable).
    * Stands in for `engine::layout_fit`'s real peitho-core verdicts. */
@@ -305,9 +309,10 @@ function slideLayoutsFor(source: string, slides: readonly ManifestSlide[], layou
 
 function renderPayloadFor(source: string, deck: MockDeck): RenderPayload {
   const { manifest, fragments } = buildManifest(source, deck.fragmentFor ?? DEFAULT_FRAGMENT_FOR, deck.canvas ?? canvasFor(source), deck.editAnnotations ?? false)
-  const layoutNames = deck.layouts ?? []
-  const slideLayouts = slideLayoutsFor(source, manifest.slides, layoutNames)
-  return { manifest, fragments, slideLayouts, layoutNames, assetBaseUrl: 'http://localhost:9/', css: deck.css ?? DEFAULT_CSS }
+  const layouts = deck.layouts ?? []
+  const slideLayouts = slideLayoutsFor(source, manifest.slides, layouts)
+  const headingLayouts = deck.headingLayouts ?? [...new Set([...layouts, ...Object.values(slideLayouts)])]
+  return { manifest, fragments, slideLayouts, headingLayouts, assetBaseUrl: 'http://localhost:9/', css: deck.css ?? DEFAULT_CSS }
 }
 
 /** Wires `page` up to open `deck.source` as a fake deck on load, and keeps

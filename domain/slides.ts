@@ -215,14 +215,14 @@ export function uniqueSlideKey(baseKey: string, existingKeys: readonly string[])
  * `key`, plus the layout `newSlideLayout` picks from the previous slide's
  * — the one its `previousConfig` names, or else the one it was actually
  * built on (`renderedLayout`, `null` when unknown: no previous slide, a
- * draft, or no render yet) — in a deck whose layouts are `deckLayouts`.
+ * draft, or no render yet) — with `headingLayouts` the deck's layouts the new slide (a lone heading) builds on.
  * A bare title-only slide (no body) structurally matches *every* layout
  * whose other slots are all optional, which peitho-core refuses to guess
  * between once a deck's `layouts/` directory holds more than one such
  * layout ("slide matches multiple layouts: ..."), so a new slide names
  * its layout whenever there's one to name. */
-export function newSlideConfig(previousConfig: PageConfig, key: string, renderedLayout: string | null, deckLayouts: readonly string[]): PageConfig {
-  const layout = newSlideLayout(previousConfig.layout || renderedLayout, deckLayouts)
+export function newSlideConfig(previousConfig: PageConfig, key: string, renderedLayout: string | null, headingLayouts: readonly string[]): PageConfig {
+  const layout = newSlideLayout(previousConfig.layout || renderedLayout, headingLayouts)
   return layout === null ? { key } : { key, layout }
 }
 
