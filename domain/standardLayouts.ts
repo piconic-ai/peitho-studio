@@ -54,8 +54,11 @@ export function layoutDisplayName(name: string, language: Language): string {
  *   before Studio named layouts — in a deck without the standard layouts
  *   that's what still finds one (`title-body-code` next to an image
  *   layout).
- * An empty name counts as none. */
+ * An empty name counts as none. An empty `headingLayouts` means nothing is
+ * known yet (no render has succeeded since the deck opened): `previous` is
+ * kept as is, as Studio always did before it knew the deck's layouts. */
 export function newSlideLayout(previous: string | null, headingLayouts: readonly string[]): string | null {
+  if (headingLayouts.length === 0) return previous === '' ? null : previous
   const hasDefault = headingLayouts.includes(DEFAULT_LAYOUT)
   const carried = previous !== null && previous !== '' && headingLayouts.includes(previous) && !(hasDefault && previous === TITLE_SLIDE)
   if (carried) return previous

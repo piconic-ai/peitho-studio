@@ -91,10 +91,17 @@ describe('newSlideLayout', () => {
     expect(newSlideLayout('title-slide', ['title-slide', 'cover'])).toBe('title-slide')
   })
 
-  test('adversarial: Given an empty previous layout or no heading layouts at all, Then it counts as none', () => {
+  test('adversarial: Given an empty previous layout, Then it counts as none', () => {
     expect(newSlideLayout('', NEW_DECK)).toBe('title-body')
     expect(newSlideLayout('', [])).toBeNull()
-    expect(newSlideLayout('title-body', [])).toBeNull()
+  })
+
+  test('adversarial: Given no render has succeeded yet (no heading layouts known), Then the previous layout is kept as is', () => {
+    // A deck opened while it doesn't build: dropping the slide's named
+    // layout would leave a bare heading that matches several layouts.
+    expect(newSlideLayout('title-body', [])).toBe('title-body')
+    expect(newSlideLayout('two-column', [])).toBe('two-column')
+    expect(newSlideLayout(null, [])).toBeNull()
   })
 
   test('adversarial: Given a previous layout the deck no longer has, Then it is not carried over', () => {
