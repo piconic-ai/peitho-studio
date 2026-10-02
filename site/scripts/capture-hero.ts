@@ -58,7 +58,7 @@ await page.locator('[data-panel-toggle="review"][aria-expanded="false"]').click(
 await page.waitForTimeout(600)
 await page.locator('[data-preview-host] h1').click()
 await page.waitForTimeout(700)
-await page.locator('[data-comment-box] textarea').pressSequentially('Keep the words. Make this introduction to Peitho Studio beautiful: three feature cards, better typography, and a gentle reveal.', { delay: 28 })
+await page.locator('[data-comment-box] textarea').pressSequentially('Use Swiss Style. Keep my words, but rethink the layout freely. Use bold typography, an asymmetric grid and a strong color accent. It does not need to look like a bullet list. Add a subtle reveal.', { delay: 28 })
 await page.waitForTimeout(1300)
 await page.locator('[data-comment-add]').click()
 await page.waitForTimeout(1500)
@@ -70,16 +70,25 @@ await page.waitForTimeout(2200)
 // Prerecorded agent result: update the deck via the real external-file-change flow.
 await expect.poll(() => deck.source).toContain('# Meet Peitho Studio')
 const wordsBefore = deck.source.split('\n').filter(line => !line.startsWith('<!--')).join('\n')
-deck.source = deck.source.replace('"layout":"plain"', '"layout":"feature-cards"')
+deck.source = deck.source.replace('"layout":"plain"', '"layout":"swiss"')
 expect(deck.source.split('\n').filter(line => !line.startsWith('<!--')).join('\n')).toBe(wordsBefore)
 await page.evaluate(() => {
   (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown) => void })
     .__mockEmitTauriEvent('deck-file-changed', null)
 })
-await expect(page.locator('[data-preview-host] .rich')).toBeVisible()
-// The rich HTML slide animates with its own JavaScript inside Studio.
+await expect(page.locator('[data-preview-host] .swiss')).toBeVisible()
+await expect(page.locator('[data-preview-host] .swiss > :not(script)')).toHaveCount(2)
+await expect(page.locator('[data-preview-host] .features li')).toHaveText([
+  'Write in Markdown', 'See changes instantly', 'Refine with your AI Agent',
+])
+await expect(page.locator('[data-preview-host] .swiss')).toHaveCSS('background-color', 'rgb(250, 249, 245)')
+await expect(page.locator('[data-preview-host] .swiss')).toHaveCSS('color', 'rgb(23, 23, 23)')
+await expect(page.locator('[data-preview-host] .features')).toHaveCSS('display', 'grid')
+await expect(page.locator('[data-preview-host] .features')).toHaveCSS('list-style-type', 'none')
+await expect(page.locator('[data-preview-host] .features li').last()).toHaveCSS('color', 'rgb(255, 255, 255)')
+// The Swiss-style HTML slide animates with its own JavaScript inside Studio.
 await expect.poll(() => page.locator('[data-preview-host] .features li').first().evaluate(el => el.getAnimations().length)).toBeGreaterThan(0)
-crit.reply('c_1', 'Kept your wording. Added three feature cards, a new type hierarchy, and a gentle reveal animation.', 'AI Agent')
+crit.reply('c_1', 'Rearranged your words on an asymmetric grid, with bold type and a red accent. The content is unchanged.', 'AI Agent')
 crit.agentConnects()
 await expect(page.locator('[data-review-agent]')).toContainText(['AI Agent'])
 await page.waitForTimeout(5500)
