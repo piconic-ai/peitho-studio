@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: 新規デッキに定番レイアウト11種(タイトルスライド〜空白)を全部入りで組み込み、Studioが作る/変えるスライドには常にlayoutを明示する
 tags: [layout, scaffold, new-deck]
 ---
@@ -152,14 +152,24 @@ tags: [layout, scaffold, new-deck]
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `cargo test` グリーン
-- [ ] `bun run test:e2e` グリーン
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `cargo test` グリーン
+- [x] `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] `title-body-code`を`title-body`に置き換え、`title-body-image`を残す
   扱いでよいか(方針「既存2種との関係」)
 - [ ] 実機で新規デッキを作り、11種それぞれの見た目が参考画像の配置に
   近いか(ユーザー自身に依頼)
+- [ ] 方針からの追加判断でよいか(実装時に決めたもの):
+  - 「+」は直前が`title-slide`/`caption`/`blank`なら`title-body`にする
+    (タイトルスライドは1枚目専用、`caption`/`blank`はtitle slotが無く
+    `# New Slide`がビルドエラーになるため)。
+  - layoutを明示したスライド(新規デッキでは全スライド)に画像をドロップ
+    すると、従来の自動切替ではなくエラーバーの「レイアウトを選ぶ」から
+    `title-body-image`を選ぶ導線になる(layout未明示スライドは従来通り
+    自動で`title-body-image`)。
+  - 「Change Layout」のプレビューを各レイアウトのslotから作るように
+    した(固定文面だと定番の大半が空白プレビューになるため)。
 
 ## 先送り事項
