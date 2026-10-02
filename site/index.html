@@ -43,10 +43,19 @@
         <p class="hero-sub">Edit Markdown. Preview slides. Bring your AI Agent.</p>
       </div>
 
-      <div id="demo" class="intro-embed">
-        <iframe id="studio-introduction" src="/demo.html" title="Peitho Studio: edit Markdown and refine your slides with an AI Agent" loading="eager" height="720"></iframe>
-      </div>
-      <p class="demo-caption">Try the interactive introduction · <a href="/demo.html">Open the slides</a></p>
+      <figure class="window" id="demo">
+        <div class="window-bar" aria-hidden="true">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="window-title">deck.md — Peitho Studio</span>
+        </div>
+        <video class="window-shot" controls muted playsinline preload="none"
+               poster="/studio.webp" width="1280" height="800"
+               aria-label="Peitho Studio demo: edit Markdown, then ask an AI Agent to refine the same slide’s HTML layout.">
+          <source src="/studio-demo.mp4" type="video/mp4">
+          <a href="/studio-demo.mp4">Watch the Peitho Studio demo</a>
+        </video>
+      </figure>
+      <p class="demo-caption">Edit Markdown. See it change. Ask your AI Agent to refine the layout.</p>
     </section>
 
     <section class="peitho" aria-labelledby="peitho-title">

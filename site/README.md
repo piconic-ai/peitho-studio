@@ -7,7 +7,7 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 
 - One static `index.html`, styled by `public/site.css` (light only):
   - a hero with the app icon, "Peitho Studio", "Write slides with Peitho."
-    ("Edit Markdown. Preview slides. Bring your AI Agent.") above an interactive HTML introduction (`demo.html`) that demonstrates Markdown editing and an Agent-assisted layout change;
+    ("Edit Markdown. Preview slides. Bring your AI Agent.") above a recording of the real Studio UI demonstrating Markdown editing and an Agent-assisted HTML layout change;
   - a "Built on Peitho" card: Peitho's one-line description and a small
     Markdown-to-slide illustration, linking to
     [peitho.gosu.ke](https://peitho.gosu.ke);
@@ -30,24 +30,26 @@ from the app (its own `package.json` and lockfile), living in `site/`.
   and long-lived caching for Vite's hashed `/assets/*`; `public/404.html` is
   served for unknown paths (`not_found_handling: "404-page"`).
 
-## Interactive HTML introduction
+## Hero demo
 
-The hero embeds `demo.html`, a standalone introduction to Peitho Studio. Its example slide introduces Studio itself: write in Markdown, see changes instantly, and refine with an AI Agent.
+The hero embeds `public/studio-demo.mp4`, recorded from the **unchanged Studio frontend**, with its real editor, preview, panel controls and comments UI. The sample deck introduces Peitho Studio itself: write in Markdown, see changes instantly, and refine with an AI Agent.
 
-- **Write & preview:** edit the heading or up to three bullets and see the slide update. The small demo renderer uses text nodes; typed HTML is not executed.
-- **Refine with AI:** send the example design comment to reveal the same text in a rich HTML/CSS layout. The Agent response is an illustration, with no live agent or network call.
-- **Play the story:** a cancellable sequence demonstrates the edit and layout change. Manual editing or chapter navigation stops the sequence. Before/After compares layouts without changing the words.
+1. The editor and preview show a simple introductory slide. Typing a new Markdown title changes the preview.
+2. The comments panel opens and a comment asks the Agent to preserve the words while refining the layout.
+3. The editor is folded using Studio's own panel control. The Agent's example result changes the slide to an HTML layout with feature cards, typography and JavaScript reveal animations.
 
-`src/demo/demo.ts` drives the interaction and JavaScript Web Animations; reduced-motion preferences skip animated reveals. `src/demo/demo.css` handles desktop and mobile layouts. The iframe reports its content height to the parent, which validates the origin and source. Both HTML entry points are built by Vite, and the CSP permits same-origin framing.
+`site/scripts/demo-deck.ts` supplies the sample Markdown and before/after slide fragments. Only the slide's layout metadata changes in the simulated Agent result; an assertion checks that the Markdown content remains unchanged. The e2e Tauri IPC mock and fake crit session provide backend responses; the Studio UI itself is not recreated or restyled. No live agent runs during capture.
 
-Run the interaction checks and regenerate the README screenshot with the site running:
+Regenerate the MP4 and WebP posters from the repository root, with Chrome and ffmpeg installed:
 
 ```sh
-# From the repository root; needs the app's Playwright dependency and Chrome.
-bun site/scripts/check-introduction.ts
-bun site/scripts/capture-introduction.ts
-# SITE_URL=http://localhost:3014 can override the default URL.
+bun run build
+PORT=3013 bun server.ts
+# In another terminal:
+bun site/scripts/capture-hero.ts
 ```
+
+Capture asserts the edited preview, sent comment, rich HTML layout, running slide animation and Agent reply, and fails on page errors. The site uses native video controls without autoplay.
 
 ## Brand
 

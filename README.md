@@ -6,7 +6,7 @@ A desktop editor for [Peitho](https://github.com/mizzy/peitho) presentations: Ma
 
 [![Peitho Studio introduction: Markdown editing and Agent-assisted slide design](site/public/studio.webp)](https://peitho-studio.piconic.ai/#demo)
 
-[Try the interactive introduction](https://peitho-studio.piconic.ai/#demo): edit Markdown, see the preview, and explore an Agent-assisted layout change.
+[Watch the demo](https://peitho-studio.piconic.ai/#demo): edit Markdown, see the preview, and ask your Agent to refine the slide layout.
 
 ## Features
 
