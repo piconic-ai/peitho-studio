@@ -44,8 +44,8 @@ pub fn image_layout_files(has_layouts_dir: bool, has_css_dir: bool) -> Vec<(&'st
 
 /// Refuses the whole set when any of its paths is already taken (`is_taken`
 /// answers per deck-relative path): an existing file is never overwritten.
-pub fn refuse_taken(files: &[(&'static str, String)], is_taken: impl Fn(&str) -> bool) -> Result<(), String> {
-    match files.iter().map(|(path, _)| *path).find(|path| is_taken(path)) {
+pub fn refuse_taken<P: AsRef<str>>(files: &[(P, String)], is_taken: impl Fn(&str) -> bool) -> Result<(), String> {
+    match files.iter().map(|(path, _)| path.as_ref()).find(|path| is_taken(path)) {
         Some(path) => Err(format!("{path} already exists in the deck; Peitho Studio won't overwrite it")),
         None => Ok(()),
     }
@@ -141,15 +141,16 @@ pub fn add_image_layout(deck_path: &Path, source: &str, slide_index: usize) -> R
     Ok(files.iter().map(|(path, _)| *path).collect())
 }
 
-/// What `add_image_layout` has created so far, for undoing a partial write.
+/// What `add_image_layout` (or `layout_files`) has created so far, for
+/// undoing a partial write.
 #[derive(Default)]
-struct Written {
+pub(crate) struct Written {
     files: Vec<PathBuf>,
     dirs: Vec<PathBuf>,
 }
 
 impl Written {
-    fn remove(self) {
+    pub(crate) fn remove(self) {
         for file in self.files.iter().rev() {
             let _ = std::fs::remove_file(file);
         }
@@ -161,7 +162,7 @@ impl Written {
     }
 }
 
-fn write_new_file(path: &Path, content: &str, written: &mut Written) -> Result<(), String> {
+pub(crate) fn write_new_file(path: &Path, content: &str, written: &mut Written) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         if !parent.is_dir() {
             std::fs::create_dir(parent).map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
@@ -311,7 +312,7 @@ pub(crate) mod tests {
 
     #[test]
     fn given_an_empty_set_when_checked_then_there_is_nothing_to_refuse() {
-        assert_eq!(refuse_taken(&[], |_| true), Ok(()));
+        assert_eq!(refuse_taken::<&str>(&[], |_| true), Ok(()));
     }
 
     // --- dispatched_layout ---
