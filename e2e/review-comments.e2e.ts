@@ -579,6 +579,36 @@ test('Given an unsent reply, When it is edited, Then the new text is what gets s
     .toEqual([[{ commentId: 'c_1', body: 'Still too small', author: 'Peitho Studio' }]])
 })
 
+test('Given an unsent comment whose text was selected to replace before its editor finished opening, When new text is typed, Then it replaces the old instead of being appended', async ({ page }) => {
+  // Holds animation frames once asked to, so the editor's deferred focus
+  // can be run between selecting the old text and typing over it — the
+  // order a slow CI frame produced, flaking the two tests above.
+  await page.addInitScript(() => {
+    const held: FrameRequestCallback[] = []
+    const raf = window.requestAnimationFrame.bind(window)
+    const w = window as unknown as { holdFrames: boolean, runHeldFrames: () => void }
+    w.holdFrames = false
+    w.runHeldFrames = () => { for (const callback of held.splice(0)) callback(performance.now()) }
+    window.requestAnimationFrame = callback => {
+      if (!w.holdFrames) return raf(callback)
+      held.push(callback)
+      return 0
+    }
+  })
+  await openDeck(page, createFakeCritIpc())
+  await comment(page, 'h1', 'Make it bigger')
+  const row = page.locator('[data-review-row="unsent-comment"]')
+  const field = row.locator('[data-review-edit-box] textarea')
+
+  await page.evaluate(() => { (window as unknown as { holdFrames: boolean }).holdFrames = true })
+  await row.locator('[data-review-edit]').click()
+  await field.evaluate((el: HTMLTextAreaElement) => { el.focus(); el.select() })
+  await page.evaluate(() => (window as unknown as { runHeldFrames: () => void }).runHeldFrames())
+  await page.keyboard.insertText('Make it red')
+
+  await expect(field).toHaveValue('Make it red')
+})
+
 test('Given an unsent comment, When it is discarded, Then it is gone from the panel, the pins and the count', async ({ page }) => {
   await openDeck(page, createFakeCritIpc())
   await comment(page, 'h1', 'Oops')
