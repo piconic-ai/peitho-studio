@@ -156,8 +156,17 @@ pub fn get_update_status(app: AppHandle) -> UpdateStatus {
     status
 }
 
+fn manifest_client() -> Result<reqwest::Client, String> {
+    // The signed manifest is fetched before Tauri's updater initializes TLS.
+    // Use the same provider as the updater; another thread may install it first.
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+    reqwest::Client::builder().timeout(Duration::from_secs(30)).build().map_err(|err| err.to_string())
+}
+
 async fn fetch_signed_manifest(public_key: &str) -> Result<(serde_json::Value, SignedManifest), String> {
-    let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build().map_err(|err| err.to_string())?;
+    let client = manifest_client()?;
     async fn read(client: &reqwest::Client, url: &str, limit: usize) -> Result<Vec<u8>, String> {
         let mut response = client.get(url).send().await.map_err(|err| err.to_string())?.error_for_status().map_err(|err| err.to_string())?;
         let mut bytes = Vec::new();
@@ -532,6 +541,13 @@ pub fn initialize(app: &AppHandle) {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn manifest_client_can_be_built_before_the_updater_runs() {
+        // No updater initialization or network access: a fresh app checks the
+        // signed manifest before calling the Tauri updater for the first time.
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async { assert!(manifest_client().is_ok()); });
+    }
     #[test]
     fn installation_waits_for_every_window_and_rejects_any_failed_save() {
         let mut acks = HashMap::from([("main".into(), None), ("deck-2".into(), None)]);

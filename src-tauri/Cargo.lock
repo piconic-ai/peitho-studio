@@ -3670,6 +3670,7 @@ dependencies = [
  "notify",
  "peitho-core",
  "reqwest",
+ "rustls",
  "semver",
  "serde",
  "serde_json",
