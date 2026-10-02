@@ -116,6 +116,7 @@ export interface Messages {
   layoutSaveFirst: string
   layoutActionFailed: (error: string) => string
   deckChangeFailed: string
+  layoutDeckUnsaved: string
 
   // Slide preview
   previewAsPhone: string
@@ -312,6 +313,7 @@ const en: Messages = {
   layoutSaveFirst: 'Save or revert the changes to this layout before opening another',
   layoutActionFailed: error => `Could not change the layouts: ${error}`,
   deckChangeFailed: 'deck.md could not be updated',
+  layoutDeckUnsaved: 'the slides have changes that could not be saved to deck.md. Layouts are checked against the saved deck, so save the slides first',
 
   previewAsPhone: 'Preview as phone',
   previewPc: 'PC',
@@ -498,6 +500,7 @@ const ja: Messages = {
   layoutSaveFirst: '別のレイアウトを開く前に、このレイアウトの変更を保存するか元に戻してください',
   layoutActionFailed: error => `レイアウトを変更できませんでした: ${error}`,
   deckChangeFailed: 'deck.md を更新できませんでした',
+  layoutDeckUnsaved: 'deck.md に保存できていないスライドの変更があります。レイアウトは保存済みのデッキに対して確認するため、先にスライドを保存してください',
 
   previewAsPhone: 'スマートフォン表示でプレビュー',
   previewPc: 'PC',

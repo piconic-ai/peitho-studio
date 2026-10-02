@@ -1733,6 +1733,29 @@ export function Studio() {
     if (menu.kind === 'on-slide' && menu.index === index && !menu.layoutPickerOpen) ui.toggleLayoutPicker()
   }
 
+  // Lands every queued structural operation and overlapping commit, then
+  // saves the open slide's draft. Resolves whether deck.md now holds
+  // everything: no save failed and no draft is left unsaved — then
+  // `editor.fullSource()` is what's on disk. Structural actions may still be
+  // queued without a dirty body, so the queue is drained first; never call
+  // it from inside `serialized`, which would wait on itself.
+  async function flushDeck(): Promise<boolean> {
+    await structuralQueue
+    await saves.drain()
+    if (editor.isDirty()) await handleSave()
+    return await saves.drain() && !editor.isDirty()
+  }
+
+  // The deck source a layout file operation is checked against: the one on
+  // disk, since only layout files are written and the deck reopens from
+  // deck.md. Saves the open slide's draft first; throws when deck.md can't
+  // be brought up to date, as a draft checked but never saved could approve
+  // a layout the saved deck doesn't build with.
+  async function persistedSource(): Promise<string> {
+    if (!await flushDeck()) throw new Error(settings.messages().layoutDeckUnsaved)
+    return editor.fullSource()
+  }
+
   // The deck source as the user sees it: the open slide's unsaved draft
   // included.
   function liveSource(): string {
@@ -1918,7 +1941,8 @@ export function Studio() {
     }
     let created = ''
     const ok = await runLayoutAction(async () => {
-      created = await deckIpc.createLayout(liveSource(), layouts.newLayoutName(), layouts.newLayoutTemplate() || null)
+      const source = await persistedSource()
+      created = await deckIpc.createLayout(source, layouts.newLayoutName(), layouts.newLayoutTemplate() || null)
     })
     if (!ok) return
     layouts.closeNewLayout()
@@ -1934,7 +1958,7 @@ export function Studio() {
       return
     }
     let copy = ''
-    if (!await runLayoutAction(async () => { copy = await deckIpc.duplicateLayout(liveSource(), name) })) return
+    if (!await runLayoutAction(async () => { copy = await deckIpc.duplicateLayout(await persistedSource(), name) })) return
     await refreshLayouts(copy)
     setStatusMessage({ kind: 'layout-created', layout: copy })
   }
@@ -2001,30 +2025,38 @@ export function Studio() {
     if (flow === null || flow.kind !== 'deleting') return
     const { name, slides, replacement } = flow
     let historyCleared = false
-    const ok = await runLayoutAction(() => serialized(async () => {
-      const texts = currentSlideTexts()
-      const original = rebuildSource(texts)
-      const step = replacement === null || slides.length === 0 ? null : layoutPinsStepFor(slides, replacement)
-      const repinned = step === null ? original : rebuildSource(applyLayoutPinsStep(texts, step))
-      await deckIpc.checkLayoutRemoval(original, repinned, name)
-      const moveBack = step === null ? null : await commitLayoutPins(step)
-      try {
-        await deckIpc.deleteLayout(rebuildSource(currentSlideTexts()), name)
-      } catch (err) {
-        // The layout stays, so its slides go back to it: the deletion as a
-        // whole didn't happen. The refusal is what's shown, not this.
-        if (moveBack !== null) await commitLayoutPins(moveBack).catch(() => null)
-        throw err
-      }
-      if (historyPinsLayout(history.history(), name)) {
-        history.clear()
-        historyCleared = true
-      }
-    }))
+    const ok = await runLayoutAction(async () => {
+      await persistedSource()
+      historyCleared = await serialized(() => deleteLayoutNow(name, slides, replacement))
+    })
     layouts.finishDelete()
     if (!ok) return
     await refreshLayouts(null)
     setStatusMessage({ kind: historyCleared ? 'layout-deleted-history-cleared' : 'layout-deleted', layout: name })
+  }
+
+  // `confirmLayoutDelete`'s unit under the queue, on the saved deck: a
+  // draft typed since the flush would be checked but not be on disk, so it
+  // refuses instead. Resolves whether the undo history was forgotten.
+  async function deleteLayoutNow(name: string, slides: readonly number[], replacement: string | null): Promise<boolean> {
+    if (editor.isDirty()) throw new Error(settings.messages().layoutDeckUnsaved)
+    const texts = currentSlideTexts()
+    const original = rebuildSource(texts)
+    const step = replacement === null || slides.length === 0 ? null : layoutPinsStepFor(slides, replacement)
+    const repinned = step === null ? original : rebuildSource(applyLayoutPinsStep(texts, step))
+    await deckIpc.checkLayoutRemoval(original, repinned, name)
+    const moveBack = step === null ? null : await commitLayoutPins(step)
+    try {
+      await deckIpc.deleteLayout(rebuildSource(currentSlideTexts()), name)
+    } catch (err) {
+      // The layout stays, so its slides go back to it: the deletion as a
+      // whole didn't happen. The refusal is what's shown, not this.
+      if (moveBack !== null) await commitLayoutPins(moveBack).catch(() => null)
+      throw err
+    }
+    if (!historyPinsLayout(history.history(), name)) return false
+    history.clear()
+    return true
   }
 
   async function saveShownLayout(): Promise<void> {
@@ -2034,7 +2066,7 @@ export function Studio() {
     const texts = editorDraft(shown)
     layouts.editorSaving()
     try {
-      await deckIpc.saveLayout(liveSource(), name, texts.html, texts.css)
+      await deckIpc.saveLayout(await persistedSource(), name, texts.html, texts.css)
     } catch (err) {
       layouts.editorSaveFailed(name, String(err))
       return
@@ -2307,13 +2339,7 @@ export function Studio() {
       void (async () => {
         let saved = false
         try {
-          // Structural actions may still be queued without a dirty body.
-          // Drain their queue and every overlapping commit, then flush the
-          // final draft and acknowledge actual persistence outcomes.
-          await structuralQueue
-          await saves.drain()
-          if (editor.isDirty()) await handleSave()
-          saved = await saves.drain() && !editor.isDirty()
+          saved = await flushDeck()
         } finally {
           await updateIpc.acknowledgeSave(token, saved).catch(() => {})
         }

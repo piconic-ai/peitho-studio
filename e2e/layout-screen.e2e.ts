@@ -10,6 +10,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 import type { LayoutVerdict } from '../domain/layoutFit'
+import { editorContent, moveToEditorEnd } from './helpers/codeEditor'
 
 const SOURCE = [
   '<!-- {"key":"cover","layout":"title-slide"} -->\n# Cover',
@@ -353,6 +354,86 @@ test('Given an edit that would stop a slide from building, when saved, then the 
   await expect(page.locator('[data-save-layout]')).toBeEnabled()
   expect(saves).toEqual([{ content: SOURCE, name: 'title-body', html: '<section class="peitho-slide layout-title-body"><h1>no body</h1></section>', css: '' }])
   expect(deck.layoutFiles?.['title-body'].html).toBe('<section class="peitho-slide layout-title-body"></section>')
+})
+
+/** Opens the deck with every `save_deck_source` failing, types into the
+ * first slide's body so its draft can't be saved, and switches to the
+ * layout screen. */
+async function openWithUnsavableDraft(page: Page, deck: MockDeck): Promise<void> {
+  let failures = 0
+  deck.commandError = cmd => {
+    if (cmd !== 'save_deck_source') return null
+    failures++
+    return 'Disk full'
+  }
+  await mockTauri(page, deck)
+  await page.goto('/')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 10_000 })
+  await page.locator('[data-slide-row="0"]').click()
+  await editorContent(page).click()
+  await moveToEditorEnd(page)
+  await page.keyboard.type(' Unsaved')
+  await expect.poll(() => failures).toBeGreaterThan(0)
+  await page.locator('[data-studio-mode-option="layouts"]').click()
+  await expect(page.locator('[data-layout-screen]')).toBeVisible()
+}
+
+// Layout files are checked against the deck as saved: a draft that can't
+// be saved isn't what the deck reopens with.
+test('Given a slide draft that cannot be saved, when a layout edit is saved, then it is refused before the check and the edit stays unsaved', async ({ page }) => {
+  const deck = deckOf()
+  await openWithUnsavableDraft(page, deck)
+
+  await row(page, 'quote').click()
+  await page.locator('[data-layout-html]').fill('<section class="peitho-slide layout-quote"><h1>edited</h1></section>')
+  await page.locator('[data-save-layout]').click()
+
+  await expect(page.locator('[data-layout-editor-message]')).toContainText('could not be saved')
+  await expect(page.locator('[data-save-layout]')).toBeEnabled()
+  expect(deck.invokedCommands).not.toContain('save_layout')
+})
+
+for (const action of ['create', 'duplicate', 'delete'] as const) {
+  test(`Given a slide draft that cannot be saved, when a layout is ${action === 'create' ? 'created' : action === 'duplicate' ? 'duplicated' : 'deleted'}, then it is refused before reaching the deck`, async ({ page }) => {
+    const deck = deckOf()
+    await openWithUnsavableDraft(page, deck)
+
+    await row(page, 'quote').click()
+    if (action === 'create') {
+      await page.locator('[data-new-layout]').click()
+      await page.locator('[data-new-layout-name]').fill('pull-quote')
+      await page.locator('[data-create-layout]').click()
+    } else if (action === 'duplicate') {
+      await page.locator('[data-duplicate-layout]').click()
+    } else {
+      await page.locator('[data-delete-layout]').click()
+      await page.locator('[data-confirm-delete-layout]').click()
+    }
+
+    await expect(page.locator('[data-layout-notice]')).toContainText('could not be saved')
+    for (const cmd of ['create_layout', 'duplicate_layout', 'check_layout_removal', 'delete_layout']) expect(deck.invokedCommands).not.toContain(cmd)
+    await expect(row(page, 'quote')).toBeVisible()
+  })
+}
+
+test('Given a slide draft that saves, when a layout edit is saved, then the draft is saved first and the check runs against it', async ({ page }) => {
+  const saves: { content: string }[] = []
+  const deck = deckOf({ renderDraftDelayMs: 300, onInvoke: (cmd, args) => { if (cmd === 'save_layout') saves.push(args as { content: string }) } })
+  await mockTauri(page, deck)
+  await page.goto('/')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 10_000 })
+  await page.locator('[data-slide-row="0"]').click()
+  await editorContent(page).click()
+  await moveToEditorEnd(page)
+  await page.keyboard.type(' Typed')
+  await page.locator('[data-studio-mode-option="layouts"]').click()
+  await row(page, 'quote').click()
+  await page.locator('[data-layout-html]').fill('<section class="peitho-slide layout-quote"><h1>edited</h1></section>')
+  await page.locator('[data-save-layout]').click()
+
+  await expect.poll(() => saves.length).toBe(1)
+  expect(saves[0].content).toContain('Typed')
+  expect(saves[0].content).toBe(deck.source)
 })
 
 test('Given unsaved edits to a layout, when another layout is clicked, then the edits stay open and a notice says to save or revert first', async ({ page }) => {
