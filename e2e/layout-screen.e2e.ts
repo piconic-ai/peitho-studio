@@ -213,6 +213,20 @@ test('Given an undo step that would pin a slide back to a layout, when that layo
   expect(deck.source).toBe(before)
 })
 
+test('Given a delete that fails after the slides were moved, then they are moved back and the layout stays', async ({ page }) => {
+  const deck = deckOf({ commandError: cmd => (cmd === 'delete_layout' ? 'failed to delete layouts/title-body.html: permission denied' : null) })
+  await openLayoutScreen(page, deck)
+
+  await row(page, 'title-body').click()
+  await page.locator('[data-delete-layout]').click()
+  await page.locator('[data-delete-replacement]').selectOption('quote')
+  await page.locator('[data-confirm-delete-layout]').click()
+
+  await expect(page.locator('[data-layout-notice]')).toContainText('permission denied')
+  await expect(row(page, 'title-body')).toBeVisible()
+  await expect.poll(() => deck.source).toBe(SOURCE)
+})
+
 test('Given a delete the deck refuses, then the reason shows, nothing is moved, and the layout stays', async ({ page }) => {
   const deck = deckOf({ commandError: cmd => (cmd === 'check_layout_removal' ? "removing the 'title-body' layout would stop slide 2 from building" : null) })
   await openLayoutScreen(page, deck)
