@@ -274,6 +274,11 @@ pub struct RenderPayload {
     manifest: serde_json::Value,
     /// Rendered fragment HTML per slide key.
     fragments: std::collections::HashMap<String, String>,
+    /// The layout each slide was built on, per slide key — what the
+    /// manifest leaves out (see `RenderOutput::slide_layouts`).
+    slide_layouts: std::collections::HashMap<String, String>,
+    /// Every layout the deck has, by name.
+    layout_names: Vec<String>,
     /// Base URL for the in-process asset server (peitho.css, fonts, images)
     /// — resolves relative `url(...)`/`src="assets/..."` references inside
     /// `css`/`fragments`.
@@ -286,7 +291,14 @@ pub struct RenderPayload {
 
 fn to_payload(output: RenderOutput, asset_base_url: String) -> Result<RenderPayload, String> {
     let manifest = serde_json::from_str(&output.manifest_json).map_err(|err| err.to_string())?;
-    Ok(RenderPayload { manifest, fragments: output.fragments, asset_base_url, css: output.css })
+    Ok(RenderPayload {
+        manifest,
+        fragments: output.fragments,
+        slide_layouts: output.slide_layouts,
+        layout_names: output.layout_names,
+        asset_base_url,
+        css: output.css,
+    })
 }
 
 #[derive(Serialize)]
@@ -2128,6 +2140,8 @@ Start writing your slides here.\n";
         RenderOutput {
             manifest_json: manifest_json.to_string(),
             fragments: HashMap::from([("slide-1".to_string(), "<section>one</section>".to_string())]),
+            slide_layouts: HashMap::from([("slide-1".to_string(), "title-body".to_string())]),
+            layout_names: vec!["title-body".to_string(), "title-slide".to_string()],
             css: css.to_string(),
             has_math: false,
             image_assets: HashMap::new(),
@@ -2145,8 +2159,18 @@ Start writing your slides here.\n";
         let payload = to_payload(output, "http://127.0.0.1:1234/".to_string()).unwrap();
         assert_eq!(payload.manifest["title"], "Deck");
         assert_eq!(payload.fragments["slide-1"], "<section>one</section>");
+        assert_eq!(payload.slide_layouts["slide-1"], "title-body");
+        assert_eq!(payload.layout_names, ["title-body", "title-slide"]);
         assert_eq!(payload.css, ".peitho-slide { color: red; }");
         assert_eq!(payload.asset_base_url, "http://127.0.0.1:1234/");
+    }
+
+    #[test]
+    fn given_a_payload_when_serialized_then_its_layouts_reach_the_frontend_in_camel_case() {
+        let payload = to_payload(render_output(r#"{"title":""}"#, ""), String::new()).unwrap();
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["slideLayouts"]["slide-1"], "title-body");
+        assert_eq!(json["layoutNames"], serde_json::json!(["title-body", "title-slide"]));
     }
 
     #[test]

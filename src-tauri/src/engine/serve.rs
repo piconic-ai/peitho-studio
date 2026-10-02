@@ -433,6 +433,8 @@ mod tests {
         server.update(&RenderOutput {
             manifest_json: String::new(),
             fragments: HashMap::new(),
+            slide_layouts: HashMap::new(),
+            layout_names: Vec::new(),
             css: String::new(),
             has_math: false,
             image_assets: HashMap::new(),
@@ -548,6 +550,8 @@ mod tests {
         server.update(&RenderOutput {
             manifest_json: String::new(),
             fragments: HashMap::new(),
+            slide_layouts: HashMap::new(),
+            layout_names: Vec::new(),
             css: String::new(),
             has_math: false,
             image_assets: HashMap::new(),
@@ -587,6 +591,8 @@ mod tests {
         server.update(&RenderOutput {
             manifest_json: String::new(),
             fragments: HashMap::new(),
+            slide_layouts: HashMap::new(),
+            layout_names: Vec::new(),
             css: String::new(),
             has_math: false,
             image_assets: HashMap::new(),

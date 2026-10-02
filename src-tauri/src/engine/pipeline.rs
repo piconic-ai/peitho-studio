@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 
 use peitho_core::phase::Parsed;
 use peitho_core::{
-    build_manifest, build_theme_css, check_deck, dispatch_by_convention, manifest_json,
+    build_manifest, build_theme_css, check_deck, dispatch_by_convention, explain_dispatch, manifest_json, DispatchResult,
     parse_deck_and_transform, parse_frontmatter, render_deck, resolve_image_paths, BuildError, Deck,
     EditAnnotations, ImageRequest, LayoutAssets, Layouts, ResolvedImageAsset, ResolvedImagePath,
 };
@@ -27,6 +27,13 @@ pub struct RenderOutput {
     /// Rendered fragment HTML per slide, keyed by slide key (matches what
     /// the frontend already keys `slideFragments` by).
     pub fragments: HashMap<String, String>,
+    /// The layout each slide was built on, keyed like `fragments` — named
+    /// by its `"layout"`, or picked by peitho-core when it names none. Not
+    /// part of `manifest_json`, which carries no layouts.
+    pub slide_layouts: HashMap<String, String>,
+    /// Every layout the deck has (its `layouts/` files, or the built-in
+    /// fallback), by name.
+    pub layout_names: Vec<String>,
     pub css: String,
     pub has_math: bool,
     /// `assets/<hash>-<name>` (as referenced from `css`/fragment HTML) ->
@@ -91,6 +98,8 @@ pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, Str
         parse_source(deck_path, source)?;
     let highlighter = highlighter.get();
 
+    let slide_layouts = slide_layouts(&parsed, &layouts);
+    let layout_names = layouts.names().into_iter().map(str::to_string).collect();
     let mapped = dispatch_by_convention(parsed, &layouts).map_err(|err| err.to_string())?;
     let checked = check_deck(mapped).map_err(|err| err.to_string())?;
 
@@ -135,7 +144,33 @@ pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, Str
         .map(|asset| (asset.dist_rel.as_str().to_string(), asset.source_abs))
         .collect();
 
-    Ok(RenderOutput { manifest_json, fragments, css, has_math, image_assets, fonts_dir, deck_dir: deck_dir.to_path_buf() })
+    Ok(RenderOutput {
+        manifest_json,
+        fragments,
+        slide_layouts,
+        layout_names,
+        css,
+        has_math,
+        image_assets,
+        fonts_dir,
+        deck_dir: deck_dir.to_path_buf(),
+    })
+}
+
+/// The layout peitho-core's dispatch gives each slide of `parsed`, by slide
+/// key — leaving out a slide it can't place (unknown, ambiguous or
+/// mismatched layout), which `dispatch_by_convention` then reports.
+/// peitho-core keeps the layout a mapped slide was given to itself, so
+/// this asks `explain_dispatch` for the same decision instead.
+fn slide_layouts(parsed: &Deck<Parsed>, layouts: &Layouts) -> HashMap<String, String> {
+    parsed
+        .parsed_slides()
+        .iter()
+        .filter_map(|slide| match explain_dispatch(slide, layouts).result() {
+            DispatchResult::Matched(layout) => Some((slide.key.as_str().to_string(), layout.clone())),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Resolves every deck-relative asset a layout's own HTML references
@@ -359,6 +394,53 @@ mod tests {
 
         let output = render_source(&deck_path, &source).expect("an explicit layout should resolve the ambiguity");
         assert_eq!(output.fragments.len(), 2);
+    }
+
+    #[test]
+    fn given_slides_naming_a_layout_or_not_when_rendered_then_each_ones_layout_is_reported_by_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = write_two_layout_deck(dir.path(), "<!-- {\"key\":\"new-slide\",\"layout\":\"cover\"} -->");
+        let source = format!("{}\n---\n\n# Picked by structure\n\nA body paragraph.\n", std::fs::read_to_string(&deck_path).unwrap());
+
+        let output = render_source(&deck_path, &source).unwrap_or_else(|err| panic!("{err}"));
+        assert_eq!(
+            output.slide_layouts,
+            HashMap::from([
+                ("cover".to_string(), "cover".to_string()),
+                ("new-slide".to_string(), "cover".to_string()),
+                ("picked-by-structure".to_string(), "title-body-code".to_string()),
+            ])
+        );
+        assert_eq!(output.layout_names, ["cover", "title-body-code"]);
+    }
+
+    #[test]
+    fn given_a_deck_without_layouts_when_rendered_then_every_slide_reports_the_built_in_layout() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let output = render_source(&deck_path, "# One\n\n---\n\n# Two\n").unwrap_or_else(|err| panic!("{err}"));
+        assert_eq!(output.slide_layouts.values().collect::<Vec<_>>(), ["title-body-code", "title-body-code"]);
+        assert_eq!(output.layout_names, ["title-body-code"]);
+    }
+
+    #[test]
+    fn adversarial_given_a_draft_slide_when_rendered_then_it_has_no_reported_layout() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let source = "# One\n\n---\n\n<!-- {\"key\":\"hidden\",\"draft\":true} -->\n# Two\n";
+        let output = render_source(&deck_path, source).unwrap_or_else(|err| panic!("{err}"));
+        assert_eq!(output.slide_layouts.keys().collect::<Vec<_>>(), ["one"]);
+    }
+
+    #[test]
+    fn adversarial_slide_layouts_leaves_out_a_slide_it_cannot_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = write_two_layout_deck(dir.path(), "<!-- {\"key\":\"new-slide\"} -->");
+        let source = std::fs::read_to_string(&deck_path).unwrap();
+        let parsed = parse_source(&deck_path, &source).unwrap();
+
+        let layouts = slide_layouts(&parsed.deck, &parsed.assets.layouts);
+        assert_eq!(layouts, HashMap::from([("cover".to_string(), "cover".to_string())]));
     }
 
     #[test]
