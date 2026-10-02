@@ -39,7 +39,7 @@ import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isL
 import { type LayoutVerdict } from '../domain/layoutFit'
 import { type ImageSlotFix, imageLayoutPin, imageSlotFixFor, parseImageSlotError, shownImageSlotFix } from '../domain/imageSlot'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
-import { buildSlideList, manifestIndexAt, renderedLayoutAt, sectionStartBySourceIndex } from '../domain/slideList'
+import { buildSlideList, lastRenderedLayoutOf, manifestIndexAt, sectionStartBySourceIndex } from '../domain/slideList'
 import { collapseKeyAt, collapsedSectionContaining, collapsedSectionStarts, lastVisibleRow, rowVisibilities, sectionSpans } from '../domain/sectionCollapse'
 import { type DeckVariant, currentVariantLabelOf, toVariantSwitcher, variantOptionsOf } from '../domain/deckVariants'
 import { racePresentOutcome } from '../domain/eventRace'
@@ -1823,15 +1823,16 @@ export function Studio() {
   // `new-slide`, `new-slide-2`, `new-slide-3`, ... against the deck's
   // actual current keys instead. The new slide also always names a layout
   // when there's one to name (`newSlideConfig`): the previous slide's own
-  // `"layout"`, or else the one its last successful render was built on —
-  // a slide added mid-edit (before that edit rendered) can only go by the
-  // last render, which is still a layout the deck has.
+  // `"layout"`, or else the one its last successful render was built on,
+  // found by its key (or position, while that still pairs up — see
+  // `lastRenderedLayoutOf`), since the deck may have changed since.
   async function addSlide(index: number): Promise<void> {
     const texts = currentSlideTexts()
     const insertAt = Math.min(index + 1, texts.length)
     const key = uniqueSlideKey(slugifyTitle('New Slide'), existingSlideKeys())
     const { config: previousConfig } = extractPageComment(texts[index] ?? '')
-    const config = newSlideConfig(previousConfig, key, renderedLayoutAt(slideEntries(), render.slideLayouts(), index), render.headingLayouts())
+    const previousLayout = lastRenderedLayoutOf(previousConfig.key, index, texts.length, slideEntries(), render.slideLayouts())
+    const config = newSlideConfig(previousConfig, key, previousLayout, render.headingLayouts())
     await perform({ kind: 'slides', cmd: { type: 'insert', at: insertAt, text: buildSlideText(config, NEW_SLIDE_MARKDOWN, '') } })
   }
 

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { isExhaustivelyAccountedFor } from './spec'
 import type { ManifestSection, ManifestSlide } from './render'
 import {
-  buildSlideList, manifestIndexAt, manifestIndexToSourceIndex, recordByManifestIndex, renderedLayoutAt, sectionStartBySourceIndex,
+  buildSlideList, lastRenderedLayoutOf, manifestIndexAt, manifestIndexToSourceIndex, recordByManifestIndex, renderedLayoutAt, sectionStartBySourceIndex,
   type SlideListEntry,
 } from './slideList'
 import { buildSlideListExamples } from './slideList.examples'
@@ -123,6 +123,27 @@ describe('renderedLayoutAt', () => {
     expect(renderedLayoutAt(entries, layouts, 3)).toBeNull()
     expect(renderedLayoutAt([], layouts, 0)).toBeNull()
     expect(renderedLayoutAt(entries, {}, 0)).toBeNull()
+  })
+
+  test('spec: lastRenderedLayoutOf — Given the slide has a key, Then its layout by key, wherever it now sits', () => {
+    // `points` moved to the front since the last render: its key still finds it.
+    expect(lastRenderedLayoutOf('points', 0, 3, entries, layouts)).toBe('title-body')
+    expect(lastRenderedLayoutOf('points', 0, 5, entries, layouts)).toBe('title-body')
+  })
+
+  test('spec: lastRenderedLayoutOf — Given no key and the same slide count as the last render, Then the layout at its position', () => {
+    expect(lastRenderedLayoutOf(undefined, 0, 3, entries, layouts)).toBe('title-slide')
+  })
+
+  test('adversarial: lastRenderedLayoutOf — Given no key and a slide added or removed since the last render, Then none rather than a neighbour\'s', () => {
+    expect(lastRenderedLayoutOf(undefined, 0, 4, entries, layouts)).toBeNull()
+    expect(lastRenderedLayoutOf(undefined, 2, 2, entries, layouts)).toBeNull()
+  })
+
+  test('adversarial: lastRenderedLayoutOf — Given a key the last render never reported (new, renamed, or an empty string), Then none', () => {
+    expect(lastRenderedLayoutOf('brand-new', 0, 3, entries, layouts)).toBeNull()
+    expect(lastRenderedLayoutOf('', 0, 3, entries, layouts)).toBeNull()
+    expect(lastRenderedLayoutOf('constructor', 0, 3, entries, layouts)).toBeNull()
   })
 
   test('adversarial: Given a key named like an Object property, Then it is not mistaken for a layout', () => {

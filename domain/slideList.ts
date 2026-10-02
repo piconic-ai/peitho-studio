@@ -132,6 +132,21 @@ export function renderedLayoutAt(entries: readonly SlideListEntry[], slideLayout
   return slideLayouts[entry.slide.key]
 }
 
+/** The layout the last render built a slide on, for a slide of the *current*
+ * source — which may be ahead of the source `entries` were built from (an
+ * edit since the last successful render). By the slide's explicit `key`
+ * when it has one, which no edit elsewhere moves; else by its position
+ * `sourceIndex`, but only while the current source has as many slides as
+ * `entries` (`slideCount`) — after a slide was added or removed, positions
+ * no longer pair up, and none is better than another slide's layout. */
+export function lastRenderedLayoutOf(
+  key: string | undefined, sourceIndex: number, slideCount: number,
+  entries: readonly SlideListEntry[], slideLayouts: Readonly<Record<string, string>>,
+): string | null {
+  if (key !== undefined) return Object.hasOwn(slideLayouts, key) ? slideLayouts[key] : null
+  return slideCount === entries.length ? renderedLayoutAt(entries, slideLayouts, sourceIndex) : null
+}
+
 /** `result[j]` is the `sourceIndex` of `entries`' `j`-th rendered slide —
  * i.e. `manifestSlides[j]`'s row in the slide list. Sparse only in the
  * degenerate case of a manifest index `buildSlideList` never assigned
