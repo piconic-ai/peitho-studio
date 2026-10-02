@@ -55,6 +55,17 @@ tags: [layout, ui, screen]
     `check_layout_removal`がビルドまで検査し、削除が拒否されるなら
     deck.mdに触れない。それでも削除が失敗したら書き換えを戻す。
     最後の1つは削除できない。
+  - (2026-10-02 実機レビューで追加)一覧の行を右クリックすると、アプリ内
+    メニューで「スライドに適用(選択スライドが無い/合わないときは無効、
+    理由をツールチップ)・レイアウトを編集・複製・削除」ができる。一覧の
+    空き領域の右クリックは「新規レイアウト」。Escapeと外側クリックで閉じる。
+  - (同上)HTML/CSSエディタはスライド本文と同じCodeMirrorで、設定の
+    Vimモードがそのまま効く(設定変更は即時反映)。スライドエディタに`:w`の
+    割り当てが無いので、こちらにも無い。エディタ内のUndo(Edit > Undo)は
+    そのエディタの入力だけを戻し、スライドの履歴には触れない。
+  - (同上)コメント欄(`ReviewPanel`)はレイアウト画面でも同じ列・同じ
+    開閉状態・同じスレッドで出る(レイアウトへのコメント送信は
+    `todo/layout-review-comments.md`)。
   - 選択したレイアウトのHTML/CSSを画面内で編集・保存でき、保存すると
     プレビューとスライドモードのサムネイルが更新される。壊れたHTML
     (`parse_layout`が失敗する)は保存前にエラー表示し、保存しない。
@@ -130,7 +141,8 @@ tags: [layout, ui, screen]
   削除可否)、削除フローのADT(`idle | confirming{usage} |
   choosing-replacement | deleting`)。
 - `state/uiStore.ts`: モード。`ipc/deckIpc.ts`+`ipc/fakeDeckIpc.ts`: 新コマンド。
-- `components/`: `LayoutScreen.tsx`(新規)、`DeckHeader.tsx`にモード切替。
+- `components/`: `LayoutScreen.tsx`(新規)、`DeckHeader.tsx`にモード切替、
+  `LayoutContextMenu.tsx`(右クリックメニュー、項目は`domain/layoutMenu.ts`)。
   オーケストレーションは`Studio.tsx`。
 
 ## テスト
@@ -154,7 +166,9 @@ tags: [layout, ui, screen]
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機でのモード切替・一覧・編集保存の見た目/挙動確認(ユーザー自身に依頼)
-- [ ] 画面構成(左一覧/中央エディタ/右プレビュー)がイメージに合うか
+- [ ] 画面構成(左一覧/中央エディタ/右プレビュー/右端コメント)がイメージに合うか
+- [ ] 実機での右クリックメニュー(WKWebViewのネイティブメニューが出ないこと)と、
+  レイアウトエディタでのVimモード(IME切替・クリップボード共有)
 
 ## 先送り事項
 
@@ -164,6 +178,9 @@ tags: [layout, ui, screen]
   `css/base.css`の`.slot-code`をpeitho-coreが拒否するため。
   `check_layout_removal`が書き換え前に拒否する)。base.css側の`.slot-code`を外すか、別の
   レイアウトにcode slotを持たせるかは未決。
-- 一覧の各行の`…`/右クリックメニューは作らず、プレビュー上部のツールバーに
-  「スライドに適用・複製・削除」を置いた(BarefootJS #2930を避けるため)。
-  行メニューが欲しければ追加する。
+- 一覧の行メニューは右クリックで追加済み(#2930は`SlideList.tsx`と同じく
+  一覧コンテナ側のハンドラが行内のクリックを無視して回避)。プレビュー上部の
+  ツールバー(スライドに適用・複製・削除)はそのまま残した。行ごとの`…`
+  ボタンは作っていない。
+- レイアウトHTML/CSSの構文ハイライト(`@codemirror/lang-html`/`lang-css`の
+  追加)。今はプレーンテキストのCodeMirror。
