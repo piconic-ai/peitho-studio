@@ -99,10 +99,10 @@ mod tests {
     }
 
     #[test]
-    fn given_title_slide_when_previewed_then_its_subtitle_takes_one_paragraph_and_no_list() {
+    fn given_title_slide_when_previewed_then_its_one_block_body_takes_a_paragraph_and_no_list() {
         let layout = builtin::STANDARD_LAYOUTS.iter().find(|layout| layout.name == "title-slide").unwrap();
         let source = placeholder_source(&parse_layout(layout.name, layout.html).unwrap());
-        assert!(source.ends_with("# Placeholder title\n\n::: {slot=subtitle}\n\nPlaceholder subtitle copy.\n\n:::\n"), "{source}");
+        assert!(source.ends_with("# Placeholder title\n\nPlaceholder body copy.\n"), "{source}");
     }
 
     #[test]

@@ -365,12 +365,10 @@ pub fn dev_default_deck() -> Option<String> {
 /// slide on the standard `title-slide` layout, named explicitly — with
 /// every standard layout in the deck, a slide that doesn't name one
 /// matches several (see `builtin::STANDARD_LAYOUTS`). Its line under the
-/// title goes in the layout's `subtitle` slot.
+/// title is the layout's one-paragraph body, shown as a subtitle.
 const STARTER_BODY: &str = "<!-- {\"key\":\"cover\",\"layout\":\"title-slide\",\"section\":\"Intro\",\"time\":\"1m\"} -->\n\
 # New Presentation\n\n\
-::: {slot=subtitle}\n\n\
-Start writing your slides here.\n\n\
-:::\n";
+Start writing your slides here.\n";
 
 /// The deck settings the New Deck dialog picks, each one of its key's
 /// choices in `deck_menu::SettingKey`.
@@ -1728,9 +1726,7 @@ mod tests {
         let expected = "---\ntime: 1m\n---\n\
 <!-- {\"key\":\"cover\",\"layout\":\"title-slide\",\"section\":\"Intro\",\"time\":\"1m\"} -->\n\
 # New Presentation\n\n\
-::: {slot=subtitle}\n\n\
-Start writing your slides here.\n\n\
-:::\n";
+Start writing your slides here.\n";
         assert_eq!(starter_deck(default_new_deck_settings()), expected);
     }
 
@@ -1955,7 +1951,7 @@ Start writing your slides here.\n\n\
     fn filled_standard_slide(name: &str) -> String {
         let fenced = |slot: &str| format!("::: {{slot={slot}}}\n\nSome {slot} text.\n\n:::\n");
         let content = match name {
-            "title-slide" => format!("# A title\n\n{}", fenced("subtitle")),
+            "title-slide" => "# A title\n\nA subtitle.\n".to_string(),
             "section-header" | "title-only" | "main-point" => "# A title\n".to_string(),
             "title-body" => "# A title\n\nA paragraph.\n\n- a point\n\n```rust\nfn main() {}\n```\n".to_string(),
             "two-column" => format!("# A title\n\n{}\n{}", fenced("left"), fenced("right")),
@@ -2048,15 +2044,39 @@ Start writing your slides here.\n\n\
     }
 
     #[test]
-    fn adversarial_given_a_created_deck_when_title_slide_gets_a_bare_paragraph_then_it_does_not_build() {
-        // A subtitle has to be fenced: a plain paragraph is body content,
-        // and `title-slide` has no body.
+    fn adversarial_given_a_created_deck_when_title_slide_gets_more_than_one_paragraph_then_it_does_not_build() {
+        // Its subtitle is one block: a second one is more than it holds.
         let parent = tempfile::tempdir().unwrap();
-        let slide = "<!-- {\"key\":\"x\",\"layout\":\"title-slide\"} -->\n# A title\n\nNot fenced.\n".to_string();
+        let slide = "<!-- {\"key\":\"x\",\"layout\":\"title-slide\"} -->\n# A title\n\nOne.\n\nTwo.\n".to_string();
         let (deck_path, source) = created_deck_source_with(parent.path(), &[slide]);
 
-        let err = pipeline::render_source(&deck_path, &source).err().expect("unfenced subtitle");
+        let err = pipeline::render_source(&deck_path, &source).err().expect("two subtitle paragraphs");
         assert!(err.contains("body"), "{err}");
+    }
+
+    #[test]
+    fn given_a_new_deck_when_an_image_is_dropped_on_its_untouched_starter_slide_then_the_image_layout_is_offered() {
+        // The starter text stays as is; the error bar's "pick layout"
+        // (`imageSlotFixFor`) has `title-body-image` to offer, since it
+        // takes the starter's title and subtitle (body) as well as the image.
+        let parent = tempfile::tempdir().unwrap();
+        let (deck_path, image) = created_deck_with_image(parent.path());
+        let source = format!("{}\n![]({image})\n", std::fs::read_to_string(&deck_path).unwrap());
+
+        let err = pipeline::render_source(&deck_path, &source).err().expect("title-slide has no image slot");
+        assert!(err.contains("no slot accepts image in layout 'title-slide'"), "{err}");
+        let verdicts = crate::engine::layout_fit::check_slide_layouts(&deck_path, &source, 0).unwrap().unwrap();
+        let fitting: Vec<&str> = verdicts
+            .iter()
+            .filter(|verdict| verdict.fit == crate::engine::layout_fit::LayoutFit::Fits)
+            .map(|verdict| verdict.layout.as_str())
+            .collect();
+        assert_eq!(fitting, ["title-body-image"]);
+
+        let repinned = source.replace("\"layout\":\"title-slide\"", "\"layout\":\"title-body-image\"");
+        let output = pipeline::render_source(&deck_path, &repinned).unwrap_or_else(|err| panic!("{err}"));
+        assert!(output.fragments["cover"].contains("Start writing your slides here."));
+        assert!(output.fragments["cover"].contains("<img"));
     }
 
     #[test]
