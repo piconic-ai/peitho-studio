@@ -15,7 +15,7 @@ import type { DeckVariant } from '../../domain/deckVariants'
 import type { LayoutVerdict } from '../../domain/layoutFit'
 import type { Size } from '../../domain/geometry'
 import { readFrontmatterKey } from '../../domain/frontmatter'
-import type { NewReviewComment, NewReviewReply } from '../../domain/critReview'
+import type { NewLayoutComment, NewReviewComment, NewReviewReply } from '../../domain/critReview'
 import type { FakeCritIpc } from '../../ipc/fakeCritIpc'
 
 export interface MockDeck {
@@ -206,6 +206,9 @@ export interface MockDeck {
   /** Answers the `crit_*` commands, and forwards its `crit-review` events
    * to the page. Without it they answer `null` (no crit at all). */
   crit?: FakeCritIpc
+  /** What `layout_files_stamp` answers — defaults to `''`. Change it to
+   * stand for a layout file written outside Studio (the agent's edit). */
+  layoutFilesStamp?: string
 }
 
 const DEFAULT_ABOUT_INFO = {
@@ -410,6 +413,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         return deck.layoutVerdicts?.(args.content as string, args.slideIndex as number) ?? null
       case 'add_image_layout':
         return deck.addImageLayout?.(args.content as string, args.slideIndex as number) ?? []
+      case 'layout_files_stamp': return deck.layoutFilesStamp ?? ''
       case 'read_layout': {
         const name = args.name as string
         return layoutFileOf(deck, name) ?? { html: `<section class="peitho-slide layout-${name}"></section>`, css: null }
@@ -512,6 +516,8 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'crit_session_status': return deck.crit?.sessionStatus() ?? null
       case 'crit_start_session': return deck.crit?.startSession() ?? null
       case 'crit_add_comments': return deck.crit?.addComments(args.comments as NewReviewComment[]) ?? null
+      case 'crit_add_layout_comments': return deck.crit?.addLayoutComments(args.comments as NewLayoutComment[]) ?? null
+      case 'crit_session_dirs': return deck.crit?.sessionDirs() ?? null
       case 'crit_add_replies': return deck.crit?.addReplies(args.replies as NewReviewReply[]) ?? null
       case 'crit_resolve_comment': return deck.crit?.resolveComment(args.id as string) ?? null
       case 'crit_finish': return deck.crit?.finish() ?? null

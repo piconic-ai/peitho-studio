@@ -21,8 +21,8 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crate::engine::crit::{
-    self as shapes, CritSession, DeckSession, DeckSessionMatch, FinishedRound, NewReviewComment, NewReviewReply, ReviewComment,
-    ReviewUpdate, SseParser, SESSION_OPENER_BODY, STUDIO_AUTHOR,
+    self as shapes, CommentPlace, CritSession, DeckSession, DeckSessionMatch, FinishedRound, NewLayoutComment, NewReviewComment, NewReviewReply,
+    ReviewComment, ReviewUpdate, SseParser, SESSION_OPENER_BODY, STUDIO_AUTHOR,
 };
 
 /// How long a request (and each read of the event stream) may take. The
@@ -121,20 +121,43 @@ pub fn finish(port: u16) -> Result<(), String> {
     request(port, "POST", "/api/finish", None).map(|_| ())
 }
 
-/// The comments on `file` and their replies.
-pub fn list_comments(port: u16, file: &str) -> Result<Vec<ReviewComment>, String> {
-    shapes::parse_comments(&get(port, &shapes::comments_endpoint(file))?)
+/// The comments on the deck file (`deck_file`, its path in the session)
+/// and their replies.
+pub fn list_comments(port: u16, deck_file: &str) -> Result<Vec<ReviewComment>, String> {
+    shapes::parse_comments(&get(port, &shapes::comments_endpoint(deck_file))?, &CommentPlace::Deck)
 }
 
-/// Adds `reply` under its comment on `file`.
-pub fn add_reply(port: u16, file: &str, reply: &NewReviewReply) -> Result<(), String> {
+/// Every comment Studio shows for the deck: those on the deck file, on its
+/// layout files (`shapes::layout_files_in_session`) and on the review as a
+/// whole — the deck's first, then each layout file's, then the review's.
+pub fn list_all_comments(port: u16, deck_file: &str) -> Result<Vec<ReviewComment>, String> {
+    let info = shapes::parse_session_info(&get(port, "/api/session")?)?;
+    let mut comments = list_comments(port, deck_file)?;
+    for file in shapes::layout_files_in_session(&info.files, deck_file) {
+        let Some(path) = shapes::deck_relative_path(deck_file, &file) else { continue };
+        comments.extend(shapes::parse_comments(&get(port, &shapes::comments_endpoint(&file))?, &CommentPlace::File { path })?);
+    }
+    comments.extend(shapes::parse_comments(&get(port, "/api/comments")?, &CommentPlace::Review)?);
+    Ok(comments)
+}
+
+/// Adds `comment` (on a layout, or on every one) at `place`
+/// (`shapes::layout_comment_place`).
+pub fn add_layout_comment(port: u16, deck_file: &str, comment: &NewLayoutComment, place: &CommentPlace) -> Result<(), String> {
+    let body = shapes::new_layout_comment_body(comment, place)?;
+    request(port, "POST", &shapes::add_endpoint_at(place, deck_file), Some(&body)).map(|_| ())
+}
+
+/// Adds `reply` under its comment, which is at `place`.
+pub fn add_reply(port: u16, deck_file: &str, reply: &NewReviewReply, place: &CommentPlace) -> Result<(), String> {
     let body = shapes::new_reply_body(reply)?;
-    request(port, "POST", &shapes::comment_endpoint(&reply.comment_id, "/replies", file), Some(&body)).map(|_| ())
+    request(port, "POST", &shapes::comment_endpoint_at(&reply.comment_id, "/replies", place, deck_file), Some(&body)).map(|_| ())
 }
 
-/// Marks comment `id` on `file` resolved: crit stops handing it to the agent.
-pub fn resolve_comment(port: u16, file: &str, id: &str) -> Result<(), String> {
-    request(port, "PUT", &shapes::comment_endpoint(id, "/resolve", file), Some(r#"{"resolved":true}"#)).map(|_| ())
+/// Marks comment `id` (at `place`) resolved: crit stops handing it to the
+/// agent.
+pub fn resolve_comment(port: u16, deck_file: &str, id: &str, place: &CommentPlace) -> Result<(), String> {
+    request(port, "PUT", &shapes::comment_endpoint_at(id, "/resolve", place, deck_file), Some(r#"{"resolved":true}"#)).map(|_| ())
 }
 
 fn delete_comment(port: u16, file: &str, id: &str) -> Result<(), String> {
@@ -149,11 +172,19 @@ const START_TIMEOUT: Duration = Duration::from_secs(15);
 /// starts before then carries the deleted opener forward again.
 const REVIEW_FILE_SETTLE: Duration = Duration::from_millis(500);
 
+/// What `crit` is run with on `deck_path`, in its folder
+/// (`shapes::session_args`): the deck file, and the layout folders it has.
+pub fn session_args(deck_path: &Path) -> Result<Vec<String>, String> {
+    let dir = deck_path.parent().ok_or_else(|| format!("{} has no folder", deck_path.display()))?;
+    let name = deck_path.file_name().ok_or_else(|| format!("{} has no file name", deck_path.display()))?;
+    Ok(shapes::session_args(&name.to_string_lossy(), |sub| dir.join(sub).is_dir()))
+}
+
 /// Starts a review session on `deck_path` with the bundled crit, the way an
-/// agent would (`crit --no-open <deck file>` in the deck's folder), so the
-/// daemon — which answers every later `crit` on the deck, whatever version
-/// the agent runs — is the bundled one. Returns the session and the round
-/// Studio finished.
+/// agent would (`crit --no-open <deck file> [layouts] [css]` in the deck's
+/// folder, `session_args`), so the daemon — which answers every later
+/// `crit` on the deck, whatever version the agent runs — is the bundled
+/// one. Returns the session and the round Studio finished.
 ///
 /// The `crit` that starts a daemon also waits on its first round, and crit
 /// reports nothing when a waiting client connects during that first round —
@@ -165,11 +196,10 @@ const REVIEW_FILE_SETTLE: Duration = Duration::from_millis(500);
 pub fn start_deck_session(cli: &CritCli, deck_path: &Path) -> Result<(DeckSession, FinishedRound), String> {
     let deck_path = std::fs::canonicalize(deck_path).map_err(|err| format!("{}: {err}", deck_path.display()))?;
     let deck_dir = deck_path.parent().ok_or_else(|| format!("{} has no folder", deck_path.display()))?;
-    let file_name = deck_path.file_name().ok_or_else(|| format!("{} has no file name", deck_path.display()))?;
     let mut child = cli
         .command()
         .arg("--no-open")
-        .arg(file_name)
+        .args(session_args(&deck_path)?)
         .current_dir(deck_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -214,11 +244,12 @@ fn open_first_round(cli: &CritCli, deck_path: &Path, child: &mut Child) -> Resul
     Ok((DeckSession::Found { id, port, file, review_round, agent_waiting: false }, finished))
 }
 
-/// Stops the daemon reviewing `deck_path` (`crit stop <file>` in its
-/// folder). Best effort: there's nothing more to do when it fails.
+/// Stops the daemon reviewing `deck_path` (`crit stop <args>` in its
+/// folder, with the arguments it was started with). Best effort: there's
+/// nothing more to do when it fails.
 fn stop_session(cli: &CritCli, deck_path: &Path) {
-    let (Some(dir), Some(name)) = (deck_path.parent(), deck_path.file_name()) else { return };
-    let _ = cli.command().arg("stop").arg(name).current_dir(dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    let (Some(dir), Ok(args)) = (deck_path.parent(), session_args(deck_path)) else { return };
+    let _ = cli.command().arg("stop").args(args).current_dir(dir).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
 }
 
 /// Finishes the session's first round with a placeholder comment until
@@ -696,17 +727,121 @@ mod tests {
             let id = list_comments(port, &file).unwrap()[0].id.clone();
             // When Studio replies under it,
             let reply = NewReviewReply { comment_id: id.clone(), body: "Still too small".into(), author: STUDIO_AUTHOR.into() };
-            add_reply(port, &file, &reply).unwrap();
+            add_reply(port, &file, &reply, &CommentPlace::Deck).unwrap();
             // Then the reply is in its thread,
             let comments = list_comments(port, &file).unwrap();
             assert_eq!(comments[0].replies.len(), 1);
             assert_eq!(comments[0].replies[0].body, "Still too small");
             assert_eq!(comments[0].replies[0].author, STUDIO_AUTHOR);
             // and when Studio resolves it, it is resolved.
-            resolve_comment(port, &file, &id).unwrap();
+            resolve_comment(port, &file, &id, &CommentPlace::Deck).unwrap();
             assert!(list_comments(port, &file).unwrap()[0].resolved);
             // A reply to a comment that isn't there is an error.
-            assert!(add_reply(port, &file, &NewReviewReply { comment_id: "c_missing".into(), ..reply }).is_err());
+            assert!(add_reply(port, &file, &NewReviewReply { comment_id: "c_missing".into(), ..reply }, &CommentPlace::Deck).is_err());
+        }
+
+        /// The sandbox's deck with a layout of its own: `layouts/cover.html`
+        /// and `css/cover.css`.
+        fn with_layout_files(sandbox: &Sandbox) {
+            std::fs::create_dir_all(sandbox.deck_dir.join("layouts")).unwrap();
+            std::fs::create_dir_all(sandbox.deck_dir.join("css")).unwrap();
+            std::fs::write(sandbox.deck_dir.join("layouts").join("cover.html"), "<section class=\"layout-cover\">\n  <h1>{{title}}</h1>\n</section>\n").unwrap();
+            std::fs::write(sandbox.deck_dir.join("css").join("cover.css"), ".layout-cover { color: red; }\n").unwrap();
+        }
+
+        #[test]
+        fn layout_comments_reach_an_agent_that_runs_crit_with_the_same_arguments_and_deck_comments_still_work() {
+            // Given a deck with layouts/ and css/, and the session Studio starts on it,
+            let mut sandbox = Sandbox::new();
+            with_layout_files(&sandbox);
+            assert_eq!(session_args(&sandbox.deck()).unwrap(), vec!["deck.md", "layouts", "css"]);
+            let (session, finished) = start_deck_session(&sandbox.cli, &sandbox.deck()).unwrap();
+            let DeckSession::Found { port, file, .. } = session else { panic!("{session:?}") };
+            assert_eq!(file, "deck.md");
+
+            // When an agent runs crit with the same arguments (in another order),
+            let agent = sandbox.agent(&["--no-open", "css", "deck.md", "layouts"]);
+            // Then it joins Studio's session rather than starting another.
+            wait_until_agent_waits(&sandbox, &finished);
+            assert_eq!(sandbox.cli.status(&sandbox.deck_dir).unwrap().len(), 1);
+
+            // When Studio comments on the deck, on the cover layout and on every layout,
+            let deck_comment = NewReviewComment { start_line: 5, end_line: 5, body: "[Slide 1] Bigger".into(), quote: String::new(), author: STUDIO_AUTHOR.into() };
+            add_comment(port, &file, &deck_comment).unwrap();
+            let on_cover = NewLayoutComment { layout: Some("cover".into()), body: "[Layout cover] Darker title".into(), author: STUDIO_AUTHOR.into() };
+            let cover_place = shapes::layout_comment_place(&on_cover, |path| sandbox.deck_dir.join(path).is_file()).unwrap();
+            assert_eq!(cover_place, CommentPlace::File { path: "layouts/cover.html".into() });
+            add_layout_comment(port, &file, &on_cover, &cover_place).unwrap();
+            let on_all = NewLayoutComment { layout: None, body: "[All layouts] Calmer colors".into(), author: STUDIO_AUTHOR.into() };
+            add_layout_comment(port, &file, &on_all, &CommentPlace::Review).unwrap();
+            // Then each is listed at its place,
+            let comments = list_all_comments(port, &file).unwrap();
+            let places: Vec<(&str, &CommentPlace)> = comments.iter().map(|comment| (comment.body.as_str(), &comment.place)).collect();
+            assert_eq!(
+                places,
+                vec![
+                    ("[Slide 1] Bigger", &CommentPlace::Deck),
+                    ("[Layout cover] Darker title", &cover_place),
+                    ("[All layouts] Calmer colors", &CommentPlace::Review),
+                ]
+            );
+            // and the deck's own comments are the deck file's alone.
+            assert_eq!(list_comments(port, &file).unwrap().len(), 1);
+
+            // When Studio finishes the round, Then the agent gets all three,
+            // the layout comment naming its file.
+            finish(port).unwrap();
+            let handed_over = sandbox.agent_output(agent);
+            for expected in ["Bigger", "Darker title", "Calmer colors", "\"path\":\"layouts/cover.html\"", "\"scope\":\"review\""] {
+                assert!(handed_over.contains(expected), "{expected} missing from {handed_over}");
+            }
+
+            // When Studio replies to and resolves the layout and review-level comments,
+            for comment in comments.iter().filter(|comment| comment.place != CommentPlace::Deck) {
+                let reply = NewReviewReply { comment_id: comment.id.clone(), body: "One more thing".into(), author: STUDIO_AUTHOR.into() };
+                add_reply(port, &file, &reply, &comment.place).unwrap();
+                resolve_comment(port, &file, &comment.id, &comment.place).unwrap();
+            }
+            // Then both carry the reply and are resolved; the deck's is untouched.
+            let comments = list_all_comments(port, &file).unwrap();
+            for comment in &comments {
+                let touched = comment.place != CommentPlace::Deck;
+                assert_eq!(comment.resolved, touched, "{comment:?}");
+                assert_eq!(comment.replies.len(), usize::from(touched), "{comment:?}");
+            }
+        }
+
+        #[test]
+        fn given_layout_folders_created_after_the_session_started_an_agent_joining_by_id_lands_in_it() {
+            // Given Studio's session on a deck with no layout folders yet,
+            let mut sandbox = Sandbox::new();
+            let (session, finished) = start_deck_session(&sandbox.cli, &sandbox.deck()).unwrap();
+            let DeckSession::Found { port, file, id, .. } = session else { panic!("{session:?}") };
+            // When the deck gets its first layout (layouts/ and css/ appear)
+            // and an agent joins by the session's id (`domain/agentConnect.ts`),
+            with_layout_files(&sandbox);
+            let agent = sandbox.agent(&["--no-open", "--session", &id]);
+            // Then it waits in Studio's session — no second one on the deck,
+            wait_until_agent_waits(&sandbox, &finished);
+            assert_eq!(sandbox.cli.status(&sandbox.deck_dir).unwrap().len(), 1);
+            // and a comment on the new layout reaches it.
+            let on_cover = NewLayoutComment { layout: Some("cover".into()), body: "[Layout cover] Darker".into(), author: STUDIO_AUTHOR.into() };
+            let place = shapes::layout_comment_place(&on_cover, |path| sandbox.deck_dir.join(path).is_file()).unwrap();
+            add_layout_comment(port, &file, &on_cover, &place).unwrap();
+            finish(port).unwrap();
+            let handed_over = sandbox.agent_output(agent);
+            assert!(handed_over.contains("\"path\":\"layouts/cover.html\""), "{handed_over}");
+        }
+
+        #[test]
+        fn a_deck_without_layout_folders_is_reviewed_on_its_file_alone() {
+            // Given a deck with no layouts/ or css/, Then crit is started on the deck file only,
+            let sandbox = Sandbox::new();
+            assert_eq!(session_args(&sandbox.deck()).unwrap(), vec!["deck.md"]);
+            // and the session Studio starts lists no layout comments.
+            let (session, _) = start_deck_session(&sandbox.cli, &sandbox.deck()).unwrap();
+            let DeckSession::Found { port, file, .. } = session else { panic!("{session:?}") };
+            assert!(list_all_comments(port, &file).unwrap().is_empty());
         }
 
         #[test]

@@ -6,7 +6,7 @@ import { createReviewStore } from './reviewStore'
 
 const heading: CommentTarget = { kind: 'heading', text: 'Hello', quote: 'Hello', offsetInSlide: 2 }
 const waiting: CritDeckSession = { kind: 'found', id: 's', port: 1, file: 'deck.md', reviewRound: 2, agentWaiting: true }
-const thread = (id: string): ReviewComment => ({ id, lines: { start: 1, end: 1 }, body: 'b', quote: null, author: 'Peitho Studio', resolved: false, replies: [], createdAt: null })
+const thread = (id: string): ReviewComment => ({ id, place: { kind: 'deck' }, lines: { start: 1, end: 1 }, body: 'b', quote: null, author: 'Peitho Studio', resolved: false, replies: [], createdAt: null })
 
 describe('the comment box', () => {
   test('Given a click opened the box on a heading, When a comment is written and added, Then it is filed unsent and the box closes', () => {
@@ -275,6 +275,84 @@ describe('comment counts per slide', () => {
       store.syncCommentCounts({})
       expect(store.commentCountOf('a')).toBe(0)
       expect(store.commentCountOf('never-seen')).toBe(0)
+    })
+  })
+})
+
+describe('comments on layouts (todo/layout-review-comments.md)', () => {
+  test('Given the box opened on a layout from the layout screen, When a comment is added, Then it is filed unsent for that layout and the box closes', () => {
+    createRoot(() => {
+      const store = createReviewStore(() => '2026-10-02T00:00:00Z')
+      store.openLayoutBox({ kind: 'layout', name: 'cover' }, { x: 40, y: 60 })
+      expect(store.box()).toEqual({ kind: 'open-layout', target: { kind: 'layout', name: 'cover' }, at: { x: 40, y: 60 } })
+      store.setBoxDraft('  Darker title ')
+      const filed = store.commitLayoutBox()
+      expect(filed).toMatchObject({ target: { kind: 'layout', name: 'cover' }, body: 'Darker title', createdAt: '2026-10-02T00:00:00Z' })
+      expect(store.layoutPending()).toEqual([filed!])
+      expect(store.pending()).toEqual([])
+      expect(store.box()).toEqual({ kind: 'closed' })
+    })
+  })
+
+  test('Given an unsent comment on every layout and an agent waiting, Then it counts toward Send', () => {
+    createRoot(() => {
+      const store = createReviewStore()
+      store.setSession(waiting)
+      store.openLayoutBox({ kind: 'all-layouts' }, { x: 0, y: 0 })
+      store.setBoxDraft('Calmer colors')
+      store.commitLayoutBox()
+      expect(store.unsentCount()).toBe(1)
+      expect(store.availability()).toEqual({ kind: 'ready' })
+    })
+  })
+
+  test('Given a layout comment, When it is rewritten, Then its text changes; When it is sent, Then it is no longer unsent', () => {
+    createRoot(() => {
+      const store = createReviewStore()
+      store.openLayoutBox({ kind: 'layout', name: 'cover' }, { x: 0, y: 0 })
+      store.setBoxDraft('Bigger')
+      const filed = store.commitLayoutBox()!
+      store.startEdit(filed.id)
+      expect(store.unsentEdit()).toEqual({ id: filed.id, text: 'Bigger' })
+      store.setEditText('  Much bigger ')
+      store.commitEdit()
+      expect(store.layoutPending()[0].body).toBe('Much bigger')
+      store.markSent([], [], [], store.layoutPending())
+      expect(store.layoutPending()).toEqual([])
+    })
+  })
+
+  test('adversarial: Given a blank layout comment, or the preview box open instead, Then the layout commit files nothing', () => {
+    createRoot(() => {
+      const store = createReviewStore()
+      store.openLayoutBox({ kind: 'all-layouts' }, { x: 0, y: 0 })
+      store.setBoxDraft(' \n ')
+      expect(store.commitLayoutBox()).toBeNull()
+      expect(store.box().kind).toBe('open-layout')
+      // The slide box's commit leaves a layout box alone, and the other way round.
+      store.setBoxDraft('x')
+      expect(store.commitBox()).toBeNull()
+      store.openBox('hello', heading, null, { x: 0, y: 0 })
+      store.setBoxDraft('x')
+      expect(store.commitLayoutBox()).toBeNull()
+      expect(store.layoutPending()).toEqual([])
+      expect(store.pending()).toEqual([])
+    })
+  })
+
+  test('adversarial: Given a layout comment discarded, or the deck closed, Then nothing of it is left', () => {
+    createRoot(() => {
+      const store = createReviewStore()
+      store.openLayoutBox({ kind: 'all-layouts' }, { x: 0, y: 0 })
+      store.setBoxDraft('a')
+      const first = store.commitLayoutBox()!
+      store.openLayoutBox({ kind: 'all-layouts' }, { x: 0, y: 0 })
+      store.setBoxDraft('b')
+      store.commitLayoutBox()
+      store.discard(first.id)
+      expect(store.layoutPending().map(comment => comment.body)).toEqual(['b'])
+      store.reset()
+      expect(store.layoutPending()).toEqual([])
     })
   })
 })

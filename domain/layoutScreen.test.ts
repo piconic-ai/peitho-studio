@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { MAX_LAYOUT_NAME_LENGTH, layoutNameProblem, layoutRows, layoutUsage, shownLayout } from './layoutScreen'
+import { MAX_LAYOUT_NAME_LENGTH, layoutFilesChanged, layoutNameProblem, layoutRows, layoutUsage, shownLayout } from './layoutScreen'
 import type { ManifestSlide } from './render'
 import { buildSlideList } from './slideList'
 
@@ -131,5 +131,20 @@ describe('layoutNameProblem', () => {
   test('spec: Given the Rust side\'s limit, Then this one is the same', () => {
     const rust = readFileSync(join(import.meta.dir, '../src-tauri/src/engine/layout_files.rs'), 'utf-8')
     expect(rust).toContain(`const MAX_NAME_LEN: usize = ${String(MAX_LAYOUT_NAME_LENGTH)};`)
+  })
+})
+
+describe('layoutFilesChanged', () => {
+  test('spec: Given the layout files fingerprinted before, When the fingerprint differs now, Then they changed', () => {
+    expect(layoutFilesChanged('layouts/a.html\t10\t1', 'layouts/a.html\t11\t2')).toBe(true)
+    expect(layoutFilesChanged('layouts/a.html\t10\t1', 'layouts/a.html\t10\t1')).toBe(false)
+  })
+
+  test('adversarial: Given no fingerprint yet, or files appearing in or vanishing from an empty deck, Then only a real difference counts', () => {
+    expect(layoutFilesChanged(null, '')).toBe(false)
+    expect(layoutFilesChanged(null, 'layouts/a.html\t1\t1')).toBe(false)
+    expect(layoutFilesChanged('', 'layouts/a.html\t1\t1')).toBe(true)
+    expect(layoutFilesChanged('layouts/a.html\t1\t1', '')).toBe(true)
+    expect(layoutFilesChanged('', '')).toBe(false)
   })
 })

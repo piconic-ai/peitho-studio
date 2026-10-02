@@ -12,7 +12,7 @@ describe('createFakeCritIpc', () => {
     expect((await ipc.sessionStatus()).kind).toBe('found')
     const comments = await ipc.addComments([comment()])
     expect(comments).toEqual([{
-      id: 'c_1', lines: { start: 5, end: 5 }, body: 'Make it bigger', quote: '# Hello', author: 'Peitho Studio', resolved: false, replies: [], createdAt: expect.any(String),
+      id: 'c_1', place: { kind: 'deck' }, lines: { start: 5, end: 5 }, body: 'Make it bigger', quote: '# Hello', author: 'Peitho Studio', resolved: false, replies: [], createdAt: expect.any(String),
     }])
     expect(ipc.calls.map(call => call.method)).toEqual(['sessionStatus', 'addComments'])
   })
@@ -94,6 +94,28 @@ describe('createFakeCritIpc', () => {
     stop()
     ipc.emitReviewEvent('ended')
     expect(heard).toEqual([])
+  })
+
+  test('Given an agent waiting, When Studio adds layout comments, Then one sits on its layout file and one on the review', async () => {
+    const ipc = createFakeCritIpc()
+    const comments = await ipc.addLayoutComments([
+      { layout: 'cover', body: '[Layout cover] Darker', author: 'Peitho Studio' },
+      { layout: null, body: '[All layouts] Calmer', author: 'Peitho Studio' },
+    ])
+    expect(comments.map(c => [c.place, c.lines, c.body])).toEqual([
+      [{ kind: 'file', path: 'layouts/cover.html' }, null, '[Layout cover] Darker'],
+      [{ kind: 'review' }, null, '[All layouts] Calmer'],
+    ])
+    expect(await ipc.sessionDirs()).toEqual([])
+    expect(await createFakeCritIpc({ sessionDirs: ['layouts', 'css'] }).sessionDirs()).toEqual(['layouts', 'css'])
+  })
+
+  test('Given a malformed layout comment, When added, Then none of the batch is', async () => {
+    const ipc = createFakeCritIpc()
+    for (const bad of [{ layout: '../x', body: 'b', author: 'a' }, { layout: null, body: ' ', author: 'a' }, { layout: 'x', body: 'b', author: '' }]) {
+      expect(ipc.addLayoutComments([{ layout: 'ok', body: 'b', author: 'a' }, bad])).rejects.toThrow()
+    }
+    expect(await ipc.listComments()).toEqual([])
   })
 
   test('Given a comment list was returned, When the caller mutates it, Then the session is unaffected', async () => {

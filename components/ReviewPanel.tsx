@@ -2,6 +2,7 @@
 
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
+import { type LayoutCommentTarget } from '../domain/reviewComment'
 import { type PanelRow } from '../domain/reviewPanel'
 
 export interface ReviewPanelProps {
@@ -33,6 +34,8 @@ export interface ReviewPanelProps {
   highlightedThread: string | null
   /** A row was clicked: open its slide. */
   onSelectSlide: (index: number) => void
+  /** A layout comment's row was clicked: open the layout screen on it. */
+  onSelectLayout: (target: LayoutCommentTarget) => void
   replyText: string
   onSend: () => void
   onDiscard: (id: string) => void
@@ -182,14 +185,17 @@ export function ReviewPanel(props: ReviewPanelProps) {
               key={row.key}
               data-review-row={row.kind}
               data-review-slide={row.slideIndex ?? ''}
+              data-review-layout={row.layout === null ? '' : row.layout.kind === 'layout' ? row.layout.name : '*'}
               data-review-thread-start={row.threadStart ? 'true' : 'false'}
               data-review-thread={row.threadKey}
               data-review-highlighted={row.threadKey === props.highlightedThread ? 'true' : 'false'}
               data-review-editing={row.editing ? 'true' : 'false'}
               onClick={e => {
-                if (!isRowControl(e.target) && row.slideIndex !== null) props.onSelectSlide(row.slideIndex)
+                if (isRowControl(e.target)) return
+                if (row.slideIndex !== null) props.onSelectSlide(row.slideIndex)
+                else if (row.layout !== null) props.onSelectLayout(row.layout)
               }}
-              className={(row.threadStart ? 'mt-3 pt-2 border-t rounded-t-xl ' : 'pt-2 ') + (row.threadEnd ? 'pb-3 border-b rounded-b-xl ' : '') + (row.resolved ? 'opacity-60 ' : '') + (row.slideIndex === null ? '' : 'cursor-pointer ') + (row.threadKey === props.highlightedThread ? 'bg-[#fef9c3] ' : 'bg-background ') + 'px-3 border-x border-border transition-colors flex flex-col gap-2'}
+              className={(row.threadStart ? 'mt-3 pt-2 border-t rounded-t-xl ' : 'pt-2 ') + (row.threadEnd ? 'pb-3 border-b rounded-b-xl ' : '') + (row.resolved ? 'opacity-60 ' : '') + (row.slideIndex === null && row.layout === null ? '' : 'cursor-pointer ') + (row.threadKey === props.highlightedThread ? 'bg-[#fef9c3] ' : 'bg-background ') + 'px-3 border-x border-border transition-colors flex flex-col gap-2'}
             >
               {/* Each thread is one card: its first row carries the card's
                   header — what it's on, and what can be done with it. */}

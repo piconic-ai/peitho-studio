@@ -4,14 +4,14 @@ import type { PendingReply } from './reviewComment'
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, splitCommentLabel, threadOfPin, type ReviewRowsInput, type UnsentRowSource } from './reviewPanel'
 
 const comment = (id: string, createdAt: string | null, options: Partial<ReviewComment> = {}): ReviewComment => ({
-  id, lines: { start: 3, end: 3 }, body: `[Slide 1 › heading "Hello"] ${id} text`, quote: null, author: 'Peitho Studio',
+  id, place: { kind: 'deck' }, lines: { start: 3, end: 3 }, body: `[Slide 1 › heading "Hello"] ${id} text`, quote: null, author: 'Peitho Studio',
   resolved: false, replies: [], createdAt, ...options,
 })
-const unsent = (id: string, createdAt: string): UnsentRowSource => ({ id, label: 'Slide 2', body: ` ${id} body `, createdAt, slideIndex: 1 })
+const unsent = (id: string, createdAt: string): UnsentRowSource => ({ id, label: 'Slide 2', body: ` ${id} body `, createdAt, slideIndex: 1, layout: null })
 const reply = (id: string, commentId: string): PendingReply => ({ id, commentId, body: `${id} reply`, createdAt: '2026-09-29T09:00:00Z' })
 
 function input(overrides: Partial<ReviewRowsInput>): ReviewRowsInput {
-  return { comments: [], unsentReplies: [], unsent: [], showResolved: false, replyingTo: null, slideOf: sent => (sent.lines === null ? null : 0), ...overrides }
+  return { comments: [], unsentReplies: [], unsent: [], showResolved: false, replyingTo: null, slideOf: sent => (sent.lines === null ? null : 0), layoutOf: () => null, ...overrides }
 }
 
 describe('splitCommentLabel', () => {
@@ -23,6 +23,11 @@ describe('splitCommentLabel', () => {
   test('spec: Given a label that names its slide\'s key, Then the target leaves the key out', () => {
     expect(splitCommentLabel('[Slide 4 (key: new-slide-4) › heading "Hi"] Bigger')).toEqual({ target: 'Slide 4 › heading "Hi"', text: 'Bigger' })
     expect(splitCommentLabel('[Slide 4 (key: intro)] Bigger')).toEqual({ target: 'Slide 4', text: 'Bigger' })
+  })
+
+  test('spec: Given a layout comment Studio sent, Then the target names the layout without the files told to the agent', () => {
+    expect(splitCommentLabel('[Layout cover (layouts/cover.html, css/cover.css)] Darker')).toEqual({ target: 'Layout cover', text: 'Darker' })
+    expect(splitCommentLabel('[All layouts (layouts/, css/)] Calmer')).toEqual({ target: 'All layouts', text: 'Calmer' })
   })
 
   test('adversarial: Given text with no label, a bracket that is not a slide label, or an empty string, Then the text stays whole', () => {
@@ -55,6 +60,29 @@ describe('reviewRows', () => {
     }))
     expect(first).toMatchObject({ target: 'Slide 1 › heading "Hello"', body: 'c1 text', byAgent: false })
     expect(second).toMatchObject({ target: null, body: 'Done', byAgent: true, author: 'Claude' })
+  })
+
+  test('spec: Given a sent comment on a layout and an unsent one on every layout, Then a click on either thread opens its layout, not a slide', () => {
+    const onCover = comment('c1', '2026-09-29T08:00:00Z', {
+      place: { kind: 'file', path: 'layouts/cover.html' }, body: '[Layout cover (layouts/cover.html, css/cover.css)] Darker',
+      replies: [{ id: 'r1', body: 'Done', author: 'Claude', createdAt: null }],
+    })
+    const rows = reviewRows(input({
+      comments: [onCover],
+      unsent: [{ ...unsent('p1', '2026-09-29T09:00:00Z'), label: 'All layouts', slideIndex: null, layout: { kind: 'all-layouts' } }],
+      slideOf: () => null,
+      layoutOf: sent => (sent.place.kind === 'file' ? { kind: 'layout', name: 'cover' } : null),
+    }))
+    expect(rows.map(row => [row.kind, row.target, row.slideIndex, row.layout])).toEqual([
+      ['comment', 'Layout cover', null, { kind: 'layout', name: 'cover' }],
+      ['reply', null, null, { kind: 'layout', name: 'cover' }],
+      ['unsent-comment', 'All layouts', null, { kind: 'all-layouts' }],
+    ])
+  })
+
+  test('adversarial: Given a comment on a slide that also reads as a layout comment, Then the slide wins', () => {
+    const [row] = reviewRows(input({ comments: [comment('c1', null)], layoutOf: () => ({ kind: 'all-layouts' }) }))
+    expect(row).toMatchObject({ slideIndex: 0, layout: null })
   })
 
   test('spec: Given resolved threads, Then they are left out unless asked for, and counted', () => {

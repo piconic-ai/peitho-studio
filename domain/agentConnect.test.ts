@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { AGENT_IDLE_MS, agentConnectCommand, agentConnectPrompt, agentGoneQuiet, deckLocation, shellQuote, showsConnectGuide } from './agentConnect'
+import { AGENT_IDLE_MS, agentConnectCommand, connectTargetOf, agentConnectPrompt, agentGoneQuiet, deckLocation, shellQuote, showsConnectGuide } from './agentConnect'
 
 const CRIT = '/Applications/Peitho Studio.app/Contents/MacOS/crit'
 
@@ -40,6 +40,21 @@ describe('agentConnectCommand', () => {
       .toBe(`cd /Users/me/Desktop/test && '${CRIT}' --no-open deck.md`)
   })
 
+  test('spec: Given no session yet and a deck with layout folders, Then the agent names them too, as Studio starts its session', () => {
+    expect(agentConnectCommand('/d/deck.md', 'crit', { kind: 'new', dirs: ['layouts', 'css'] })).toBe('cd /d && crit --no-open deck.md layouts css')
+    expect(agentConnectCommand('/d/deck.md', 'crit', { kind: 'new', dirs: ['css'] })).toBe('cd /d && crit --no-open deck.md css')
+    expect(agentConnectCommand('/d/deck.md', 'crit', { kind: 'new', dirs: [] })).toBe('cd /d && crit --no-open deck.md')
+  })
+
+  test('spec: Given a running session on the deck, Then the agent joins it by its id, whatever folders the deck has now', () => {
+    expect(agentConnectCommand('/d/deck.md', 'crit', { kind: 'session', id: '4b7c60582f48' })).toBe('cd /d && crit --no-open --session 4b7c60582f48')
+  })
+
+  test('adversarial: Given a folder name or a session id that needs quoting, Then it is quoted on its own', () => {
+    expect(agentConnectCommand('/d/deck.md', 'crit', { kind: 'new', dirs: ["it's dir"] })).toBe(`cd /d && crit --no-open deck.md 'it'\\''s dir'`)
+    expect(agentConnectCommand('/d/deck.md', 'crit', { kind: 'session', id: 'a b;rm' })).toBe(`cd /d && crit --no-open --session 'a b;rm'`)
+  })
+
   test('adversarial: Given a folder and file name that need quoting, Then each is quoted on its own', () => {
     expect(agentConnectCommand("/Users/me/My Talks/it's.md", '/opt/crit'))
       .toBe(`cd '/Users/me/My Talks' && /opt/crit --no-open 'it'\\''s.md'`)
@@ -60,8 +75,27 @@ describe('agentConnectPrompt', () => {
     expect(agentConnectPrompt('/d/deck.md', 'crit', 'en')).toContain('5. Write your replies in English.')
   })
 
+  test('spec: Given layout folders, Then the prompt\'s command names them and layout comments are pointed at them', () => {
+    const prompt = agentConnectPrompt('/d/deck.md', 'crit', 'en', { kind: 'new', dirs: ['layouts', 'css'] })
+    expect(prompt).toContain('1. Run: cd /d && crit --no-open deck.md layouts css')
+    expect(prompt).toContain('for a comment on a layout, in the layout files it names')
+  })
+
   test('adversarial: Given no deck path, Then the prompt still names deck.md in the current folder', () => {
     expect(agentConnectPrompt(null, 'crit', 'en')).toContain('1. Run: cd . && crit --no-open deck.md')
+  })
+})
+
+describe('connectTargetOf', () => {
+  test('spec: Given the session Studio found on the deck, Then the agent joins it; with none yet, it starts one on the deck and its folders', () => {
+    const found = { kind: 'found' as const, id: 's1', port: 1, file: 'deck.md', reviewRound: 1, agentWaiting: false }
+    expect(connectTargetOf(found, ['layouts'])).toEqual({ kind: 'session', id: 's1' })
+    expect(connectTargetOf({ kind: 'none' }, ['layouts'])).toEqual({ kind: 'new', dirs: ['layouts'] })
+  })
+
+  test('adversarial: Given no answer yet, or several sessions, Then no session is joined', () => {
+    expect(connectTargetOf(null, [])).toEqual({ kind: 'new', dirs: [] })
+    expect(connectTargetOf({ kind: 'ambiguous', ids: ['a', 'b'] }, ['css'])).toEqual({ kind: 'new', dirs: ['css'] })
   })
 })
 

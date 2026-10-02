@@ -13,14 +13,17 @@ function enabledOf(menu: LayoutMenu, ctx: LayoutMenuContext): Record<string, boo
 }
 
 describe('layoutMenuItems', () => {
-  test('spec: Given a right-click on a layout the open slide fits, Then Apply, Edit, Duplicate and Delete are offered, all enabled', () => {
+  test('spec: Given a right-click on a layout the open slide fits, Then Apply, Edit, Duplicate, Delete and a comment on it are offered, all enabled', () => {
     const menu = withLayoutMenuFit(openOnLayout('quote', 10, 20, 1), 1, [{ layout: 'quote', fit: { kind: 'fits' } }])
-    expect(layoutMenuItems(menu, READY).map(item => item.action)).toEqual(['apply', 'edit', 'duplicate', 'delete'])
-    expect(enabledOf(menu, READY)).toEqual({ apply: true, edit: true, duplicate: true, delete: true })
+    expect(layoutMenuItems(menu, READY).map(item => item.action)).toEqual(['apply', 'edit', 'duplicate', 'delete', 'comment-layout'])
+    expect(enabledOf(menu, READY)).toEqual({ apply: true, edit: true, duplicate: true, delete: true, 'comment-layout': true })
   })
 
-  test('spec: Given a right-click on empty list space, Then only New Layout is offered', () => {
-    expect(layoutMenuItems(openOnList(1, 2), READY)).toEqual([{ action: 'new-layout', enabled: true, reason: null }])
+  test('spec: Given a right-click on empty list space, Then New Layout and a comment on every layout are offered', () => {
+    expect(layoutMenuItems(openOnList(1, 2), READY)).toEqual([
+      { action: 'new-layout', enabled: true, reason: null },
+      { action: 'comment-all-layouts', enabled: true, reason: null },
+    ])
   })
 
   test('spec: Given no slide open in Slides, Then Apply is off and says why', () => {
@@ -43,11 +46,16 @@ describe('layoutMenuItems', () => {
     expect(items.find(item => item.action === 'delete')).toEqual({ action: 'delete', enabled: false, reason: { kind: 'only-layout' } })
   })
 
-  test('adversarial: Given another operation running, Then every item but Edit waits', () => {
+  test('adversarial: Given another operation running, Then every item but Edit and the comments waits', () => {
     const busy = { ...READY, busy: true }
     const menu = withLayoutMenuFit(openOnLayout('quote', 0, 0, 1), 1, null)
-    expect(enabledOf(menu, busy)).toEqual({ apply: false, edit: true, duplicate: false, delete: false })
-    expect(enabledOf(openOnList(0, 0), busy)).toEqual({ 'new-layout': false })
+    expect(enabledOf(menu, busy)).toEqual({ apply: false, edit: true, duplicate: false, delete: false, 'comment-layout': true })
+    expect(enabledOf(openOnList(0, 0), busy)).toEqual({ 'new-layout': false, 'comment-all-layouts': true })
+  })
+
+  test('adversarial: Given the deck\'s only layout and no slide open, Then a comment on it is still offered', () => {
+    const items = layoutMenuItems(openOnLayout('only', 0, 0, null), { hasSlide: false, layoutCount: 1, busy: false })
+    expect(items.find(item => item.action === 'comment-layout')).toEqual({ action: 'comment-layout', enabled: true, reason: null })
   })
 
   test('adversarial: Given a closed menu, Then it has no items', () => {
@@ -96,7 +104,7 @@ describe('position and target', () => {
 
 describe('labels and titles', () => {
   test('spec: Given every action, When worded in each language, Then each has its own non-empty label', () => {
-    const actions: LayoutMenuAction[] = ['new-layout', 'apply', 'edit', 'duplicate', 'delete']
+    const actions: LayoutMenuAction[] = ['new-layout', 'apply', 'edit', 'duplicate', 'delete', 'comment-layout', 'comment-all-layouts']
     for (const language of ['en', 'ja'] as const) {
       const labels = actions.map(action => layoutMenuLabel(action, messagesFor(language)))
       expect(labels.every(label => label.trim() !== '')).toBe(true)
