@@ -1900,6 +1900,18 @@ export function Studio() {
     return (ui.layoutPreviews() ?? []).find(preview => preview.name === name)?.fragment ?? ''
   }
 
+  // The comments column takes the rest of the row only on the slides screen
+  // with both the editor and the preview closed; on the layout screen, the
+  // layout's preview does.
+  const reviewFillsRow = createMemo(() => ui.studioMode() === 'slides' && !ui.previewOpen() && !ui.editorOpen())
+
+  // A comment's row names a slide: from the layout screen, the slides
+  // screen comes back to show it.
+  async function selectSlideFromReview(index: number): Promise<void> {
+    if (ui.studioMode() !== 'slides') setStudioMode('slides')
+    await selectSlide(index)
+  }
+
   function setStudioMode(mode: StudioMode): void {
     ui.setStudioMode(mode)
     layouts.closeMenu()
@@ -2881,63 +2893,6 @@ export function Studio() {
           </div>
         </div>
 
-        {/* The comments column, rightmost: a fourth column rather than a
-            strip under the preview, so the threads get the window's full
-            height. Hidden with the panel until a deck is open. */}
-        <div
-          hidden={!render.assetBaseUrl() || !ui.reviewOpen()}
-          className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"
-          onMouseDown={startColumnResize(ui.reviewPanelWidth, ui.setReviewPanelWidth, -1)}
-        />
-
-        <div hidden={!render.assetBaseUrl() || !ui.reviewOpen()} data-panel="review" className="studio-panel" style={ui.reviewOpen() && !ui.previewOpen() && !ui.editorOpen() ? 'flex: 1; min-width: 0' : ''}>
-          <PanelToggle panel="review" language={settings.language()} open={true} onToggle={() => ui.setReviewOpen(!ui.reviewOpen())} />
-          <div id="panel-review"
-            className={ui.reviewOpen() ? 'panel-content border-l border-border' : 'hidden'}
-            style={!ui.previewOpen() && !ui.editorOpen() ? 'width: 100%' : `width: ${ui.reviewPanelWidth()}px`}
-          >
-            <ReviewPanel
-              language={settings.language()}
-              shown={Boolean(render.assetBaseUrl())}
-              status={reviewStatus()}
-              canSend={review.availability().kind === 'ready'}
-              sending={review.busy() === 'sending'}
-              sendCount={review.sendCount()}
-              working={agentWorking()}
-              onReconnect={review.forgetAgent}
-              error={review.error()}
-              rows={reviewPanelRows()}
-              resolvedCount={reviewResolvedCount()}
-              showResolved={review.showResolved()}
-              resolvedToggleLabel={review.showResolved() ? settings.messages().hideResolved : settings.messages().showResolved(reviewResolvedCount())}
-              onToggleResolved={review.toggleShowResolved}
-              onSelectSlide={index => void selectSlide(index)}
-              highlightedThread={highlightedThread()}
-              replyText={review.replyDraft()?.text ?? ''}
-              onSend={() => void sendReview()}
-              onDiscard={review.discard}
-              editText={review.unsentEdit()?.text ?? ''}
-              onStartEdit={id => {
-                review.startEdit(id)
-                focusUnsentEdit()
-              }}
-              onEditInput={review.setEditText}
-              onEditSave={review.commitEdit}
-              onEditCancel={review.cancelEdit}
-              onStartReply={commentId => review.editReply(commentId, '')}
-              onReplyInput={review.setReplyText}
-              onReplyAdd={review.commitReply}
-              onReplyCancel={review.cancelReply}
-              onResolve={id => void resolveReviewComment(id)}
-              connectShown={connectShown()}
-              connectPrompt={connectPrompt()}
-              connectCommand={connectCommand()}
-              copied={connectCopied()}
-              onCopyPrompt={() => void copyConnectText('prompt')}
-              onCopyCommand={() => void copyConnectText('command')}
-            />
-          </div>
-        </div>
         </div>
         <LayoutScreen
           language={settings.language()}
@@ -2989,6 +2944,70 @@ export function Studio() {
           onSave={() => void saveShownLayout()}
           onRevert={revertShownLayout}
         />
+        {/* The comments column, rightmost: a fourth column rather than a
+            strip under the preview, so the threads get the window's full
+            height. Hidden with the panel until a deck is open. Shared by
+            both screens — one column, one open/closed state, the same
+            threads — and outside both, so the layout screen has it too
+            (groundwork for todo/layout-review-comments.md). While the layout
+            screen shows, its own rail holds the toggle to reopen it. */}
+        <div data-layout-panel-rail="" className="panel-rail" hidden={ui.studioMode() !== 'layouts' || ui.reviewOpen() || !render.assetBaseUrl()}>
+          <PanelToggle panel="review" language={settings.language()} open={false} onToggle={() => ui.setReviewOpen(true)} />
+        </div>
+        <div
+          hidden={!render.assetBaseUrl() || !ui.reviewOpen()}
+          className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"
+          onMouseDown={startColumnResize(ui.reviewPanelWidth, ui.setReviewPanelWidth, -1)}
+        />
+
+        <div hidden={!render.assetBaseUrl() || !ui.reviewOpen()} data-panel="review" className="studio-panel" style={reviewFillsRow() ? 'flex: 1; min-width: 0' : ''}>
+          <PanelToggle panel="review" language={settings.language()} open={true} onToggle={() => ui.setReviewOpen(!ui.reviewOpen())} />
+          <div id="panel-review"
+            className={ui.reviewOpen() ? 'panel-content border-l border-border' : 'hidden'}
+            style={reviewFillsRow() ? 'width: 100%' : `width: ${ui.reviewPanelWidth()}px`}
+          >
+            <ReviewPanel
+              language={settings.language()}
+              shown={Boolean(render.assetBaseUrl())}
+              status={reviewStatus()}
+              canSend={review.availability().kind === 'ready'}
+              sending={review.busy() === 'sending'}
+              sendCount={review.sendCount()}
+              working={agentWorking()}
+              onReconnect={review.forgetAgent}
+              error={review.error()}
+              rows={reviewPanelRows()}
+              resolvedCount={reviewResolvedCount()}
+              showResolved={review.showResolved()}
+              resolvedToggleLabel={review.showResolved() ? settings.messages().hideResolved : settings.messages().showResolved(reviewResolvedCount())}
+              onToggleResolved={review.toggleShowResolved}
+              onSelectSlide={index => void selectSlideFromReview(index)}
+              highlightedThread={highlightedThread()}
+              replyText={review.replyDraft()?.text ?? ''}
+              onSend={() => void sendReview()}
+              onDiscard={review.discard}
+              editText={review.unsentEdit()?.text ?? ''}
+              onStartEdit={id => {
+                review.startEdit(id)
+                focusUnsentEdit()
+              }}
+              onEditInput={review.setEditText}
+              onEditSave={review.commitEdit}
+              onEditCancel={review.cancelEdit}
+              onStartReply={commentId => review.editReply(commentId, '')}
+              onReplyInput={review.setReplyText}
+              onReplyAdd={review.commitReply}
+              onReplyCancel={review.cancelReply}
+              onResolve={id => void resolveReviewComment(id)}
+              connectShown={connectShown()}
+              connectPrompt={connectPrompt()}
+              connectCommand={connectCommand()}
+              copied={connectCopied()}
+              onCopyPrompt={() => void copyConnectText('prompt')}
+              onCopyCommand={() => void copyConnectText('command')}
+            />
+          </div>
+        </div>
       </div>
       )}
 

@@ -597,3 +597,43 @@ test('Given sending fails, Then the comments stay unsent and the error is shown'
   await expect(page.locator('[data-review-error]')).toContainText('crit went away')
   await expect(page.locator('[data-review-row="unsent-comment"]')).toHaveCount(1)
 })
+
+// Groundwork for comments on layouts (todo/layout-review-comments.md): the
+// comments column is the same one in both screens.
+test('Given comments on the deck, When the window switches to the layout screen, Then the same comments column shows there, opened and closed together with the slides screen\'s', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  await openDeck(page, crit)
+  await comment(page, 'h1', 'Make it bigger')
+  await page.locator(SEND).click()
+  await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
+
+  await page.locator('[data-studio-mode-option="layouts"]').click()
+  await expect(page.locator('[data-layout-screen]')).toBeVisible()
+  await expect(page.locator('[data-panel="review"]')).toBeVisible()
+  await expect(page.locator('[data-review-row="comment"]')).toContainText('Make it bigger')
+
+  await page.locator('[data-panel="review"] [data-panel-toggle]').click()
+  await expect(page.locator('[data-panel="review"]')).toBeHidden()
+  await page.locator('[data-studio-mode-option="slides"]').click()
+  await expect(page.locator('[data-panel="review"]')).toBeHidden()
+  await page.locator('[data-studio-mode-option="layouts"]').click()
+  await page.locator('[data-layout-panel-rail] [data-panel-toggle="review"]').click()
+  await expect(page.locator('[data-panel="review"]')).toBeVisible()
+  await expect(page.locator('[data-layout-panel-rail]')).toBeHidden()
+})
+
+test('Given the layout screen, When a comment\'s row is clicked, Then the slides screen comes back with its slide open', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  await openDeck(page, crit)
+  await page.locator('[data-slide-row="1"]').click()
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Second')
+  await comment(page, 'h1', 'Shorter title')
+  await page.locator(SEND).click()
+  await page.locator('[data-slide-row="0"]').click()
+
+  await page.locator('[data-studio-mode-option="layouts"]').click()
+  await page.locator('[data-review-row="comment"]').click()
+
+  await expect(page.locator('[data-layout-screen]')).toBeHidden()
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Second')
+})

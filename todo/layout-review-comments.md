@@ -40,6 +40,34 @@ Coding Agentへ渡す。アプリ内LLMは持たない — `todo/archive/crit-re
     キャッシュ無効化)。
   - 返信・解決は既存のReviewPanelと同じ見た目・操作で扱える。
 
+## 既にある下地(`todo/layout-screen.md`のPRで用意済み)
+
+コメント送信そのものはまだ無い。差し込み先として次が入っている:
+
+- **コメント欄はレイアウト画面でも出る**: `components/Studio.tsx`の
+  コメント列(`data-panel="review"`の`ReviewPanel`)をスライド画面の
+  外へ出し、両画面で同じ列・同じ開閉状態(`ui.reviewOpen()`)・同じ
+  スレッド(`review`ストア)を共有している。レイアウト画面で閉じたときの
+  再表示ボタンは`data-layout-panel-rail`。レイアウト画面の右端カラムに
+  収まる(`LayoutScreen.tsx`のプレビュー列が`flex-1`で残りを取る)。
+- **行をクリックするとスライド画面へ戻る**: `selectSlideFromReview`
+  (`Studio.tsx`)。レイアウト宛てのスレッドは`slideIndex`を持たない
+  想定なので、そのときの遷移先(該当レイアウトを選択する等)はここで決める。
+- **レイアウト一覧の右クリックメニュー**: `domain/layoutMenu.ts`の
+  `LayoutMenu` ADT(`on-layout{name}` / `on-list`)と
+  `layoutMenuItems`(項目はデータ)、`components/LayoutContextMenu.tsx`
+  (項目を`.map()`で描くだけ)、`Studio.tsx`の`runLayoutMenuAction`。
+  「このレイアウトにコメント…」は`on-layout`に、「レイアウト全体に
+  コメント…」は`on-list`に、`LayoutMenuAction`を1つ足して
+  `layoutMenuItems`/`layoutMenuLabel`/`runLayoutMenuAction`の`switch`に
+  1行ずつ足せばよい(網羅性チェックが足りない箇所を教える)。
+  メニューの開き方・コンポーネントは変えなくてよい。
+
+残り(このtodoの本体): 要調査1〜5、コメント対象ADT(`domain/reviewComment.ts`
+に`layout{name}`/`all-layouts`)、コメント入力の導線(`CommentBox.tsx`を
+レイアウト画面から開く — 位置はメニューを開いた座標でよい)、crit
+セッション起動引数、finish後のレイアウト再読込(`refreshLayouts`)。
+
 ## 背景・要調査
 
 読んで分かったこと:
