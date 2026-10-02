@@ -1905,8 +1905,14 @@ export function Studio() {
     return layoutNameProblemText(layouts.newLayoutNameProblem(layoutNames()), settings.messages())
   })
 
+  // The new layout opens in the editor, so unsaved edits to the one open now
+  // keep it from being created, as in `selectLayout`.
   async function createLayout(): Promise<void> {
     if (layouts.newLayoutNameProblem(layoutNames()) !== null) return
+    if (layouts.editorDirty()) {
+      layouts.setNotice(settings.messages().layoutSaveFirst)
+      return
+    }
     let created = ''
     const ok = await runLayoutAction(async () => {
       created = await deckIpc.createLayout(liveSource(), layouts.newLayoutName(), layouts.newLayoutTemplate() || null)

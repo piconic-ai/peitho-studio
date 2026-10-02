@@ -284,6 +284,22 @@ test('Given unsaved edits to a layout, when another layout is clicked, then the 
   await expect(row(page, 'title-slide')).toHaveAttribute('aria-current', 'true')
 })
 
+test('Given unsaved edits to a layout, when a new layout is created, then nothing is created and the edits stay open with a notice to save or revert first', async ({ page }) => {
+  const deck = deckOf()
+  await openLayoutScreen(page, deck)
+
+  await row(page, 'quote').click()
+  await page.locator('[data-layout-html]').fill('<section>edited</section>')
+  await page.locator('[data-new-layout]').click()
+  await page.locator('[data-new-layout-name]').fill('pull-quote')
+  await page.locator('[data-create-layout]').click()
+
+  await expect(page.locator('[data-layout-notice]')).toContainText('Save or revert')
+  await expect(row(page, 'quote')).toHaveAttribute('aria-current', 'true')
+  await expect(page.locator('[data-layout-html]')).toHaveValue('<section>edited</section>')
+  expect(deck.invokedCommands).not.toContain('create_layout')
+})
+
 test('Given the layout screen, when Delete or an arrow key is pressed outside a text field, then no slide is deleted or moved', async ({ page }) => {
   const deck = deckOf()
   await openLayoutScreen(page, deck)
