@@ -103,6 +103,7 @@ import { SlideContextMenu } from './SlideContextMenu'
 import { SlideList } from './SlideList'
 import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
 import { LayoutContextMenu, type LayoutMenuEntry } from './LayoutContextMenu'
+import { focusDeleteLayoutDialog, focusNewLayoutName } from '../dom/layoutModals'
 import { type LayoutMenuAction, layoutMenuItems, layoutMenuLabel, layoutMenuPosition, layoutMenuTarget, layoutMenuTitle } from '../domain/layoutMenu'
 
 // Just the heading — `addSlide` attaches an explicit, collision-free
@@ -2011,8 +2012,8 @@ export function Studio() {
     setStatusMessage({ kind: 'layout-created', layout: created })
   }
 
-  // Copies layout `name` (the toolbar's: the one shown) and opens the copy.
-  async function duplicateLayout(name: string | null = layouts.selectedLayout()): Promise<void> {
+  // Copies layout `name` and opens the copy.
+  async function duplicateLayout(name: string | null): Promise<void> {
     if (name === null) return
     if (layouts.editorDirty()) {
       layouts.setNotice(settings.messages().layoutSaveFirst)
@@ -2024,11 +2025,10 @@ export function Studio() {
     setStatusMessage({ kind: 'layout-created', layout: copy })
   }
 
-  // Pins the slide open in the slides screen to layout `name` (the toolbar's:
-  // the one shown), through the same Undo-able path as the context menu's
+  // Pins the slide open in the slides screen to layout `name`, through the same Undo-able path as the context menu's
   // Change Layout — after the same fit check, so a layout the slide doesn't
   // fit is refused with peitho-core's reason instead of a build error.
-  async function applyLayout(name: string | null = layouts.selectedLayout()): Promise<void> {
+  async function applyLayout(name: string | null): Promise<void> {
     const index = editor.selectedIndex()
     if (name === null || index === null) return
     await runLayoutAction(async () => {
@@ -2061,7 +2061,7 @@ export function Studio() {
     })
   }
 
-  function startLayoutDelete(name: string | null = layouts.selectedLayout()): void {
+  function startLayoutDelete(name: string | null): void {
     if (name === null) return
     layouts.setNotice(null)
     layouts.beginDelete(name, layoutNames(), slidesByLayout().get(name) ?? [])
@@ -2102,6 +2102,7 @@ export function Studio() {
     switch (action) {
       case 'new-layout':
         layouts.openNewLayout()
+        focusNewLayoutName()
         return
       case 'apply':
         void applyLayout(name)
@@ -2114,6 +2115,7 @@ export function Studio() {
         return
       case 'delete':
         startLayoutDelete(name)
+        focusDeleteLayoutDialog()
         return
       default: {
         const _exhaustive: never = action
@@ -2601,6 +2603,18 @@ export function Studio() {
         }
         return
       }
+      // The layout screen's modals: Escape cancels, as their Cancel button
+      // does (not while a delete runs).
+      if (event.key === 'Escape' && ui.studioMode() === 'layouts' && layouts.newLayoutOpen()) {
+        event.preventDefault()
+        layouts.closeNewLayout()
+        return
+      }
+      if (event.key === 'Escape' && ui.studioMode() === 'layouts' && (layouts.deleteFlow().kind === 'confirming' || layouts.deleteFlow().kind === 'choosing-replacement')) {
+        event.preventDefault()
+        layouts.cancelDeleteFlow()
+        return
+      }
       // Like the slide menu just below: also when focus stayed in an editor
       // through the right-click (see vim-mode.e2e.ts).
       if (event.key === 'Escape' && layouts.menu().kind !== 'closed') {
@@ -2911,16 +2925,10 @@ export function Studio() {
           onEditorResize={startColumnResize(layouts.editorWidth, layouts.setEditorWidth, 1)}
           busy={layouts.busy()}
           notice={layouts.notice()}
-          canApply={layouts.selectedLayout() !== null && editor.selectedIndex() !== null}
-          canDelete={layoutNames().length > 1 && layouts.selectedLayout() !== null}
-          onApply={() => void applyLayout()}
-          onDuplicate={() => void duplicateLayout()}
-          onStartDelete={() => startLayoutDelete()}
           newLayoutOpen={layouts.newLayoutOpen()}
           newLayoutName={layouts.newLayoutName()}
           newLayoutTemplate={layouts.newLayoutTemplate()}
           newLayoutProblem={newLayoutProblem()}
-          onOpenNewLayout={layouts.openNewLayout}
           onNewLayoutName={layouts.setNewLayoutName}
           onNewLayoutTemplate={layouts.setNewLayoutTemplate}
           onCreateLayout={() => void createLayout()}

@@ -36,18 +36,12 @@ export interface LayoutScreenProps {
   /** The last refused operation's reason, `null` for none. */
   notice: string | null
 
-  canApply: boolean
-  canDelete: boolean
-  onApply: () => void
-  onDuplicate: () => void
-  onStartDelete: () => void
 
   newLayoutOpen: boolean
   newLayoutName: string
   newLayoutTemplate: string
   /** What's wrong with the typed name, worded; `''` when nothing is. */
   newLayoutProblem: string
-  onOpenNewLayout: () => void
   onNewLayoutName: (name: string) => void
   onNewLayoutTemplate: (template: string) => void
   onCreateLayout: () => void
@@ -98,74 +92,22 @@ function tabClass(active: boolean): string {
 }
 
 /** The deck's layouts in one screen: the list (left), the selected layout's
- * HTML/CSS (center) and its preview (right), plus New Layout, Apply to
- * Slide, Duplicate and Delete. Every part is permanently mounted and shown
- * or hidden by class — see CLAUDE.md's BarefootJS pitfalls on branches. */
+ * HTML/CSS (center) and its preview (right). Every operation on a layout
+ * is in the list's right-click menu (`LayoutContextMenu.tsx`); New Layout
+ * and Delete open the modals at the end. Every part is permanently
+ * mounted and shown or hidden by class — see CLAUDE.md's BarefootJS
+ * pitfalls on branches. */
 export function LayoutScreen(props: LayoutScreenProps) {
   return (
     <div data-layout-screen className={(props.hidden ? 'hidden' : 'flex') + ' flex-1 min-h-0'}>
       <div data-layout-list className="shrink-0 flex flex-col min-h-0 border-r border-border" style={`width: ${String(props.listWidth)}px`}>
-        <div className="shrink-0 h-9 flex items-center justify-between px-3 border-b border-border">
+        <div className="shrink-0 h-9 flex items-center px-3 border-b border-border">
           <span className="text-xs font-medium text-muted-foreground">{messagesFor(props.language).layoutList}</span>
-          <button
-            type="button"
-            data-new-layout
-            disabled={props.busy}
-            onClick={() => props.onOpenNewLayout()}
-            className="px-2 py-0.5 rounded-md border border-border text-xs hover:bg-accent disabled:opacity-40"
-          >
-            {messagesFor(props.language).newLayout}
-          </button>
         </div>
-        <form
-          data-new-layout-form
-          className={(props.newLayoutOpen ? '' : 'hidden ') + 'shrink-0 flex flex-col gap-2 p-3 border-b border-border'}
-          onSubmit={event => {
-            event.preventDefault()
-            props.onCreateLayout()
-          }}
-        >
-          <input
-            type="text"
-            data-new-layout-name
-            value={props.newLayoutName}
-            placeholder={messagesFor(props.language).newLayoutName}
-            spellcheck={false}
-            autocomplete="off"
-            onInput={event => props.onNewLayoutName(event.target.value)}
-            className="w-full px-2 py-1 rounded-md border border-border bg-background text-sm"
-          />
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            {messagesFor(props.language).newLayoutFrom}
-            <select
-              data-new-layout-template
-              onChange={event => props.onNewLayoutTemplate(event.target.value)}
-              className="px-2 py-1 rounded-md border border-border bg-background text-sm text-foreground"
-            >
-              <option value="" selected={props.newLayoutTemplate === ''}>{messagesFor(props.language).blankLayout}</option>
-              {STANDARD_LAYOUTS.map(layout => (
-                <option key={layout.name} value={layout.name} selected={props.newLayoutTemplate === layout.name}>{layout.label[props.language]}</option>
-              ))}
-            </select>
-          </label>
-          <p role="alert" className="text-xs text-destructive" hidden={props.newLayoutProblem === ''}>{props.newLayoutProblem}</p>
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => props.onCancelNewLayout()} className="px-2 py-1 rounded-md text-xs hover:bg-accent">
-              {messagesFor(props.language).cancel}
-            </button>
-            <button
-              type="submit"
-              data-create-layout
-              disabled={props.busy || props.newLayoutProblem !== ''}
-              className="px-2 py-1 rounded-md bg-primary text-primary-foreground text-xs disabled:opacity-40"
-            >
-              {messagesFor(props.language).create}
-            </button>
-          </div>
-        </form>
         <div
           data-layout-rows
-          className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-2"
+          // `pb-16`: room below the last row to right-click for New Layout.
+          className="flex-1 min-h-0 overflow-y-auto p-2 pb-16 flex flex-col gap-2"
           // A row's own handler is delegated to this same element, so both
           // fire for a right-click on a row and `stopPropagation()` can't
           // tell them apart (barefootjs#2930, see `SlideList.tsx`): this one
@@ -255,41 +197,99 @@ export function LayoutScreen(props: LayoutScreenProps) {
       <div className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40" onMouseDown={event => props.onEditorResize(event)} />
 
       <div data-layout-detail className="flex-1 min-w-0 flex flex-col min-h-0">
-        <div className="shrink-0 h-9 flex items-center gap-2 px-3 border-b border-border">
-          <button
-            type="button"
-            data-apply-layout
-            disabled={props.busy || !props.canApply}
-            title={props.canApply ? '' : messagesFor(props.language).applyLayoutNeedsSlide}
-            onClick={() => props.onApply()}
-            className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground text-xs disabled:opacity-40"
+        <p role="alert" data-layout-notice hidden={props.notice === null} className="shrink-0 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words border-b border-border">{props.notice ?? ''}</p>
+        <div className="flex-1 min-h-0 flex items-center justify-center p-6">
+          <div
+            data-layout-preview
+            className="relative w-full rounded border border-border bg-black overflow-hidden"
+            style={`aspect-ratio: ${String(props.canvasWidth)} / ${String(props.canvasHeight)}`}
           >
-            {messagesFor(props.language).applyLayoutToSlide}
-          </button>
-          <button
-            type="button"
-            data-duplicate-layout
-            disabled={props.busy || props.selectedName === null}
-            onClick={() => props.onDuplicate()}
-            className="px-2 py-0.5 rounded-md border border-border text-xs hover:bg-accent disabled:opacity-40"
-          >
-            {messagesFor(props.language).duplicateLayout}
-          </button>
-          <button
-            type="button"
-            data-delete-layout
-            disabled={props.busy || !props.canDelete}
-            title={props.canDelete ? '' : messagesFor(props.language).onlyLayoutCannotBeDeleted}
-            onClick={() => props.onStartDelete()}
-            className="px-2 py-0.5 rounded-md border border-border text-xs text-destructive hover:bg-accent disabled:opacity-40"
-          >
-            {messagesFor(props.language).deleteLayout}
-          </button>
+            <div
+              ref={el => {
+                createEffect(() => {
+                  const canvas = { width: props.canvasWidth, height: props.canvasHeight }
+                  const name = props.selectedName
+                  mountSlideCanvas(el, props.layoutPreviewStylesheet(), name === null ? '' : props.fragmentOf(name), canvas, 'thumbnail')
+                  observeCanvasScale(el, canvas)
+                })
+              }}
+              className="absolute top-0 right-0 bottom-0 left-0"
+            />
+          </div>
         </div>
+      </div>
+      {/* New Layout, opened from the list's empty-space menu: an in-app
+          modal (never `window.confirm`/`prompt`, CLAUDE.md), permanently
+          mounted and shown by class like the rest of this screen. */}
+      <div className={(props.newLayoutOpen ? '' : 'hidden ') + 'fixed top-0 right-0 bottom-0 left-0 z-40 bg-black/40'} onClick={() => props.onCancelNewLayout()} />
+      <div className={(props.newLayoutOpen ? '' : 'hidden ') + 'fixed top-0 right-0 bottom-0 left-0 z-50 flex items-center justify-center pointer-events-none'}>
+        <div className="pointer-events-auto w-full max-w-sm">
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-label={messagesFor(props.language).newLayout}
+            data-new-layout-form
+            className="w-full max-w-sm flex flex-col gap-2 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-4"
+            onSubmit={event => {
+              event.preventDefault()
+              props.onCreateLayout()
+            }}
+          >
+            <div className="text-sm font-medium">{messagesFor(props.language).newLayout}</div>
+            <input
+              type="text"
+              data-new-layout-name
+              value={props.newLayoutName}
+              placeholder={messagesFor(props.language).newLayoutName}
+              spellcheck={false}
+              autocomplete="off"
+              onInput={event => props.onNewLayoutName(event.target.value)}
+              className="w-full px-2 py-1 rounded-md border border-border bg-background text-sm"
+            />
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              {messagesFor(props.language).newLayoutFrom}
+              <select
+                data-new-layout-template
+                onChange={event => props.onNewLayoutTemplate(event.target.value)}
+                className="px-2 py-1 rounded-md border border-border bg-background text-sm text-foreground"
+              >
+                <option value="" selected={props.newLayoutTemplate === ''}>{messagesFor(props.language).blankLayout}</option>
+                {STANDARD_LAYOUTS.map(layout => (
+                  <option key={layout.name} value={layout.name} selected={props.newLayoutTemplate === layout.name}>{layout.label[props.language]}</option>
+                ))}
+              </select>
+            </label>
+            <p role="alert" className="text-xs text-destructive" hidden={props.newLayoutProblem === ''}>{props.newLayoutProblem}</p>
+            {/* A refusal from the deck (the name check passed here) shows
+                here too: the screen's own notice is behind the backdrop. */}
+            <p className="text-xs text-destructive whitespace-pre-wrap break-words" hidden={props.notice === null}>{props.notice ?? ''}</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => props.onCancelNewLayout()} className="px-2 py-1 rounded-md text-xs hover:bg-accent">
+                {messagesFor(props.language).cancel}
+              </button>
+              <button
+                type="submit"
+                data-create-layout
+                disabled={props.busy || props.newLayoutProblem !== ''}
+                className="px-2 py-1 rounded-md bg-primary text-primary-foreground text-xs disabled:opacity-40"
+              >
+                {messagesFor(props.language).create}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+      {/* Delete, opened from a row's menu: the confirmation, and for a
+          layout slides use, the layout to move them to. An in-app modal,
+          permanently mounted like the New Layout one. A click outside
+          cancels, except while the delete runs. */}
+      <div className={(props.deleteView === 'idle' ? 'hidden ' : '') + 'fixed top-0 right-0 bottom-0 left-0 z-40 bg-black/40'} onClick={() => { if (props.deleteView !== 'deleting') props.onCancelDelete() }} />
+      <div className={(props.deleteView === 'idle' ? 'hidden ' : '') + 'fixed top-0 right-0 bottom-0 left-0 z-50 flex items-center justify-center pointer-events-none'}>
         <div
           role="alertdialog"
+          aria-modal="true"
           data-delete-layout-panel
-          className={(props.deleteView === 'idle' ? 'hidden ' : '') + 'shrink-0 flex flex-col gap-2 p-3 border-b border-border bg-popover text-popover-foreground'}
+          className="pointer-events-auto w-full max-w-sm flex flex-col gap-3 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-4"
         >
           <p className="text-sm">{props.deleteText}</p>
           <label className={(props.replacementChoices.length === 0 ? 'hidden ' : '') + 'flex items-center gap-2 text-xs text-muted-foreground'}>
@@ -319,26 +319,6 @@ export function LayoutScreen(props: LayoutScreenProps) {
             >
               {confirmLabel(messagesFor(props.language), props.deleteView)}
             </button>
-          </div>
-        </div>
-        <p role="alert" data-layout-notice hidden={props.notice === null} className="shrink-0 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words border-b border-border">{props.notice ?? ''}</p>
-        <div className="flex-1 min-h-0 flex items-center justify-center p-6">
-          <div
-            data-layout-preview
-            className="relative w-full rounded border border-border bg-black overflow-hidden"
-            style={`aspect-ratio: ${String(props.canvasWidth)} / ${String(props.canvasHeight)}`}
-          >
-            <div
-              ref={el => {
-                createEffect(() => {
-                  const canvas = { width: props.canvasWidth, height: props.canvasHeight }
-                  const name = props.selectedName
-                  mountSlideCanvas(el, props.layoutPreviewStylesheet(), name === null ? '' : props.fragmentOf(name), canvas, 'thumbnail')
-                  observeCanvasScale(el, canvas)
-                })
-              }}
-              className="absolute top-0 right-0 bottom-0 left-0"
-            />
           </div>
         </div>
       </div>

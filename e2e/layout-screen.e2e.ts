@@ -35,6 +35,20 @@ function row(page: Page, name: string) {
   return page.locator(`[data-layout-row="${name}"]`)
 }
 
+/** Runs a layout menu item: on layout `name`'s row (the selected row by
+ * default), or, for New Layout, on the list's empty space below the rows. */
+async function act(page: Page, action: 'apply' | 'edit' | 'duplicate' | 'delete' | 'new-layout', name?: string): Promise<void> {
+  if (action === 'new-layout') {
+    const box = await page.locator('[data-layout-rows]').boundingBox()
+    if (!box) throw new Error('the layout list has no box')
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height - 10, { button: 'right' })
+  } else {
+    const target = name === undefined ? page.locator('[data-layout-row][aria-current="true"]') : row(page, name)
+    await target.click({ button: 'right' })
+  }
+  await page.locator(`[data-layout-menu-item="${action}"]`).click()
+}
+
 function slideConfigs(source: string): unknown[] {
   return source.split(/^---$/m).map(text => {
     const match = /<!-- (\{.*\}) -->/.exec(text)
@@ -120,11 +134,13 @@ test('Given a layout the selected slide does not fit, when its row is right-clic
     { layout: 'title-body', fit: { kind: 'fits' } },
     { layout: 'quote', fit: { kind: 'mismatch', reason: "unassigned content remains for missing 'body' slot" } },
   ]
-  await openLayoutScreen(page, deckOf({ layoutVerdicts: verdicts }))
+  const deck = deckOf({ layoutVerdicts: verdicts })
+  await openLayoutScreen(page, deck)
 
   await row(page, 'quote').click({ button: 'right' })
   await expect(layoutMenuItem(page, 'apply')).toBeDisabled()
   await expect(layoutMenuItem(page, 'apply')).toHaveAttribute('title', "unassigned content remains for missing 'body' slot")
+  expect(deck.invokedCommands).not.toContain('save_deck_source')
   await page.keyboard.press('Escape')
   await row(page, 'title-body').click({ button: 'right' })
   await expect(layoutMenuItem(page, 'apply')).toBeEnabled()
@@ -158,7 +174,7 @@ test('Given a slide selected in Slides, when a layout is applied from the layout
   await openLayoutScreen(page, deck)
 
   await row(page, 'quote').click()
-  await page.locator('[data-apply-layout]').click()
+  await act(page, 'apply')
 
   await expect.poll(() => slideConfigs(deck.source)[0]).toEqual({ key: 'cover', layout: 'quote' })
   await expect(page.getByText('Applied the quote layout to the slide')).toBeVisible()
@@ -170,29 +186,12 @@ test('Given a slide selected in Slides, when a layout is applied from the layout
   await expect.poll(() => slideConfigs(deck.source)[0]).toEqual({ key: 'cover', layout: 'title-slide' })
 })
 
-test('Given a layout the selected slide does not fit, when it is applied, then the reason shows and deck.md is untouched', async ({ page }) => {
-  const verdicts = (): LayoutVerdict[] => [
-    { layout: 'title-slide', fit: { kind: 'fits' } },
-    { layout: 'title-body', fit: { kind: 'fits' } },
-    { layout: 'quote', fit: { kind: 'mismatch', reason: "unassigned content remains for missing 'body' slot" } },
-  ]
-  const deck = deckOf({ layoutVerdicts: verdicts })
-  await openLayoutScreen(page, deck)
-
-  await row(page, 'quote').click()
-  await page.locator('[data-apply-layout]').click()
-
-  await expect(page.locator('[data-layout-notice]')).toContainText(`"quote" doesn't fit this slide: unassigned content remains for missing 'body' slot`)
-  expect(deck.source).toBe(SOURCE)
-  expect(deck.invokedCommands).not.toContain('save_deck_source')
-})
-
 test('Given the layout the selected slide already uses, when it is applied, then the screen says so instead of reporting it applied', async ({ page }) => {
   const deck = deckOf()
   await openLayoutScreen(page, deck)
 
   await row(page, 'title-slide').click()
-  await page.locator('[data-apply-layout]').click()
+  await act(page, 'apply')
 
   await expect(page.locator('[data-layout-notice]')).toContainText('The slide already uses the title-slide layout')
   await expect(page.getByText('Applied the title-slide layout to the slide')).toHaveCount(0)
@@ -206,7 +205,7 @@ test('Given a layout whose render fails, when it is applied, then the failure sh
   await openLayoutScreen(page, deck)
 
   await row(page, 'quote').click()
-  await page.locator('[data-apply-layout]').click()
+  await act(page, 'apply')
 
   await expect(page.locator('[data-layout-notice]')).toContainText("slide 1 doesn't build on 'quote'")
   await expect(page.getByText('Applied the quote layout to the slide')).toHaveCount(0)
@@ -219,7 +218,7 @@ test('Given New Layout, when a name is typed, then a taken one is refused before
   deck.onInvoke = (cmd, args) => { if (cmd === 'create_layout') created.push(args) }
   await openLayoutScreen(page, deck)
 
-  await page.locator('[data-new-layout]').click()
+  await act(page, 'new-layout')
   await page.locator('[data-new-layout-name]').fill('Quote')
   await expect(page.locator('[data-new-layout-form] [role="alert"]')).toHaveText('The deck already has a layout with this name')
   await expect(page.locator('[data-create-layout]')).toBeDisabled()
@@ -238,7 +237,7 @@ test('Given a layout, when it is duplicated, then the copy appears in the list, 
   await openLayoutScreen(page, deckOf())
 
   await row(page, 'quote').click()
-  await page.locator('[data-duplicate-layout]').click()
+  await act(page, 'duplicate')
 
   await expect(row(page, 'quote-copy')).toHaveAttribute('aria-current', 'true')
 })
@@ -248,7 +247,7 @@ test('Given an unused layout, when it is deleted and confirmed, then it leaves t
   await openLayoutScreen(page, deck)
 
   await row(page, 'quote').click()
-  await page.locator('[data-delete-layout]').click()
+  await act(page, 'delete')
   await expect(page.locator('[data-delete-layout-panel]')).toContainText('Delete "quote"?')
   await page.locator('[data-confirm-delete-layout]').click()
 
@@ -273,7 +272,7 @@ test('Given a layout two slides use, when it is deleted, then a layout to move t
   await openLayoutScreen(page, deck)
 
   await row(page, 'title-body').click()
-  await page.locator('[data-delete-layout]').click()
+  await act(page, 'delete')
   const panel = page.locator('[data-delete-layout-panel]')
   await expect(panel).toContainText('2 slides use "Title and body"')
   await expect(page.locator('[data-confirm-delete-layout]')).toBeDisabled()
@@ -299,11 +298,11 @@ test('Given slides moved off a deleted layout, when Undo is pressed, then the mo
   const deck = deckOf({ rejectUnknownLayouts: true })
   await openLayoutScreen(page, deck)
   await row(page, 'quote').click()
-  await page.locator('[data-apply-layout]').click()
+  await act(page, 'apply')
   await expect.poll(() => layoutsOf(deck.source)).toEqual(['quote', 'title-body', 'title-body'])
 
   await row(page, 'title-body').click()
-  await page.locator('[data-delete-layout]').click()
+  await act(page, 'delete')
   await page.locator('[data-delete-replacement]').selectOption('quote')
   await page.locator('[data-confirm-delete-layout]').click()
   await expect(row(page, 'title-body')).toHaveCount(0)
@@ -319,11 +318,11 @@ test('Given an undo step that would pin a slide back to a layout, when that layo
   await openLayoutScreen(page, deck)
   // Undoing this would pin the cover back to `title-slide`.
   await row(page, 'quote').click()
-  await page.locator('[data-apply-layout]').click()
+  await act(page, 'apply')
   await expect.poll(() => layoutsOf(deck.source)).toEqual(['quote', 'title-body', 'title-body'])
 
   await row(page, 'title-slide').click()
-  await page.locator('[data-delete-layout]').click()
+  await act(page, 'delete')
   await page.locator('[data-confirm-delete-layout]').click()
   await expect(row(page, 'title-slide')).toHaveCount(0)
   await expect(page.getByText('Deleted the title-slide layout — undo history cleared')).toBeVisible()
@@ -341,7 +340,7 @@ test('Given a delete that fails after the slides were moved, then they are moved
   await openLayoutScreen(page, deck)
 
   await row(page, 'title-body').click()
-  await page.locator('[data-delete-layout]').click()
+  await act(page, 'delete')
   await page.locator('[data-delete-replacement]').selectOption('quote')
   await page.locator('[data-confirm-delete-layout]').click()
 
@@ -369,7 +368,7 @@ test('Given a deletion that fails while Undo is pressed, then the slides are mov
 
   await page.locator('[data-studio-mode-option="layouts"]').click()
   await row(page, 'title-body').click()
-  await page.locator('[data-delete-layout]').click()
+  await act(page, 'delete')
   await page.locator('[data-delete-replacement]').selectOption('quote')
   await page.locator('[data-confirm-delete-layout]').click()
   await expect.poll(() => layoutsOf(deck.source)).toEqual(['quote', 'quote'])
@@ -384,7 +383,7 @@ test('Given a delete the deck refuses, then the reason shows, nothing is moved, 
   await openLayoutScreen(page, deck)
 
   await row(page, 'title-body').click()
-  await page.locator('[data-delete-layout]').click()
+  await act(page, 'delete')
   await page.locator('[data-delete-replacement]').selectOption('quote')
   await page.locator('[data-confirm-delete-layout]').click()
 
@@ -394,10 +393,40 @@ test('Given a delete the deck refuses, then the reason shows, nothing is moved, 
   expect(deck.invokedCommands).not.toContain('delete_layout')
 })
 
-test('Given the deck\'s only layout, then Delete is off', async ({ page }) => {
-  await openLayoutScreen(page, deckOf({ layouts: ['title-body'], source: SOURCE.replaceAll('title-slide', 'title-body') }))
-  await row(page, 'title-body').click()
-  await expect(page.locator('[data-delete-layout]')).toBeDisabled()
+test('Given the layout screen, then it has no toolbar or New Layout button: every operation is in the right-click menus', async ({ page }) => {
+  await openLayoutScreen(page, deckOf())
+  await row(page, 'quote').click()
+  for (const selector of ['[data-apply-layout]', '[data-duplicate-layout]', '[data-delete-layout]', '[data-new-layout]']) {
+    await expect(page.locator(selector)).toHaveCount(0)
+  }
+  await expect(page.locator('[data-delete-layout-panel]')).toBeHidden()
+  await expect(page.locator('[data-new-layout-form]')).toBeHidden()
+})
+
+test('Given the delete and New Layout modals, when Escape or a click outside is used, then they close without changing anything', async ({ page }) => {
+  const deck = deckOf()
+  await openLayoutScreen(page, deck)
+
+  await act(page, 'delete', 'title-body')
+  await expect(page.locator('[data-delete-layout-panel]')).toBeVisible()
+  await expect(page.locator('[data-delete-replacement]')).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('[data-delete-layout-panel]')).toBeHidden()
+
+  await act(page, 'delete', 'quote')
+  await page.mouse.click(5, 5)
+  await expect(page.locator('[data-delete-layout-panel]')).toBeHidden()
+
+  await act(page, 'new-layout')
+  await expect(page.locator('[data-new-layout-name]')).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('[data-new-layout-form]')).toBeHidden()
+
+  await act(page, 'new-layout')
+  await page.mouse.click(5, 5)
+  await expect(page.locator('[data-new-layout-form]')).toBeHidden()
+  expect(deck.source).toBe(SOURCE)
+  expect(deck.layouts).toEqual(['title-slide', 'title-body', 'quote'])
 })
 
 test('Given a layout\'s CSS edited, when saved, then the files are written and Save turns off; HTML that does not parse is refused with the reason and kept unsaved', async ({ page }) => {
@@ -486,13 +515,13 @@ for (const action of ['create', 'duplicate', 'delete'] as const) {
 
     await row(page, 'quote').click()
     if (action === 'create') {
-      await page.locator('[data-new-layout]').click()
+      await act(page, 'new-layout')
       await page.locator('[data-new-layout-name]').fill('pull-quote')
       await page.locator('[data-create-layout]').click()
     } else if (action === 'duplicate') {
-      await page.locator('[data-duplicate-layout]').click()
+      await act(page, 'duplicate')
     } else {
-      await page.locator('[data-delete-layout]').click()
+      await act(page, 'delete')
       await page.locator('[data-confirm-delete-layout]').click()
     }
 
@@ -542,7 +571,7 @@ test('Given unsaved edits to a layout, when a new layout is created, then nothin
 
   await row(page, 'quote').click()
   await fillEditor(page, '<section>edited</section>', 'layout-html')
-  await page.locator('[data-new-layout]').click()
+  await act(page, 'new-layout')
   await page.locator('[data-new-layout-name]').fill('pull-quote')
   await page.locator('[data-create-layout]').click()
 
@@ -613,12 +642,9 @@ test.describe('the layout editor in vim mode', () => {
     await expect.poll(() => editorText(page, 'layout-css')).toBe('.peitho-slide.layout-quote {}dd')
   })
 
-  test('Given vim mode is on and a delete waiting to be confirmed, when Escape leaves insert mode in the layout editor, then only vim reacts', async ({ page }) => {
+  test('Given vim mode is on, when Escape leaves insert mode in the layout editor, then only vim reacts', async ({ page }) => {
     await openLayoutScreen(page, deckOf({ settings: { vimMode: true }, layoutFiles: QUOTE_FILES }))
     await row(page, 'quote').click()
-    await page.locator('[data-delete-layout]').click()
-    await page.locator('[data-new-layout]').click()
-    await expect(page.locator('[data-delete-layout-panel]')).toBeVisible()
 
     await editorContent(page, 'layout-html').click()
     await page.keyboard.type('i')
@@ -626,16 +652,30 @@ test.describe('the layout editor in vim mode', () => {
     await page.keyboard.press('Escape')
 
     await expect(vimStatus(page)).not.toContainText('INSERT')
+    await expect(row(page, 'quote')).toHaveAttribute('aria-current', 'true')
+    await expect(page.locator('[data-layout-screen]')).toBeVisible()
+    await expect.poll(() => editorText(page, 'layout-html')).toBe(QUOTE_FILES.quote.html)
+  })
+
+  test('Given vim mode is on and focus in the layout editor, when Delete is chosen from the menu, then the modal takes focus so vim keys don\'t reach the editor', async ({ page }) => {
+    await openLayoutScreen(page, deckOf({ settings: { vimMode: true }, layoutFiles: QUOTE_FILES }))
+    await row(page, 'quote').click()
+    await editorContent(page, 'layout-html').click()
+
+    await act(page, 'delete', 'quote')
     await expect(page.locator('[data-delete-layout-panel]')).toBeVisible()
-    await expect(page.locator('[data-new-layout-form]')).toBeVisible()
-    await expect(row(page, 'quote')).toBeVisible()
+    await page.keyboard.type('dd')
+
+    await expect.poll(() => editorText(page, 'layout-html')).toBe(QUOTE_FILES.quote.html)
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-delete-layout-panel]')).toBeHidden()
   })
 
   test('Given typing in the layout editor after a slide change, when Edit > Undo is chosen there, then the typing is undone and the slide change stays', async ({ page }) => {
     const deck = deckOf({ layoutFiles: QUOTE_FILES })
     await openLayoutScreen(page, deck)
     await row(page, 'quote').click()
-    await page.locator('[data-apply-layout]').click()
+    await act(page, 'apply')
     await expect.poll(() => slideConfigs(deck.source)[0]).toEqual({ key: 'cover', layout: 'quote' })
 
     await editorContent(page, 'layout-html').click()
