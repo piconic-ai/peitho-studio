@@ -14,7 +14,7 @@ from the app (its own `package.json` and lockfile), living in `site/`.
   - a "Built on Peitho" card: Peitho's one-line description and a small
     Markdown-to-slide illustration, linking to
     [peitho.gosu.ke](https://peitho.gosu.ke);
-  - a Download section listing every build as an accordion.
+  - a Download section with a Homebrew installation command and every build listed as an accordion.
   It reads without JavaScript, with plain links to GitHub Releases.
 - [BarefootJS](https://barefootjs.dev) (CSR adapter, compiled by
   `@barefootjs/vite`): `src/components/DownloadPanel.tsx`, mounted twice
@@ -44,7 +44,9 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 
 ## Hero demo
 
-`public/studio-demo.mp4` (1280×800) records the real Studio frontend: click a title, type a comment, send it, then see an updated title and an Agent reply. The e2e Tauri IPC mock and fake crit session simulate the agent and file change; no live AI service runs during capture. The script asserts the updated preview and reply before exporting the video and the final-frame WebP poster (`studio.webp`, `studio@2x.webp`).
+`public/studio-demo.mp4` (1280×800) records the real Studio frontend in two steps: edit a Markdown title and watch the HTML preview update, then ask the Agent to research renewable-capacity data and add a JavaScript-animated bar chart. The slide layout and chart use HTML/CSS; their reveal and bar animations run through JavaScript's Web Animations API inside Studio's trusted slide canvas.
+
+`site/scripts/demo-deck.ts` holds the capture fixture, HTML layout, animation script and data-source URLs. The chart uses IRENA's published annual capacity additions (473 GW in 2023 and 585 GW in 2024), with an on-slide source citation. Agent research and replies are prerecorded via the e2e Tauri IPC mock and fake crit session; no live AI service runs during capture. The script verifies the directly edited title, externally updated chart, running JavaScript animation and Agent reply, then exports the video and final-frame WebP posters (`studio.webp`, `studio@2x.webp`).
 
 The player has native controls, stays paused until played, and has no audio. A visible caption explains the sequence. The CSP allows local media. Regenerate from the repository root with Chrome and `ffmpeg` installed:
 
