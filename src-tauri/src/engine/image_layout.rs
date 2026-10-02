@@ -557,4 +557,57 @@ mod tests {
             assert_eq!(files_under(dir.path()), before);
         }
     }
+
+    // --- a deck holding the standard layouts ---
+
+    /// A deck folder with the standard layouts and their CSS (and
+    /// `css/base.css`), as `create_deck` writes them — minus the image
+    /// layout unless `with_image_layout`.
+    fn standard_deck(source: &str, with_image_layout: bool) -> (tempfile::TempDir, PathBuf) {
+        let mut layouts: Vec<(String, &str)> =
+            builtin::STANDARD_LAYOUTS.iter().map(|layout| (format!("{}.html", layout.name), layout.html)).collect();
+        let mut css: Vec<(String, &str)> =
+            builtin::STANDARD_LAYOUTS.iter().map(|layout| (format!("{}.css", layout.name), layout.css)).collect();
+        css.push(("base.css".to_string(), builtin::BASE_CSS));
+        if with_image_layout {
+            layouts.push(("title-body-image.html".to_string(), builtin::IMAGE_LAYOUT_HTML));
+            css.push(("title-body-image.css".to_string(), builtin::IMAGE_LAYOUT_CSS));
+        }
+        fn borrow<'a>(files: &'a [(String, &'static str)]) -> Vec<(&'a str, &'static str)> {
+            files.iter().map(|(name, content)| (name.as_str(), *content)).collect()
+        }
+        deck(&borrow(&layouts), &borrow(&css), source)
+    }
+
+    #[test]
+    fn given_a_standard_layout_deck_without_the_image_layout_when_it_is_added_then_no_other_slide_changes_layout() {
+        let source = "<!-- {\"key\":\"cover\",\"layout\":\"title-slide\"} -->\n# Cover\n\n---\n\n\
+# With code\n\n```rust\nfn main() {}\n```\n\n---\n\n\
+<!-- {\"key\":\"cols\",\"layout\":\"two-column\"} -->\n# Columns\n\n---\n\n\
+# A photo\n\n![](img/photo.png)\n";
+        let (_dir, deck_path) = standard_deck(source, false);
+        let without_photo = source.rsplit_once("\n---\n").unwrap().0;
+        let before = render_source(&deck_path, without_photo).unwrap_or_else(|err| panic!("{err}"));
+
+        let written = add_image_layout(&deck_path, source, 3).unwrap_or_else(|err| panic!("{err}"));
+
+        assert_eq!(written, vec!["layouts/title-body-image.html", "css/title-body-image.css"]);
+        let after = render_source(&deck_path, source).unwrap_or_else(|err| panic!("{err}"));
+        assert_eq!(after.slide_layouts["a-photo"], IMAGE_LAYOUT_NAME);
+        for key in ["cover", "with-code", "cols"] {
+            assert_eq!(after.slide_layouts[key], before.slide_layouts[key], "slide '{key}' changed layout");
+        }
+    }
+
+    #[test]
+    fn adversarial_given_a_deck_created_with_the_image_layout_when_it_is_added_again_then_it_is_refused_and_nothing_is_written() {
+        let source = "<!-- {\"key\":\"x\",\"layout\":\"title-body\"} -->\n# Title\n\n![](img/photo.png)\n";
+        let (dir, deck_path) = standard_deck(source, true);
+        let before = files_under(dir.path());
+
+        let err = add_image_layout(&deck_path, source, 0).unwrap_err();
+
+        assert!(err.contains("already exists"), "{err}");
+        assert_eq!(files_under(dir.path()), before);
+    }
 }
