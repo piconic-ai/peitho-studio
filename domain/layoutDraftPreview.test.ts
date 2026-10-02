@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  NO_DRAFT_PREVIEW, absolutizedDraft, draftPreviewError, draftPreviewFailed, draftPreviewRendered, previewToDraw, requestDraftPreview, resetDraftPreview,
+  NO_DRAFT_PREVIEW, absolutizedDraft, draftFontFaces, draftPreviewError, draftPreviewFailed, draftPreviewRendered, previewToDraw, requestDraftPreview, resetDraftPreview,
 } from './layoutDraftPreview'
 
 const A = { fragment: '<section>a</section>', css: '.a {}' }
@@ -18,6 +18,28 @@ describe('absolutizedDraft', () => {
     expect(absolutizedDraft(absolute, 'http://127.0.0.1:5/')).toEqual(absolute)
     expect(absolutizedDraft({ fragment: '', css: '' }, 'http://127.0.0.1:5/')).toEqual({ fragment: '', css: '' })
     expect(() => absolutizedDraft({ fragment: '<img src="assets/a.png">', css: '' }, '')).not.toThrow()
+  })
+})
+
+describe('draftFontFaces', () => {
+  const DRAFT = '@font-face { font-family: "Draft"; src: url(http://h/fonts/d.woff2); }\n.x { font-family: "Draft"; }'
+
+  test('spec: Given a drawn draft adding a face, Then that face is registered; the saved preview registers none', () => {
+    expect(draftFontFaces({ css: DRAFT }, '')).toBe('@font-face { font-family: "Draft"; src: url(http://h/fonts/d.woff2); }')
+    expect(draftFontFaces({ css: null }, '')).toBe('')
+  })
+
+  test('adversarial: Given a face the saved deck already has (whitespace aside), Then it isn\'t added again; other faces are', () => {
+    const saved = '@font-face {\n  font-family: "Draft";\n  src: url(http://h/fonts/d.woff2);\n}'
+    expect(draftFontFaces({ css: DRAFT }, saved)).toBe('')
+    const two = '@font-face { font-family: "A"; src: url(a.woff2); } @FONT-FACE { font-family: "B"; src: url(b.woff2); }'
+    expect(draftFontFaces({ css: two }, '@font-face { font-family: "A"; src: url(a.woff2); }')).toBe('@FONT-FACE { font-family: "B"; src: url(b.woff2); }')
+  })
+
+  test('adversarial: Given draft CSS with no faces, empty, or a broken unclosed face, Then nothing is registered', () => {
+    expect(draftFontFaces({ css: '' }, '')).toBe('')
+    expect(draftFontFaces({ css: '.x { color: red; }' }, '')).toBe('')
+    expect(draftFontFaces({ css: '@font-face { font-family: "X"; src: url(x.woff2);' }, '')).toBe('')
   })
 })
 

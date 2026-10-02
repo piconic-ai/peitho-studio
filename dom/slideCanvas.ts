@@ -88,6 +88,23 @@ export function ensureFontFaces(fontFaceCss: string): void {
   if (styleEl.textContent !== fontFaceCss) styleEl.textContent = fontFaceCss
 }
 
+const DRAFT_FONT_FACE_STYLE_ATTR = 'data-peitho-draft-fonts'
+
+/** Registers `fontFaceCss` — the `@font-face` rules a layout draft in the
+ * layout editor brings (`draftFontFaces`) — in a `<style>` of its own
+ * beside `ensureFontFaces`' deck one, for the same reason (font
+ * registration inside a shadow tree is unconfirmed on WKWebView). `''`
+ * empties it, dropping those faces for the whole page again. */
+export function setDraftFontFaces(fontFaceCss: string): void {
+  let styleEl = document.head.querySelector<HTMLStyleElement>(`style[${DRAFT_FONT_FACE_STYLE_ATTR}]`)
+  if (!styleEl) {
+    styleEl = document.createElement('style')
+    styleEl.setAttribute(DRAFT_FONT_FACE_STYLE_ATTR, '')
+    document.head.appendChild(styleEl)
+  }
+  if (styleEl.textContent !== fontFaceCss) styleEl.textContent = fontFaceCss
+}
+
 // How many queued-microtask retries `mountSlideCanvas` allows before giving
 // up on a host that never connects — see the function's doc comment. Sized
 // generously above the observed single-retry case, not tuned to any

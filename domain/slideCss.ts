@@ -34,9 +34,14 @@ export function absolutizeCssUrls(css: string, baseUrl: string): string {
  * `todo/thumbnail-iframe-removal.md`). Assumes `@font-face` bodies never
  * nest braces, true of CSS syntax generally. */
 export function splitFontFaceRules(css: string): { fontFaces: string; rest: string } {
-  const fontFaces = css.match(FONT_FACE_RULE_PATTERN) ?? []
+  const fontFaces = fontFaceRules(css)
   const rest = css.replace(FONT_FACE_RULE_PATTERN, '')
   return { fontFaces: fontFaces.join('\n'), rest }
+}
+
+/** Each `@font-face` rule of `css`, in order, as written. */
+export function fontFaceRules(css: string): string[] {
+  return css.match(FONT_FACE_RULE_PATTERN) ?? []
 }
 
 export function scopeRootToHost(css: string): string {

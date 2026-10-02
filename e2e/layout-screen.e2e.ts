@@ -764,6 +764,23 @@ test.describe('the layout preview while editing', () => {
     await expect(preview(page).locator('img')).toHaveAttribute('src', 'http://localhost:9/assets/bbbb-logo.png')
   })
 
+  test('Given a font face added in the draft CSS, then it is registered for the preview, and dropped once the draft is reverted', async ({ page }) => {
+    await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' }))
+    await row(page, 'quote').click()
+    await page.locator('[data-layout-tab="css"]').click()
+    const fontFamilies = () => page.evaluate(() => [...document.fonts].map(face => face.family.replace(/"/g, '')))
+    const draftFonts = () => page.evaluate(() => document.querySelector('style[data-peitho-draft-fonts]')?.textContent ?? '')
+
+    await fillEditor(page, '@font-face { font-family: "DraftFace"; src: url(fonts/draft.woff2); }\n.peitho-slide.layout-quote h1 { font-family: "DraftFace"; }', 'layout-css')
+
+    await expect.poll(fontFamilies).toContain('DraftFace')
+    await expect.poll(draftFonts).toContain('http://localhost:9/fonts/draft.woff2')
+
+    await page.locator('[data-revert-layout]').click()
+    await expect.poll(fontFamilies).not.toContain('DraftFace')
+    await expect.poll(draftFonts).toBe('')
+  })
+
   test('Given a draft previewed, when it is reverted or another layout is opened, then the saved preview comes back', async ({ page }) => {
     await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' }))
     await row(page, 'quote').click()

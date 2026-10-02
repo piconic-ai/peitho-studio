@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { absolutizeCssUrls, splitFontFaceRules, scopeRootToHost } from './slideCss'
+import { absolutizeCssUrls, fontFaceRules, splitFontFaceRules, scopeRootToHost } from './slideCss'
 
 // The exact `@font-face` shape emitted by the bundled base theme
 // (`src-tauri/src/engine/builtin/base.css`), which `theme-fonts/*` on the
@@ -77,6 +77,17 @@ describe('absolutizeCssUrls', () => {
   test('adversarial: CSS with no url() at all passes through unchanged', () => {
     const css = '.peitho-slide { color: red; }'
     expect(absolutizeCssUrls(css, 'http://localhost/')).toBe(css)
+  })
+})
+
+describe('fontFaceRules', () => {
+  test('spec: Given two faces among other rules, Then each face comes back as written, in order', () => {
+    expect(fontFaceRules('@font-face { font-family: A; } .x {} @font-face{font-family:B}')).toEqual(['@font-face { font-family: A; }', '@font-face{font-family:B}'])
+  })
+
+  test('adversarial: Given no faces or empty CSS, Then there are none', () => {
+    expect(fontFaceRules('')).toEqual([])
+    expect(fontFaceRules('.font-face { color: red }')).toEqual([])
   })
 })
 

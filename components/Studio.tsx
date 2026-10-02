@@ -62,7 +62,7 @@ import { readPastedImage } from '../dom/imagePaste'
 import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
 import { focusSettingsPanel, restoreFocusAfterSettingsPanel } from '../dom/settingsPanel'
 import { slideRowMenuAnchor } from '../dom/slideRow'
-import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, remountSlideCanvases, setManifestKeysSource, setScriptsBlockedListener, setSlideScriptsTrusted } from '../dom/slideCanvas'
+import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, remountSlideCanvases, setDraftFontFaces, setManifestKeysSource, setScriptsBlockedListener, setSlideScriptsTrusted } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
 import { createLayoutScreenStore } from '../state/layoutScreenStore'
 import { createRenderStore } from '../state/renderStore'
@@ -104,7 +104,7 @@ import { SlideList } from './SlideList'
 import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
 import { LayoutContextMenu, type LayoutMenuEntry } from './LayoutContextMenu'
 import { focusDeleteLayoutDialog, focusNewLayoutName } from '../dom/layoutModals'
-import { absolutizedDraft, draftPreviewError, previewToDraw } from '../domain/layoutDraftPreview'
+import { absolutizedDraft, draftFontFaces, draftPreviewError, previewToDraw } from '../domain/layoutDraftPreview'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { type LayoutMenuAction, layoutMenuItems, layoutMenuLabel, layoutMenuPosition, layoutMenuTarget, layoutMenuTitle } from '../domain/layoutMenu'
 
@@ -787,6 +787,11 @@ export function Studio() {
   createEffect(() => {
     const css = layoutPreviewDraw().css
     layoutDraftStylesheet.replaceSync(css === null ? ui.layoutPreviewStylesheetText() : scopeRootToHost(splitFontFaceRules(css).rest))
+  })
+  // A draft's own `@font-face` rules: registered while its preview is
+  // drawn, dropped as soon as the saved preview is drawn again.
+  createEffect(() => {
+    setDraftFontFaces(draftFontFaces(layoutPreviewDraw(), render.fontFaceCss()))
   })
 
   // The error bar's way out of peitho-core's "no slot accepts image" (see

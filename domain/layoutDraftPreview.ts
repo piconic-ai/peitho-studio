@@ -2,7 +2,7 @@
 // rendered from its unsaved HTML/CSS (`preview_layout_draft`) while the
 // user types. Pure — the store holds one `DraftPreview`, `Studio.tsx`
 // debounces the typing and makes the calls.
-import { absolutizeCssUrls } from './slideCss'
+import { absolutizeCssUrls, fontFaceRules } from './slideCss'
 import { absolutizeFragmentUrls } from './slideFragment'
 
 /** One rendered draft: the slide's fragment and the CSS it's drawn with. */
@@ -65,6 +65,19 @@ export function previewToDraw(state: DraftPreview, name: string | null, saved: s
  * The command has the server serve the files the draft names. */
 export function absolutizedDraft(rendered: RenderedDraft, baseUrl: string): RenderedDraft {
   return { fragment: absolutizeFragmentUrls(rendered.fragment, baseUrl), css: absolutizeCssUrls(rendered.css, baseUrl) }
+}
+
+/** The `@font-face` rules the drawn draft (`previewToDraw`) brings that the
+ * saved deck's (`savedFontFaces`, already registered) doesn't have — for
+ * `dom/slideCanvas.ts` to register beside the deck's while the draft is
+ * drawn. `''` when the saved preview is drawn (`css: null`), so a reset,
+ * a save or another layout drops the draft's faces. Compared with
+ * whitespace collapsed, so a face the deck already has isn't added twice. */
+export function draftFontFaces(drawn: { css: string | null }, savedFontFaces: string): string {
+  if (drawn.css === null) return ''
+  const normalize = (rule: string) => rule.replace(/\s+/g, ' ').trim()
+  const saved = new Set(fontFaceRules(savedFontFaces).map(normalize))
+  return fontFaceRules(drawn.css).filter(rule => !saved.has(normalize(rule))).join('\n')
 }
 
 /** The error to show under the preview of layout `name`, `''` for none. */
