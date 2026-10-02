@@ -83,6 +83,37 @@ export interface Messages {
   layoutChecking: string
   layoutMismatch: (layout: string, reason: string) => string
 
+  // Layout screen (the header's Slides / Layouts switch)
+  studioModeSlides: string
+  studioModeLayouts: string
+  layoutList: string
+  newLayout: string
+  newLayoutName: string
+  newLayoutFrom: string
+  blankLayout: string
+  layoutNameEmpty: string
+  layoutNameTooLong: string
+  layoutNameInvalid: string
+  layoutNameStart: string
+  layoutNameTaken: string
+  applyLayoutToSlide: string
+  /** Why Apply is off: no slide is selected in the slides screen. */
+  applyLayoutNeedsSlide: string
+  duplicateLayout: string
+  deleteLayout: string
+  layoutUsage: (count: number) => string
+  /** Why Delete is off for the deck's only layout. */
+  onlyLayoutCannotBeDeleted: string
+  deleteLayoutConfirm: (layout: string) => string
+  deleteLayoutMoveSlides: (layout: string, count: number) => string
+  deleteLayoutMoveTo: string
+  deleting: string
+  saveLayout: string
+  savingLayout: string
+  revertLayout: string
+  layoutUnsaved: string
+  layoutActionFailed: (error: string) => string
+
   // Slide preview
   previewAsPhone: string
   previewPc: string
@@ -166,6 +197,10 @@ export interface Messages {
   imageSlotAddLayout: string
   imageSlotAddingLayout: string
   imageLayoutAdded: string
+  layoutCreated: (layout: string) => string
+  layoutDeleted: (layout: string) => string
+  layoutSaved: (layout: string) => string
+  layoutApplied: (layout: string) => string
   imageLayoutAddFailed: (error: string) => string
 
   // About window
@@ -243,6 +278,34 @@ const en: Messages = {
   layoutChecking: 'Still checking which layouts fit this slide — try again in a moment.',
   layoutMismatch: (layout, reason) => `"${layout}" doesn't fit this slide: ${reason}`,
 
+  studioModeSlides: 'Slides',
+  studioModeLayouts: 'Layouts',
+  layoutList: 'Layouts',
+  newLayout: 'New Layout',
+  newLayoutName: 'Layout name (a-z, 0-9, -, _)',
+  newLayoutFrom: 'Start from',
+  blankLayout: 'Blank (title only)',
+  layoutNameEmpty: 'Enter a name for the layout',
+  layoutNameTooLong: 'The name is too long',
+  layoutNameInvalid: 'Use only letters a-z, digits, "-" and "_"',
+  layoutNameStart: 'Start the name with a letter or a digit',
+  layoutNameTaken: 'The deck already has a layout with this name',
+  applyLayoutToSlide: 'Apply to Slide',
+  applyLayoutNeedsSlide: 'Select a slide in Slides first',
+  duplicateLayout: 'Duplicate',
+  deleteLayout: 'Delete',
+  layoutUsage: count => (count === 0 ? 'Unused' : count === 1 ? '1 slide' : `${String(count)} slides`),
+  onlyLayoutCannotBeDeleted: "The deck's only layout can't be deleted",
+  deleteLayoutConfirm: layout => `Delete "${layout}"? Its files are removed from layouts/ and css/.`,
+  deleteLayoutMoveSlides: (layout, count) => `${count === 1 ? '1 slide uses' : `${String(count)} slides use`} "${layout}". Move ${count === 1 ? 'it' : 'them'} to another layout before it is deleted.`,
+  deleteLayoutMoveTo: 'Move to',
+  deleting: 'Deleting…',
+  saveLayout: 'Save',
+  savingLayout: 'Saving…',
+  revertLayout: 'Revert',
+  layoutUnsaved: 'Unsaved changes',
+  layoutActionFailed: error => `Could not change the layouts: ${error}`,
+
   previewAsPhone: 'Preview as phone',
   previewPc: 'PC',
   previewPhone: 'Phone',
@@ -316,6 +379,10 @@ const en: Messages = {
   imageSlotAddLayout: 'Add an Image Layout',
   imageSlotAddingLayout: 'Adding the Image Layout…',
   imageLayoutAdded: 'Added the title-body-image layout to layouts/',
+  layoutCreated: layout => `Added the ${layout} layout`,
+  layoutDeleted: layout => `Deleted the ${layout} layout`,
+  layoutSaved: layout => `Saved the ${layout} layout`,
+  layoutApplied: layout => `Applied the ${layout} layout to the slide`,
   imageLayoutAddFailed: error => `Could not add the image layout: ${error}`,
 
   // Same words as the site's (site/index.html).
@@ -393,6 +460,34 @@ const ja: Messages = {
   layoutChecking: 'このスライドに合うレイアウトを確認しています。少し待ってからもう一度選んでください。',
   layoutMismatch: (layout, reason) => `「${layout}」はこのスライドに合いません: ${reason}`,
 
+  studioModeSlides: 'スライド',
+  studioModeLayouts: 'レイアウト',
+  layoutList: 'レイアウト一覧',
+  newLayout: '新規レイアウト',
+  newLayoutName: 'レイアウト名(英数字・-・_)',
+  newLayoutFrom: '元にするレイアウト',
+  blankLayout: '空白(タイトルのみ)',
+  layoutNameEmpty: 'レイアウト名を入力してください',
+  layoutNameTooLong: '名前が長すぎます',
+  layoutNameInvalid: '英字(a-z)・数字・「-」「_」だけを使ってください',
+  layoutNameStart: '名前は英字か数字で始めてください',
+  layoutNameTaken: '同じ名前のレイアウトがすでにあります',
+  applyLayoutToSlide: 'スライドに適用',
+  applyLayoutNeedsSlide: '先にスライド画面でスライドを選択してください',
+  duplicateLayout: '複製',
+  deleteLayout: '削除',
+  layoutUsage: count => (count === 0 ? '未使用' : `${String(count)}枚で使用中`),
+  onlyLayoutCannotBeDeleted: 'デッキに1つしかないレイアウトは削除できません',
+  deleteLayoutConfirm: layout => `「${layout}」を削除しますか? layouts/ と css/ からファイルが削除されます。`,
+  deleteLayoutMoveSlides: (layout, count) => `「${layout}」は${String(count)}枚のスライドで使われています。削除する前に、別のレイアウトへ移してください。`,
+  deleteLayoutMoveTo: '移動先',
+  deleting: '削除中…',
+  saveLayout: '保存',
+  savingLayout: '保存中…',
+  revertLayout: '元に戻す',
+  layoutUnsaved: '未保存の変更があります',
+  layoutActionFailed: error => `レイアウトを変更できませんでした: ${error}`,
+
   previewAsPhone: 'スマートフォン表示でプレビュー',
   previewPc: 'PC',
   previewPhone: 'スマートフォン',
@@ -466,6 +561,10 @@ const ja: Messages = {
   imageSlotAddLayout: '画像用レイアウトを追加',
   imageSlotAddingLayout: '画像用レイアウトを追加しています…',
   imageLayoutAdded: '画像用レイアウト title-body-image を layouts/ に追加しました',
+  layoutCreated: layout => `レイアウト ${layout} を追加しました`,
+  layoutDeleted: layout => `レイアウト ${layout} を削除しました`,
+  layoutSaved: layout => `レイアウト ${layout} を保存しました`,
+  layoutApplied: layout => `スライドにレイアウト ${layout} を適用しました`,
   imageLayoutAddFailed: error => `画像用レイアウトを追加できませんでした: ${error}`,
 
   aboutDescription: 'Peithoでスライドを書く。素のMarkdownとHTMLなので、AIに手伝ってもらえます。',

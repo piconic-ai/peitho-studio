@@ -28,10 +28,22 @@ describe('messagesFor', () => {
       expect(messages.unsupportedImageFiles('diagram.svg, notes.txt')).toContain('diagram.svg, notes.txt')
       expect(messages.imageImportFailed('permission denied')).toContain('permission denied')
       expect(messages.imageLayoutAddFailed('already exists')).toContain('already exists')
+      expect(messages.layoutActionFailed('slide 2 is on it')).toContain('slide 2 is on it')
+      expect(messages.deleteLayoutConfirm('quote')).toContain('quote')
+      expect(messages.deleteLayoutMoveSlides('quote', 3)).toContain('quote')
+      expect(messages.deleteLayoutMoveSlides('quote', 3)).toContain('3')
       const mismatch = messages.layoutMismatch('cover', "missing 'body' slot")
       expect(mismatch).toContain('cover')
       expect(mismatch).toContain("missing 'body' slot")
     }
+  })
+
+  test('spec: Given a layout\'s slide count, when worded, then none, one and several read differently in English', () => {
+    const en = messagesFor('en')
+    expect(en.layoutUsage(0)).toBe('Unused')
+    expect(en.layoutUsage(1)).toBe('1 slide')
+    expect(en.layoutUsage(12)).toBe('12 slides')
+    expect(messagesFor('ja').layoutUsage(2)).toContain('2')
   })
 
   test('spec: Given English, when a layout mismatch is worded, then it reads as before the UI was translated', () => {

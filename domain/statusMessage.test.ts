@@ -17,6 +17,10 @@ const EVERY_STATUS: StatusMessage[] = [
   { kind: 'imported-images', count: 1 },
   { kind: 'imported-images', count: 3 },
   { kind: 'image-layout-added' },
+  { kind: 'layout-created', layout: 'quote' },
+  { kind: 'layout-deleted', layout: 'quote' },
+  { kind: 'layout-saved', layout: 'quote' },
+  { kind: 'layout-applied', layout: 'quote' },
 ]
 
 describe('statusText', () => {
@@ -49,6 +53,14 @@ describe('statusText', () => {
     const text = statusText(messagesFor('en'), { kind: 'image-layout-added' })
     expect(text).toContain('title-body-image')
     expect(text).toContain('layouts/')
+  })
+
+  test('spec: Given a change made on the layout screen, when worded in each language, then the status names the layout', () => {
+    for (const language of ['en', 'ja'] as const) {
+      for (const kind of ['layout-created', 'layout-deleted', 'layout-saved', 'layout-applied'] as const) {
+        expect(statusText(messagesFor(language), { kind, layout: 'quote' })).toContain('quote')
+      }
+    }
   })
 
   test('spec: Given nothing to report, when worded, then the status bar is empty', () => {

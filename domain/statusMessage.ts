@@ -16,6 +16,10 @@ export type StatusMessage =
   | { kind: 'importing-images'; count: number }
   | { kind: 'imported-images'; count: number }
   | { kind: 'image-layout-added' }
+  | { kind: 'layout-created'; layout: string }
+  | { kind: 'layout-deleted'; layout: string }
+  | { kind: 'layout-saved'; layout: string }
+  | { kind: 'layout-applied'; layout: string }
 
 /** `status` worded with `messages` — empty for `none`. */
 export function statusText(messages: Messages, status: StatusMessage): string {
@@ -32,6 +36,10 @@ export function statusText(messages: Messages, status: StatusMessage): string {
     case 'importing-images': return messages.importingImages(status.count)
     case 'imported-images': return messages.importedImages(status.count)
     case 'image-layout-added': return messages.imageLayoutAdded
+    case 'layout-created': return messages.layoutCreated(status.layout)
+    case 'layout-deleted': return messages.layoutDeleted(status.layout)
+    case 'layout-saved': return messages.layoutSaved(status.layout)
+    case 'layout-applied': return messages.layoutApplied(status.layout)
     default: {
       const _exhaustive: never = status
       return _exhaustive
