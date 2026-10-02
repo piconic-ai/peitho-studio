@@ -1,0 +1,17 @@
+/* Big number: a figure in very large type (written as the slide's
+   heading) with a short explanation under it. */
+.peitho-slide.layout-big-number {
+  justify-content: center;
+  gap: 16px;
+}
+
+.peitho-slide.layout-big-number h1 {
+  font-size: 160px;
+  line-height: 1;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.layout-big-number .slot-body p {
+  margin: 0 0 12px;
+}

@@ -1,0 +1,5 @@
+/* Title only: a title at the top and nothing else, leaving the rest of the
+   slide open. */
+.peitho-slide.layout-title-only {
+  justify-content: flex-start;
+}

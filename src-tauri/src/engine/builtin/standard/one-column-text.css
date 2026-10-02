@@ -1,0 +1,24 @@
+/* One column text: a title and body text in a narrow column down the left
+   side of the slide. */
+.peitho-slide.layout-one-column-text {
+  gap: 24px;
+}
+
+.peitho-slide.layout-one-column-text h1,
+.layout-one-column-text .body {
+  max-width: 40%;
+}
+
+.peitho-slide.layout-one-column-text h1 {
+  font-size: 40px;
+  line-height: 1.15;
+}
+
+.layout-one-column-text .slot-body {
+  font-size: 22px;
+  line-height: 1.45;
+}
+
+.layout-one-column-text .slot-body p {
+  margin: 0 0 16px;
+}

@@ -1,0 +1,5 @@
+/* Blank: no title, only optional body content from the top. There's no
+   title here: write plain text, lists and the like, not a heading. */
+.peitho-slide.layout-blank {
+  justify-content: flex-start;
+}

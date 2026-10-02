@@ -1,0 +1,24 @@
+/* Title slide: the deck's title with an optional subtitle under it,
+   centered on the slide. The subtitle goes in a `::: {slot=subtitle}`
+   block. */
+.peitho-slide.layout-title-slide {
+  justify-content: center;
+  align-items: center;
+  gap: 24px;
+  text-align: center;
+}
+
+.peitho-slide.layout-title-slide h1 {
+  font-size: 72px;
+  line-height: 1.1;
+}
+
+.layout-title-slide .slot-subtitle {
+  font-size: 32px;
+  line-height: 1.35;
+  color: #5f5b52;
+}
+
+.layout-title-slide .slot-subtitle p {
+  margin: 0;
+}

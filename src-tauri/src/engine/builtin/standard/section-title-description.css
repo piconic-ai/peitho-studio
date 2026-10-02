@@ -1,0 +1,51 @@
+/* Section title and description: the section's title (and an optional
+   `::: {slot=subtitle}`) on the left half, its description on a shaded
+   right half. */
+.peitho-slide.layout-section-title-description {
+  flex-direction: row;
+  gap: 0;
+  padding: 0;
+}
+
+.layout-section-title-description .lead,
+.layout-section-title-description .description {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+  overflow: hidden;
+}
+
+.layout-section-title-description .lead {
+  padding: 64px 48px 64px 72px;
+}
+
+.layout-section-title-description .description {
+  padding: 64px 72px 64px 48px;
+  background: #e8e4d8;
+}
+
+.peitho-slide.layout-section-title-description h1 {
+  font-size: 52px;
+  line-height: 1.1;
+}
+
+.layout-section-title-description .slot-subtitle {
+  font-size: 28px;
+  line-height: 1.35;
+  color: #5f5b52;
+}
+
+.layout-section-title-description .slot-subtitle p {
+  margin: 0;
+}
+
+.layout-section-title-description .slot-body {
+  font-size: 24px;
+}
+
+.layout-section-title-description .slot-body p {
+  margin: 0 0 16px;
+}
