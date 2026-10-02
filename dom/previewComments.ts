@@ -144,12 +144,15 @@ export function watchPreviewLayout(onChange: () => void): () => void {
 /** Scrolls the comments column to `threadKey`'s card
  * (`data-review-thread`), for a pin clicked on the preview. */
 /** Puts the caret at the end of the unsent comment or reply being
- * rewritten, once its editor shows. */
+ * rewritten, once its editor shows. Leaves a field that already has focus
+ * alone: whoever focused it first may have already selected its text to
+ * replace, and collapsing that selection would append instead. */
 export function focusUnsentEdit(): void {
   requestAnimationFrame(() => {
     const field = document.querySelector<HTMLTextAreaElement>('[data-review-editing="true"] [data-review-edit-box] textarea')
-    field?.focus()
-    field?.setSelectionRange(field.value.length, field.value.length)
+    if (field === null || field === document.activeElement) return
+    field.focus()
+    field.setSelectionRange(field.value.length, field.value.length)
   })
 }
 
