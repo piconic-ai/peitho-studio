@@ -106,3 +106,41 @@ describe('the layout screen\'s state', () => {
     })
   })
 })
+
+describe('the layout list\'s right-click menu', () => {
+  test('spec: Given a right-click on a layout with a slide to apply it to, When the fit check answers, Then the menu settles with it', () => {
+    createRoot(() => {
+      const layouts = createLayoutScreenStore()
+      const requestId = layouts.openMenuOnLayout('quote', 10, 20, true)
+      expect(requestId).not.toBeNull()
+      expect(layouts.menu()).toMatchObject({ kind: 'on-layout', name: 'quote', fit: { kind: 'checking' } })
+      layouts.settleMenuFit(requestId!, [{ layout: 'quote', fit: { kind: 'fits' } }])
+      expect(layouts.menu()).toMatchObject({ fit: { kind: 'checked' } })
+      layouts.closeMenu()
+      expect(layouts.menu().kind).toBe('closed')
+    })
+  })
+
+  test('adversarial: Given a second right-click before the first check answers, Then the first answer is dropped', () => {
+    createRoot(() => {
+      const layouts = createLayoutScreenStore()
+      const first = layouts.openMenuOnLayout('quote', 0, 0, true)!
+      const second = layouts.openMenuOnLayout('title-body', 0, 0, true)!
+      expect(second).not.toBe(first)
+      layouts.settleMenuFit(first, [])
+      expect(layouts.menu()).toMatchObject({ name: 'title-body', fit: { kind: 'checking' } })
+    })
+  })
+
+  test('adversarial: Given no slide to check against, or empty space, Then nothing waits on a check, and a move keeps what it targets', () => {
+    createRoot(() => {
+      const layouts = createLayoutScreenStore()
+      expect(layouts.openMenuOnLayout('quote', 0, 0, false)).toBeNull()
+      expect(layouts.menu()).toMatchObject({ fit: { kind: 'unavailable' } })
+      layouts.moveMenu({ x: 3, y: 4 })
+      expect(layouts.menu()).toMatchObject({ name: 'quote', x: 3, y: 4 })
+      layouts.openMenuOnList(5, 6)
+      expect(layouts.menu()).toEqual({ kind: 'on-list', x: 5, y: 6 })
+    })
+  })
+})

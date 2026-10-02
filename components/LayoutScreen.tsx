@@ -19,6 +19,9 @@ export interface LayoutScreenProps {
   rows: LayoutRow[]
   selectedName: string | null
   onSelect: (name: string) => void
+  /** A right-click on layout `name`'s row, or on the list's empty space
+   * (`null`) — opens the layout menu (`LayoutContextMenu.tsx`). */
+  onContextMenu: (name: string | null, event: MouseEvent) => void
   /** A layout's placeholder preview (`preview_layouts`), `''` for none. */
   fragmentOf: (name: string) => string
   layoutPreviewStylesheet: () => CSSStyleSheet
@@ -157,7 +160,18 @@ export function LayoutScreen(props: LayoutScreenProps) {
             </button>
           </div>
         </form>
-        <div className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-2">
+        <div
+          data-layout-rows
+          className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-2"
+          // A row's own handler is delegated to this same element, so both
+          // fire for a right-click on a row and `stopPropagation()` can't
+          // tell them apart (barefootjs#2930, see `SlideList.tsx`): this one
+          // skips a click that landed in a row.
+          onContextMenu={e => {
+            if ((e.target as Element).closest('[data-layout-row]')) return
+            props.onContextMenu(null, e)
+          }}
+        >
           {props.rows.map(row => (
             <button
               type="button"
@@ -165,6 +179,7 @@ export function LayoutScreen(props: LayoutScreenProps) {
               data-layout-row={row.name}
               aria-current={props.selectedName === row.name ? 'true' : 'false'}
               onClick={() => props.onSelect(row.name)}
+              onContextMenu={e => props.onContextMenu(row.name, e)}
               className={(props.selectedName === row.name ? 'border-primary bg-accent ' : 'border-transparent hover:bg-accent ') + 'flex flex-col gap-1 p-1.5 rounded-md border-2 text-left'}
             >
               <span

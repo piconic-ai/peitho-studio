@@ -67,6 +67,92 @@ test('Given layouts named like Object prototype members, when the screen opens, 
   await expect(page.locator('[data-layout-html]')).toHaveValue('<section class="peitho-slide layout-toString"></section>')
 })
 
+function layoutMenu(page: Page) {
+  return page.locator('[data-layout-menu]')
+}
+
+function layoutMenuItem(page: Page, action: string) {
+  return page.locator(`[data-layout-menu-item="${action}"]`)
+}
+
+test('Given a layout row, when it is right-clicked, then a menu offers Apply, Edit, Duplicate and Delete; Escape and a click outside close it', async ({ page }) => {
+  await openLayoutScreen(page, deckOf())
+
+  await row(page, 'quote').click({ button: 'right' })
+  await expect(layoutMenu(page)).toBeVisible()
+  await expect(layoutMenu(page).locator('[data-layout-menu-item]')).toHaveText(['Apply to Slide', 'Edit Layout', 'Duplicate Layout', 'Delete Layout'])
+  await expect(layoutMenuItem(page, 'apply')).toBeEnabled()
+
+  await page.keyboard.press('Escape')
+  await expect(layoutMenu(page)).toBeHidden()
+
+  await row(page, 'quote').click({ button: 'right' })
+  await expect(layoutMenu(page)).toBeVisible()
+  await page.mouse.click(5, 5)
+  await expect(layoutMenu(page)).toBeHidden()
+})
+
+test('Given the layout menu, when each item is chosen, then it acts on the right-clicked layout', async ({ page }) => {
+  const deck = deckOf()
+  await openLayoutScreen(page, deck)
+
+  await row(page, 'quote').click({ button: 'right' })
+  await layoutMenuItem(page, 'edit').click()
+  await expect(row(page, 'quote')).toHaveAttribute('aria-current', 'true')
+  await expect(layoutMenu(page)).toBeHidden()
+
+  await row(page, 'quote').click({ button: 'right' })
+  await layoutMenuItem(page, 'apply').click()
+  await expect.poll(() => slideConfigs(deck.source)[0]).toEqual({ key: 'cover', layout: 'quote' })
+
+  await row(page, 'title-slide').click({ button: 'right' })
+  await layoutMenuItem(page, 'duplicate').click()
+  await expect(row(page, 'title-slide-copy')).toHaveAttribute('aria-current', 'true')
+
+  await row(page, 'quote').click({ button: 'right' })
+  await layoutMenuItem(page, 'delete').click()
+  await expect(page.locator('[data-delete-layout-panel]')).toContainText('1 slide uses "quote"')
+})
+
+test('Given a layout the selected slide does not fit, when its row is right-clicked, then Apply is off with the reason', async ({ page }) => {
+  const verdicts = (): LayoutVerdict[] => [
+    { layout: 'title-slide', fit: { kind: 'fits' } },
+    { layout: 'title-body', fit: { kind: 'fits' } },
+    { layout: 'quote', fit: { kind: 'mismatch', reason: "unassigned content remains for missing 'body' slot" } },
+  ]
+  await openLayoutScreen(page, deckOf({ layoutVerdicts: verdicts }))
+
+  await row(page, 'quote').click({ button: 'right' })
+  await expect(layoutMenuItem(page, 'apply')).toBeDisabled()
+  await expect(layoutMenuItem(page, 'apply')).toHaveAttribute('title', "unassigned content remains for missing 'body' slot")
+  await page.keyboard.press('Escape')
+  await row(page, 'title-body').click({ button: 'right' })
+  await expect(layoutMenuItem(page, 'apply')).toBeEnabled()
+})
+
+test('Given the deck\'s only layout, when its row is right-clicked, then Delete is off with the reason', async ({ page }) => {
+  await openLayoutScreen(page, deckOf({ layouts: ['title-body'], source: SOURCE.replaceAll('title-slide', 'title-body') }))
+
+  await row(page, 'title-body').click({ button: 'right' })
+  await expect(layoutMenuItem(page, 'delete')).toBeDisabled()
+  await expect(layoutMenuItem(page, 'delete')).toHaveAttribute('title', "The deck's only layout can't be deleted")
+  await expect(layoutMenuItem(page, 'edit')).toBeEnabled()
+})
+
+test('Given empty space in the layout list, when it is right-clicked, then the menu offers New Layout, which opens the form', async ({ page }) => {
+  await openLayoutScreen(page, deckOf())
+
+  const list = page.locator('[data-layout-rows]')
+  const box = await list.boundingBox()
+  if (!box) throw new Error('the layout list has no box')
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height - 10, { button: 'right' })
+
+  await expect(layoutMenu(page).locator('[data-layout-menu-item]')).toHaveText(['New Layout'])
+  await layoutMenuItem(page, 'new-layout').click()
+  await expect(page.locator('[data-new-layout-form]')).toBeVisible()
+  await expect(layoutMenu(page)).toBeHidden()
+})
+
 test('Given a slide selected in Slides, when a layout is applied from the layout screen, then deck.md pins that slide to it and Undo takes it back', async ({ page }) => {
   const deck = deckOf()
   await openLayoutScreen(page, deck)

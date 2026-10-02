@@ -99,6 +99,7 @@ export interface Messages {
   applyLayoutToSlide: string
   /** Why Apply is off: no slide is selected in the slides screen. */
   applyLayoutNeedsSlide: string
+  editLayout: string
   duplicateLayout: string
   deleteLayout: string
   layoutUsage: (count: number) => string
@@ -298,6 +299,7 @@ const en: Messages = {
   layoutNameTaken: 'The deck already has a layout with this name',
   applyLayoutToSlide: 'Apply to Slide',
   applyLayoutNeedsSlide: 'Select a slide in Slides first',
+  editLayout: 'Edit Layout',
   duplicateLayout: 'Duplicate Layout',
   deleteLayout: 'Delete Layout',
   layoutUsage: count => (count === 0 ? 'Unused' : count === 1 ? '1 slide' : `${String(count)} slides`),
@@ -485,6 +487,7 @@ const ja: Messages = {
   layoutNameTaken: '同じ名前のレイアウトがすでにあります',
   applyLayoutToSlide: 'スライドに適用',
   applyLayoutNeedsSlide: '先にスライド画面でスライドを選択してください',
+  editLayout: 'レイアウトを編集',
   duplicateLayout: 'レイアウトを複製',
   deleteLayout: 'レイアウトを削除',
   layoutUsage: count => (count === 0 ? '未使用' : `${String(count)}枚で使用中`),

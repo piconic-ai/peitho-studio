@@ -54,7 +54,7 @@ import { type ScriptTrust, type ScriptTrustEvent, nextScriptTrust, scriptTrustOn
 import { takesCommandKeys, type VimMode } from '../domain/vimMode'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { startColumnResize } from '../dom/columnResize'
-import { blurEditorFieldOnRowPress, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
+import { blurEditorFieldOnRowPress, isInCodeEditor, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
 import { canReplayCodeEditorGroup, codeEditorPositionAt, codeEditorSelection, createCodeEditor, insertIntoCodeEditor, isolateCodeEditorHistory, replayCodeEditorGroup, replayFocusedCodeEditorHistory, restoreCodeEditor, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, snapshotCodeEditor, type CodeEditorOptions, type CodeEditorSnapshot } from '../dom/codeEditor'
 import { createEditorSlideStates } from '../dom/editorSlideStates'
 import { createVimClipboardBridge, onClipboardMayHaveChanged } from '../dom/vimClipboard'
@@ -102,6 +102,8 @@ import { SlideEditor } from './SlideEditor'
 import { SlideContextMenu } from './SlideContextMenu'
 import { SlideList } from './SlideList'
 import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
+import { LayoutContextMenu, type LayoutMenuEntry } from './LayoutContextMenu'
+import { type LayoutMenuAction, layoutMenuItems, layoutMenuLabel, layoutMenuPosition, layoutMenuTarget, layoutMenuTitle } from '../domain/layoutMenu'
 
 // Just the heading — `addSlide` attaches an explicit, collision-free
 // PageComment `key` around this (see its own comment for why).
@@ -1855,6 +1857,7 @@ export function Studio() {
 
   function setStudioMode(mode: StudioMode): void {
     ui.setStudioMode(mode)
+    layouts.closeMenu()
     if (mode === 'layouts') void enterLayoutScreen()
   }
 
@@ -1950,8 +1953,8 @@ export function Studio() {
     setStatusMessage({ kind: 'layout-created', layout: created })
   }
 
-  async function duplicateLayout(): Promise<void> {
-    const name = layouts.selectedLayout()
+  // Copies layout `name` (the toolbar's: the one shown) and opens the copy.
+  async function duplicateLayout(name: string | null = layouts.selectedLayout()): Promise<void> {
     if (name === null) return
     if (layouts.editorDirty()) {
       layouts.setNotice(settings.messages().layoutSaveFirst)
@@ -1963,12 +1966,11 @@ export function Studio() {
     setStatusMessage({ kind: 'layout-created', layout: copy })
   }
 
-  // Pins the slide open in the slides screen to the shown layout, through
-  // the same Undo-able path as the context menu's Change Layout — after the
-  // same fit check, so a layout the slide doesn't fit is refused with
-  // peitho-core's reason instead of a build error.
-  async function applyShownLayout(): Promise<void> {
-    const name = layouts.selectedLayout()
+  // Pins the slide open in the slides screen to layout `name` (the toolbar's:
+  // the one shown), through the same Undo-able path as the context menu's
+  // Change Layout — after the same fit check, so a layout the slide doesn't
+  // fit is refused with peitho-core's reason instead of a build error.
+  async function applyLayout(name: string | null = layouts.selectedLayout()): Promise<void> {
     const index = editor.selectedIndex()
     if (name === null || index === null) return
     await runLayoutAction(async () => {
@@ -2001,12 +2003,84 @@ export function Studio() {
     })
   }
 
-  function startLayoutDelete(): void {
-    const name = layouts.selectedLayout()
+  function startLayoutDelete(name: string | null = layouts.selectedLayout()): void {
     if (name === null) return
     layouts.setNotice(null)
     layouts.beginDelete(name, layoutNames(), slidesByLayout().get(name) ?? [])
   }
+
+  // The layout list's right-click menu: on a row, it acts on that layout
+  // (not necessarily the one shown); on empty space, it offers New Layout.
+  // With a slide open in the slides screen, Apply waits on the same fit
+  // check as the slide menu's Change Layout.
+  function openLayoutMenu(name: string | null, event: MouseEvent): void {
+    event.preventDefault()
+    if (name === null) {
+      layouts.openMenuOnList(event.clientX, event.clientY)
+      return
+    }
+    const index = editor.selectedIndex()
+    const requestId = layouts.openMenuOnLayout(name, event.clientX, event.clientY, index !== null)
+    if (requestId === null || index === null) return
+    deckIpc.checkSlideLayouts(liveSource(), index)
+      .then(verdicts => { layouts.settleMenuFit(requestId, verdicts) })
+      .catch(() => { layouts.settleMenuFit(requestId, null) })
+  }
+
+  const layoutMenuEntries = createMemo<LayoutMenuEntry[]>(() => {
+    const messages = settings.messages()
+    const context = { hasSlide: editor.selectedIndex() !== null, layoutCount: layoutNames().length, busy: layouts.busy() }
+    return layoutMenuItems(layouts.menu(), context).map(item => ({
+      action: item.action,
+      label: layoutMenuLabel(item.action, messages),
+      enabled: item.enabled,
+      title: layoutMenuTitle(item.reason, messages),
+    }))
+  })
+
+  function runLayoutMenuAction(action: LayoutMenuAction): void {
+    const name = layoutMenuTarget(layouts.menu())
+    layouts.closeMenu()
+    switch (action) {
+      case 'new-layout':
+        layouts.openNewLayout()
+        return
+      case 'apply':
+        void applyLayout(name)
+        return
+      case 'edit':
+        if (name !== null) selectLayout(name)
+        return
+      case 'duplicate':
+        void duplicateLayout(name)
+        return
+      case 'delete':
+        startLayoutDelete(name)
+        return
+      default: {
+        const _exhaustive: never = action
+        return _exhaustive
+      }
+    }
+  }
+
+  // Keeps the layout menu on-screen, as the slide menu's effect above does.
+  let layoutMenuEl: HTMLElement | undefined
+  createEffect(() => {
+    if (layouts.menu().kind === 'closed') return
+    requestAnimationFrame(() => {
+      const menu = layouts.menu()
+      if (!layoutMenuEl || menu.kind === 'closed') return
+      const rect = layoutMenuEl.getBoundingClientRect()
+      const at = clampMenuPosition(
+        { x: menu.x, y: menu.y },
+        { width: rect.width, height: rect.height },
+        { width: window.innerWidth, height: window.innerHeight },
+        8,
+      )
+      if (at.x !== menu.x || at.y !== menu.y) layouts.moveMenu(at)
+    })
+  })
 
   // Deletes the layout the delete flow is about: checks first that the deck
   // still builds with its slides moved and without the layout, then moves
@@ -2464,6 +2538,14 @@ export function Studio() {
         }
         return
       }
+      // Escape typed into an editor is the editor's own (vim's back-to-normal
+      // mode); the layout menu can't be open then anyway, since pressing
+      // into the editor closed it.
+      if (event.key === 'Escape' && layouts.menu().kind !== 'closed' && !isInCodeEditor(event.target)) {
+        event.preventDefault()
+        layouts.closeMenu()
+        return
+      }
       if (event.key === 'Escape' && ui.contextMenu().kind !== 'closed') {
         event.preventDefault()
         ui.closeContextMenu()
@@ -2813,6 +2895,7 @@ export function Studio() {
           rows={layoutRowsShown()}
           selectedName={layouts.selectedLayout()}
           onSelect={selectLayout}
+          onContextMenu={openLayoutMenu}
           fragmentOf={layoutFragmentOf}
           layoutPreviewStylesheet={getLayoutPreviewStylesheet}
           canvasWidth={render.canvasWidth()}
@@ -2825,9 +2908,9 @@ export function Studio() {
           notice={layouts.notice()}
           canApply={layouts.selectedLayout() !== null && editor.selectedIndex() !== null}
           canDelete={layoutNames().length > 1 && layouts.selectedLayout() !== null}
-          onApply={() => void applyShownLayout()}
+          onApply={() => void applyLayout()}
           onDuplicate={() => void duplicateLayout()}
-          onStartDelete={startLayoutDelete}
+          onStartDelete={() => startLayoutDelete()}
           newLayoutOpen={layouts.newLayoutOpen()}
           newLayoutName={layouts.newLayoutName()}
           newLayoutTemplate={layouts.newLayoutTemplate()}
@@ -2881,6 +2964,15 @@ export function Studio() {
         onDraftInput={review.setBoxDraft}
         onCancel={review.closeBox}
         onAdd={addComment}
+      />
+
+      <LayoutContextMenu
+        hidden={layouts.menu().kind === 'closed'}
+        position={layoutMenuPosition(layouts.menu())}
+        items={layoutMenuEntries()}
+        onMenuRef={el => { layoutMenuEl = el }}
+        onClose={layouts.closeMenu}
+        onAction={runLayoutMenuAction}
       />
 
       <SlideContextMenu

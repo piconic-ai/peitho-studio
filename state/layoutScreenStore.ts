@@ -7,6 +7,10 @@ import {
   type LayoutEditor, type LayoutField, type LayoutTexts,
 } from '../domain/layoutEditor'
 import { type LayoutNameProblem, layoutNameProblem } from '../domain/layoutScreen'
+import {
+  LAYOUT_MENU_CLOSED, openOnLayout, openOnList, withLayoutMenuFit, withLayoutMenuPosition, type LayoutMenu,
+} from '../domain/layoutMenu'
+import type { LayoutVerdict } from '../domain/layoutFit'
 
 const LIST_WIDTH = 220
 const EDITOR_WIDTH = 420
@@ -109,6 +113,31 @@ export function createLayoutScreenStore() {
     setEditor(current => saveFailedEditor(current, name, message))
   }
 
+  // The layout list's right-click menu (`domain/layoutMenu.ts`). Each open
+  // on a layout with a slide to apply it to numbers its fit check, so a
+  // late answer for an earlier right-click can't land on this one.
+  const [menu, setMenu] = createSignal<LayoutMenu>(LAYOUT_MENU_CLOSED)
+  let lastMenuFitRequest = 0
+  /** Opens the menu on layout `name`; with `checkFit`, returns the id the
+   * fit check's answer must carry (`settleMenuFit`), else `null`. */
+  function openMenuOnLayout(name: string, x: number, y: number, checkFit: boolean): number | null {
+    const requestId = checkFit ? ++lastMenuFitRequest : null
+    setMenu(openOnLayout(name, x, y, requestId))
+    return requestId
+  }
+  function openMenuOnList(x: number, y: number): void {
+    setMenu(openOnList(x, y))
+  }
+  function settleMenuFit(requestId: number, verdicts: readonly LayoutVerdict[] | null): void {
+    setMenu(current => withLayoutMenuFit(current, requestId, verdicts))
+  }
+  function moveMenu(at: { x: number; y: number }): void {
+    setMenu(current => withLayoutMenuPosition(current, at))
+  }
+  function closeMenu(): void {
+    setMenu(LAYOUT_MENU_CLOSED)
+  }
+
   // True while a create/duplicate/delete/apply runs: their buttons are
   // disabled meanwhile, so a second click can't start another beside it.
   const [busy, setBusy] = createSignal(false)
@@ -126,5 +155,6 @@ export function createLayoutScreenStore() {
     editor, editorDirty, editorTab, setEditorTab,
     editorLoading, editorLoaded, editorUnavailable, typeInEditor, revertEditor, editorSaving, editorSaved, editorSaveFailed,
     busy, setBusy, notice, setNotice,
+    menu, openMenuOnLayout, openMenuOnList, settleMenuFit, moveMenu, closeMenu,
   }
 }
