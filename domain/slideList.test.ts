@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { isExhaustivelyAccountedFor } from './spec'
 import type { ManifestSection, ManifestSlide } from './render'
 import {
-  buildSlideList, manifestIndexAt, manifestIndexToSourceIndex, recordByManifestIndex, sectionStartBySourceIndex,
+  buildSlideList, manifestIndexAt, manifestIndexToSourceIndex, recordByManifestIndex, renderedLayoutAt, sectionStartBySourceIndex,
   type SlideListEntry,
 } from './slideList'
 import { buildSlideListExamples } from './slideList.examples'
@@ -98,6 +98,37 @@ describe('manifestIndexAt / manifestIndexToSourceIndex', () => {
 
   test('adversarial: an empty entry list maps to an empty array', () => {
     expect(manifestIndexToSourceIndex([])).toEqual([])
+  })
+})
+
+describe('renderedLayoutAt', () => {
+  const entries: SlideListEntry[] = [
+    { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'cover', 'Cover') },
+    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: 'hidden' },
+    { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'points', 'Points') },
+  ]
+  const layouts = { cover: 'title-slide', points: 'title-body', hidden: 'blank' }
+
+  test('spec: Given a rendered slide, Then the layout reported for its key', () => {
+    expect(renderedLayoutAt(entries, layouts, 0)).toBe('title-slide')
+    expect(renderedLayoutAt(entries, layouts, 2)).toBe('title-body')
+  })
+
+  test('adversarial: Given a draft placeholder, Then none, even when its last key has a layout', () => {
+    expect(renderedLayoutAt(entries, layouts, 1)).toBeNull()
+  })
+
+  test('adversarial: Given an index out of range or no reported layouts, Then none rather than throwing', () => {
+    expect(renderedLayoutAt(entries, layouts, -1)).toBeNull()
+    expect(renderedLayoutAt(entries, layouts, 3)).toBeNull()
+    expect(renderedLayoutAt([], layouts, 0)).toBeNull()
+    expect(renderedLayoutAt(entries, {}, 0)).toBeNull()
+  })
+
+  test('adversarial: Given a key named like an Object property, Then it is not mistaken for a layout', () => {
+    const odd: SlideListEntry[] = [{ kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'constructor', 'C') }]
+    expect(renderedLayoutAt(odd, {}, 0)).toBeNull()
+    expect(renderedLayoutAt(odd, { constructor: 'blank' }, 0)).toBe('blank')
   })
 })
 

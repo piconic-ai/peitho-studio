@@ -55,6 +55,11 @@ export function savedSectionDraft(section: ManifestSection): SectionDraft {
 export interface RenderPayload {
   manifest: Manifest
   fragments: Record<string, string>
+  /** The layout each slide was built on, by slide key — the manifest
+   * itself names none. */
+  slideLayouts: Record<string, string>
+  /** Every layout the deck has, by name. */
+  layoutNames: string[]
   assetBaseUrl: string
   css: string
 }

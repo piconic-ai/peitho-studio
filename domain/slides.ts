@@ -13,6 +13,7 @@
 
 import { setFrontmatterKey } from './frontmatter'
 import { parsePageComment, configOf, serializePageConfig, type PageConfig } from './pageConfig'
+import { newSlideLayout } from './standardLayouts'
 
 export interface SlideRange {
   /** Character offset into the source where this slide's text starts. */
@@ -211,17 +212,18 @@ export function uniqueSlideKey(baseKey: string, existingKeys: readonly string[])
 }
 
 /** The `PageConfig` for a freshly inserted blank slide: always the new
- * `key`, plus `previousConfig`'s `layout` when it has one explicitly set.
+ * `key`, plus the layout `newSlideLayout` picks from the previous slide's
+ * — the one its `previousConfig` names, or else the one it was actually
+ * built on (`renderedLayout`, `null` when unknown: no previous slide, a
+ * draft, or no render yet) — in a deck whose layouts are `deckLayouts`.
  * A bare title-only slide (no body) structurally matches *every* layout
  * whose other slots are all optional, which peitho-core refuses to guess
  * between once a deck's `layouts/` directory holds more than one such
- * layout ("slide matches multiple layouts: ..."). Deliberately does NOT
- * inherit an *implicit* layout (one peitho only resolved by structural
- * dispatch, never written to the previous slide's own comment) — only
- * carrying over what's already explicit keeps a single-layout deck's new
- * slide exactly as unlabeled as before. */
-export function newSlideConfig(previousConfig: PageConfig, key: string): PageConfig {
-  return previousConfig.layout ? { key, layout: previousConfig.layout } : { key }
+ * layout ("slide matches multiple layouts: ..."), so a new slide names
+ * its layout whenever there's one to name. */
+export function newSlideConfig(previousConfig: PageConfig, key: string, renderedLayout: string | null, deckLayouts: readonly string[]): PageConfig {
+  const layout = newSlideLayout(previousConfig.layout || renderedLayout, deckLayouts)
+  return layout === null ? { key } : { key, layout }
 }
 
 /** Where slide index `i` ends up after moving the slide at `from` to `to`

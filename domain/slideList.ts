@@ -122,6 +122,16 @@ export function manifestIndexAt(entries: readonly SlideListEntry[], sourceIndex:
   return entry?.kind === 'rendered' ? entry.manifestIndex : null
 }
 
+/** The layout the source slide at `sourceIndex` was built on, looked up by
+ * its key in `slideLayouts` (`RenderPayload.slideLayouts`), or `null` when
+ * there's none to go by: a placeholder, `sourceIndex` out of range, or a
+ * key the render didn't report a layout for. */
+export function renderedLayoutAt(entries: readonly SlideListEntry[], slideLayouts: Readonly<Record<string, string>>, sourceIndex: number): string | null {
+  const entry = entries[sourceIndex]
+  if (entry?.kind !== 'rendered' || !Object.hasOwn(slideLayouts, entry.slide.key)) return null
+  return slideLayouts[entry.slide.key]
+}
+
 /** `result[j]` is the `sourceIndex` of `entries`' `j`-th rendered slide —
  * i.e. `manifestSlides[j]`'s row in the slide list. Sparse only in the
  * degenerate case of a manifest index `buildSlideList` never assigned
