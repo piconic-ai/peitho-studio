@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.1.1](https://github.com/piconic-ai/peitho-studio/compare/v0.1.0...v0.1.1) - 2026-10-02
+
+- Fix RC-to-stable release version synchronization by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/150
+
 ## [v0.1.0](https://github.com/piconic-ai/peitho-studio/compare/v0.1.0-rc.7...v0.1.0) - 2026-10-02
 
 - Automate Homebrew cask update PRs after releases by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/144
