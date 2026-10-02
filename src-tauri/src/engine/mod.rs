@@ -28,6 +28,7 @@ pub mod crit;
 pub mod image_layout;
 pub mod images;
 pub mod layout_fit;
+pub mod layout_preview;
 pub mod pipeline;
 pub mod serve;
 pub mod unsupported;

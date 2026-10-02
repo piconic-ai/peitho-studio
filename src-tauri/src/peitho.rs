@@ -34,6 +34,7 @@ use crate::engine::crit::{self as crit_shapes, DeckSession, FinishedRound, NewRe
 use crate::engine::image_layout;
 use crate::engine::images;
 use crate::engine::layout_fit::{self, LayoutVerdict};
+use crate::engine::layout_preview;
 use crate::engine::pipeline::{self, RenderOutput};
 use crate::engine::serve::AssetServer;
 
@@ -1044,7 +1045,8 @@ pub struct LayoutPreviewsPayload {
 }
 
 /// Renders every layout available to the currently open deck (built-in, or
-/// its own `layouts/` directory) with generic placeholder content, for the
+/// its own `layouts/` directory) with placeholder content written from its
+/// slots (`layout_preview::placeholder_source`), for the
 /// thumbnail context menu's "Change Layout" picker grid. Each layout is
 /// rendered as its own tiny one-slide deck via the normal pipeline — same
 /// as a real slide explicitly pinning `"layout"` in its PageComment, just
@@ -1068,20 +1070,18 @@ pub fn preview_layouts(window: WebviewWindow, session: State<PeithoSession>) -> 
     let resolved = crate::engine::assets::resolve(&deck_dir)?;
     let mut previews = Vec::new();
     let mut css = String::new();
-    for name in resolved.layouts.names() {
-        let synthetic = format!(
-            "<!-- {{\"key\":\"preview\",\"layout\":\"{name}\"}} -->\n# Placeholder title\n\nPlaceholder body copy.\n\n- First point\n- Second point"
-        );
+    for layout in resolved.layouts.iter() {
+        let synthetic = layout_preview::placeholder_source(layout);
         let fragment = pipeline::render_source(&deck_path, &synthetic)
             .ok()
             .and_then(|output| {
                 if css.is_empty() {
                     css = output.css.clone();
                 }
-                output.fragments.get("preview").cloned()
+                output.fragments.get(layout_preview::PREVIEW_KEY).cloned()
             })
             .unwrap_or_default();
-        previews.push(LayoutPreview { name: name.to_string(), fragment });
+        previews.push(LayoutPreview { name: layout.name().to_string(), fragment });
     }
     Ok(LayoutPreviewsPayload { previews, css })
 }
