@@ -35,7 +35,10 @@ tags: [layout, ui, screen]
     先送り事項へ。
   - レイアウトファイル操作(作成/複製/削除)のUndo。
     `todo/archive/image-slot-layout-suggestion.md`と同じく、ファイル操作は
-    Undo対象外(deck.mdの書き換え部分だけがUndoできる)。
+    Undo対象外。削除に伴う置き換え先への書き換えも削除の一部として
+    Undo対象外(戻すと消えたレイアウトを指すことになり、レンダが必ず失敗して
+    Undoが詰まるため)。削除したレイアウトを指すUndo/Redo手順が履歴に残って
+    いれば、履歴ごと消去してステータスで知らせる。
 - **受け入れ条件**:
   - デッキを開いた状態でヘッダーから「レイアウト」モードに切り替えられ、
     デッキの`layouts/*.html`が全部、サムネイル付きで一覧される。
@@ -47,8 +50,11 @@ tags: [layout, ui, screen]
     `layouts/<name>.html`(+`css/<name>.css`)を作れる。既存名は拒否。
   - 「複製」で`<name>-copy`(衝突時は連番)としてHTML/CSSを複製できる。
   - 「削除」で、使用中でなければファイルを削除。使用中なら使用枚数を示し、
-    置き換え先を選ばせ、該当スライドのlayoutを書き換えて(Undo可)から
-    ファイルを削除する。最後の1つは削除できない。
+    置き換え先を選ばせ、該当スライドのlayoutを書き換えてから
+    ファイルを削除する(書き換えはUndo対象外、上記)。書き換え前に
+    `check_layout_removal`がビルドまで検査し、削除が拒否されるなら
+    deck.mdに触れない。それでも削除が失敗したら書き換えを戻す。
+    最後の1つは削除できない。
   - 選択したレイアウトのHTML/CSSを画面内で編集・保存でき、保存すると
     プレビューとスライドモードのサムネイルが更新される。壊れたHTML
     (`parse_layout`が失敗する)は保存前にエラー表示し、保存しない。
@@ -155,8 +161,8 @@ tags: [layout, ui, screen]
 - `layouts/`/`css/`の外部変更を拾うファイル監視。
 - レイアウトのリネーム(参照しているスライドの書き換え込み)。
 - 新規デッキの`title-body`は削除できない(code slotを持つのが`title-body`だけで、
-  `css/base.css`の`.slot-code`をpeitho-coreが拒否するため。`delete_layout`は
-  ファイルを戻してエラーを返す)。base.css側の`.slot-code`を外すか、別の
+  `css/base.css`の`.slot-code`をpeitho-coreが拒否するため。
+  `check_layout_removal`が書き換え前に拒否する)。base.css側の`.slot-code`を外すか、別の
   レイアウトにcode slotを持たせるかは未決。
 - 一覧の各行の`…`/右クリックメニューは作らず、プレビュー上部のツールバーに
   「スライドに適用・複製・削除」を置いた(BarefootJS #2930を避けるため)。
