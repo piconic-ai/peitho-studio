@@ -12,53 +12,21 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { mockTauri, type MockDeck } from '../../e2e/helpers/mockTauri'
 
+import { editorContent } from '../../e2e/helpers/codeEditor'
+import { source, fragmentFor, css } from './demo-deck'
 import { createFakeCritIpc } from '../../ipc/fakeCritIpc'
 
 const STUDIO_URL = process.env.STUDIO_URL ?? 'http://localhost:3013/'
 const OUT = mkdtempSync(join(tmpdir(), 'peitho-hero-'))
 const SITE = resolve(import.meta.dir, '../public')
-const slide = (key: string, body: string, extra: Record<string, unknown> = {}) =>
-  `<!-- ${JSON.stringify({ key, ...extra })} -->\n${body}\n`
-const SOURCE = [
-  slide('cover', '# Markdown Decks\n\nWrite slides the way you write notes.'),
-  slide('plain-text', '# Why plain text\n\n- One file, any editor\n- Diffs you can review\n- Nothing locked in\n\n<!-- Pause here. Ask who keeps slides in git. -->', { section: 'Intro', time: '5m' }),
-  slide('schema', '# The layout is the schema\n\n- Slots declare what fits\n- Broken decks fail at build'),
-  slide('preview', '# Live preview\n\n- Rendered by peitho-core\n- PC or phone canvas', { section: 'Demo', time: '8m' }),
-  slide('present', '# Present anywhere\n\n- Presenter view\n- Phone remote'),
-  slide('thanks', '# Thanks'),
-].join('\n---\n\n')
-
-const BODIES: Record<string, string> = {
-  'Markdown Decks': '<p class="sub">Write slides the way you write notes.</p>',
-  'Why Markdown works': '<ul><li>One file, any editor</li><li>Diffs you can review</li><li>Nothing locked in</li></ul>',
-  'Why plain text': '<ul><li>One file, any editor</li><li>Diffs you can review</li><li>Nothing locked in</li></ul>',
-  'The layout is the schema': '<ul><li>Slots declare what fits</li><li>Broken decks fail at build</li></ul>',
-  'Live preview': '<ul><li>Rendered by peitho-core</li><li>PC or phone canvas</li></ul>',
-  'Present anywhere': '<ul><li>Presenter view</li><li>Phone remote</li></ul>',
-  'Thanks': '',
-}
-const fragmentFor = (title: string) => {
-  const cls = title === 'Markdown Decks' || title === 'Thanks' ? 'peitho-slide cover' : 'peitho-slide'
-  return `<section class="${cls}"><h1>${title}</h1>${BODIES[title] ?? ''}</section>`
-}
-const css = `
-.peitho-slide { width: var(--peitho-canvas-width, 1280px); height: var(--peitho-canvas-height, 720px); box-sizing: border-box;
-  padding: 96px 112px; background: #fbfaf8; color: #1c1917; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
-.peitho-slide h1 { margin: 0 0 44px; font-size: 76px; line-height: 1.05; letter-spacing: -0.03em; }
-.peitho-slide h1::after { content: ""; display: block; width: 96px; height: 8px; margin-top: 28px; background: #1c1917; border-radius: 4px; }
-.peitho-slide ul { margin: 0; padding-left: 1.1em; font-size: 44px; line-height: 1.55; color: #44403c; }
-.peitho-slide.cover { display: flex; flex-direction: column; justify-content: center; background: #111; color: #fff; }
-.peitho-slide.cover h1 { font-size: 104px; }
-.peitho-slide.cover h1::after { background: #fff; }
-.peitho-slide .sub { margin: 0; font-size: 40px; color: #d6d3d1; }
-`
 const crit = createFakeCritIpc({ now: () => '2026-10-02T10:00:00Z' })
-const deck: MockDeck = { source: SOURCE, fragmentFor, css, editAnnotations: true, trusted: true, crit }
+const deck: MockDeck = { source, fragmentFor: title => fragmentFor(deck.source, title), css, trusted: true, crit }
 
 const b = await chromium.launch(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chrome' })
 const ctx = await b.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2, locale: 'en-US', recordVideo: { dir: OUT, size: { width: 1280, height: 800 } } })
 const page = await ctx.newPage()
-page.on('pageerror', e => console.log('pageerror', String(e)))
+const pageErrors: string[] = []
+page.on('pageerror', e => pageErrors.push(String(e)))
 await mockTauri(page as never, deck)
 // The mock answers open_deck with the source as the path; show a real one.
 await page.addInitScript(() => {
@@ -66,34 +34,55 @@ await page.addInitScript(() => {
   const inner = w.__TAURI_INTERNALS__.invoke
   w.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
     const r = await inner(cmd, args)
-    return cmd === 'open_deck' ? { ...r, deckPath: '~/talks/markdown-decks/deck.md', deckDir: '~/talks/markdown-decks' } : r
+    return cmd === 'open_deck' ? { ...r, deckPath: '~/talks/peitho-studio-intro/deck.md', deckDir: '~/talks/peitho-studio-intro' } : r
   }
 })
 await page.goto(STUDIO_URL)
 await page.locator('[data-slide-row]').first().waitFor({ timeout: 15000 })
 await page.locator('[data-slide-row="1"]').click()
+await page.locator('[data-panel-toggle="review"][aria-expanded="true"]').click()
 await page.evaluate(() => document.fonts.ready)
-await page.waitForTimeout(1200)
+await page.waitForTimeout(1800)
+// First, the user edits Markdown directly; the HTML preview follows each edit.
+const editor = editorContent(page)
+await editor.click()
+await page.keyboard.press('ControlOrMeta+Home')
+await page.keyboard.press('Home')
+await page.keyboard.press('Shift+End')
+await page.keyboard.press('Backspace')
+await editor.pressSequentially('# Meet Peitho Studio', { delay: 100 })
+await expect(page.locator('[data-preview-host] h1')).toHaveText('Meet Peitho Studio')
+await page.waitForTimeout(2200)
+// Then the user asks their agent to refine this same introduction slide.
+await page.locator('[data-panel-toggle="review"][aria-expanded="false"]').click()
+await page.waitForTimeout(600)
 await page.locator('[data-preview-host] h1').click()
 await page.waitForTimeout(700)
-await page.locator('[data-comment-box] textarea').pressSequentially('Rename this title to “Why Markdown works”.', { delay: 45 })
-await page.waitForTimeout(1000)
+await page.locator('[data-comment-box] textarea').pressSequentially('Keep the words. Make this introduction to Peitho Studio beautiful: three feature cards, better typography, and a gentle reveal.', { delay: 28 })
+await page.waitForTimeout(1300)
 await page.locator('[data-comment-add]').click()
-await page.waitForTimeout(1800)
+await page.waitForTimeout(1500)
 await page.locator('[data-review-send]').click()
 await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
-await page.waitForTimeout(2000)
-// Simulate the external agent's file edit through Studio's real file-change flow.
-deck.source = deck.source.replace('# Why plain text', '# Why Markdown works')
+// Expand the slide after showing its Markdown source, so the before/after layout stays readable.
+await page.locator('[data-panel-toggle="editor"][aria-expanded="true"]').click()
+await page.waitForTimeout(2200)
+// Prerecorded agent result: update the deck via the real external-file-change flow.
+await expect.poll(() => deck.source).toContain('# Meet Peitho Studio')
+const wordsBefore = deck.source.split('\n').filter(line => !line.startsWith('<!--')).join('\n')
+deck.source = deck.source.replace('"layout":"plain"', '"layout":"feature-cards"')
+expect(deck.source.split('\n').filter(line => !line.startsWith('<!--')).join('\n')).toBe(wordsBefore)
 await page.evaluate(() => {
   (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown) => void })
     .__mockEmitTauriEvent('deck-file-changed', null)
 })
-await expect(page.locator('[data-preview-host] h1')).toHaveText('Why Markdown works')
-crit.reply('c_1', 'Updated the title in deck.md. The rest of the slide is unchanged.', 'AI Agent')
+await expect(page.locator('[data-preview-host] .rich')).toBeVisible()
+// The rich HTML slide animates with its own JavaScript inside Studio.
+await expect.poll(() => page.locator('[data-preview-host] .features li').first().evaluate(el => el.getAnimations().length)).toBeGreaterThan(0)
+crit.reply('c_1', 'Kept your wording. Added three feature cards, a new type hierarchy, and a gentle reveal animation.', 'AI Agent')
 crit.agentConnects()
 await expect(page.locator('[data-review-agent]')).toContainText(['AI Agent'])
-await page.waitForTimeout(4500)
+await page.waitForTimeout(5500)
 await page.screenshot({ path: `${OUT}/studio-raw.png` })
 // Encode WebP at 2x and 1x in the page itself, so no image tooling is needed.
 const png = 'data:image/png;base64,' + readFileSync(`${OUT}/studio-raw.png`).toString('base64')
@@ -113,3 +102,4 @@ const encoded = spawnSync('ffmpeg', ['-y', '-i', recorded, '-an', '-c:v', 'libx2
 if (encoded.status !== 0) throw new Error(encoded.stderr)
 console.log(`wrote ${SITE}/studio-demo.mp4`)
 await b.close()
+if (pageErrors.length) throw new Error(pageErrors.join('\n'))

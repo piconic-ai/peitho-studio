@@ -201,3 +201,8 @@ h1, h2 { font-family: var(--serif); font-weight: 400; letter-spacing: -0.03em; }
   .peitho h2 { font-size: 36px; }
   .peitho-tagline { font-size: 17px; }
 }
+
+.homebrew-install { margin: 24px 0; padding: 24px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.homebrew-install h3 { margin: 0 0 8px; font-size: 20px; }
+.homebrew-install p { color: var(--muted); margin: 0 0 16px; }
+.homebrew-install pre { overflow-x: auto; padding: 16px; border-radius: 8px; background: #eeece9; font-size: 14px; }

@@ -1,10 +1,5 @@
-// The latest GitHub Release, fetched once per page load. The page mounts
-// DownloadPanel twice (the hero button and the Download section's list);
-// both share this one request, which also keeps the page to a single call
-// against GitHub's unauthenticated rate limit. It lives outside
-// components/ because the BarefootJS compiler copies a component file's
-// own top-level functions into each instance, which would give every
-// mount its own cache.
+// Fetch release metadata once per page load for the download list. Keep the
+// cache outside components, whose top-level functions are copied per instance.
 import type { ReleaseAsset } from '../domain/releases'
 
 export const REPO = 'piconic-ai/peitho-studio'

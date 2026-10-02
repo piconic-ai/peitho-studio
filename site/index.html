@@ -21,7 +21,6 @@
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="preload" as="image" href="/studio@2x.webp" imagesrcset="/studio.webp 1280w, /studio@2x.webp 2560w" imagesizes="(min-width: 1140px) 1080px, 100vw">
   <link rel="stylesheet" href="/site.css">
 </head>
 <body>
@@ -42,25 +41,21 @@
         <h1 id="title">Peitho Studio</h1>
         <p class="hero-lede">Write slides with <a href="https://peitho.gosu.ke">Peitho</a>.</p>
         <p class="hero-sub">Edit Markdown. Preview slides. Bring your AI Agent.</p>
-        <div id="download-button" class="download">
-          <!-- Replaced by the DownloadPanel island; kept as the no-JS fallback. -->
-          <a class="btn btn-big" href="https://github.com/piconic-ai/peitho-studio/releases/latest">Download</a>
-        </div>
       </div>
 
-      <figure class="window">
+      <figure class="window" id="demo">
         <div class="window-bar" aria-hidden="true">
           <span class="dots"><i></i><i></i><i></i></span>
           <span class="window-title">deck.md — Peitho Studio</span>
         </div>
-        <video id="demo" class="window-shot" controls muted playsinline preload="none"
+        <video class="window-shot" controls muted playsinline preload="none"
                poster="/studio.webp" width="1280" height="800"
-               aria-label="Demo: comment on a slide, send feedback to an AI Agent, and see the updated title and reply.">
+               aria-label="Peitho Studio demo: edit Markdown, then ask an AI Agent to refine the same slide’s HTML layout.">
           <source src="/studio-demo.mp4" type="video/mp4">
-          <a href="/studio-demo.mp4">Watch the AI Agent collaboration demo</a>
+          <a href="/studio-demo.mp4">Watch the Peitho Studio demo</a>
         </video>
       </figure>
-      <p class="demo-caption">Click a slide → leave a comment → send to your AI Agent → review the changes.</p>
+      <p class="demo-caption">Edit Markdown. See it change. Ask your AI Agent to refine the layout.</p>
     </section>
 
     <section class="peitho" aria-labelledby="peitho-title">
@@ -86,9 +81,14 @@
 
     <section id="download" class="downloads" aria-labelledby="download-title">
       <h2 id="download-title">Download</h2>
+      <div class="homebrew-install">
+        <h3>Install with Homebrew</h3>
+        <p>For Apple Silicon Macs running macOS 13 or later.</p>
+        <pre><code>brew install --cask piconic-ai/tap/peitho-studio</code></pre>
+      </div>
       <div id="download-list">
         <!-- Replaced by the DownloadPanel island; kept as the no-JS fallback. -->
-        <p class="acc-empty">Builds for macOS, Windows and Linux are on <a href="https://github.com/piconic-ai/peitho-studio/releases">GitHub Releases</a>.</p>
+        <p class="acc-empty">For direct downloads and release notes, visit <a href="https://github.com/piconic-ai/peitho-studio/releases">GitHub Releases</a>.</p>
       </div>
     </section>
   </main>

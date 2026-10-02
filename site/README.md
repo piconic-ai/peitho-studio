@@ -1,35 +1,23 @@
 # Peitho Studio site
 
-The landing page for Peitho Studio: what it does, and a download button that
-picks the right build from the latest GitHub Release. A separate Bun project
+The landing page for Peitho Studio: what it does, Homebrew installation and downloads from GitHub Releases. A separate Bun project
 from the app (its own `package.json` and lockfile), living in `site/`.
 
 ## Stack
 
 - One static `index.html`, styled by `public/site.css` (light only):
   - a hero with the app icon, "Peitho Studio", "Write slides with Peitho."
-    ("Edit Markdown. Preview slides. Bring your AI Agent.") and
-    the download button, above a short, user-controlled demo of commenting on a slide and reviewing an AI Agent revision,
-    framed as a window (`public/studio-demo.mp4`, with `studio.webp` as its poster);
+    ("Edit Markdown. Preview slides. Bring your AI Agent.") above a recording of the real Studio UI demonstrating Markdown editing and an Agent-assisted HTML layout change;
   - a "Built on Peitho" card: Peitho's one-line description and a small
     Markdown-to-slide illustration, linking to
     [peitho.gosu.ke](https://peitho.gosu.ke);
-  - a Download section listing every build as an accordion.
+  - a Download section with a Homebrew installation command and every build listed as an accordion.
   It reads without JavaScript, with plain links to GitHub Releases.
 - [BarefootJS](https://barefootjs.dev) (CSR adapter, compiled by
-  `@barefootjs/vite`): `src/components/DownloadPanel.tsx`, mounted twice
+  `@barefootjs/vite`): `src/components/DownloadPanel.tsx`, mounted in the Download section
   from `src/main.ts`.
-  - `part: 'button'` (the hero) detects the visitor's platform (and, on
-    Chromium, the CPU architecture via UA Client Hints) and puts the
-    matching build on the button. On an unrecognised platform (a phone) the
-    button points at the Download section instead.
-  - `part: 'list'` shows one native `<details>` per platform, the visitor's
-    own platform open.
-  - Both share one request to
-    `https://api.github.com/repos/piconic-ai/peitho-studio/releases/latest`
-    (`src/lib/latestRelease.ts`), show button-/row-sized placeholders while
-    it loads, and link GitHub Releases when there is no release, no
-    assets, or the API can't be reached.
+  - Shows one native `<details>` per platform, the visitor's own platform open.
+  - Fetches release metadata from GitHub's latest-release API. Failed requests explain that release downloads could not be loaded; releases with no downloadable files explain that those files are not listed. Both link to GitHub Releases and keep the Homebrew instructions available.
 - `src/domain/releases.ts` holds the pure rules (asset classification,
   platform detection) and their `bun test` specs, following the app's
   `.ts` = pure / `.tsx` = stateful convention.
@@ -44,15 +32,24 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 
 ## Hero demo
 
-`public/studio-demo.mp4` (1280×800) records the real Studio frontend: click a title, type a comment, send it, then see an updated title and an Agent reply. The e2e Tauri IPC mock and fake crit session simulate the agent and file change; no live AI service runs during capture. The script asserts the updated preview and reply before exporting the video and the final-frame WebP poster (`studio.webp`, `studio@2x.webp`).
+The hero embeds `public/studio-demo.mp4`, recorded from the **unchanged Studio frontend**, with its real editor, preview, panel controls and comments UI. The sample deck introduces Peitho Studio itself: write in Markdown, see changes instantly, and refine with an AI Agent.
 
-The player has native controls, stays paused until played, and has no audio. A visible caption explains the sequence. The CSP allows local media. Regenerate from the repository root with Chrome and `ffmpeg` installed:
+1. The editor and preview show a simple introductory slide. Typing a new Markdown title changes the preview.
+2. The comments panel opens and a comment asks the Agent to preserve the words while refining the layout.
+3. The editor is folded using Studio's own panel control. The Agent's example result changes the slide to an HTML layout with feature cards, typography and JavaScript reveal animations.
+
+`site/scripts/demo-deck.ts` supplies the sample Markdown and before/after slide fragments. Only the slide's layout metadata changes in the simulated Agent result; an assertion checks that the Markdown content remains unchanged. The e2e Tauri IPC mock and fake crit session provide backend responses; the Studio UI itself is not recreated or restyled. No live agent runs during capture.
+
+Regenerate the MP4 and WebP posters from the repository root, with Chrome and ffmpeg installed:
 
 ```sh
-bun install && bun run build
-PORT=3013 bun run start &
-bun site/scripts/capture-hero.ts   # CHROME_PATH=/path/to/chrome if Chrome isn't installed
+bun run build
+PORT=3013 bun server.ts
+# In another terminal:
+bun site/scripts/capture-hero.ts
 ```
+
+Capture asserts the edited preview, sent comment, rich HTML layout, running slide animation and Agent reply, and fails on page errors. The site uses native video controls without autoplay.
 
 ## Brand
 
