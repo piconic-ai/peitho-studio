@@ -93,7 +93,7 @@ tags: [layout, scaffold, new-deck]
   未知の名前(ユーザー作成)は名前をそのまま表示する。
 - **slot設計**(参考画像の配置に合わせる。arityは「空でもビルドできる」側に
   倒す — 新規スライドが空のまま置かれても壊れないため):
-  - title-slide: title(inline,1), subtitle(blocks,0..1)
+  - title-slide: title(inline,1), body(blocks,0..1) (サブタイトル。実装時に`subtitle`から変更 — 完了条件参照)
   - section-header: title(inline,1)
   - title-body: title(inline,1), body(blocks,0..*)
   - two-column: title(inline,1), left(blocks,0..*), right(blocks,0..*)
@@ -162,9 +162,14 @@ tags: [layout, scaffold, new-deck]
 - [ ] 実機で新規デッキを作り、11種それぞれの見た目が参考画像の配置に
   近いか(ユーザー自身に依頼)
 - [ ] 方針からの追加判断でよいか(実装時に決めたもの):
-  - 「+」は直前が`title-slide`/`caption`/`blank`なら`title-body`にする
-    (タイトルスライドは1枚目専用、`caption`/`blank`はtitle slotが無く
-    `# New Slide`がビルドエラーになるため)。
+  - 「+」は直前のレイアウトのうち「見出しだけのスライドがビルドできる」
+    もの(`RenderPayload.headingLayouts`)だけを引き継ぐ。`caption`/`blank`
+    (title slotが無い)や`title-body-image`(画像必須)、および
+    `title-slide`(1枚目専用)の後は`title-body`にする。
+  - `title-slide`のサブタイトルはslot名`subtitle`ではなく`body`
+    (arity 0..1)にした。フェンス不要で書けて、スターターに画像を
+    ドロップしたときも`title-body-image`が合うレイアウトとして提示される
+    (`subtitle`だとどのレイアウトにも合わず回復手段が無かった)。
   - layoutを明示したスライド(新規デッキでは全スライド)に画像をドロップ
     すると、従来の自動切替ではなくエラーバーの「レイアウトを選ぶ」から
     `title-body-image`を選ぶ導線になる(layout未明示スライドは従来通り
