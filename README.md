@@ -1,8 +1,7 @@
-<p align="center">
-  <img src="brand/app-icon.svg" alt="" width="128" height="128">
-</p>
-
-<h1 align="center">Peitho Studio</h1>
+<h1 align="center">
+  <img src="brand/app-icon.svg" alt="" width="96" height="96"><br>
+  Peitho Studio
+</h1>
 
 A desktop editor for [Peitho](https://github.com/mizzy/peitho) presentations: Markdown as the source of truth, HTML slides you can interact with. Use HTML, CSS and JavaScript to build slides your audience can explore. Edit them yourself, work with an AI coding agent, or use both.
 
