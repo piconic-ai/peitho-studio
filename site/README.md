@@ -126,6 +126,23 @@ CI identity check, so the command explicitly pins the account ID and Worker name
 It only uploads a version; production deployment keeps the normal identity check.
 Remove the workaround after Cloudflare fixes the preview build trigger.
 
+Existing preview branches can retain the old `bun run preview` command even
+after Previews Base is saved. Retrying a build may still use that old command;
+check **Deploy command** in the actual build details, not just the settings.
+The `preview` script therefore forwards to `deploy:preview` when Cloudflare's
+[built-in `WORKERS_CI=1` variable](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/#environment-variables)
+is present. Locally it still builds and starts `wrangler dev`. This prevents
+stale branch settings from leaving CI waiting on a development server.
+The affected branch must include this change; retrying an older commit cannot
+pick it up. Keep the dashboard preview command set to `bun run deploy:preview`.
+
+To repair the remote configuration, inspect the failed build's trigger and
+update its `deploy_command` to `bun run deploy:preview` using the
+[Builds API](https://developers.cloudflare.com/workers/ci-cd/builds/api-reference/),
+then rebuild the affected branch and verify the command in its logs.
+The API requires Workers Builds Configuration permission; a Wrangler OAuth
+login with Workers Scripts access alone may return `403 Forbidden`.
+
 ## Release assets
 
 The download panel classifies assets by file extension, matching what
