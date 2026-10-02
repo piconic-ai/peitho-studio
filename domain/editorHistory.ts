@@ -56,7 +56,7 @@ export interface PageNumbersStep {
   hidden: readonly number[]
 }
 
-export type HistoryStep = StructuralStep | PageNumbersStep | FrontmatterStep | LayoutPinsStep | TextStep
+export type HistoryStep = StructuralStep | PageNumbersStep | FrontmatterStep | TextStep
 
 /** Undo and redo stacks, most recent last. Each entry is the step that
  * undoes (or redoes) one operation: a slide operation, or a marker for a
@@ -304,12 +304,13 @@ export function applyFrontmatterStep(source: string, step: FrontmatterStep): str
   return setFrontmatterKey(source, step.key, step.value)
 }
 
-/** Several slides' `"layout"` set at once, as one step — the layout
- * screen moving every slide off a layout it deletes, which Undo should put
- * back in one press. Each pin names a slide by position and the layout to
- * write (`undefined`: no `"layout"` field). Like `PageNumbersStep`, it
- * holds the pinned values themselves rather than a change, so the step
- * that undoes it is the slides' values before (`inverseLayoutPinsStep`). */
+/** Several slides' `"layout"` set at once — the layout screen moving every
+ * slide off a layout it deletes. Each pin names a slide by position and
+ * the layout to write (`undefined`: no `"layout"` field). Not a history
+ * step: the move is part of the deletion, which can't be undone, and its
+ * inverse would pin the slides back to a layout whose file is gone. The
+ * inverse (`inverseLayoutPinsStep`) moves the slides back when the
+ * deletion itself then fails. */
 export interface LayoutPinsStep {
   kind: 'layout-pins'
   pins: readonly { index: number; layout: string | undefined }[]
@@ -344,4 +345,33 @@ export function applyLayoutPinsStep(texts: readonly string[], step: LayoutPinsSt
     if (slideConfigOfText(text).layout === layout) return text
     return updatePageComment(text, { layout }).trim()
   })
+}
+
+/** Whether running `step` would write `"layout": layout` onto a slide — a
+ * layout change (or its undo) naming it, a re-pin to it, or a slide put
+ * back (insert/replace) whose text names it. Once the layout's files are
+ * deleted such a step can never succeed again: every replay would fail the
+ * render and be put back on the stack. */
+export function stepPinsLayout(step: HistoryStep, layout: string): boolean {
+  switch (step.kind) {
+    case 'config':
+      return step.patch.layout === layout
+    case 'slides':
+      return (step.cmd.type === 'insert' || step.cmd.type === 'replace') && slideConfigOfText(step.cmd.text).layout === layout
+    case 'page-numbers':
+    case 'frontmatter':
+    case 'text':
+      return false
+    default: {
+      const _exhaustive: never = step
+      throw new Error(`Unhandled HistoryStep: ${JSON.stringify(_exhaustive)}`)
+    }
+  }
+}
+
+/** Whether any undo or redo step would pin a slide to `layout`
+ * (`stepPinsLayout`) — after deleting that layout, such a history no
+ * longer matches the deck and has to be forgotten. */
+export function historyPinsLayout(history: EditorHistory, layout: string): boolean {
+  return [...history.undo, ...history.redo].some(step => stepPinsLayout(step, layout))
 }

@@ -115,6 +115,7 @@ export interface Messages {
   /** Why another layout can't be opened yet: this one has unsaved edits. */
   layoutSaveFirst: string
   layoutActionFailed: (error: string) => string
+  deckChangeFailed: string
 
   // Slide preview
   previewAsPhone: string
@@ -201,6 +202,7 @@ export interface Messages {
   imageLayoutAdded: string
   layoutCreated: (layout: string) => string
   layoutDeleted: (layout: string) => string
+  layoutDeletedHistoryCleared: (layout: string) => string
   layoutSaved: (layout: string) => string
   layoutApplied: (layout: string) => string
   imageLayoutAddFailed: (error: string) => string
@@ -308,6 +310,7 @@ const en: Messages = {
   layoutUnsaved: 'Unsaved changes',
   layoutSaveFirst: 'Save or revert the changes to this layout before opening another',
   layoutActionFailed: error => `Could not change the layouts: ${error}`,
+  deckChangeFailed: 'deck.md could not be updated',
 
   previewAsPhone: 'Preview as phone',
   previewPc: 'PC',
@@ -384,6 +387,7 @@ const en: Messages = {
   imageLayoutAdded: 'Added the title-body-image layout to layouts/',
   layoutCreated: layout => `Added the ${layout} layout`,
   layoutDeleted: layout => `Deleted the ${layout} layout`,
+  layoutDeletedHistoryCleared: layout => `Deleted the ${layout} layout — undo history cleared, since it pointed slides at it`,
   layoutSaved: layout => `Saved the ${layout} layout`,
   layoutApplied: layout => `Applied the ${layout} layout to the slide`,
   imageLayoutAddFailed: error => `Could not add the image layout: ${error}`,
@@ -491,6 +495,7 @@ const ja: Messages = {
   layoutUnsaved: '未保存の変更があります',
   layoutSaveFirst: '別のレイアウトを開く前に、このレイアウトの変更を保存するか元に戻してください',
   layoutActionFailed: error => `レイアウトを変更できませんでした: ${error}`,
+  deckChangeFailed: 'deck.md を更新できませんでした',
 
   previewAsPhone: 'スマートフォン表示でプレビュー',
   previewPc: 'PC',
@@ -567,6 +572,7 @@ const ja: Messages = {
   imageLayoutAdded: '画像用レイアウト title-body-image を layouts/ に追加しました',
   layoutCreated: layout => `レイアウト ${layout} を追加しました`,
   layoutDeleted: layout => `レイアウト ${layout} を削除しました`,
+  layoutDeletedHistoryCleared: layout => `レイアウト ${layout} を削除しました。このレイアウトを指していた取り消し履歴は消去しました`,
   layoutSaved: layout => `レイアウト ${layout} を保存しました`,
   layoutApplied: layout => `スライドにレイアウト ${layout} を適用しました`,
   imageLayoutAddFailed: error => `画像用レイアウトを追加できませんでした: ${error}`,

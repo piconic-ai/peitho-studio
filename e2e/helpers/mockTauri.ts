@@ -146,6 +146,10 @@ export interface MockDeck {
    * `repinned` still names the layout, and `save_layout` refuses HTML with
    * no `<section`. */
   layoutFiles?: Record<string, { html: string; css: string | null }>
+  /** When set, `render_draft` fails for a source with a slide naming a
+   * layout `layouts` doesn't list — as peitho-core does once a layout's
+   * file is gone. Off by default: most tests name layouts freely. */
+  rejectUnknownLayouts?: boolean
   /** The fragment every `preview_layouts` entry carries — defaults to an
    * empty one (the picker then draws name-only cards and mounts no canvas).
    * Set it to give the picker real slide canvases to inspect. */
@@ -363,6 +367,12 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'open_deck':
         return { deckPath: deck.deckPath ?? deck.source, deckDir: '/fake', trusted: deck.trusted ?? false, render: renderPayloadFor(deck.source, deck) }
       case 'render_draft':
+        if (deck.rejectUnknownLayouts) {
+          splitSlides(args.content as string).forEach((range, i) => {
+            const layout = extractPageComment(range.text).config.layout
+            if (layout !== undefined && !(deck.layouts ?? []).includes(layout)) throw new Error(`slide ${String(i + 1)} names layout '${layout}', which the deck doesn't have`)
+          })
+        }
         return renderPayloadFor(args.content as string, deck)
       case 'read_deck_source': return deck.source
       case 'save_deck_source':

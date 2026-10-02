@@ -19,6 +19,7 @@ const EVERY_STATUS: StatusMessage[] = [
   { kind: 'image-layout-added' },
   { kind: 'layout-created', layout: 'quote' },
   { kind: 'layout-deleted', layout: 'quote' },
+  { kind: 'layout-deleted-history-cleared', layout: 'quote' },
   { kind: 'layout-saved', layout: 'quote' },
   { kind: 'layout-applied', layout: 'quote' },
 ]
@@ -57,10 +58,16 @@ describe('statusText', () => {
 
   test('spec: Given a change made on the layout screen, when worded in each language, then the status names the layout', () => {
     for (const language of ['en', 'ja'] as const) {
-      for (const kind of ['layout-created', 'layout-deleted', 'layout-saved', 'layout-applied'] as const) {
+      for (const kind of ['layout-created', 'layout-deleted', 'layout-deleted-history-cleared', 'layout-saved', 'layout-applied'] as const) {
         expect(statusText(messagesFor(language), { kind, layout: 'quote' })).toContain('quote')
       }
     }
+  })
+
+  test('spec: Given a deletion that forgot the undo history, when worded, then it says so, unlike a plain deletion', () => {
+    const en = messagesFor('en')
+    expect(statusText(en, { kind: 'layout-deleted-history-cleared', layout: 'quote' })).toContain('undo history cleared')
+    expect(statusText(en, { kind: 'layout-deleted', layout: 'quote' })).not.toContain('undo history')
   })
 
   test('spec: Given nothing to report, when worded, then the status bar is empty', () => {

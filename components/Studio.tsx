@@ -31,7 +31,7 @@ import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, indexAfterCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
-import { type FrontmatterStep, type HistoryStep, type LayoutPinsStep, type PageNumbersStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyLayoutPinsStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inverseLayoutPinsStep, inversePageNumbersStep, layoutPinsStepFor, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
+import { type FrontmatterStep, type HistoryStep, type LayoutPinsStep, type PageNumbersStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyLayoutPinsStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inverseLayoutPinsStep, inversePageNumbersStep, historyPinsLayout, layoutPinsStepFor, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
 import { type DeckSettingsState, frontmatterValueOf, pickChangesNothing, readDeckSettings, resolveDeckSettingPick, sameDeckSettings } from '../domain/deckSettings'
 import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
@@ -1460,9 +1460,9 @@ export function Studio() {
   // silently overwrite the earlier, and the history would record a step for
   // a change that is no longer in the file.
   let structuralQueue: Promise<void> = Promise.resolve()
-  function serialized(run: () => Promise<void>): Promise<void> {
+  function serialized<T>(run: () => Promise<T>): Promise<T> {
     const next = structuralQueue.then(run)
-    structuralQueue = next.catch(() => undefined)
+    structuralQueue = next.then(() => undefined, () => undefined)
     return next
   }
 
@@ -1495,16 +1495,17 @@ export function Studio() {
 
   // Writes several slides' `"layout"` at once through the same
   // `commitChange` path as every structural operation — the layout screen
-  // moving a deleted layout's slides to another — as one undoable step.
-  // The open slide stays open: no slide moves. A step that changes no text
-  // records nothing.
-  async function runLayoutPinsStep(step: LayoutPinsStep): Promise<StepOutcome> {
+  // moving a deleted layout's slides to another — recording nothing (see
+  // `confirmLayoutDelete`). The open slide stays open: no slide moves.
+  // Resolves the pins that put the slides back, or `null` when nothing had
+  // to change; throws when the commit fails.
+  async function commitLayoutPins(step: LayoutPinsStep): Promise<LayoutPinsStep | null> {
     const texts = currentSlideTexts()
     const next = applyLayoutPinsStep(texts, step)
-    if (next.every((text, i) => text === texts[i])) return { kind: 'rejected' }
+    if (next.every((text, i) => text === texts[i])) return null
     const inverse = inverseLayoutPinsStep(texts, step)
-    const ok = await commitChange(rebuildSource(next), { kind: 'keep' })
-    return ok ? { kind: 'done', inverse } : { kind: 'failed' }
+    if (!await commitChange(rebuildSource(next), { kind: 'keep' })) throw new Error(errorMessage() ?? settings.messages().deckChangeFailed)
+    return inverse
   }
 
   // Edit menu's deck settings: writes the picked choice into the deck's
@@ -1603,19 +1604,17 @@ export function Studio() {
   // other stack; a failed commit puts the step back so it can be retried; a
   // rejected one means the history no longer matches the deck, so it is
   // dropped whole rather than left to misfire on the next press.
-  function runReplayedStep(step: StructuralStep | PageNumbersStep | FrontmatterStep | LayoutPinsStep): Promise<StepOutcome> {
+  function runReplayedStep(step: StructuralStep | PageNumbersStep | FrontmatterStep): Promise<StepOutcome> {
     switch (step.kind) {
       case 'page-numbers':
         return runPageNumbersStep(step)
-      case 'layout-pins':
-        return runLayoutPinsStep(step)
       case 'frontmatter':
         return runFrontmatterStep(step)
       default:
         return runStep(step, cmd => selectionForReplay(step, cmd, editor.selectedIndex()))
     }
   }
-  async function replayStructuralStep(step: StructuralStep | PageNumbersStep | FrontmatterStep | LayoutPinsStep, direction: 'undo' | 'redo'): Promise<void> {
+  async function replayStructuralStep(step: StructuralStep | PageNumbersStep | FrontmatterStep, direction: 'undo' | 'redo'): Promise<void> {
     const isUndo = direction === 'undo'
     const outcome = await runReplayedStep(step)
     if (outcome.kind === 'done') {
@@ -1961,34 +1960,42 @@ export function Studio() {
   }
 
   // Deletes the layout the delete flow is about: checks first that the deck
-  // still builds with its slides moved, then moves them (one Undo-able
-  // step — the file deletion itself can't be undone, like adding the image
-  // layout) and deletes the files.
+  // still builds with its slides moved and without the layout, then moves
+  // them and deletes the files. The move is part of the deletion, which
+  // can't be undone (like adding the image layout), so it records no undo
+  // step: undoing it would pin the slides back to a layout whose file is
+  // gone — a render that fails on every press. An older step that would do
+  // the same makes the whole history stale, so it is forgotten.
   async function confirmLayoutDelete(): Promise<void> {
     const flow = layouts.confirmDeleteFlow()
     if (flow === null || flow.kind !== 'deleting') return
     const { name, slides, replacement } = flow
+    let historyCleared = false
     const ok = await runLayoutAction(async () => {
       const texts = currentSlideTexts()
       const original = rebuildSource(texts)
       const step = replacement === null || slides.length === 0 ? null : layoutPinsStepFor(slides, replacement)
       const repinned = step === null ? original : rebuildSource(applyLayoutPinsStep(texts, step))
       await deckIpc.checkLayoutRemoval(original, repinned, name)
-      if (step !== null) {
-        let moved = false
-        await performStep(async () => {
-          const outcome = await runLayoutPinsStep(step)
-          moved = outcome.kind === 'done'
-          return outcome
-        })
-        if (!moved) throw new Error(errorMessage() ?? 'the slides could not be moved')
-      }
+      if (step !== null) await moveSlidesOffLayout(step)
       await deckIpc.deleteLayout(rebuildSource(currentSlideTexts()), name)
+      if (historyPinsLayout(history.history(), name)) {
+        history.clear()
+        historyCleared = true
+      }
     })
     layouts.finishDelete()
     if (!ok) return
     await refreshLayouts(null)
-    setStatusMessage({ kind: 'layout-deleted', layout: name })
+    setStatusMessage({ kind: historyCleared ? 'layout-deleted-history-cleared' : 'layout-deleted', layout: name })
+  }
+
+  // Re-pins a deleted layout's slides once every earlier operation has
+  // landed, recording nothing (see `confirmLayoutDelete`). Resolves the
+  // pins that put them back (`null`: nothing changed); throws when the
+  // commit fails.
+  function moveSlidesOffLayout(step: LayoutPinsStep): Promise<LayoutPinsStep | null> {
+    return serialized(() => commitLayoutPins(step))
   }
 
   async function saveShownLayout(): Promise<void> {

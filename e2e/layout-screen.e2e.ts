@@ -134,7 +134,18 @@ test('Given an unused layout, when it is deleted and confirmed, then it leaves t
   expect(deck.source).toBe(SOURCE)
 })
 
-test('Given a layout two slides use, when it is deleted, then a layout to move them to must be picked; confirming moves both slides and deletes it, and Undo puts both back in one step', async ({ page }) => {
+function pressUndo(page: Page): Promise<void> {
+  return page.evaluate(() => {
+    (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, toWindow?: string) => void })
+      .__mockEmitTauriEvent('menu:undo', null, 'main')
+  })
+}
+
+function layoutsOf(source: string): unknown[] {
+  return slideConfigs(source).map(config => (config as { layout?: string }).layout)
+}
+
+test('Given a layout two slides use, when it is deleted, then a layout to move them to must be picked, and confirming moves both slides and deletes it', async ({ page }) => {
   const deck = deckOf()
   await openLayoutScreen(page, deck)
 
@@ -156,12 +167,50 @@ test('Given a layout two slides use, when it is deleted, then a layout to move t
     { key: 'intro', layout: 'quote' },
     { key: 'more', layout: 'quote' },
   ])
+})
 
-  await page.evaluate(() => {
-    (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, toWindow?: string) => void })
-      .__mockEmitTauriEvent('menu:undo', null, 'main')
-  })
-  await expect.poll(() => slideConfigs(deck.source).map(config => (config as { layout: string }).layout)).toEqual(['title-slide', 'title-body', 'title-body'])
+// The move is part of the deletion, which can't be undone: undoing it
+// would point the slides back at a layout whose file is gone, a render that
+// can never succeed. So Undo skips it and reaches the step before.
+test('Given slides moved off a deleted layout, when Undo is pressed, then the move stays and Undo reaches the change made before the deletion', async ({ page }) => {
+  const deck = deckOf({ rejectUnknownLayouts: true })
+  await openLayoutScreen(page, deck)
+  await row(page, 'quote').click()
+  await page.locator('[data-apply-layout]').click()
+  await expect.poll(() => layoutsOf(deck.source)).toEqual(['quote', 'title-body', 'title-body'])
+
+  await row(page, 'title-body').click()
+  await page.locator('[data-delete-layout]').click()
+  await page.locator('[data-delete-replacement]').selectOption('quote')
+  await page.locator('[data-confirm-delete-layout]').click()
+  await expect(row(page, 'title-body')).toHaveCount(0)
+  expect(layoutsOf(deck.source)).toEqual(['quote', 'quote', 'quote'])
+
+  await pressUndo(page)
+
+  await expect.poll(() => layoutsOf(deck.source)).toEqual(['title-slide', 'quote', 'quote'])
+})
+
+test('Given an undo step that would pin a slide back to a layout, when that layout is deleted, then the undo history is forgotten instead of failing on every Undo', async ({ page }) => {
+  const deck = deckOf({ rejectUnknownLayouts: true })
+  await openLayoutScreen(page, deck)
+  // Undoing this would pin the cover back to `title-slide`.
+  await row(page, 'quote').click()
+  await page.locator('[data-apply-layout]').click()
+  await expect.poll(() => layoutsOf(deck.source)).toEqual(['quote', 'title-body', 'title-body'])
+
+  await row(page, 'title-slide').click()
+  await page.locator('[data-delete-layout]').click()
+  await page.locator('[data-confirm-delete-layout]').click()
+  await expect(row(page, 'title-slide')).toHaveCount(0)
+  await expect(page.getByText('Deleted the title-slide layout — undo history cleared')).toBeVisible()
+
+  const before = deck.source
+  await pressUndo(page)
+  await pressUndo(page)
+
+  await expect(page.getByText("names layout 'title-slide'")).toHaveCount(0)
+  expect(deck.source).toBe(before)
 })
 
 test('Given a delete the deck refuses, then the reason shows, nothing is moved, and the layout stays', async ({ page }) => {

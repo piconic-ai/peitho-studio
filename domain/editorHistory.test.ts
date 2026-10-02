@@ -10,6 +10,8 @@ import {
   applyPageNumbersStep,
   commandForStep,
   hiddenPageNumberSlides,
+  historyPinsLayout,
+  stepPinsLayout,
   inverseFrontmatterStep,
   inversePageNumbersStep,
   pageNumbersStepFor,
@@ -611,7 +613,7 @@ describe('layout pins (moving a deleted layout\'s slides)', () => {
     expect(slideConfigOfText(next[2]).layout).toBe('one-column-text')
   })
 
-  test('spec: Given a re-pin, When it is undone in one step, Then every slide gets back exactly the layout field it had (none for a slide that had none)', () => {
+  test('spec: Given a re-pin, When it is reversed, Then every slide gets back exactly the layout field it had (none for a slide that had none)', () => {
     const texts = [COVER, INTRO, PLAIN]
     const step = layoutPinsStepFor([1, 2], 'one-column-text')
     const inverse = inverseLayoutPinsStep(texts, step)
@@ -639,5 +641,44 @@ describe('layout pins (moving a deleted layout\'s slides)', () => {
 
   test('adversarial: Given no slides to move, Then the step changes nothing', () => {
     expect(applyLayoutPinsStep([COVER, PLAIN], layoutPinsStepFor([], 'x'))).toEqual([COVER, PLAIN])
+  })
+})
+
+describe('stepPinsLayout / historyPinsLayout (forgetting history after a layout is deleted)', () => {
+  const ON_QUOTE = '<!-- {"key":"a","layout":"quote"} -->\n# A'
+  const PLAIN = '# Plain'
+
+  test('spec: Given each kind of step that writes a layout, When it names the layout, Then it pins it', () => {
+    expect(stepPinsLayout({ kind: 'config', index: 0, patch: { layout: 'quote' } }, 'quote')).toBe(true)
+    expect(stepPinsLayout({ kind: 'slides', cmd: { type: 'insert', at: 0, text: ON_QUOTE } }, 'quote')).toBe(true)
+    expect(stepPinsLayout({ kind: 'slides', cmd: { type: 'replace', index: 0, text: ON_QUOTE } }, 'quote')).toBe(true)
+  })
+
+  test('spec: Given a history with a step pinning the layout on either stack, Then the history pins it', () => {
+    const pin: HistoryStep = { kind: 'config', index: 1, patch: { layout: 'quote' } }
+    expect(historyPinsLayout({ undo: [DELETE_0, pin], redo: [] }, 'quote')).toBe(true)
+    expect(historyPinsLayout({ undo: [DELETE_0], redo: [pin] }, 'quote')).toBe(true)
+    expect(historyPinsLayout({ undo: [DELETE_0, MOVE_1_0, LAYOUT_OFF], redo: [] }, 'quote')).toBe(false)
+  })
+
+  test('adversarial: Given steps that write no layout or another one, Then they do not pin it', () => {
+    const steps: HistoryStep[] = [
+      LAYOUT_OFF,
+      { kind: 'config', index: 0, patch: { layout: 'quote-copy' } },
+      { kind: 'config', index: 0, patch: { draft: true } },
+      { kind: 'slides', cmd: { type: 'insert', at: 0, text: PLAIN } },
+      { kind: 'slides', cmd: { type: 'insert', at: 0, text: '<!-- not json -->\n# x' } },
+      { kind: 'slides', cmd: { type: 'delete', index: 0 } },
+      { kind: 'slides', cmd: { type: 'move', from: 0, to: 1 } },
+      { kind: 'page-numbers', value: null, hidden: [] },
+      { kind: 'frontmatter', key: 'layout', value: 'quote' },
+      { kind: 'text', index: 0, field: 'body', seq: 1 },
+    ]
+    for (const step of steps) expect(stepPinsLayout(step, 'quote')).toBe(false)
+  })
+
+  test('adversarial: Given an empty history or an empty layout name, Then nothing pins it', () => {
+    expect(historyPinsLayout(EMPTY_HISTORY, 'quote')).toBe(false)
+    expect(historyPinsLayout({ undo: [LAYOUT_OFF], redo: [] }, '')).toBe(false)
   })
 })

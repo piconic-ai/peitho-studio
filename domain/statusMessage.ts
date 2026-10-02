@@ -18,6 +18,9 @@ export type StatusMessage =
   | { kind: 'image-layout-added' }
   | { kind: 'layout-created'; layout: string }
   | { kind: 'layout-deleted'; layout: string }
+  // Deleted, and the undo history forgotten: some step in it would have
+  // pinned a slide back to the deleted layout (`historyPinsLayout`).
+  | { kind: 'layout-deleted-history-cleared'; layout: string }
   | { kind: 'layout-saved'; layout: string }
   | { kind: 'layout-applied'; layout: string }
 
@@ -38,6 +41,7 @@ export function statusText(messages: Messages, status: StatusMessage): string {
     case 'image-layout-added': return messages.imageLayoutAdded
     case 'layout-created': return messages.layoutCreated(status.layout)
     case 'layout-deleted': return messages.layoutDeleted(status.layout)
+    case 'layout-deleted-history-cleared': return messages.layoutDeletedHistoryCleared(status.layout)
     case 'layout-saved': return messages.layoutSaved(status.layout)
     case 'layout-applied': return messages.layoutApplied(status.layout)
     default: {
