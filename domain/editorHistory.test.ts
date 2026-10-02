@@ -4,6 +4,9 @@ import {
   EMPTY_HISTORY,
   MAX_HISTORY_DEPTH,
   applyFrontmatterStep,
+  applyLayoutPinsStep,
+  inverseLayoutPinsStep,
+  layoutPinsStepFor,
   applyPageNumbersStep,
   commandForStep,
   hiddenPageNumberSlides,
@@ -591,5 +594,50 @@ describe('frontmatter step: adversarial', () => {
       const undone = applyFrontmatterStep(done.source, done.inverse)
       return inverseFrontmatterStep(undone, done.inverse).value === before
     }))
+  })
+})
+
+describe('layout pins (moving a deleted layout\'s slides)', () => {
+  const COVER = '<!-- {"key":"cover","layout":"title-slide"} -->\n# Cover'
+  const INTRO = '<!-- {"key":"intro","layout":"title-body"} -->\n# Intro\n\nText.'
+  const PLAIN = '# Plain'
+
+  test('spec: Given slides on a layout being deleted, When they are re-pinned, Then each names the replacement and the other slides are untouched', () => {
+    const texts = [COVER, INTRO, PLAIN]
+    const next = applyLayoutPinsStep(texts, layoutPinsStepFor([1, 2], 'one-column-text'))
+    expect(next[0]).toBe(COVER)
+    expect(slideConfigOfText(next[1])).toEqual({ key: 'intro', layout: 'one-column-text' })
+    expect(next[1]).toContain('# Intro\n\nText.')
+    expect(slideConfigOfText(next[2]).layout).toBe('one-column-text')
+  })
+
+  test('spec: Given a re-pin, When it is undone in one step, Then every slide gets back exactly the layout field it had (none for a slide that had none)', () => {
+    const texts = [COVER, INTRO, PLAIN]
+    const step = layoutPinsStepFor([1, 2], 'one-column-text')
+    const inverse = inverseLayoutPinsStep(texts, step)
+    expect(inverse).toEqual({ kind: 'layout-pins', pins: [{ index: 1, layout: 'title-body' }, { index: 2, layout: undefined }] })
+    const undone = applyLayoutPinsStep(applyLayoutPinsStep(texts, step), inverse)
+    expect(undone.map(slideConfigOfText)).toEqual(texts.map(slideConfigOfText))
+    expect(undone[1]).toBe(INTRO)
+  })
+
+  test('adversarial: Given a slide already on the replacement, Then its text stays byte for byte', () => {
+    expect(applyLayoutPinsStep([INTRO], layoutPinsStepFor([0], 'title-body'))[0]).toBe(INTRO)
+  })
+
+  test('adversarial: Given positions that name no slide, Then they are ignored by the step and left out of its inverse', () => {
+    const step = layoutPinsStepFor([5, -1, 0.5, Number.NaN], 'x')
+    expect(applyLayoutPinsStep([INTRO], step)).toEqual([INTRO])
+    expect(inverseLayoutPinsStep([INTRO], step).pins).toEqual([])
+    expect(applyLayoutPinsStep([], layoutPinsStepFor([0], 'x'))).toEqual([])
+  })
+
+  test('adversarial: Given the same slide pinned twice, Then the last pin wins', () => {
+    const step = { kind: 'layout-pins' as const, pins: [{ index: 0, layout: 'a' }, { index: 0, layout: 'b' }] }
+    expect(slideConfigOfText(applyLayoutPinsStep([PLAIN], step)[0]).layout).toBe('b')
+  })
+
+  test('adversarial: Given no slides to move, Then the step changes nothing', () => {
+    expect(applyLayoutPinsStep([COVER, PLAIN], layoutPinsStepFor([], 'x'))).toEqual([COVER, PLAIN])
   })
 })

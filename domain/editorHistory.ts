@@ -56,7 +56,7 @@ export interface PageNumbersStep {
   hidden: readonly number[]
 }
 
-export type HistoryStep = StructuralStep | PageNumbersStep | FrontmatterStep | TextStep
+export type HistoryStep = StructuralStep | PageNumbersStep | FrontmatterStep | LayoutPinsStep | TextStep
 
 /** Undo and redo stacks, most recent last. Each entry is the step that
  * undoes (or redoes) one operation: a slide operation, or a marker for a
@@ -302,4 +302,46 @@ export function inverseFrontmatterStep(source: string, step: FrontmatterStep): F
  * and without any trailing comment it had; its value is the same. */
 export function applyFrontmatterStep(source: string, step: FrontmatterStep): string {
   return setFrontmatterKey(source, step.key, step.value)
+}
+
+/** Several slides' `"layout"` set at once, as one step — the layout
+ * screen moving every slide off a layout it deletes, which Undo should put
+ * back in one press. Each pin names a slide by position and the layout to
+ * write (`undefined`: no `"layout"` field). Like `PageNumbersStep`, it
+ * holds the pinned values themselves rather than a change, so the step
+ * that undoes it is the slides' values before (`inverseLayoutPinsStep`). */
+export interface LayoutPinsStep {
+  kind: 'layout-pins'
+  pins: readonly { index: number; layout: string | undefined }[]
+}
+
+/** The step that pins every slide at `indices` to `layout`. */
+export function layoutPinsStepFor(indices: readonly number[], layout: string): LayoutPinsStep {
+  return { kind: 'layout-pins', pins: indices.map(index => ({ index, layout })) }
+}
+
+/** The step that puts back the `"layout"` each slide `step` pins has in
+ * `texts` now. A pin naming no slide is left out. */
+export function inverseLayoutPinsStep(texts: readonly string[], step: LayoutPinsStep): LayoutPinsStep {
+  return {
+    kind: 'layout-pins',
+    pins: step.pins
+      .filter(pin => Number.isInteger(pin.index) && pin.index >= 0 && pin.index < texts.length)
+      .map(pin => ({ index: pin.index, layout: slideConfigOfText(texts[pin.index]).layout })),
+  }
+}
+
+/** `texts` with each pin of `step` written. Only a slide whose `"layout"`
+ * has to change is rewritten, so every other slide's text stays byte for
+ * byte as it was. A position past the end, negative, or not an integer
+ * names no slide and is ignored; for a repeated one, the last pin wins. */
+export function applyLayoutPinsStep(texts: readonly string[], step: LayoutPinsStep): string[] {
+  const wanted = new Map<number, string | undefined>()
+  for (const pin of step.pins) wanted.set(pin.index, pin.layout)
+  return texts.map((text, i) => {
+    if (!wanted.has(i)) return text
+    const layout = wanted.get(i)
+    if (slideConfigOfText(text).layout === layout) return text
+    return updatePageComment(text, { layout }).trim()
+  })
 }
