@@ -76,6 +76,15 @@ h1, h2 { font-family: var(--serif); font-weight: 400; letter-spacing: -0.03em; }
 .dots i:nth-child(3) { background: #28c840; }
 .window-title { position: absolute; left: 50%; transform: translateX(-50%); font-size: 13px; color: #57534e; white-space: nowrap; }
 .window-shot { display: block; width: 100%; height: auto; }
+/* While the demo isn't playing, mute the poster's red accent so the eye
+   lands on the logo. main.ts adds .is-idle (no JS, no veil). */
+.window-media { position: relative; }
+.window-media::after {
+  content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; pointer-events: none;
+  background: rgba(251, 250, 248, 0.55); -webkit-backdrop-filter: grayscale(1); backdrop-filter: grayscale(1);
+  opacity: 0; transition: opacity 0.3s;
+}
+.window-media.is-idle::after { opacity: 1; }
 .demo-caption { text-align: center; color: var(--muted); font-size: 14px; padding: 0 16px; }
 
 @media (prefers-reduced-motion: no-preference) {

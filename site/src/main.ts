@@ -11,3 +11,12 @@ import './components/DownloadPanel'
 
 const list = document.getElementById('download-list')
 if (list) render(list, 'DownloadPanel', {})
+
+// Veil the demo's poster (see .window-media in site.css) until it plays.
+const media = document.getElementById('demo-media')
+const video = document.getElementById('demo-video') as HTMLVideoElement | null
+if (media && video) {
+  const sync = () => media.classList.toggle('is-idle', video.paused)
+  for (const type of ['play', 'playing', 'pause', 'ended']) video.addEventListener(type, sync)
+  sync()
+}
