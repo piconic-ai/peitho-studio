@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use peitho_core::{parse_layout, Layout, Layouts};
 use serde::Serialize;
 
+use super::assets::ResolvedAssets;
 use super::builtin;
 use super::image_layout::{dispatched_layout, refuse_taken, write_new_file, Written};
 use super::layout_fit::{self, LayoutFit};
@@ -344,44 +345,64 @@ fn without_layout(current: &Layouts, name: &str) -> Result<Layouts, String> {
     Layouts::new(rest).map_err(|err| err.to_string())
 }
 
+/// `assets` as they will be once layout `name` is deleted: its layouts
+/// replaced by `next` (the deck's layouts without `name`, see
+/// `without_layout`), and without `css/<name>.css` — the CSS file a layout
+/// of the deck's own has. Every other CSS file stays, even one whose name
+/// merely starts with `name`.
+fn assets_without_layout(assets: ResolvedAssets, next: Layouts, name: &str) -> ResolvedAssets {
+    let own_css = format!("{name}.css");
+    ResolvedAssets { layouts: next, css: assets.css.into_iter().filter(|file| file.name != own_css).collect(), ..assets }
+}
+
+/// Whether `deck_path`'s deck still builds once layout `name` and its CSS
+/// are gone: `repinned` rendered against the deck's assets without them
+/// (`assets_without_layout`), before any file is touched — say another
+/// CSS file names a `.slot-*` only this layout had. A deck that doesn't
+/// build today (`original`) isn't held to it: this only guards against
+/// making things worse.
+fn check_build_without_layout(deck_path: &Path, original: &str, repinned: &str, next: Layouts, name: &str) -> Result<(), String> {
+    if pipeline::render_source(deck_path, original).is_err() {
+        return Ok(());
+    }
+    let mut parsed = pipeline::parse_source(deck_path, repinned)?;
+    parsed.assets = assets_without_layout(parsed.assets, next, name);
+    pipeline::render_parsed(deck_path, parsed)
+        .map(|_| ())
+        .map_err(|err| format!("removing the '{name}' layout would stop the deck from building: {err}"))
+}
+
 /// Whether deleting layout `name` from `deck_path`'s deck is safe:
 /// `original` is the deck source now, `repinned` the same with every slide
-/// on `name` re-pinned to the layout picked in its place (see
-/// `check_layout_set_change`).
+/// on `name` re-pinned to the layout picked in its place. Every slide must
+/// keep building as it does (see `check_layout_set_change`), and the deck
+/// as a whole must still build without the layout's files
+/// (`check_build_without_layout`) — so a deletion `delete_layout` would
+/// refuse is refused here, before the frontend re-pins any slide.
 pub fn check_layout_removal(deck_path: &Path, original: &str, repinned: &str, name: &str) -> Result<(), String> {
     let current = pipeline::parse_source(deck_path, original)?.assets.layouts;
     let next = without_layout(&current, name)?;
-    check_layout_set_change(deck_path, original, repinned, &next, Some(name), &format!("removing the '{name}' layout"))
+    check_layout_set_change(deck_path, original, repinned, &next, Some(name), &format!("removing the '{name}' layout"))?;
+    check_build_without_layout(deck_path, original, repinned, next, name)
 }
 
 /// Deletes layout `name`'s files (`layouts/<name>.html`, and `css/<name>.css`
 /// when there is one) from `deck_path`'s deck once `check_layout_removal`
 /// agrees for `content`, the deck source as it is now (its slides already
-/// moved off `name`). When the deck built before and doesn't after — say
-/// another CSS file names a `.slot-*` only this layout had — the files are
-/// put back and the build error is returned.
+/// moved off `name`) — including that the deck still builds without them,
+/// so nothing is removed for a deletion the build would refuse.
 pub fn delete_layout(deck_path: &Path, content: &str, name: &str) -> Result<(), String> {
     let (html_path, css_path) = layout_paths(pipeline::deck_dir_of(deck_path), name)?;
     if !html_path.is_file() {
         return Err(format!("'{name}' is not a layout file of this deck"));
     }
     check_layout_removal(deck_path, content, content, name)?;
-    let built_before = pipeline::render_source(deck_path, content).is_ok();
     let removed = read_layout(deck_path, name)?;
     std::fs::remove_file(&html_path).map_err(|err| format!("failed to delete {}: {err}", html_path.display()))?;
     if removed.css.is_some() {
         if let Err(err) = std::fs::remove_file(&css_path) {
             let _ = std::fs::write(&html_path, &removed.html);
             return Err(format!("failed to delete {}: {err}", css_path.display()));
-        }
-    }
-    if built_before {
-        if let Err(err) = pipeline::render_source(deck_path, content) {
-            let _ = std::fs::write(&html_path, &removed.html);
-            if let Some(css) = &removed.css {
-                let _ = std::fs::write(&css_path, css);
-            }
-            return Err(format!("removing the '{name}' layout would stop the deck from building: {err}"));
         }
     }
     Ok(())
@@ -902,24 +923,87 @@ mod tests {
     }
 
     #[test]
-    fn adversarial_a_deletion_that_would_break_the_build_puts_the_files_back() {
+    fn adversarial_a_deletion_that_would_break_the_build_is_refused_by_the_check_before_anything_changes() {
         // `css/base.css` styles `.slot-code`, and in a new deck `title-body`
         // is the only layout with a code slot: peitho-core refuses a theme
         // naming a slot class no layout has. The dispatch check passes (the
-        // slides moved to `one-column-text`), the build doesn't.
+        // slides moved to `one-column-text`), the build doesn't — and the
+        // check says so before the frontend re-pins any slide.
         let (dir, deck_path) = standard_deck(PINNED);
         let repinned = PINNED.replace("\"layout\":\"title-body\"", "\"layout\":\"one-column-text\"");
-        check_layout_removal(&deck_path, PINNED, &repinned, "title-body").unwrap();
         let before = files_under(dir.path());
 
-        let err = delete_layout(&deck_path, &repinned, "title-body").unwrap_err();
-
+        let err = check_layout_removal(&deck_path, PINNED, &repinned, "title-body").unwrap_err();
         assert!(err.contains("stop the deck from building"), "{err}");
         assert!(err.contains(".slot-code"), "{err}");
+
+        let err = delete_layout(&deck_path, &repinned, "title-body").unwrap_err();
+        assert!(err.contains("stop the deck from building"), "{err}");
         assert_eq!(files_under(dir.path()), before);
-        let title_body = builtin::STANDARD_LAYOUTS.iter().find(|layout| layout.name == "title-body").unwrap();
-        assert_eq!(std::fs::read_to_string(dir.path().join("layouts/title-body.html")).unwrap(), title_body.html);
-        assert_eq!(std::fs::read_to_string(dir.path().join("css/title-body.css")).unwrap(), title_body.css);
         assert!(render_source(&deck_path, &repinned).is_ok());
+    }
+
+    #[test]
+    fn given_the_build_check_then_it_renders_the_repinned_source_not_the_original() {
+        // The original still has slides on `title-slide`; only the
+        // re-pinned source can build without it.
+        let (_dir, deck_path) = standard_deck(PINNED);
+        let repinned = PINNED.replace("\"layout\":\"title-slide\"", "\"layout\":\"section-header\"");
+        let current = pipeline::parse_source(&deck_path, PINNED).unwrap().assets.layouts;
+
+        let next = without_layout(&current, "title-slide").unwrap();
+        assert!(check_build_without_layout(&deck_path, PINNED, &repinned, next, "title-slide").is_ok());
+        let next = without_layout(&current, "title-slide").unwrap();
+        assert!(check_build_without_layout(&deck_path, PINNED, PINNED, next, "title-slide").is_err());
+    }
+
+    #[test]
+    fn adversarial_a_deck_that_does_not_build_today_is_not_held_to_the_build_check() {
+        // `quote` isn't a layout of the deck: the original doesn't build,
+        // so the deletion isn't blamed for it.
+        let (_dir, deck_path) = standard_deck(PINNED);
+        let broken = PINNED.replace("\"layout\":\"title-slide\"", "\"layout\":\"quote\"");
+        assert!(render_source(&deck_path, &broken).is_err());
+        let current = pipeline::parse_source(&deck_path, PINNED).unwrap().assets.layouts;
+        let next = without_layout(&current, "big-number").unwrap();
+
+        assert!(check_build_without_layout(&deck_path, &broken, &broken, next, "big-number").is_ok());
+    }
+
+    // --- assets_without_layout ---
+
+    fn css_names(assets: &ResolvedAssets) -> Vec<&str> {
+        assets.css.iter().map(|file| file.name.as_str()).collect()
+    }
+
+    #[test]
+    fn given_a_layout_with_its_css_when_left_out_then_its_layout_and_css_file_go_and_the_rest_stay() {
+        let (dir, _deck_path) = standard_deck(PINNED);
+        std::fs::write(dir.path().join("css/title-body-extra.css"), ".peitho-slide {}\n").unwrap();
+        let assets = crate::engine::assets::resolve(dir.path()).unwrap();
+        let next = without_layout(&assets.layouts, "title-body").unwrap();
+
+        let without = assets_without_layout(assets, next, "title-body");
+
+        assert!(without.layouts.get("title-body").is_none());
+        assert!(without.layouts.get("title-slide").is_some());
+        let names = css_names(&without);
+        assert!(!names.contains(&"title-body.css"), "{names:?}");
+        assert!(names.contains(&"title-body-extra.css"), "a CSS file merely sharing the prefix stays: {names:?}");
+        assert!(names.contains(&"title-slide.css"), "{names:?}");
+        assert!(names.contains(&"base.css"), "{names:?}");
+    }
+
+    #[test]
+    fn adversarial_a_layout_without_css_or_a_deck_on_the_built_in_theme_loses_no_css_file() {
+        let (dir, _deck_path) = deck_with(&[("cover", COVER), ("statement", STATEMENT)], "# A\n");
+        let assets = crate::engine::assets::resolve(dir.path()).unwrap();
+        let before: Vec<String> = assets.css.iter().map(|file| file.name.clone()).collect();
+        let next = without_layout(&assets.layouts, "cover").unwrap();
+
+        let without = assets_without_layout(assets, next, "cover");
+
+        assert_eq!(css_names(&without), before.iter().map(String::as_str).collect::<Vec<_>>());
+        assert_eq!(without.layouts.names(), vec!["statement"]);
     }
 }
