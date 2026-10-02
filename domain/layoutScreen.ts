@@ -16,12 +16,16 @@ export type StudioMode = 'slides' | 'layouts'
 export function layoutUsage(
   entries: readonly SlideListEntry[],
   slideLayouts: Readonly<Record<string, string>>,
-): Record<string, number[]> {
-  const usage: Record<string, number[]> = {}
+): ReadonlyMap<string, readonly number[]> {
+  // A `Map`, not an object: a layout may be named `constructor` or
+  // `__proto__`, which an object would find on its prototype.
+  const usage = new Map<string, number[]>()
   for (const entry of entries) {
     if (entry.kind !== 'rendered' || !Object.hasOwn(slideLayouts, entry.slide.key)) continue
     const layout = slideLayouts[entry.slide.key]
-    ;(usage[layout] ??= []).push(entry.sourceIndex)
+    const slides = usage.get(layout)
+    if (slides) slides.push(entry.sourceIndex)
+    else usage.set(layout, [entry.sourceIndex])
   }
   return usage
 }
@@ -43,7 +47,7 @@ export interface LayoutRow {
 /** The layout list's rows, in the deck's own layout order (`names`). */
 export function layoutRows(
   names: readonly string[],
-  usage: Readonly<Record<string, readonly number[]>>,
+  usage: ReadonlyMap<string, readonly number[]>,
   language: Language,
   generation: number,
 ): LayoutRow[] {
@@ -51,7 +55,7 @@ export function layoutRows(
     key: `${String(generation)}:${name}`,
     name,
     label: layoutDisplayName(name, language),
-    usage: Object.hasOwn(usage, name) ? usage[name].length : 0,
+    usage: usage.get(name)?.length ?? 0,
     deletable: names.length > 1,
   }))
 }

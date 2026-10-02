@@ -1980,7 +1980,7 @@ export function Studio() {
     const name = layouts.selectedLayout()
     if (name === null) return
     layouts.setNotice(null)
-    layouts.beginDelete(name, layoutNames(), slidesByLayout()[name] ?? [])
+    layouts.beginDelete(name, layoutNames(), slidesByLayout().get(name) ?? [])
   }
 
   // Deletes the layout the delete flow is about: checks first that the deck

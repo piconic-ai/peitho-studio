@@ -21,25 +21,36 @@ const SLIDE_LAYOUTS = { cover: 'title-slide', intro: 'title-body', more: 'title-
 
 describe('layoutUsage', () => {
   test('spec: Given a deck whose slides are on two layouts, When usage is counted, Then each layout lists its slides by their place in deck.md', () => {
-    expect(layoutUsage(ENTRIES, SLIDE_LAYOUTS)).toEqual({ 'title-slide': [0], 'title-body': [1, 3] })
+    expect(layoutUsage(ENTRIES, SLIDE_LAYOUTS)).toEqual(new Map([['title-slide', [0]], ['title-body', [1, 3]]]))
   })
 
   test('spec: Given a draft slide before another, When usage is counted, Then the later slide keeps its own position and the draft counts for no layout', () => {
     // `more` is the fourth slide of deck.md even though it's the third
     // the render built — the draft before it takes a place too.
-    expect(layoutUsage(ENTRIES, SLIDE_LAYOUTS)['title-body']).toEqual([1, 3])
+    expect(layoutUsage(ENTRIES, SLIDE_LAYOUTS).get('title-body')).toEqual([1, 3])
   })
 
   test('adversarial: Given no slides, or no layout reported for a slide, When usage is counted, Then nothing is invented', () => {
-    expect(layoutUsage([], SLIDE_LAYOUTS)).toEqual({})
-    expect(layoutUsage(ENTRIES, {})).toEqual({})
-    expect(layoutUsage(ENTRIES, { cover: 'title-slide' })).toEqual({ 'title-slide': [0] })
+    expect(layoutUsage([], SLIDE_LAYOUTS)).toEqual(new Map())
+    expect(layoutUsage(ENTRIES, {})).toEqual(new Map())
+    expect(layoutUsage(ENTRIES, { cover: 'title-slide' })).toEqual(new Map([['title-slide', [0]]]))
   })
 
   test('adversarial: Given a slide key that collides with an Object prototype name, When usage is counted, Then only the layouts actually reported count', () => {
     const entries = buildSlideList('<!-- {"key":"constructor"} -->\n# X', [slide(0, 'constructor')])
-    expect(layoutUsage(entries, {})).toEqual({})
-    expect(layoutUsage(entries, { constructor: 'blank' })).toEqual({ blank: [0] })
+    expect(layoutUsage(entries, {})).toEqual(new Map())
+    expect(layoutUsage(entries, { constructor: 'blank' })).toEqual(new Map([['blank', [0]]]))
+  })
+
+  test('adversarial: Given layouts named like Object prototype members, When usage is counted and listed, Then each counts only its own slides', () => {
+    const source = ['constructor', 'toString', '__proto__', 'hasOwnProperty'].map(key => `<!-- {"key":"${key}"} -->\n# ${key}`).join('\n\n---\n\n')
+    const entries = buildSlideList(source, ['constructor', 'toString', '__proto__', 'hasOwnProperty'].map((key, i) => slide(i, key)))
+    // Parsed, so `__proto__` is an own key as it is in a render payload.
+    const slideLayouts = JSON.parse('{"constructor":"constructor","toString":"toString","__proto__":"__proto__","hasOwnProperty":"toString"}') as Record<string, string>
+    const usage = layoutUsage(entries, slideLayouts)
+    expect(usage).toEqual(new Map([['constructor', [0]], ['toString', [1, 3]], ['__proto__', [2]]]))
+    const rows = layoutRows(['constructor', 'toString', '__proto__', 'valueOf'], usage, 'en', 0)
+    expect(rows.map(row => [row.name, row.usage])).toEqual([['constructor', 1], ['toString', 2], ['__proto__', 1], ['valueOf', 0]])
   })
 })
 
@@ -55,19 +66,19 @@ describe('layoutRows', () => {
   })
 
   test('spec: Given the deck\'s only layout, When the list is built, Then its row offers no Delete', () => {
-    expect(layoutRows(['title-body-code'], {}, 'en', 0)).toEqual([
+    expect(layoutRows(['title-body-code'], new Map(), 'en', 0)).toEqual([
       { key: '0:title-body-code', name: 'title-body-code', label: 'title-body-code', usage: 0, deletable: false },
     ])
   })
 
   test('spec: Given a fresh set of previews, When the list is rebuilt, Then every row gets a new key so its thumbnail is drawn again', () => {
-    const before = layoutRows(['a', 'b'], {}, 'en', 1).map(row => row.key)
-    const after = layoutRows(['a', 'b'], {}, 'en', 2).map(row => row.key)
+    const before = layoutRows(['a', 'b'], new Map(), 'en', 1).map(row => row.key)
+    const after = layoutRows(['a', 'b'], new Map(), 'en', 2).map(row => row.key)
     expect(after.some(key => before.includes(key))).toBe(false)
   })
 
   test('adversarial: Given no layouts, When the list is built, Then it is empty', () => {
-    expect(layoutRows([], {}, 'en', 0)).toEqual([])
+    expect(layoutRows([], new Map(), 'en', 0)).toEqual([])
   })
 })
 

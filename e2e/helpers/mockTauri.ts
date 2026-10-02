@@ -329,6 +329,13 @@ function renderPayloadFor(source: string, deck: MockDeck): RenderPayload {
   return { manifest, fragments, slideLayouts, headingLayouts, assetBaseUrl: 'http://localhost:9/', css: deck.css ?? DEFAULT_CSS }
 }
 
+/** Layout `name`'s files in `deck.layoutFiles` — an own entry only, so a
+ * layout named like an `Object` prototype member (`constructor`) isn't
+ * handed the prototype's value. */
+function layoutFileOf(deck: MockDeck, name: string): { html: string; css: string | null } | undefined {
+  return deck.layoutFiles && Object.hasOwn(deck.layoutFiles, name) ? deck.layoutFiles[name] : undefined
+}
+
 /** Wires `page` up to open `deck.source` as a fake deck on load, and keeps
  * `deck.source` in sync with every `save_deck_source` call — so a test can
  * read it back afterward to assert on the persisted content. Call before
@@ -387,7 +394,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         return deck.addImageLayout?.(args.content as string, args.slideIndex as number) ?? []
       case 'read_layout': {
         const name = args.name as string
-        return deck.layoutFiles?.[name] ?? { html: `<section class="peitho-slide layout-${name}"></section>`, css: null }
+        return layoutFileOf(deck, name) ?? { html: `<section class="peitho-slide layout-${name}"></section>`, css: null }
       }
       case 'create_layout': {
         const name = (args.name as string).trim()
@@ -403,7 +410,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         let copy = `${name}-copy`
         for (let n = 2; layouts.includes(copy); n++) copy = `${name}-copy-${String(n)}`
         layouts.push(copy)
-        const files = deck.layoutFiles?.[name]
+        const files = layoutFileOf(deck, name)
         if (files) (deck.layoutFiles ??= {})[copy] = files
         return copy
       }

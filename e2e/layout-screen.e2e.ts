@@ -56,6 +56,16 @@ test('Given an open deck, when the header switches to Layouts, then every layout
   await expect(page.locator('[data-panel="slides"]')).toBeVisible()
 })
 
+test('Given layouts named like Object prototype members, when the screen opens, then each is listed with its own usage and opens', async ({ page }) => {
+  const source = SOURCE.replace('"layout":"title-slide"', '"layout":"constructor"')
+  await openLayoutScreen(page, deckOf({ source, layouts: ['constructor', 'title-body', 'toString'] }))
+
+  await expect(row(page, 'constructor').locator('[data-layout-usage]')).toHaveText('1 slide')
+  await expect(row(page, 'toString').locator('[data-layout-usage]')).toHaveText('Unused')
+  await row(page, 'toString').click()
+  await expect(page.locator('[data-layout-html]')).toHaveValue('<section class="peitho-slide layout-toString"></section>')
+})
+
 test('Given a slide selected in Slides, when a layout is applied from the layout screen, then deck.md pins that slide to it and Undo takes it back', async ({ page }) => {
   const deck = deckOf()
   await openLayoutScreen(page, deck)
