@@ -205,6 +205,7 @@ export interface Messages {
   layoutDeletedHistoryCleared: (layout: string) => string
   layoutSaved: (layout: string) => string
   layoutApplied: (layout: string) => string
+  layoutAlreadyApplied: (layout: string) => string
   imageLayoutAddFailed: (error: string) => string
 
   // About window
@@ -390,6 +391,7 @@ const en: Messages = {
   layoutDeletedHistoryCleared: layout => `Deleted the ${layout} layout — undo history cleared, since it pointed slides at it`,
   layoutSaved: layout => `Saved the ${layout} layout`,
   layoutApplied: layout => `Applied the ${layout} layout to the slide`,
+  layoutAlreadyApplied: layout => `The slide already uses the ${layout} layout`,
   imageLayoutAddFailed: error => `Could not add the image layout: ${error}`,
 
   // Same words as the site's (site/index.html).
@@ -575,6 +577,7 @@ const ja: Messages = {
   layoutDeletedHistoryCleared: layout => `レイアウト ${layout} を削除しました。このレイアウトを指していた取り消し履歴は消去しました`,
   layoutSaved: layout => `レイアウト ${layout} を保存しました`,
   layoutApplied: layout => `スライドにレイアウト ${layout} を適用しました`,
+  layoutAlreadyApplied: layout => `スライドはすでにレイアウト ${layout} を使っています`,
   imageLayoutAddFailed: error => `画像用レイアウトを追加できませんでした: ${error}`,
 
   aboutDescription: 'Peithoでスライドを書く。素のMarkdownとHTMLなので、AIに手伝ってもらえます。',

@@ -90,6 +90,32 @@ test('Given a layout the selected slide does not fit, when it is applied, then t
   expect(deck.invokedCommands).not.toContain('save_deck_source')
 })
 
+test('Given the layout the selected slide already uses, when it is applied, then the screen says so instead of reporting it applied', async ({ page }) => {
+  const deck = deckOf()
+  await openLayoutScreen(page, deck)
+
+  await row(page, 'title-slide').click()
+  await page.locator('[data-apply-layout]').click()
+
+  await expect(page.locator('[data-layout-notice]')).toContainText('The slide already uses the title-slide layout')
+  await expect(page.getByText('Applied the title-slide layout to the slide')).toHaveCount(0)
+  expect(deck.invokedCommands).not.toContain('save_deck_source')
+})
+
+test('Given a layout whose render fails, when it is applied, then the failure shows on the screen instead of reporting it applied', async ({ page }) => {
+  const deck = deckOf({
+    commandError: (cmd, args) => (cmd === 'render_draft' && layoutsOf(args.content as string)[0] === 'quote' ? "slide 1 doesn't build on 'quote'" : null),
+  })
+  await openLayoutScreen(page, deck)
+
+  await row(page, 'quote').click()
+  await page.locator('[data-apply-layout]').click()
+
+  await expect(page.locator('[data-layout-notice]')).toContainText("slide 1 doesn't build on 'quote'")
+  await expect(page.getByText('Applied the quote layout to the slide')).toHaveCount(0)
+  expect(deck.source).toBe(SOURCE)
+})
+
 test('Given New Layout, when a name is typed, then a taken one is refused before sending, and a new one is created from the chosen template and selected', async ({ page }) => {
   const deck = deckOf()
   const created: unknown[] = []

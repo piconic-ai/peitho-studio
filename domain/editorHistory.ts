@@ -77,6 +77,11 @@ export type StepOutcome =
   // It ran and the commit failed; the error is already shown.
   | { kind: 'failed' }
 
+/** How a slide operation ended, for a caller that reports it: as its step
+ * did (`StepOutcome`), or `unchanged` when there was nothing to change and
+ * no step ran. */
+export type SlideChange = StepOutcome['kind'] | 'unchanged'
+
 /** Oldest entries past this many are dropped, so a long session can't grow
  * the undo stack without bound. Each group of typing takes an entry, so
  * this is well above what slide operations alone would need. The text

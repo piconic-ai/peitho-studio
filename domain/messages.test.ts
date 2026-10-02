@@ -30,6 +30,8 @@ describe('messagesFor', () => {
       expect(messages.imageLayoutAddFailed('already exists')).toContain('already exists')
       expect(messages.layoutActionFailed('slide 2 is on it')).toContain('slide 2 is on it')
       expect(messages.deleteLayoutConfirm('quote')).toContain('quote')
+      expect(messages.layoutAlreadyApplied('quote')).toContain('quote')
+      expect(messages.layoutDeletedHistoryCleared('quote')).toContain('quote')
       expect(messages.deleteLayoutMoveSlides('quote', 3)).toContain('quote')
       expect(messages.deleteLayoutMoveSlides('quote', 3)).toContain('3')
       const mismatch = messages.layoutMismatch('cover', "missing 'body' slot")

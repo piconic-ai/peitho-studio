@@ -31,7 +31,7 @@ import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, indexAfterCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
-import { type FrontmatterStep, type HistoryStep, type LayoutPinsStep, type PageNumbersStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyLayoutPinsStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inverseLayoutPinsStep, inversePageNumbersStep, historyPinsLayout, layoutPinsStepFor, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
+import { type FrontmatterStep, type HistoryStep, type LayoutPinsStep, type PageNumbersStep, type SlideChange, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyLayoutPinsStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inverseLayoutPinsStep, inversePageNumbersStep, historyPinsLayout, layoutPinsStepFor, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
 import { type DeckSettingsState, frontmatterValueOf, pickChangesNothing, readDeckSettings, resolveDeckSettingPick, sameDeckSettings } from '../domain/deckSettings'
 import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
@@ -1467,18 +1467,20 @@ export function Studio() {
   }
 
   // A new structural operation: runs it and records how to undo it.
-  function perform(step: StructuralStep): Promise<void> {
+  function perform(step: StructuralStep): Promise<StepOutcome['kind']> {
     return performStep(() => runStep(step, selectionPlanFor))
   }
 
   // Runs `run` once every earlier operation has landed, and records the
-  // step that undoes it if it did.
-  function performStep(run: () => Promise<StepOutcome>): Promise<void> {
+  // step that undoes it if it did. Resolves how it ended.
+  function performStep(run: () => Promise<StepOutcome>): Promise<StepOutcome['kind']> {
     return serialized(async () => {
       const outcome = await run()
-      if (outcome.kind !== 'done') return
-      history.record(outcome.inverse)
-      separateTextHistory()
+      if (outcome.kind === 'done') {
+        history.record(outcome.inverse)
+        separateTextHistory()
+      }
+      return outcome.kind
     })
   }
 
@@ -1517,8 +1519,8 @@ export function Studio() {
   // earlier operations have landed, so the Line Breaks toggle flips what
   // the deck holds by then; one that isn't a pick the menu offers is
   // dropped.
-  function setDeckSetting(payload: unknown): Promise<void> {
-    return performStep(async () => {
+  async function setDeckSetting(payload: unknown): Promise<void> {
+    await performStep(async () => {
       const pick = resolveDeckSettingPick(payload, deckSettings())
       if (pick === null || pickChangesNothing(deckSettings(), pick)) return { kind: 'rejected' }
       const value = frontmatterValueOf(pick.key, pick.choice)
@@ -1953,8 +1955,24 @@ export function Studio() {
       }
       const availability = availabilityOf(settledFitCheck(verdicts), name)
       if (availability.kind === 'mismatch') throw new Error(settings.messages().layoutMismatch(name, availability.reason))
-      await changeSlideLayout(index, name)
-      setStatusMessage({ kind: 'layout-applied', layout: name })
+      const change = await changeSlideLayout(index, name)
+      switch (change) {
+        case 'done':
+          setStatusMessage({ kind: 'layout-applied', layout: name })
+          return
+        case 'unchanged':
+          layouts.setNotice(settings.messages().layoutAlreadyApplied(name))
+          return
+        case 'failed':
+          // `commitChange` has put peitho-core's reason in the error bar.
+          throw new Error(errorMessage() ?? settings.messages().deckChangeFailed)
+        case 'rejected':
+          throw new Error(settings.messages().deckChangeFailed)
+        default: {
+          const _exhaustive: never = change
+          throw new Error(`Unhandled slide change: ${String(_exhaustive)}`)
+        }
+      }
     })
   }
 
@@ -2141,16 +2159,18 @@ export function Studio() {
   // config change that adds or removes a section (see `toggleSlideSection`)
   // keeps the frontmatter time total correct — a no-op resync for updates
   // (layout/draft/skip) that don't touch `section`/`time`.
-  async function updateSlideConfig(index: number, updates: Partial<PageConfig>): Promise<void> {
+  // Resolves how the change ended: `unchanged` when the slide already had
+  // every field as `updates` asks, so nothing ran.
+  async function updateSlideConfig(index: number, updates: Partial<PageConfig>): Promise<SlideChange> {
     const slideText = currentSlideText(index)
-    if (updatePageComment(slideText, updates) === slideText) return
+    if (updatePageComment(slideText, updates) === slideText) return 'unchanged'
     // Recorded as a field patch, not a whole-text replace, so undoing it
     // later keeps text typed into the slide in between.
-    await perform({ kind: 'config', index, patch: updates })
+    return perform({ kind: 'config', index, patch: updates })
   }
 
-  async function changeSlideLayout(index: number, layout: string): Promise<void> {
-    await updateSlideConfig(index, { layout })
+  function changeSlideLayout(index: number, layout: string): Promise<SlideChange> {
+    return updateSlideConfig(index, { layout })
   }
 
   async function toggleSlideDraft(index: number): Promise<void> {
