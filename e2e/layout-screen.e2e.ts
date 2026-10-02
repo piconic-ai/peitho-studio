@@ -263,6 +263,35 @@ test('Given a delete that fails after the slides were moved, then they are moved
   await expect.poll(() => deck.source).toBe(SOURCE)
 })
 
+// The move, the file deletion and moving the slides back run as one unit
+// behind earlier operations: an Undo pressed meanwhile waits for it, so it
+// can't shift the slides the move-back addresses by position.
+test('Given a deletion that fails while Undo is pressed, then the slides are moved back first and the Undo lands after, on the right slides', async ({ page }) => {
+  const deck = deckOf({
+    deleteLayoutDelayMs: 1_500,
+    commandError: cmd => (cmd === 'delete_layout' ? 'failed to delete layouts/title-body.html: permission denied' : null),
+  })
+  await mockTauri(page, deck)
+  await page.goto('/')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 10_000 })
+  // Undoing this puts the cover back at the top, shifting every slide.
+  await page.locator('[data-slide-row="0"]').click({ button: 'right' })
+  await page.getByRole('button', { name: /^Delete/ }).click()
+  await expect(page.locator('[data-slide-row]')).toHaveCount(2)
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+
+  await page.locator('[data-studio-mode-option="layouts"]').click()
+  await row(page, 'title-body').click()
+  await page.locator('[data-delete-layout]').click()
+  await page.locator('[data-delete-replacement]').selectOption('quote')
+  await page.locator('[data-confirm-delete-layout]').click()
+  await expect.poll(() => layoutsOf(deck.source)).toEqual(['quote', 'quote'])
+  await pressUndo(page)
+
+  await expect(page.locator('[data-layout-notice]')).toContainText('permission denied')
+  await expect.poll(() => layoutsOf(deck.source)).toEqual(['title-slide', 'title-body', 'title-body'])
+})
+
 test('Given a delete the deck refuses, then the reason shows, nothing is moved, and the layout stays', async ({ page }) => {
   const deck = deckOf({ commandError: cmd => (cmd === 'check_layout_removal' ? "removing the 'title-body' layout would stop slide 2 from building" : null) })
   await openLayoutScreen(page, deck)

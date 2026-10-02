@@ -146,6 +146,10 @@ export interface MockDeck {
    * `repinned` still names the layout, and `save_layout` refuses HTML with
    * no `<section`. */
   layoutFiles?: Record<string, { html: string; css: string | null }>
+  /** Milliseconds `delete_layout` waits before resolving/rejecting —
+   * defaults to 0. Set this to act (e.g. Undo) while a deletion is in
+   * flight. */
+  deleteLayoutDelayMs?: number
   /** When set, `render_draft` fails for a source with a slide naming a
    * layout `layouts` doesn't list — as peitho-core does once a layout's
    * file is gone. Off by default: most tests name layouts freely. */
@@ -358,6 +362,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
     if (cmd === 'open_deck' && deck.openDeckDelayMs) await sleep(deck.openDeckDelayMs)
     if (cmd === 'check_slide_layouts' && deck.checkSlideLayoutsDelayMs) await sleep(deck.checkSlideLayoutsDelayMs)
     if (cmd === 'render_draft' && deck.renderDraftDelayMs) await sleep(deck.renderDraftDelayMs)
+    if (cmd === 'delete_layout' && deck.deleteLayoutDelayMs) await sleep(deck.deleteLayoutDelayMs)
     if (cmd.startsWith('import_deck_image_') && deck.importImageDelayMs) await sleep(deck.importImageDelayMs)
     deck.onInvoke?.(cmd, args)
     if (error !== null && error !== undefined) throw new Error(error)

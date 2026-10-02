@@ -1497,8 +1497,9 @@ export function Studio() {
 
   // Writes several slides' `"layout"` at once through the same
   // `commitChange` path as every structural operation — the layout screen
-  // moving a deleted layout's slides to another — recording nothing (see
-  // `confirmLayoutDelete`). The open slide stays open: no slide moves.
+  // moving a deleted layout's slides to another, or back when the deletion
+  // fails — recording nothing (see `confirmLayoutDelete`, which runs it
+  // under `serialized`; this doesn't queue by itself). The open slide stays open: no slide moves.
   // Resolves the pins that put the slides back, or `null` when nothing had
   // to change; throws when the commit fails.
   async function commitLayoutPins(step: LayoutPinsStep): Promise<LayoutPinsStep | null> {
@@ -1990,43 +1991,40 @@ export function Studio() {
   // step: undoing it would pin the slides back to a layout whose file is
   // gone — a render that fails on every press. An older step that would do
   // the same makes the whole history stale, so it is forgotten.
+  //
+  // The check, the move, the file deletion and moving the slides back run
+  // as one unit behind earlier operations (`serialized`): an Undo pressed
+  // meanwhile waits until it's over, so it can neither be overwritten by
+  // the move back nor shift the slides the move back addresses by position.
   async function confirmLayoutDelete(): Promise<void> {
     const flow = layouts.confirmDeleteFlow()
     if (flow === null || flow.kind !== 'deleting') return
     const { name, slides, replacement } = flow
     let historyCleared = false
-    const ok = await runLayoutAction(async () => {
+    const ok = await runLayoutAction(() => serialized(async () => {
       const texts = currentSlideTexts()
       const original = rebuildSource(texts)
       const step = replacement === null || slides.length === 0 ? null : layoutPinsStepFor(slides, replacement)
       const repinned = step === null ? original : rebuildSource(applyLayoutPinsStep(texts, step))
       await deckIpc.checkLayoutRemoval(original, repinned, name)
-      const moveBack = step === null ? null : await moveSlidesOffLayout(step)
+      const moveBack = step === null ? null : await commitLayoutPins(step)
       try {
         await deckIpc.deleteLayout(rebuildSource(currentSlideTexts()), name)
       } catch (err) {
         // The layout stays, so its slides go back to it: the deletion as a
         // whole didn't happen. The refusal is what's shown, not this.
-        if (moveBack !== null) await moveSlidesOffLayout(moveBack).catch(() => null)
+        if (moveBack !== null) await commitLayoutPins(moveBack).catch(() => null)
         throw err
       }
       if (historyPinsLayout(history.history(), name)) {
         history.clear()
         historyCleared = true
       }
-    })
+    }))
     layouts.finishDelete()
     if (!ok) return
     await refreshLayouts(null)
     setStatusMessage({ kind: historyCleared ? 'layout-deleted-history-cleared' : 'layout-deleted', layout: name })
-  }
-
-  // Re-pins a deleted layout's slides (or, when the deletion fails, puts
-  // them back) once every earlier operation has landed, recording nothing
-  // (see `confirmLayoutDelete`). Resolves the pins that reverse it
-  // (`null`: nothing changed); throws when the commit fails.
-  function moveSlidesOffLayout(step: LayoutPinsStep): Promise<LayoutPinsStep | null> {
-    return serialized(() => commitLayoutPins(step))
   }
 
   async function saveShownLayout(): Promise<void> {
