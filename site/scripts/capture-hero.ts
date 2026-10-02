@@ -58,7 +58,7 @@ await page.locator('[data-panel-toggle="review"][aria-expanded="false"]').click(
 await page.waitForTimeout(600)
 await page.locator('[data-preview-host] h1').click()
 await page.waitForTimeout(700)
-await page.locator('[data-comment-box] textarea').pressSequentially('Use Swiss Style. Keep it light, with clear typography and generous space. Preserve the title and three bullets; add no text or decoration. Gently fade in the bullets.', { delay: 28 })
+await page.locator('[data-comment-box] textarea').pressSequentially('Use Swiss Style. Keep my words, but rethink the layout freely. Use bold typography, an asymmetric grid and a strong color accent. It does not need to look like a bullet list. Add a subtle reveal.', { delay: 28 })
 await page.waitForTimeout(1300)
 await page.locator('[data-comment-add]').click()
 await page.waitForTimeout(1500)
@@ -81,11 +81,14 @@ await expect(page.locator('[data-preview-host] .swiss > :not(script)')).toHaveCo
 await expect(page.locator('[data-preview-host] .features li')).toHaveText([
   'Write in Markdown', 'See changes instantly', 'Refine with your AI Agent',
 ])
-await expect(page.locator('[data-preview-host] .swiss')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+await expect(page.locator('[data-preview-host] .swiss')).toHaveCSS('background-color', 'rgb(250, 249, 245)')
 await expect(page.locator('[data-preview-host] .swiss')).toHaveCSS('color', 'rgb(23, 23, 23)')
+await expect(page.locator('[data-preview-host] .features')).toHaveCSS('display', 'grid')
+await expect(page.locator('[data-preview-host] .features')).toHaveCSS('list-style-type', 'none')
+await expect(page.locator('[data-preview-host] .features li').last()).toHaveCSS('color', 'rgb(255, 255, 255)')
 // The Swiss-style HTML slide animates with its own JavaScript inside Studio.
 await expect.poll(() => page.locator('[data-preview-host] .features li').first().evaluate(el => el.getAnimations().length)).toBeGreaterThan(0)
-crit.reply('c_1', 'Applied Swiss Style: a light background, clean type and an orderly layout. Your title and three bullets are unchanged.', 'AI Agent')
+crit.reply('c_1', 'Rearranged your words on an asymmetric grid, with bold type and a red accent. The content is unchanged.', 'AI Agent')
 crit.agentConnects()
 await expect(page.locator('[data-review-agent]')).toContainText(['AI Agent'])
 await page.waitForTimeout(5500)

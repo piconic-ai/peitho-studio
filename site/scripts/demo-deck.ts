@@ -61,8 +61,10 @@ export const css = `
 .peitho-slide h1 { font-size: 72px; line-height: 1.1; letter-spacing: -.04em; margin: 0 0 56px; position: relative; z-index: 1; }
 .peitho-slide p { font-size: 40px; line-height: 1.5; }
 .features { padding-left: 1.2em; margin: 0; font-size: 40px; line-height: 1.9; position: relative; z-index: 1; }
-.peitho-slide.swiss { background: #fff; color: #171717; padding: 88px 96px; font-family: "Helvetica Neue",Helvetica,Arial,sans-serif; }
-.swiss h1 { font-weight: 600; font-size: 104px; line-height: 1.04; letter-spacing: -.055em; margin: 0 0 100px; }
-.swiss .features { font-size: 42px; line-height: 1.4; padding-left: 1em; margin-left: 280px; }
-.swiss li + li { margin-top: 24px; }
+.peitho-slide.swiss { background: #faf9f5; color: #171717; padding: 72px; font-family: "Helvetica Neue",Helvetica,Arial,sans-serif; }
+.swiss::before { content: ""; position: absolute; inset: 0 0 0 auto; width: 35%; background: #df3526; }
+.swiss h1 { max-width: 730px; font-weight: 700; font-size: 120px; line-height: .96; letter-spacing: -.065em; margin: 0; }
+.swiss .features { position: absolute; left: 72px; right: 72px; top: 432px; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 40px; list-style: none; font-size: 44px; font-weight: 500; line-height: 1.12; letter-spacing: -.035em; padding: 0; margin: 0; }
+.swiss li { border-top: 2px solid currentColor; padding: 28px 16px 0 0; }
+.swiss li:last-child { color: #fff; }
 `
