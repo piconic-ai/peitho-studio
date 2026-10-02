@@ -38,6 +38,13 @@ export interface LayoutPreview {
   fragment: string
 }
 
+/** A layout's two files, as `read_layout` reads them: its HTML, and its own
+ * CSS (`css/<name>.css`), `null` when it has none. */
+export interface LayoutFiles {
+  html: string
+  css: string | null
+}
+
 export interface LayoutPreviewsPayload {
   previews: LayoutPreview[]
   css: string
@@ -77,6 +84,26 @@ export interface DeckIpc {
    * written nothing, when one of them exists or another slide would stop
    * building. See `engine::image_layout` in src-tauri. */
   addImageLayout(content: string, slideIndex: number): Promise<string[]>
+  /** The layout screen's file operations on the deck's own `layouts/` and
+   * `css/` — see `engine::layout_files` in src-tauri. Each refuses, having
+   * written nothing, when the change would move a slide of `content` (the
+   * deck source as the frontend has it) off the layout it builds on.
+   *
+   * Creates layout `name` from `template` (`null`: blank, otherwise a
+   * standard layout's name) and resolves with the name saved. */
+  createLayout(content: string, name: string, template: string | null): Promise<string>
+  /** Copies layout `name` and resolves with the copy's name. */
+  duplicateLayout(content: string, name: string): Promise<string>
+  /** Resolves when layout `name` can be deleted once its slides are moved
+   * as in `repinned` (`original` with them re-pinned); writes nothing. */
+  checkLayoutRemoval(original: string, repinned: string, name: string): Promise<void>
+  /** Deletes layout `name`'s files, its slides already moved off it in
+   * `content`. */
+  deleteLayout(content: string, name: string): Promise<void>
+  readLayout(name: string): Promise<LayoutFiles>
+  /** Overwrites layout `name`'s HTML and CSS; refuses HTML that doesn't
+   * parse as a layout. */
+  saveLayout(name: string, html: string, css: string): Promise<void>
   presentDeck(rehearsal: boolean): Promise<void>
   /** Tells the Edit menu's deck settings what this window's deck holds
    * (checks and current-value labels), shown while this window is in
@@ -149,6 +176,12 @@ export function createTauriDeckIpc(): DeckIpc {
     previewLayouts: () => invoke('preview_layouts'),
     checkSlideLayouts: (content, slideIndex) => invoke('check_slide_layouts', { content, slideIndex }),
     addImageLayout: (content, slideIndex) => invoke('add_image_layout', { content, slideIndex }),
+    createLayout: (content, name, template) => invoke('create_layout', { content, name, template }),
+    duplicateLayout: (content, name) => invoke('duplicate_layout', { content, name }),
+    checkLayoutRemoval: (original, repinned, name) => invoke('check_layout_removal', { original, repinned, name }),
+    deleteLayout: (content, name) => invoke('delete_layout', { content, name }),
+    readLayout: name => invoke('read_layout', { name }),
+    saveLayout: (name, html, css) => invoke('save_layout', { name, html, css }),
     presentDeck: rehearsal => invoke('present_deck', { rehearsal }),
     reportDeckSettings: settings => invoke('report_deck_settings', { settings }),
     trustOpenDeck: () => invoke('trust_open_deck'),
