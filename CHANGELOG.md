@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.1.2](https://github.com/piconic-ai/peitho-studio/compare/v0.1.1...v0.1.2) - 2026-10-02
+
+- fix: 更新確認時のTLS初期化不足による停止を修正 by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/152
+
 ## [v0.1.1](https://github.com/piconic-ai/peitho-studio/compare/v0.1.0...v0.1.1) - 2026-10-02
 
 - Fix RC-to-stable release version synchronization by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/150
