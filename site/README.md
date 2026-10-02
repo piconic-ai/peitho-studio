@@ -35,8 +35,9 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 The hero embeds `public/studio-demo.mp4`, recorded from the **unchanged Studio frontend**, with its real editor, preview, panel controls and comments UI. The sample deck introduces Peitho Studio itself: write in Markdown, see changes instantly, and refine with an AI Agent.
 
 1. The editor and preview show a simple introductory slide. Typing a new Markdown title changes the preview.
-2. The comments panel opens and a comment specifies a light editorial style: warm white (#FFFCF7), charcoal (#252525), a large Georgia title, 40px sans-serif bullets, left alignment and wide margins. It explicitly disallows extra text, cards, numbers and icons.
-3. The editor is folded using Studio's own panel control. The Agent's example result changes the slide to a light HTML layout containing only the same heading and three bullets, with the specified typography, spacing and a JavaScript fade-in.
+2. The comments panel opens and a comment names **Swiss Style** as its reference, with a light background, clear typography and generous space. It asks to keep the title and three bullets, without extra words or decorations. No color codes, font names or pixel measurements are needed.
+   The [Swiss Style reference](https://www.aboutswitzerland.eda.admin.ch/en/swiss-style-forever-the-story-of-a-graphic-design-tradition) describes its restrained use of color, sans-serif type and asymmetric layouts.
+3. The editor is folded using Studio's own panel control. The Agent's example result changes the slide to a light HTML layout containing only the same heading and three bullets, with a large sans-serif title, an asymmetric grid, generous spacing and a JavaScript fade-in.
 
 `site/scripts/demo-deck.ts` supplies the sample Markdown and before/after slide fragments. Only the slide's layout metadata changes in the simulated Agent result; an assertion checks that the Markdown content remains unchanged. The e2e Tauri IPC mock and fake crit session provide backend responses; the Studio UI itself is not recreated or restyled. No live agent runs during capture.
 

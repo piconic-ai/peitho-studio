@@ -25,7 +25,7 @@ Plain Markdown and HTML. Edit with the tools you choose.
 const animation = `<script>
 if (!window.__studioIntroAnimate) {
   window.__studioIntroAnimate = root => {
-    const slide = root.querySelector('.peitho-slide.editorial');
+    const slide = root.querySelector('.peitho-slide.swiss');
     if (!slide || slide.dataset.animated) return;
     slide.dataset.animated = 'true';
     slide.querySelectorAll('[data-reveal]').forEach((el, i) => {
@@ -45,14 +45,14 @@ export function fragmentFor(source: string, title: string): string {
   const start = Buffer.byteLength(source.slice(0, at))
   const end = start + Buffer.byteLength(title)
   const isIntro = title === 'Peitho Studio' || title === 'Meet Peitho Studio'
-  const editorial = isIntro && source.includes('"layout":"light-editorial"')
+  const swiss = isIntro && source.includes('"layout":"swiss"')
   const heading = `<h1 data-reveal><span data-peitho-src="${start}-${end}" data-peitho-md="${escape(title)}">${escape(title)}</span></h1>`
   const words = ['Write in Markdown', 'See changes instantly', 'Refine with your AI Agent']
   const content = isIntro ? `<ul class="features">${words.map(word => `<li data-reveal>${word}</li>`).join('')}</ul>`
     : `<p>${title === 'Your words stay yours' ? 'Plain Markdown and HTML.<br>Edit with the tools you choose.' : 'Write them down.<br>See them take shape.'}</p>`
-  return `<section class="peitho-slide ${editorial ? 'editorial' : ''}">
+  return `<section class="peitho-slide ${swiss ? 'swiss' : ''}">
     ${heading}${content}
-    ${editorial ? animation : ''}
+    ${swiss ? animation : ''}
   </section>`
 }
 
@@ -61,8 +61,8 @@ export const css = `
 .peitho-slide h1 { font-size: 72px; line-height: 1.1; letter-spacing: -.04em; margin: 0 0 56px; position: relative; z-index: 1; }
 .peitho-slide p { font-size: 40px; line-height: 1.5; }
 .features { padding-left: 1.2em; margin: 0; font-size: 40px; line-height: 1.9; position: relative; z-index: 1; }
-.peitho-slide.editorial { background: #fffcf7; color: #252525; padding: 100px 118px; display: flex; flex-direction: column; justify-content: center; }
-.editorial h1 { font-family: Georgia,serif; font-weight: 400; font-size: 86px; line-height: 1.12; letter-spacing: -.045em; margin: 0 0 64px; }
-.editorial .features { font-size: 40px; line-height: 1.5; padding-left: 1em; }
-.editorial li + li { margin-top: 24px; }
+.peitho-slide.swiss { background: #fff; color: #171717; padding: 88px 96px; font-family: "Helvetica Neue",Helvetica,Arial,sans-serif; }
+.swiss h1 { font-weight: 600; font-size: 104px; line-height: 1.04; letter-spacing: -.055em; margin: 0 0 100px; }
+.swiss .features { font-size: 42px; line-height: 1.4; padding-left: 1em; margin-left: 280px; }
+.swiss li + li { margin-top: 24px; }
 `
