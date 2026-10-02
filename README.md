@@ -4,9 +4,9 @@ A desktop editor for [Peitho](https://github.com/mizzy/peitho) presentations: Ma
 
 [Website](https://peitho-studio.piconic.ai/) · [Download](https://github.com/piconic-ai/peitho-studio/releases/latest)
 
-[![Watch a slide comment become an AI Agent revision](site/public/studio.webp)](https://peitho-studio.piconic.ai/#demo)
+[![Peitho Studio introduction: Markdown editing and Agent-assisted slide design](site/public/studio.webp)](https://peitho-studio.piconic.ai/#demo)
 
-[Watch the demo](https://peitho-studio.piconic.ai/#demo): comment on a slide, send it to your agent, and review the updated deck.
+[Try the interactive introduction](https://peitho-studio.piconic.ai/#demo): edit Markdown, see the preview, and explore an Agent-assisted layout change.
 
 ## Features
 

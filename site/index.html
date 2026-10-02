@@ -21,7 +21,6 @@
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="preload" as="image" href="/studio@2x.webp" imagesrcset="/studio.webp 1280w, /studio@2x.webp 2560w" imagesizes="(min-width: 1140px) 1080px, 100vw">
   <link rel="stylesheet" href="/site.css">
 </head>
 <body>
@@ -44,19 +43,10 @@
         <p class="hero-sub">Edit Markdown. Preview slides. Bring your AI Agent.</p>
       </div>
 
-      <figure class="window">
-        <div class="window-bar" aria-hidden="true">
-          <span class="dots"><i></i><i></i><i></i></span>
-          <span class="window-title">deck.md — Peitho Studio</span>
-        </div>
-        <video id="demo" class="window-shot" controls muted playsinline preload="none"
-               poster="/studio.webp" width="1280" height="800"
-               aria-label="Demo: edit Markdown and see the HTML preview update, then ask an AI Agent to research data and add a JavaScript-animated chart.">
-          <source src="/studio-demo.mp4" type="video/mp4">
-          <a href="/studio-demo.mp4">Watch the AI Agent collaboration demo</a>
-        </video>
-      </figure>
-      <p class="demo-caption">Edit Markdown → see the HTML preview update → ask your AI Agent for research and an animated chart.</p>
+      <div id="demo" class="intro-embed">
+        <iframe id="studio-introduction" src="/demo.html" title="Peitho Studio: edit Markdown and refine your slides with an AI Agent" loading="eager" height="720"></iframe>
+      </div>
+      <p class="demo-caption">Try the interactive introduction · <a href="/demo.html">Open the slides</a></p>
     </section>
 
     <section class="peitho" aria-labelledby="peitho-title">

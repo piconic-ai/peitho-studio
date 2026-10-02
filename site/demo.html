@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Peitho Studio — An interactive introduction</title>
+  <link rel="stylesheet" href="/src/demo/demo.css">
+</head>
+<body>
+  <main class="tour" aria-label="Peitho Studio interactive introduction">
+    <header class="tour-header">
+      <a class="brand" href="/" target="_top"><img src="../brand/app-icon-small.svg" width="26" height="26" alt="">Peitho Studio</a>
+      <span class="tour-label">AN INTERACTIVE INTRODUCTION</span>
+    </header>
+    <div class="story-heading">
+      <div><p class="eyebrow" id="chapter">01 — YOUR WORDS</p><h1 id="story-title">Edit the words. See the slide.</h1></div>
+      <p id="story-description">Write in Markdown. Your preview follows as you type.</p>
+    </div>
+    <div class="workspace">
+      <aside class="work-panel">
+        <div id="write-panel">
+          <div class="panel-bar"><span class="file-dot"></span><span>deck.md</span><span class="panel-badge">MARKDOWN</span></div>
+          <label class="sr-only" for="markdown">Edit the slide Markdown</label>
+          <textarea id="markdown" spellcheck="false" maxlength="600"># Peitho Studio
+
+- Write in Markdown
+- See changes instantly
+- Refine with your AI Agent</textarea>
+          <p class="panel-hint"><span aria-hidden="true">↳</span> Try editing the title or a bullet.</p>
+        </div>
+        <div id="agent-panel" hidden>
+          <div class="panel-bar"><span class="agent-mark" aria-hidden="true">✳</span><span>A little art direction</span></div>
+          <p class="request-label">YOUR COMMENT</p>
+          <p class="request" id="request">Keep the wording. Turn these three features into a beautiful introduction to Peitho Studio. Give each one its own space, with clear typography and a gentle reveal.</p>
+          <button id="send" class="send" type="button">Send to Agent <span aria-hidden="true">↗</span></button>
+          <div class="agent-response" id="response" hidden><span class="agent-mark" aria-hidden="true">✳</span><p><strong>AI Agent</strong><span id="response-text">I kept your wording and gave each feature its own card, with a new type hierarchy and a gentle reveal.</span></p></div>
+          <p class="panel-hint">You decide what to say.<br>Your agent can help with the design.</p>
+        </div>
+      </aside>
+      <div class="preview-panel">
+        <div class="panel-bar preview-bar"><span>SLIDE PREVIEW</span><span id="preview-status">Updates as you type</span></div>
+        <div class="slide-viewport">
+          <article class="presentation" id="presentation" aria-label="Example slide preview">
+            <div class="slide-decoration" aria-hidden="true"><i></i><i></i><i></i><span id="layout-mark" aria-hidden="true">P.</span></div>
+            <p class="slide-kicker">A DESKTOP EDITOR FOR PEITHO</p>
+            <h2 id="slide-title">Peitho Studio</h2>
+            <ol id="slide-points"><li><span class="point-number">01</span><span class="point-text">Write in Markdown</span><span class="point-arrow" aria-hidden="true">↗</span></li><li><span class="point-number">02</span><span class="point-text">See changes instantly</span><span class="point-arrow" aria-hidden="true">↗</span></li><li><span class="point-number">03</span><span class="point-text">Refine with your AI Agent</span><span class="point-arrow" aria-hidden="true">↗</span></li></ol>
+            <div class="slide-footer"><span>YOUR WORDS. YOUR SLIDES.</span><span>MARKDOWN + HTML</span></div>
+          </article>
+        </div>
+        <div class="preview-footer"><span id="preview-note">Plain text. Your content.</span><div class="comparison" id="comparison" hidden aria-label="Compare slide layouts"><button id="before" type="button" aria-pressed="false">Before</button><button id="after" type="button" aria-pressed="true">After</button></div></div>
+      </div>
+    </div>
+    <footer class="tour-controls">
+      <nav class="chapters" aria-label="Introduction chapters"><button type="button" id="step-write" aria-current="step"><span>01</span> Write & preview</button><button type="button" id="step-design"><span>02</span> Refine with AI <span aria-hidden="true">→</span></button></nav>
+      <button type="button" id="play" class="play"><span aria-hidden="true">▶</span> <span id="play-label">Play the story</span></button>
+    </footer>
+    <p class="tour-footnote">An interactive illustration of the workflow. Your Markdown stays yours.</p>
+    <p class="sr-only" id="announcement" role="status" aria-live="polite"></p>
+    <noscript><p>Peitho Studio previews your Markdown as you edit. Comment on a slide to ask your own AI coding agent to refine its layout.</p></noscript>
+  </main>
+  <script type="module" src="/src/demo/demo.ts"></script>
+</body>
+</html>

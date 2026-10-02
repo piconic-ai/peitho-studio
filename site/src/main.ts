@@ -11,3 +11,14 @@ import './components/DownloadPanel'
 
 const list = document.getElementById('download-list')
 if (list) render(list, 'DownloadPanel', {})
+
+// The standalone HTML introduction also works as a responsive inline embed.
+const intro = document.getElementById('studio-introduction') as HTMLIFrameElement | null
+window.addEventListener('message', event => {
+  if (!intro || event.origin !== location.origin || event.source !== intro.contentWindow) return
+  if (event.data?.type !== 'peitho-tour-height') return
+  const height = event.data.height
+  if (typeof height === 'number' && Number.isFinite(height) && height >= 200 && height <= 2000) {
+    intro.style.height = `${Math.ceil(height)}px`
+  }
+})

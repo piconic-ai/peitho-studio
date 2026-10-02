@@ -7,8 +7,7 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 
 - One static `index.html`, styled by `public/site.css` (light only):
   - a hero with the app icon, "Peitho Studio", "Write slides with Peitho."
-    ("Edit Markdown. Preview slides. Bring your AI Agent.") above a short, user-controlled demo of editing Markdown and asking an AI Agent for an animated HTTP benchmark chart,
-    framed as a window (`public/studio-demo.mp4`, with `studio.webp` as its poster);
+    ("Edit Markdown. Preview slides. Bring your AI Agent.") above an interactive HTML introduction (`demo.html`) that demonstrates Markdown editing and an Agent-assisted layout change;
   - a "Built on Peitho" card: Peitho's one-line description and a small
     Markdown-to-slide illustration, linking to
     [peitho.gosu.ke](https://peitho.gosu.ke);
@@ -31,18 +30,23 @@ from the app (its own `package.json` and lockfile), living in `site/`.
   and long-lived caching for Vite's hashed `/assets/*`; `public/404.html` is
   served for unknown paths (`not_found_handling: "404-page"`).
 
-## Hero demo
+## Interactive HTML introduction
 
-`public/studio-demo.mp4` (1280×800) records the real Studio frontend in two steps: edit a Markdown title and watch the HTML preview update, then ask the Agent to research HTTP benchmark data and add a JavaScript-animated bar chart. The slide layout and chart use HTML/CSS; their reveal and bar animations run through JavaScript's Web Animations API inside Studio's trusted slide canvas.
+The hero embeds `demo.html`, a standalone introduction to Peitho Studio. Its example slide introduces Studio itself: write in Markdown, see changes instantly, and refine with an AI Agent.
 
-`site/scripts/demo-deck.ts` holds the capture fixture, HTML layout, animation script and data-source URLs. The chart uses Bun's documented Linux HTTP benchmark (Node 16 ~64k req/s, Bun ~160k req/s), with an on-slide source citation and benchmark context; it is a vendor-published simple-response benchmark, not a general runtime performance claim. Agent research and replies are prerecorded via the e2e Tauri IPC mock and fake crit session; no live AI service runs during capture. The script verifies the directly edited title, externally updated chart, running JavaScript animation and Agent reply, then exports the video and final-frame WebP posters (`studio.webp`, `studio@2x.webp`).
+- **Write & preview:** edit the heading or up to three bullets and see the slide update. The small demo renderer uses text nodes; typed HTML is not executed.
+- **Refine with AI:** send the example design comment to reveal the same text in a rich HTML/CSS layout. The Agent response is an illustration, with no live agent or network call.
+- **Play the story:** a cancellable sequence demonstrates the edit and layout change. Manual editing or chapter navigation stops the sequence. Before/After compares layouts without changing the words.
 
-The player has native controls, stays paused until played, and has no audio. A visible caption explains the sequence. The CSP allows local media. Regenerate from the repository root with Chrome and `ffmpeg` installed:
+`src/demo/demo.ts` drives the interaction and JavaScript Web Animations; reduced-motion preferences skip animated reveals. `src/demo/demo.css` handles desktop and mobile layouts. The iframe reports its content height to the parent, which validates the origin and source. Both HTML entry points are built by Vite, and the CSP permits same-origin framing.
+
+Run the interaction checks and regenerate the README screenshot with the site running:
 
 ```sh
-bun install && bun run build
-PORT=3013 bun run start &
-bun site/scripts/capture-hero.ts   # CHROME_PATH=/path/to/chrome if Chrome isn't installed
+# From the repository root; needs the app's Playwright dependency and Chrome.
+bun site/scripts/check-introduction.ts
+bun site/scripts/capture-introduction.ts
+# SITE_URL=http://localhost:3014 can override the default URL.
 ```
 
 ## Brand
