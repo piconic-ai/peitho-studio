@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: Studioに「スライド / レイアウト」のモード切替を設け、レイアウト一覧・プレビュー・適用・新規作成・複製・削除・HTML/CSS編集を専用画面で行えるようにする
 tags: [layout, ui, screen]
 ---
@@ -142,9 +142,9 @@ tags: [layout, ui, screen]
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `cargo test` グリーン
-- [ ] `bun run test:e2e` グリーン
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `cargo test` グリーン
+- [x] `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機でのモード切替・一覧・編集保存の見た目/挙動確認(ユーザー自身に依頼)
@@ -154,3 +154,10 @@ tags: [layout, ui, screen]
 
 - `layouts/`/`css/`の外部変更を拾うファイル監視。
 - レイアウトのリネーム(参照しているスライドの書き換え込み)。
+- 新規デッキの`title-body`は削除できない(code slotを持つのが`title-body`だけで、
+  `css/base.css`の`.slot-code`をpeitho-coreが拒否するため。`delete_layout`は
+  ファイルを戻してエラーを返す)。base.css側の`.slot-code`を外すか、別の
+  レイアウトにcode slotを持たせるかは未決。
+- 一覧の各行の`…`/右クリックメニューは作らず、プレビュー上部のツールバーに
+  「スライドに適用・複製・削除」を置いた(BarefootJS #2930を避けるため)。
+  行メニューが欲しければ追加する。
