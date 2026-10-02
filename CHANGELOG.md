@@ -1,5 +1,14 @@
 # Changelog
 
+## [v0.1.3](https://github.com/piconic-ai/peitho-studio/compare/v0.1.2...v0.1.3) - 2026-10-02
+
+- Build new decks with eleven standard layouts and name a layout on every new slide by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/155
+- Fix the flaky review-edit e2e tests: don't collapse a selection the user already made by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/156
+- Veil the demo poster's red accent until the video plays by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/158
+- Show the app icon at the top of the README by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/159
+- Enable per-version preview URLs by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/160
+- Add a layout screen: list, apply, create, duplicate, delete and edit layouts by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/157
+
 ## [v0.1.2](https://github.com/piconic-ai/peitho-studio/compare/v0.1.1...v0.1.2) - 2026-10-02
 
 - fix: 更新確認時のTLS初期化不足による停止を修正 by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/152
