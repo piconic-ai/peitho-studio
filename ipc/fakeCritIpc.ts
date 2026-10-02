@@ -5,6 +5,7 @@
 // starting its next round, and `reply` an agent answering a comment. Also
 // what the mocked e2e suite answers the crit commands with
 // (`e2e/helpers/mockTauri.ts`).
+import { layoutHtmlFile } from '../domain/reviewComment'
 import type { CommentPlace, CritDeckSession, CritIpc, CritReviewEvent, NewLayoutComment, NewReviewComment, NewReviewReply, ReviewComment } from './critIpc'
 
 export interface RecordedCritCall {
@@ -130,7 +131,7 @@ export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
     },
     addLayoutComments: async added => {
       record('addLayoutComments', added)
-      if (added.some(comment => comment.body.trim() === '' || comment.author.trim() === '' || (comment.layout !== null && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(comment.layout)))) {
+      if (added.some(comment => comment.body.trim() === '' || comment.author.trim() === '' || (comment.layout !== null && layoutHtmlFile(comment.layout) === null))) {
         throw new Error('a layout comment is malformed')
       }
       found()

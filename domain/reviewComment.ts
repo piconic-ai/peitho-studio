@@ -92,6 +92,8 @@ export interface PendingLayoutComment {
   createdAt: string
 }
 
+// A layout's name, as a pattern to build the others from.
+const NAME = '[A-Za-z0-9][A-Za-z0-9_-]*'
 const LAYOUT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
 
 /** Layout `name`'s HTML file, relative to the deck's folder — or `null`
@@ -128,7 +130,7 @@ export function newLayoutComment(pending: PendingLayoutComment): NewLayoutCommen
   }
 }
 
-const LAYOUT_LABEL = /^\[(?:Layout ([A-Za-z0-9][A-Za-z0-9_-]*)|(All layouts))(?: \([^\]\n]*\))?\] ([\s\S]*)$/
+const LAYOUT_LABEL = new RegExp(`^\\[(?:Layout (${NAME})|(All layouts))(?: \\([^\\]\\n]*\\))?\\] ([\\s\\S]*)$`)
 
 /** A sent comment's text split back into the layout target its label
  * names (`layoutAgentLabel`) and the text itself — `null` for a comment
@@ -139,7 +141,7 @@ export function splitLayoutLabel(body: string): { target: LayoutCommentTarget; t
   return { target: match[1] === undefined ? { kind: 'all-layouts' } : { kind: 'layout', name: match[1] }, text: match[3] }
 }
 
-const LAYOUT_FILE = /^(?:layouts\/([A-Za-z0-9][A-Za-z0-9_-]*)\.html|css\/([A-Za-z0-9][A-Za-z0-9_-]*)\.css)$/
+const LAYOUT_FILE = new RegExp(`^(?:layouts/(${NAME})\\.html|css/(${NAME})\\.css)$`)
 
 /** Which layout a sent comment is about: the layout whose file it's on,
  * else — for one on the review as a whole — the layout its label names.
