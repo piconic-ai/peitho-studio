@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: レイアウト専用画面から、選択したレイアウト/レイアウト全体へコメントし、crit経由で外部Coding Agentに直させる
 tags: [layout, crit, agent, review]
 ---
@@ -100,6 +100,40 @@ Coding Agentへ渡す。アプリ内LLMは持たない — `todo/archive/crit-re
 5. セッション起動時にレイアウトファイルを含めると、既存のdeck.mdへの
    コメント機能が影響を受けないか(回帰確認)。
 
+### 要調査の結果(同梱crit v0.21.0で実際に試した — 結論は(A))
+
+1. `crit --no-open deck.md layouts css`で起動できる。`/api/session`の
+   `files`に`layouts/*.html`/`css/*.css`が並び(`file_type: "code"`)、
+   `POST /api/file/comments?path=layouts/cover.html`は行コメントを受け付け
+   る(201、`anchor`にHTMLの該当行)。後から追加したファイルも少し遅れて
+   `files`に載り、コメントも付く。git管理下ではcritはリポジトリのルートで
+   動くため、パスは`talks/a/layouts/cover.html`のようにルート相対になる
+   (`layouts/cover.html`では404)— deck.mdのセッション内パスの親を前に付ける
+   (`engine::crit::session_path`)。存在しないフォルダを引数に渡すとcritは
+   `Error: file not found`で落ちるので、あるものだけ渡す
+   (`engine::crit::session_args`)。
+2. ファイル全体へのコメントは`{"scope":"file","body","author"}`で付く
+   (`start_line`0で返る)。`start_line:0`だけを送ると`Invalid line range`(400)。
+   → レイアウト1つへのコメントは`layouts/<name>.html`へのファイル全体コメント。
+3. review-levelコメントは`POST /api/comments`(`{"body","author"}`)で付き、
+   `scope:"review"`・`r_`始まりのidで`GET /api/comments`/`/api/session`の
+   `review_comments`に出る。返信・解決はファイル用の`/api/comment/<id>/...`
+   ではなく(`path`必須で400)、`/api/review-comment/<id>/replies`・
+   `/api/review-comment/<id>/resolve`。finishでエージェントに
+   `scope:"review"`として渡る。→ 「レイアウト全体」と、ファイルの無い
+   レイアウト(組み込みの`title-body-code`)へのコメントはreview-level。
+4. critのセッションは**引数の組**(順不同)で識別される。Studioが
+   `deck.md layouts css`で起動したセッションに、エージェントが
+   `crit --no-open deck.md`で繋ぐと**別セッション**が立つ(順序違いの
+   `css layouts deck.md`は同じセッションに繋がる)。→ `agentConnectCommand`
+   にデッキのレイアウトフォルダを足す(`crit_session_dirs`)。`crit stop`も
+   同じ引数で止まる。
+5. 回帰: 複数ファイルのセッションでもdeck.mdは`files`にそのまま載り、
+   `deck_file_in`で見つかって従来どおり行コメントが付く(`crit.rs`の
+   `round_trip`テストで確認)。なお`deck.md`だけのセッション(以前の接続
+   コマンドで繋いだエージェント)でも`layouts/a.html`へのコメントは受け付け
+   られてfinishで渡る(critがcwd配下のファイルをその場でセッションに足す)。
+
 ## 方針
 
 - 要調査1〜4の結果で分岐する:
@@ -136,14 +170,31 @@ Coding Agentへ渡す。アプリ内LLMは持たない — `todo/archive/crit-re
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] 要調査1〜5の結果をこのファイルに記録した
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `cargo test` グリーン
-- [ ] `bun run test:e2e` グリーン
+- [x] 要調査1〜5の結果をこのファイルに記録した
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `cargo test` グリーン
+- [x] `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 要調査で(B)になった場合の進め方
+- [ ] 要調査で(B)になった場合の進め方 — 結果は(A)だったので該当しない
+  見込み。確認だけお願いしたい
 - [ ] 実機で実際のエージェント(Claude Code等)にレイアウト変更を依頼し、
-  反映されるか(ユーザー自身に依頼)
+  反映されるか(ユーザー自身に依頼)。自動で確かめられていないのは次の2点:
+  - 実エージェントが`[Layout …]`/`[All layouts …]`の依頼を読んで
+    `layouts/`/`css/`を直せるか(crit経由で届くことは`round_trip`テストで確認済み)
+  - エージェントがレイアウトを書き換えたあと、Studioのレイアウト一覧・
+    プレビュー・スライドのサムネイルが実機のWKWebViewで描き直されるか
+    (経路: critのイベント → `layout_files_stamp`の変化 → `refreshLayouts`。
+    モックe2eでは確認済み)
+
+## 実装メモ
+
+- エージェントの変更の検知: Studioが監視するのはdeck.mdだけなので、
+  critのイベント(エージェントのレイアウト編集はセッションが`layouts/`/
+  `css/`を見ているので`file-changed`になる。返信でも来る)のたびに
+  `layout_files_stamp`(`layouts/*.html`・`css/*.css`のパス・サイズ・
+  更新時刻の指紋)を読み、前回と違えば`refreshLayouts`する。Studio自身の
+  保存では`refreshLayouts`の中で指紋を取り直す(その保存へのcritの
+  イベントが先に届いた場合は、一度余分に描き直すことがある)。
 
 ## 先送り事項
