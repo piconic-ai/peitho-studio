@@ -136,6 +136,16 @@ export interface MockDeck {
    * fix the size whatever the source says. peitho-core only produces those
    * two sizes. */
   canvas?: Size
+  /** The layout screen's files, by layout name — what `read_layout`
+   * answers and `save_layout` / `create_layout` / `duplicate_layout` /
+   * `delete_layout` change (with `layouts`, which they keep in step).
+   * Defaults to none: a layout read without an entry gets a bare
+   * `<section>` and no CSS. Stands in for `engine::layout_files`, modeling
+   * only what the frontend relies on: a name taken is refused, a copy is
+   * `<name>-copy`, `check_layout_removal` refuses while a slide of
+   * `repinned` still names the layout, and `save_layout` refuses HTML with
+   * no `<section`. */
+  layoutFiles?: Record<string, { html: string; css: string | null }>
   /** The fragment every `preview_layouts` entry carries — defaults to an
    * empty one (the picker then draws name-only cards and mounts no canvas).
    * Set it to give the picker real slide canvases to inspect. */
@@ -365,6 +375,48 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         return deck.layoutVerdicts?.(args.content as string, args.slideIndex as number) ?? null
       case 'add_image_layout':
         return deck.addImageLayout?.(args.content as string, args.slideIndex as number) ?? []
+      case 'read_layout': {
+        const name = args.name as string
+        return deck.layoutFiles?.[name] ?? { html: `<section class="peitho-slide layout-${name}"></section>`, css: null }
+      }
+      case 'create_layout': {
+        const name = (args.name as string).trim()
+        const layouts = deck.layouts ??= []
+        if (layouts.some(taken => taken.toLowerCase() === name.toLowerCase())) throw new Error(`the deck already has a layout named '${name}'`)
+        layouts.push(name)
+        ;(deck.layoutFiles ??= {})[name] = { html: `<section class="peitho-slide layout-${name}"></section>`, css: `.peitho-slide.layout-${name} {\n}\n` }
+        return name
+      }
+      case 'duplicate_layout': {
+        const name = args.name as string
+        const layouts = deck.layouts ??= []
+        let copy = `${name}-copy`
+        for (let n = 2; layouts.includes(copy); n++) copy = `${name}-copy-${String(n)}`
+        layouts.push(copy)
+        const files = deck.layoutFiles?.[name]
+        if (files) (deck.layoutFiles ??= {})[copy] = files
+        return copy
+      }
+      case 'check_layout_removal': {
+        const name = args.name as string
+        splitSlides(args.repinned as string).forEach((range, i) => {
+          if (extractPageComment(range.text).config.layout === name) throw new Error(`slide ${String(i + 1)} is on '${name}' — pick another layout for it first`)
+        })
+        if ((deck.layouts ?? []).length < 2) throw new Error(`'${name}' is the deck's only layout`)
+        return null
+      }
+      case 'delete_layout': {
+        const name = args.name as string
+        deck.layouts = (deck.layouts ?? []).filter(layout => layout !== name)
+        if (deck.layoutFiles) delete deck.layoutFiles[name]
+        return null
+      }
+      case 'save_layout': {
+        const html = args.html as string
+        if (!html.includes('<section')) throw new Error('a layout needs a <section> element')
+        ;(deck.layoutFiles ??= {})[args.name as string] = { html, css: args.css as string }
+        return null
+      }
       case 'present_deck':
         // Fires after the spawn itself resolves, matching real timing —
         // `watch_present_readiness`/`watch_present_failure` (peitho.rs)
