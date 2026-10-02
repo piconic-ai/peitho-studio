@@ -75,31 +75,134 @@ function normalizeRule(rule: string): string {
   return rule.replace(/\s+/g, ' ').trim()
 }
 
-/** The family an `@font-face` rule defines, lower-cased; `null` for none. */
-export function fontFaceFamily(rule: string): string | null {
-  const match = /font-family\s*:\s*(["']?)([^;"'}]+?)\1\s*(?:;|\})/i.exec(rule)
-  return match ? match[2].trim().toLowerCase() : null
+// A `font-family`/`font` declaration: the property (not a longer one such
+// as `font-size`, or a custom `--font`), and its value up to `;`/`}`
+// outside quoted strings.
+const FONT_DECLARATION = /(?<![\w-])(font-family|font)(\s*:)((?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^;}"'])*)/gi
+const IMPORTANT = /^([\s\S]*?)(\s*!\s*important\s*)$/i
+const SIZE_KEYWORDS = new Set(['xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large', 'xxx-large', 'smaller', 'larger'])
+const SIZE_LENGTH = /^(?:\d+\.?\d*|\.\d+)(?:px|em|rem|%|pt|pc|in|cm|mm|q|ex|ch|vw|vh|vmin|vmax|vi|vb|lh|rlh|cap|ic|svh|lvh|dvh|svw|lvw|dvw)$/i
+const VALUE_TOKEN = /"(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?|[^\s"']+/g
+const IDENTIFIERS = /^-?[A-Za-z_\u0080-￿][\w\-\u0080-￿]*(?:\s+-?[A-Za-z_\u0080-￿][\w\-\u0080-￿]*)*$/
+
+/** One family as written in a family list, read the way CSS reads it: a
+ * quoted string (escapes undone), or identifiers joined by single spaces.
+ * `null` for anything else (a `var()`, an empty part, a stray token). */
+function readFamily(part: string): string | null {
+  const text = part.trim()
+  const quote = text[0]
+  if (quote === '"' || quote === "'") {
+    let name = ''
+    let i = 1
+    for (; i < text.length; i++) {
+      const c = text[i]
+      if (c === '\\') {
+        i++
+        if (i < text.length) name += text[i]
+        continue
+      }
+      if (c === quote) break
+      name += c
+    }
+    return i === text.length - 1 ? name : null
+  }
+  return IDENTIFIERS.test(text) ? text.split(/\s+/).join(' ') : null
 }
 
-/** `css` with every mention of a family in `families` (lower-cased) —
- * in `@font-face` rules and in `font-family`/`font` declarations — renamed
- * to its preview-only name (`DRAFT_FAMILY_SUFFIX`). Quoted or bare, any
- * case; a `font` shorthand's family is the end of its first part. */
+/** `list` split on its top-level commas (not inside quotes or brackets),
+ * each part as written. */
+function splitFamilyList(list: string): string[] {
+  const parts: string[] = []
+  let depth = 0
+  let quote: string | null = null
+  let start = 0
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i]
+    if (quote !== null) {
+      if (c === '\\') i++
+      else if (c === quote) quote = null
+    } else if (c === '"' || c === "'") quote = c
+    else if (c === '(') depth++
+    else if (c === ')') depth = Math.max(0, depth - 1)
+    else if (c === ',' && depth === 0) {
+      parts.push(list.slice(start, i))
+      start = i + 1
+    }
+  }
+  parts.push(list.slice(start))
+  return parts
+}
+
+/** Where a `font` shorthand's family list starts in `value` (after its size
+ * and any `/line-height`), or `null` when it has none to find: a system
+ * font (`caption`), a `var()`/`calc()`, or no size before a quoted name. */
+function shorthandFamilyStart(value: string): number | null {
+  if (value.includes('(')) return null
+  for (const token of value.matchAll(VALUE_TOKEN)) {
+    const text = token[0]
+    if (text.startsWith('"') || text.startsWith("'")) return null
+    const [size, lineHeight] = text.split('/', 2) as [string, string | undefined]
+    if (!SIZE_KEYWORDS.has(size.toLowerCase()) && !SIZE_LENGTH.test(size)) continue
+    let end = (token.index ?? 0) + text.length
+    const rest = value.slice(end)
+    if (lineHeight === undefined) {
+      const slash = /^\s*\/\s*[^\s,]+/.exec(rest)
+      if (slash) end += slash[0].length
+    } else if (lineHeight === '') {
+      const after = /^\s*[^\s,]+/.exec(rest)
+      if (after) end += after[0].length
+    }
+    return end
+  }
+  return null
+}
+
+function quotedFamily(name: string): string {
+  return `"${name.replace(/[\\"]/g, c => `\\${c}`)}"`
+}
+
+/** `list` (a family list) with each family in `families` (lower-cased)
+ * re-emitted quoted under its preview-only name; every other part, and the
+ * whitespace around each, as written. */
+function renameInFamilyList(list: string, families: ReadonlySet<string>): string {
+  return splitFamilyList(list).map(part => {
+    const name = readFamily(part)
+    if (name === null || !families.has(name.toLowerCase())) return part
+    const [, before, , after] = /^(\s*)([\s\S]*?)(\s*)$/.exec(part)!
+    return `${before}${quotedFamily(`${name}${DRAFT_FAMILY_SUFFIX}`)}${after}`
+  }).join(',')
+}
+
+/** The family an `@font-face` rule defines, lower-cased; `null` for none. */
+export function fontFaceFamily(rule: string): string | null {
+  for (const match of rule.matchAll(FONT_DECLARATION)) {
+    if (match[1].toLowerCase() !== 'font-family') continue
+    const core = IMPORTANT.exec(match[3])?.[1] ?? match[3]
+    const name = readFamily(splitFamilyList(core)[0])
+    return name === null ? null : name.toLowerCase()
+  }
+  return null
+}
+
+/** `css` with every family in `families` (lower-cased) renamed to its
+ * preview-only name (`DRAFT_FAMILY_SUFFIX`) wherever a `font-family` or
+ * `font` declaration names it — `@font-face` rules included. Each value is
+ * read as CSS reads it: a trailing `!important` kept, a `font` shorthand's
+ * families taken after its size (and `/line-height`), the list split on
+ * commas outside quotes, a family quoted or made of identifiers, compared
+ * case-insensitively. Only matching families change (re-emitted quoted);
+ * everything else stays byte for byte, including system fonts, generic
+ * families and `var()`, which isn't followed. */
 export function aliasFontFamilies(css: string, families: ReadonlySet<string>): string {
   if (families.size === 0) return css
-  const alias = (name: string) => `"${name}${DRAFT_FAMILY_SUFFIX}"`
-  const renamePart = (part: string): string => {
-    const quoted = /^(\s*)(["'])(.+?)\2(\s*)$/.exec(part)
-    if (quoted && families.has(quoted[3].trim().toLowerCase())) return `${quoted[1]}${alias(quoted[3].trim())}${quoted[4]}`
-    const bare = /^(\s*)(.*?)(\s*)$/.exec(part)!
-    if (families.has(bare[2].toLowerCase())) return `${bare[1]}${alias(bare[2])}${bare[3]}`
-    // A `font` shorthand's first part: "italic 2rem Family" / '... "Family"'.
-    const tail = /^(.*\s)(["']?)([^\s"']+(?: [^\s"']+)*)\2(\s*)$/.exec(part)
-    if (tail && families.has(tail[3].toLowerCase())) return `${tail[1]}${alias(tail[3])}${tail[4]}`
-    return part
-  }
-  return css.replace(/(font-family|font)(\s*:\s*)([^;}]*)/gi, (_match, property: string, colon: string, value: string) =>
-    `${property}${colon}${value.split(',').map(renamePart).join(',')}`)
+  return css.replace(FONT_DECLARATION, (whole: string, property: string, colon: string, value: string) => {
+    const important = IMPORTANT.exec(value)
+    const core = important ? important[1] : value
+    const suffix = important ? important[2] : ''
+    const start = property.toLowerCase() === 'font' ? shorthandFamilyStart(core) : 0
+    if (start === null) return whole
+    return `${property}${colon}${core.slice(0, start)}${renameInFamilyList(core.slice(start), families)}${suffix}`
+  })
 }
 
 /** The drawn draft's CSS (`previewToDraw`) made safe to register beside the

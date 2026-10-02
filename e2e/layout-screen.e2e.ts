@@ -803,9 +803,13 @@ test.describe('the layout preview while editing', () => {
     await page.locator('[data-layout-tab="css"]').click()
     const draftFonts = () => page.evaluate(() => document.querySelector('style[data-peitho-draft-fonts]')?.textContent ?? '')
 
-    await fillEditor(page, '@font-face { font-family: "DeckFace"; src: url(fonts/other.woff2); }\n.peitho-slide.layout-quote h1 { font-family: "DeckFace", serif; }', 'layout-css')
+    await fillEditor(page, '@font-face { font-family: "DeckFace"; src: url(fonts/other.woff2); }\n.peitho-slide.layout-quote h1 { font: italic 2rem/1.2 DeckFace, serif !important; }', 'layout-css')
 
     await expect.poll(draftFonts).toContain('fonts/other.woff2')
+    // The preview's own sheet names the draft's face by its preview-only name.
+    const previewCss = () => page.locator('[data-layout-preview] > div').evaluate(host =>
+      (host.shadowRoot?.adoptedStyleSheets ?? []).flatMap(sheet => [...sheet.cssRules].map(rule => rule.cssText)).join('\n'))
+    await expect.poll(previewCss).toContain('"DeckFace (Peitho draft)", serif !important')
     expect(await draftFonts()).not.toMatch(/font-family:\s*"DeckFace"\s*;/)
     const families = await page.evaluate(() => [...document.fonts].map(face => face.family.replace(/"/g, '')))
     expect(families.filter(family => family === 'DeckFace')).toHaveLength(1)

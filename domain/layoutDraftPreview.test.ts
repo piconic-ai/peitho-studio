@@ -84,6 +84,8 @@ describe('fontFaceFamily / aliasFontFamilies', () => {
     expect(fontFaceFamily("@font-face { font-family: 'X' }")).toBe('x')
     expect(fontFaceFamily('@font-face { font-family: Y; }')).toBe('y')
     expect(fontFaceFamily('@font-face { src: url(a.woff2); }')).toBeNull()
+    expect(fontFaceFamily('@font-face { font-family: Deck   Face; }')).toBe('deck face')
+    expect(fontFaceFamily('@font-face { font-family: "Deck Face" !important; }')).toBe('deck face')
   })
 
   test('adversarial: Given families not listed, other properties, or no families, Then nothing changes', () => {
@@ -91,6 +93,52 @@ describe('fontFaceFamily / aliasFontFamilies', () => {
     expect(aliasFontFamilies(css, new Set(['deckface']))).toBe(css)
     expect(aliasFontFamilies(css, new Set())).toBe(css)
     expect(aliasFontFamilies('.x { font-family: "DeckFaceWide"; }', new Set(['deckface']))).toBe('.x { font-family: "DeckFaceWide"; }')
+  })
+})
+
+describe('aliasFontFamilies: parsing declarations', () => {
+  const DECK = new Set(['deck face'])
+  const A = `"Deck Face${DRAFT_FAMILY_SUFFIX}"`
+
+  test('adversarial: Given !important with or without spaces, Then the family is renamed and the flag kept byte for byte', () => {
+    expect(aliasFontFamilies('.x { font-family: "Deck Face" !important; }', DECK)).toBe(`.x { font-family: ${A} !important; }`)
+    expect(aliasFontFamilies('.x{font-family:"Deck Face"!important}', DECK)).toBe(`.x{font-family:${A}!important}`)
+    expect(aliasFontFamilies('.x { font-family: Deck Face ! important; }', DECK)).toBe(`.x { font-family: ${A} ! important; }`)
+  })
+
+  test('adversarial: Given a shorthand with style, variant, weight, size and line-height and an unquoted multi-word family, Then only the family is renamed', () => {
+    expect(aliasFontFamilies('.x { font: italic small-caps 700 2rem/1.2 Deck   Face, serif; }', DECK)).toBe(`.x { font: italic small-caps 700 2rem/1.2 ${A}, serif; }`)
+    expect(aliasFontFamilies('.x { font: italic 2rem Deck Face; }', DECK)).toBe(`.x { font: italic 2rem ${A}; }`)
+    expect(aliasFontFamilies('.x { font: 700 2rem / 1.5 "deck face" }', DECK)).toBe(`.x { font: 700 2rem / 1.5 "deck face${DRAFT_FAMILY_SUFFIX}" }`)
+    expect(aliasFontFamilies('.x { font: large Deck Face !important; }', DECK)).toBe(`.x { font: large ${A} !important; }`)
+  })
+
+  test('adversarial: Given several families with the target in the middle, Then only it is renamed and the rest stay as written', () => {
+    expect(aliasFontFamilies(".x { font-family: 'Other One',Deck Face ,  serif; }", DECK)).toBe(`.x { font-family: 'Other One',${A} ,  serif; }`)
+  })
+
+  test('adversarial: Given escaped quotes and commas inside a quoted family, Then quotes are read as one name and re-emitted escaped', () => {
+    const quoted = new Set(['say "hi", there'])
+    expect(aliasFontFamilies('.x { font-family: "Say \\"Hi\\", There", serif; }', quoted)).toBe(`.x { font-family: "Say \\"Hi\\", There${DRAFT_FAMILY_SUFFIX}", serif; }`)
+  })
+
+  test('adversarial: Given system keywords, generic families, var() and font-* longhands, Then they are left byte-identical', () => {
+    for (const css of [
+      '.x { font: caption; }',
+      '.x { font: menu !important; }',
+      '.x { font-family: serif, sans-serif; }',
+      '.x { font-family: var(--deck-face); }',
+      '.x { font: var(--font); }',
+      '.x { font: 2rem var(--family); }',
+      '.x { font-size: 2rem; font-weight: 700; }',
+      '.x { --font: Deck Face; }',
+      '.x { icon-font: Deck Face; }',
+    ]) expect(aliasFontFamilies(css, DECK)).toBe(css)
+  })
+
+  test('spec: Given the @font-face of a renamed family, Then its family is renamed too, and a different family with the name as prefix is not', () => {
+    expect(aliasFontFamilies('@font-face { font-family: Deck Face; src: url(a.woff2); }', DECK)).toBe(`@font-face { font-family: ${A}; src: url(a.woff2); }`)
+    expect(aliasFontFamilies('.x { font-family: "Deck Face Wide"; }', DECK)).toBe('.x { font-family: "Deck Face Wide"; }')
   })
 })
 

@@ -211,7 +211,10 @@ tags: [layout, ui, screen]
   WKWebViewで未確認のため、デッキのフォントと同じ方式)。デッキに無い新しい
   familyだけがそのまま登録され、スライド側はそのfamilyを参照しないので
   影響しない。family名の付け替えは`font-family`/`font`宣言と`@font-face`
-  だけが対象(`var()`経由などは追わない)。
+  だけが対象(値はCSSどおりに読む: `!important`、`font`の短縮記法のサイズ/
+  行高さの後のfamily、クォート内のカンマ・エスケープ、クォート無しの複数語)。
+  `var()`経由・`calc()`を含む`font`短縮記法・システムフォント(`font: caption`)
+  は追わず、そのまま残す。
 - 下書きのファイル登録(`AssetServer`の`draft_assets`)はウィンドウが開いて
   いる間増えるだけ(パスはファイルのハッシュ付きなので古くはならない)。
 - レイアウトHTML/CSSの構文ハイライト(`@codemirror/lang-html`/`lang-css`の
