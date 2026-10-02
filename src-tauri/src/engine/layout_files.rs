@@ -404,12 +404,17 @@ pub fn save_layout(deck_path: &Path, content: &str, name: &str, html: &str, css:
 }
 
 /// A layout's placeholder preview (`layout_preview::placeholder_source`)
-/// rendered from its unsaved HTML and CSS: the slide's fragment, and the
-/// deck CSS it's drawn with.
+/// rendered from its unsaved HTML and CSS: the slide's fragment, the deck
+/// CSS it's drawn with, and the files they reference by hashed
+/// `assets/<hash>-<name>` path (an image only the draft names, say) — for
+/// the asset server to serve alongside the saved deck's
+/// (`AssetServer::add_draft_assets`). Not sent to the frontend.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LayoutDraftPreview {
     pub fragment: String,
     pub css: String,
+    #[serde(skip)]
+    pub image_assets: std::collections::HashMap<String, PathBuf>,
 }
 
 /// Renders layout `name`'s placeholder preview with `html` and `css` in
@@ -436,7 +441,7 @@ pub fn preview_layout_draft(deck_path: &Path, name: &str, html: &str, css: &str)
         .get(layout_preview::PREVIEW_KEY)
         .cloned()
         .ok_or_else(|| format!("the '{name}' layout's preview has no slide"))?;
-    Ok(LayoutDraftPreview { fragment, css: output.css })
+    Ok(LayoutDraftPreview { fragment, css: output.css, image_assets: output.image_assets })
 }
 
 /// `current` without layout `name`: an error when the deck has no such
@@ -1036,6 +1041,29 @@ mod tests {
         assert!(preview.css.contains("rebeccapurple"));
         assert_eq!(files_under(dir.path()), before);
         assert_eq!(std::fs::read_to_string(dir.path().join("layouts/title-slide.html")).unwrap(), before_html);
+    }
+
+    #[test]
+    fn given_a_draft_naming_an_image_no_saved_file_uses_then_the_preview_carries_its_hashed_path_and_source() {
+        let (dir, deck_path) = standard_deck(PINNED);
+        std::fs::create_dir(dir.path().join("img")).unwrap();
+        std::fs::write(dir.path().join("img/logo.png"), b"not really a png").unwrap();
+        let html = "<section class=\"peitho-slide layout-title-slide\"><img src=\"img/logo.png\"><h1><slot name=\"title\" accepts=\"inline\" arity=\"1\"></slot></h1></section>";
+
+        let preview = preview_layout_draft(&deck_path, "title-slide", html, "").unwrap_or_else(|err| panic!("{err}"));
+
+        let (served, source) = preview.image_assets.iter().find(|(_, source)| source.ends_with("img/logo.png")).expect("the draft's image is resolved");
+        assert!(served.starts_with("assets/") && served.ends_with("-logo.png"), "{served}");
+        assert!(preview.fragment.contains(served.as_str()), "{}", preview.fragment);
+        assert!(source.is_file());
+    }
+
+    #[test]
+    fn adversarial_a_draft_naming_a_missing_file_is_an_error_naming_it() {
+        let (_dir, deck_path) = standard_deck(PINNED);
+        let html = "<section class=\"peitho-slide layout-title-slide\"><img src=\"img/nope.png\"><h1><slot name=\"title\" accepts=\"inline\" arity=\"1\"></slot></h1></section>";
+        let err = preview_layout_draft(&deck_path, "title-slide", html, "").unwrap_err();
+        assert!(err.contains("img/nope.png"), "{err}");
     }
 
     #[test]

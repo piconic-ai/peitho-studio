@@ -104,7 +104,7 @@ import { SlideList } from './SlideList'
 import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
 import { LayoutContextMenu, type LayoutMenuEntry } from './LayoutContextMenu'
 import { focusDeleteLayoutDialog, focusNewLayoutName } from '../dom/layoutModals'
-import { draftPreviewError, previewToDraw } from '../domain/layoutDraftPreview'
+import { absolutizedDraft, draftPreviewError, previewToDraw } from '../domain/layoutDraftPreview'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { type LayoutMenuAction, layoutMenuItems, layoutMenuLabel, layoutMenuPosition, layoutMenuTarget, layoutMenuTitle } from '../domain/layoutMenu'
 
@@ -500,7 +500,8 @@ export function Studio() {
     }
     const seq = layouts.requestPreview(shown.name)
     try {
-      layouts.previewRendered(seq, await deckIpc.previewLayoutDraft(shown.name, shown.draft.html, shown.draft.css))
+      const rendered = await deckIpc.previewLayoutDraft(shown.name, shown.draft.html, shown.draft.css)
+      layouts.previewRendered(seq, absolutizedDraft(rendered, render.assetBaseUrl() ?? ''))
     } catch (err) {
       layouts.previewFailed(seq, err instanceof Error ? err.message : String(err))
     }

@@ -1,10 +1,25 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  NO_DRAFT_PREVIEW, draftPreviewError, draftPreviewFailed, draftPreviewRendered, previewToDraw, requestDraftPreview, resetDraftPreview,
+  NO_DRAFT_PREVIEW, absolutizedDraft, draftPreviewError, draftPreviewFailed, draftPreviewRendered, previewToDraw, requestDraftPreview, resetDraftPreview,
 } from './layoutDraftPreview'
 
 const A = { fragment: '<section>a</section>', css: '.a {}' }
 const B = { fragment: '<section>b</section>', css: '.b {}' }
+
+describe('absolutizedDraft', () => {
+  test('spec: Given a draft naming an asset and a CSS url, Then both point at the deck\'s asset server', () => {
+    const drawn = absolutizedDraft({ fragment: '<img src="assets/bbbb-logo.png">', css: '.x { background: url(assets/cccc-bg.png); }' }, 'http://127.0.0.1:5/')
+    expect(drawn.fragment).toBe('<img src="http://127.0.0.1:5/assets/bbbb-logo.png">')
+    expect(drawn.css).toBe('.x { background: url(http://127.0.0.1:5/assets/cccc-bg.png); }')
+  })
+
+  test('adversarial: Given absolute URLs, an empty draft or no server yet, Then nothing breaks', () => {
+    const absolute = { fragment: '<img src="https://example.com/a.png">', css: '.x { background: url(data:image/png;base64,AA==); }' }
+    expect(absolutizedDraft(absolute, 'http://127.0.0.1:5/')).toEqual(absolute)
+    expect(absolutizedDraft({ fragment: '', css: '' }, 'http://127.0.0.1:5/')).toEqual({ fragment: '', css: '' })
+    expect(() => absolutizedDraft({ fragment: '<img src="assets/a.png">', css: '' }, '')).not.toThrow()
+  })
+})
 
 describe('the layout editor\'s live preview', () => {
   test('spec: Given a draft rendered, Then the preview draws it with its own CSS; before that, the saved preview with the deck\'s', () => {

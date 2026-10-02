@@ -26,8 +26,35 @@ struct ServedState {
     css: String,
     has_math: bool,
     image_assets: HashMap<String, PathBuf>,
+    /// Files only an unsaved layout draft names (the layout screen's live
+    /// preview, `layout_files::preview_layout_draft`), by the same
+    /// `assets/<hash>-<name>` path. Only ever added to, and looked up after
+    /// `image_assets`: a draft can't replace or remove what the saved deck
+    /// serves, and `update` (a deck render) leaves these alone, so a draft
+    /// preview and a deck render running at once can't undo each other.
+    /// The hash in the path is the file's own, so an entry never goes
+    /// stale; the map lives as long as the deck window.
+    draft_assets: HashMap<String, PathBuf>,
     fonts_dir: Option<PathBuf>,
     deck_dir: PathBuf,
+}
+
+impl ServedState {
+    /// Adds `assets` to the draft assets, skipping a path the saved deck
+    /// already serves.
+    fn add_draft_assets(&mut self, assets: &HashMap<String, PathBuf>) {
+        for (path, source) in assets {
+            if !self.image_assets.contains_key(path) {
+                self.draft_assets.insert(path.clone(), source.clone());
+            }
+        }
+    }
+
+    /// The file served at `path` (`assets/<hash>-<name>`): the saved
+    /// deck's, else a draft's.
+    fn asset_source(&self, path: &str) -> Option<&PathBuf> {
+        self.image_assets.get(path).or_else(|| self.draft_assets.get(path))
+    }
 }
 
 impl AssetServer {
@@ -123,6 +150,15 @@ impl AssetServer {
             state.deck_dir = output.deck_dir.clone();
         }
     }
+
+    /// Serves the files a layout draft's preview references, beside the
+    /// saved deck's (see `ServedState::draft_assets`). Additive only, so it
+    /// is safe to call from a command running alongside `render_draft`.
+    pub fn add_draft_assets(&self, assets: &HashMap<String, PathBuf>) {
+        if let Ok(mut state) = self.state.lock() {
+            state.add_draft_assets(assets);
+        }
+    }
 }
 
 fn respond(state: &Mutex<ServedState>, url: &str) -> Result<(Vec<u8>, &'static str), u16> {
@@ -166,7 +202,7 @@ fn respond(state: &Mutex<ServedState>, url: &str) -> Result<(Vec<u8>, &'static s
     if let Some(name) = path.strip_prefix("assets/") {
         // Keyed by the full `assets/<hash>-<name>` dist path (see
         // `RenderOutput::image_assets`), not by `name` alone.
-        if let Some(source) = state.image_assets.get(path) {
+        if let Some(source) = state.asset_source(path) {
             if let Ok(bytes) = std::fs::read(source) {
                 return Ok((bytes, asset_content_type(name)));
             }
@@ -278,6 +314,41 @@ mod tests {
 
     fn state_for(deck_dir: PathBuf, image_assets: HashMap<String, PathBuf>) -> Mutex<ServedState> {
         Mutex::new(ServedState { deck_dir, image_assets, ..ServedState::default() })
+    }
+
+    #[test]
+    fn respond_spec_serves_a_layout_drafts_own_asset_beside_the_saved_decks() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("logo.png"), b"draft logo").unwrap();
+        std::fs::write(dir.path().join("photo.png"), b"saved photo").unwrap();
+        let state = state_for(dir.path().to_path_buf(), HashMap::from([("assets/aaaa-photo.png".to_string(), dir.path().join("photo.png"))]));
+
+        state.lock().unwrap().add_draft_assets(&HashMap::from([("assets/bbbb-logo.png".to_string(), dir.path().join("logo.png"))]));
+
+        assert_eq!(respond(&state, "/assets/bbbb-logo.png").unwrap().0, b"draft logo");
+        assert_eq!(respond(&state, "/assets/aaaa-photo.png").unwrap().0, b"saved photo");
+    }
+
+    #[test]
+    fn adversarial_a_draft_asset_never_replaces_the_saved_decks_and_survives_a_deck_render() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("saved.png"), b"saved").unwrap();
+        std::fs::write(dir.path().join("other.png"), b"other").unwrap();
+        let mut state = ServedState { deck_dir: dir.path().to_path_buf(), ..ServedState::default() };
+        state.image_assets.insert("assets/aaaa-x.png".to_string(), dir.path().join("saved.png"));
+
+        state.add_draft_assets(&HashMap::from([
+            ("assets/aaaa-x.png".to_string(), dir.path().join("other.png")),
+            ("assets/cccc-y.png".to_string(), dir.path().join("other.png")),
+        ]));
+        assert_eq!(state.asset_source("assets/aaaa-x.png"), Some(&dir.path().join("saved.png")));
+
+        // A later deck render replaces the saved map; the draft's stays.
+        state.image_assets = HashMap::new();
+        assert_eq!(state.asset_source("assets/cccc-y.png"), Some(&dir.path().join("other.png")));
+        assert_eq!(state.asset_source("assets/aaaa-x.png"), None);
+        state.add_draft_assets(&HashMap::new());
+        assert_eq!(state.asset_source("assets/zzzz-nope.png"), None);
     }
 
     #[test]

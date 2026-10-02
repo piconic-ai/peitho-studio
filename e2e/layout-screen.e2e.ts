@@ -755,6 +755,15 @@ test.describe('the layout preview while editing', () => {
     await expect(preview(page).locator('h1')).toHaveText('fast')
   })
 
+  test('Given a draft naming an asset, then its preview loads it from the deck\'s asset server', async ({ page }) => {
+    await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' }))
+    await row(page, 'quote').click()
+
+    await fillEditor(page, '<section class="peitho-slide layout-quote"><img src="assets/bbbb-logo.png"><h1>draft</h1></section>', 'layout-html')
+
+    await expect(preview(page).locator('img')).toHaveAttribute('src', 'http://localhost:9/assets/bbbb-logo.png')
+  })
+
   test('Given a draft previewed, when it is reverted or another layout is opened, then the saved preview comes back', async ({ page }) => {
     await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' }))
     await row(page, 'quote').click()

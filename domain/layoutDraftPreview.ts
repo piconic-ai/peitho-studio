@@ -2,6 +2,8 @@
 // rendered from its unsaved HTML/CSS (`preview_layout_draft`) while the
 // user types. Pure — the store holds one `DraftPreview`, `Studio.tsx`
 // debounces the typing and makes the calls.
+import { absolutizeCssUrls } from './slideCss'
+import { absolutizeFragmentUrls } from './slideFragment'
 
 /** One rendered draft: the slide's fragment and the CSS it's drawn with. */
 export interface RenderedDraft {
@@ -55,6 +57,14 @@ export function resetDraftPreview(state: DraftPreview): DraftPreview {
 export function previewToDraw(state: DraftPreview, name: string | null, saved: string): { fragment: string; css: string | null } {
   if (name !== null && state.name === name && state.shown !== null) return state.shown
   return { fragment: saved, css: null }
+}
+
+/** `rendered` with its relative `assets/…`/`url(…)` references made
+ * absolute under the deck's asset server (`baseUrl`), as the deck's own
+ * slides are: a shadow root has no `<base href>` to resolve them against.
+ * The command has the server serve the files the draft names. */
+export function absolutizedDraft(rendered: RenderedDraft, baseUrl: string): RenderedDraft {
+  return { fragment: absolutizeFragmentUrls(rendered.fragment, baseUrl), css: absolutizeCssUrls(rendered.css, baseUrl) }
 }
 
 /** The error to show under the preview of layout `name`, `''` for none. */

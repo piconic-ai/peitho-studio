@@ -1177,8 +1177,12 @@ pub fn delete_layout(content: String, name: String, window: WebviewWindow, sessi
 
 /// Layout `name`'s placeholder preview rendered from the editor's unsaved
 /// `html` and `css`, for the layout screen's live preview. Writes nothing.
-/// `async`: it renders a deck, and touches no shared state (like
-/// `preview_layouts`, it never goes through the live deck's `AssetServer`).
+/// The files the draft references are served beside the saved deck's
+/// (`AssetServer::add_draft_assets` — additive, never touching what a deck
+/// render serves), so its URLs resolve against the same asset server.
+/// `async`, unlike `render_draft`: that one replaces the served deck, so
+/// concurrent runs could leave an older render up; adding draft assets
+/// can't.
 #[tauri::command(async)]
 pub fn preview_layout_draft(
     name: String,
@@ -1187,7 +1191,12 @@ pub fn preview_layout_draft(
     window: WebviewWindow,
     session: State<PeithoSession>,
 ) -> Result<layout_files::LayoutDraftPreview, String> {
-    layout_files::preview_layout_draft(&session_deck_path(&session, window.label())?, &name, &html, &css)
+    let preview = layout_files::preview_layout_draft(&session_deck_path(&session, window.label())?, &name, &html, &css)?;
+    let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+    if let Some(state) = guard.get(window.label()) {
+        state.asset_server.add_draft_assets(&preview.image_assets);
+    }
+    Ok(preview)
 }
 
 /// Layout `name`'s HTML and own CSS, for the layout screen's editor.
