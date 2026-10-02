@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  NO_DRAFT_PREVIEW, absolutizedDraft, draftFontFaces, draftPreviewError, draftPreviewFailed, draftPreviewRendered, previewToDraw, requestDraftPreview, resetDraftPreview,
+  DRAFT_FAMILY_SUFFIX, NO_DRAFT_PREVIEW, absolutizedDraft, aliasFontFamilies, draftPreviewError, fontFaceFamily, previewDraftCss, draftPreviewFailed, draftPreviewRendered, previewToDraw, requestDraftPreview, resetDraftPreview,
 } from './layoutDraftPreview'
 
 const A = { fragment: '<section>a</section>', css: '.a {}' }
@@ -21,25 +21,76 @@ describe('absolutizedDraft', () => {
   })
 })
 
-describe('draftFontFaces', () => {
+describe('previewDraftCss: which faces register', () => {
   const DRAFT = '@font-face { font-family: "Draft"; src: url(http://h/fonts/d.woff2); }\n.x { font-family: "Draft"; }'
 
   test('spec: Given a drawn draft adding a face, Then that face is registered; the saved preview registers none', () => {
-    expect(draftFontFaces({ css: DRAFT }, '')).toBe('@font-face { font-family: "Draft"; src: url(http://h/fonts/d.woff2); }')
-    expect(draftFontFaces({ css: null }, '')).toBe('')
+    expect(previewDraftCss({ css: DRAFT }, '').fontFaces).toBe('@font-face { font-family: "Draft"; src: url(http://h/fonts/d.woff2); }')
+    expect(previewDraftCss({ css: null }, '').fontFaces).toBe('')
   })
 
   test('adversarial: Given a face the saved deck already has (whitespace aside), Then it isn\'t added again; other faces are', () => {
     const saved = '@font-face {\n  font-family: "Draft";\n  src: url(http://h/fonts/d.woff2);\n}'
-    expect(draftFontFaces({ css: DRAFT }, saved)).toBe('')
+    expect(previewDraftCss({ css: DRAFT }, saved).fontFaces).toBe('')
     const two = '@font-face { font-family: "A"; src: url(a.woff2); } @FONT-FACE { font-family: "B"; src: url(b.woff2); }'
-    expect(draftFontFaces({ css: two }, '@font-face { font-family: "A"; src: url(a.woff2); }')).toBe('@FONT-FACE { font-family: "B"; src: url(b.woff2); }')
+    expect(previewDraftCss({ css: two }, '@font-face { font-family: "A"; src: url(a.woff2); }').fontFaces).toBe('@FONT-FACE { font-family: "B"; src: url(b.woff2); }')
   })
 
   test('adversarial: Given draft CSS with no faces, empty, or a broken unclosed face, Then nothing is registered', () => {
-    expect(draftFontFaces({ css: '' }, '')).toBe('')
-    expect(draftFontFaces({ css: '.x { color: red; }' }, '')).toBe('')
-    expect(draftFontFaces({ css: '@font-face { font-family: "X"; src: url(x.woff2);' }, '')).toBe('')
+    expect(previewDraftCss({ css: '' }, '').fontFaces).toBe('')
+    expect(previewDraftCss({ css: '.x { color: red; }' }, '').fontFaces).toBe('')
+    expect(previewDraftCss({ css: '@font-face { font-family: "X"; src: url(x.woff2);' }, '').fontFaces).toBe('')
+  })
+})
+
+describe('previewDraftCss', () => {
+  const SAVED = '@font-face { font-family: "DeckFace"; src: url(http://h/fonts/deck.woff2); }'
+
+  test('spec: Given a draft redefining a family the deck defines, Then the draft registers it under a preview-only name and uses that name', () => {
+    const css = '@font-face { font-family: "DeckFace"; src: url(http://h/fonts/other.woff2); }\n.x h1 { font-family: "DeckFace", serif; }'
+    const { fontFaces, rest } = previewDraftCss({ css }, SAVED)
+    expect(fontFaces).toBe(`@font-face { font-family: "DeckFace${DRAFT_FAMILY_SUFFIX}"; src: url(http://h/fonts/other.woff2); }`)
+    expect(rest).toContain(`font-family: "DeckFace${DRAFT_FAMILY_SUFFIX}", serif;`)
+  })
+
+  test('spec: Given a draft keeping the deck\'s face and adding a new family, Then only the new face registers and nothing is renamed', () => {
+    const css = `${SAVED}\n@font-face { font-family: "New"; src: url(n.woff2); }\n.x { font-family: "DeckFace"; }`
+    const { fontFaces, rest } = previewDraftCss({ css }, SAVED)
+    expect(fontFaces).toBe('@font-face { font-family: "New"; src: url(n.woff2); }')
+    expect(rest).toContain('font-family: "DeckFace";')
+  })
+
+  test('adversarial: Given a redefined family with several weights, Then all of its draft faces move to the preview-only name together', () => {
+    const saved = `${SAVED}\n@font-face { font-family: "DeckFace"; font-weight: 700; src: url(http://h/fonts/deck-bold.woff2); }`
+    const css = `@font-face { font-family: "DeckFace"; src: url(changed.woff2); }\n@font-face { font-family: "DeckFace"; font-weight: 700; src: url(http://h/fonts/deck-bold.woff2); }`
+    const faces = previewDraftCss({ css }, saved).fontFaces.split('\n')
+    expect(faces).toHaveLength(2)
+    expect(faces.every(face => face.includes(DRAFT_FAMILY_SUFFIX))).toBe(true)
+  })
+
+  test('adversarial: Given the saved preview, no faces, or an unquoted family in another case, Then it is handled', () => {
+    expect(previewDraftCss({ css: null }, SAVED)).toEqual({ fontFaces: '', rest: null })
+    expect(previewDraftCss({ css: '' }, SAVED)).toEqual({ fontFaces: '', rest: '' })
+    const css = '@font-face { font-family: deckface; src: url(x.woff2); } .x { font: italic 2rem deckface; }'
+    const { fontFaces, rest } = previewDraftCss({ css }, SAVED)
+    expect(fontFaces).toContain(`"deckface${DRAFT_FAMILY_SUFFIX}"`)
+    expect(rest).toContain(`font: italic 2rem "deckface${DRAFT_FAMILY_SUFFIX}"`)
+  })
+})
+
+describe('fontFaceFamily / aliasFontFamilies', () => {
+  test('spec: Given faces quoted, single-quoted or bare, Then the family is read lower-cased; none without one', () => {
+    expect(fontFaceFamily('@font-face { font-family: "Deck Face"; }')).toBe('deck face')
+    expect(fontFaceFamily("@font-face { font-family: 'X' }")).toBe('x')
+    expect(fontFaceFamily('@font-face { font-family: Y; }')).toBe('y')
+    expect(fontFaceFamily('@font-face { src: url(a.woff2); }')).toBeNull()
+  })
+
+  test('adversarial: Given families not listed, other properties, or no families, Then nothing changes', () => {
+    const css = '.x { font-family: "Other", sans-serif; font-size: 2rem; } .y { font-weight: 700 }'
+    expect(aliasFontFamilies(css, new Set(['deckface']))).toBe(css)
+    expect(aliasFontFamilies(css, new Set())).toBe(css)
+    expect(aliasFontFamilies('.x { font-family: "DeckFaceWide"; }', new Set(['deckface']))).toBe('.x { font-family: "DeckFaceWide"; }')
   })
 })
 

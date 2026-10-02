@@ -2,7 +2,7 @@
 // rendered from its unsaved HTML/CSS (`preview_layout_draft`) while the
 // user types. Pure — the store holds one `DraftPreview`, `Studio.tsx`
 // debounces the typing and makes the calls.
-import { absolutizeCssUrls, fontFaceRules } from './slideCss'
+import { absolutizeCssUrls, fontFaceRules, splitFontFaceRules } from './slideCss'
 import { absolutizeFragmentUrls } from './slideFragment'
 
 /** One rendered draft: the slide's fragment and the CSS it's drawn with. */
@@ -67,17 +67,67 @@ export function absolutizedDraft(rendered: RenderedDraft, baseUrl: string): Rend
   return { fragment: absolutizeFragmentUrls(rendered.fragment, baseUrl), css: absolutizeCssUrls(rendered.css, baseUrl) }
 }
 
-/** The `@font-face` rules the drawn draft (`previewToDraw`) brings that the
- * saved deck's (`savedFontFaces`, already registered) doesn't have — for
- * `dom/slideCanvas.ts` to register beside the deck's while the draft is
- * drawn. `''` when the saved preview is drawn (`css: null`), so a reset,
- * a save or another layout drops the draft's faces. Compared with
- * whitespace collapsed, so a face the deck already has isn't added twice. */
-export function draftFontFaces(drawn: { css: string | null }, savedFontFaces: string): string {
-  if (drawn.css === null) return ''
-  const normalize = (rule: string) => rule.replace(/\s+/g, ' ').trim()
-  const saved = new Set(fontFaceRules(savedFontFaces).map(normalize))
-  return fontFaceRules(drawn.css).filter(rule => !saved.has(normalize(rule))).join('\n')
+/** What a preview-only font family is called: a family the saved deck
+ * defines but the draft redefines (`previewDraftCss`). */
+export const DRAFT_FAMILY_SUFFIX = ' (Peitho draft)'
+
+function normalizeRule(rule: string): string {
+  return rule.replace(/\s+/g, ' ').trim()
+}
+
+/** The family an `@font-face` rule defines, lower-cased; `null` for none. */
+export function fontFaceFamily(rule: string): string | null {
+  const match = /font-family\s*:\s*(["']?)([^;"'}]+?)\1\s*(?:;|\})/i.exec(rule)
+  return match ? match[2].trim().toLowerCase() : null
+}
+
+/** `css` with every mention of a family in `families` (lower-cased) —
+ * in `@font-face` rules and in `font-family`/`font` declarations — renamed
+ * to its preview-only name (`DRAFT_FAMILY_SUFFIX`). Quoted or bare, any
+ * case; a `font` shorthand's family is the end of its first part. */
+export function aliasFontFamilies(css: string, families: ReadonlySet<string>): string {
+  if (families.size === 0) return css
+  const alias = (name: string) => `"${name}${DRAFT_FAMILY_SUFFIX}"`
+  const renamePart = (part: string): string => {
+    const quoted = /^(\s*)(["'])(.+?)\2(\s*)$/.exec(part)
+    if (quoted && families.has(quoted[3].trim().toLowerCase())) return `${quoted[1]}${alias(quoted[3].trim())}${quoted[4]}`
+    const bare = /^(\s*)(.*?)(\s*)$/.exec(part)!
+    if (families.has(bare[2].toLowerCase())) return `${bare[1]}${alias(bare[2])}${bare[3]}`
+    // A `font` shorthand's first part: "italic 2rem Family" / '... "Family"'.
+    const tail = /^(.*\s)(["']?)([^\s"']+(?: [^\s"']+)*)\2(\s*)$/.exec(part)
+    if (tail && families.has(tail[3].toLowerCase())) return `${tail[1]}${alias(tail[3])}${tail[4]}`
+    return part
+  }
+  return css.replace(/(font-family|font)(\s*:\s*)([^;}]*)/gi, (_match, property: string, colon: string, value: string) =>
+    `${property}${colon}${value.split(',').map(renamePart).join(',')}`)
+}
+
+/** The drawn draft's CSS (`previewToDraw`) made safe to register beside the
+ * saved deck's (`savedFontFaces`, already registered page-wide):
+ * - a family the deck defines and the draft redefines (any of its faces
+ *   differing, whitespace aside) is renamed to a preview-only name in the
+ *   whole draft CSS (`aliasFontFamilies`), so the draft's faces can't
+ *   change how the deck's slides draw;
+ * - `fontFaces` are the draft's faces the deck doesn't have as they are —
+ *   to register page-wide (`dom/slideCanvas.ts` `setDraftFontFaces`);
+ * - `rest` is everything else, for the preview's own sheet.
+ * Nothing for the saved preview (`css: null`). */
+export function previewDraftCss(drawn: { css: string | null }, savedFontFaces: string): { fontFaces: string; rest: string | null } {
+  if (drawn.css === null) return { fontFaces: '', rest: null }
+  const savedRules = fontFaceRules(savedFontFaces)
+  const saved = new Set(savedRules.map(normalizeRule))
+  const savedFamilies = new Set(savedRules.map(fontFaceFamily).filter((family): family is string => family !== null))
+  const redefined = new Set(
+    fontFaceRules(drawn.css)
+      .filter(rule => !saved.has(normalizeRule(rule)))
+      .map(fontFaceFamily)
+      .filter((family): family is string => family !== null && savedFamilies.has(family)),
+  )
+  const css = aliasFontFamilies(drawn.css, redefined)
+  return {
+    fontFaces: fontFaceRules(css).filter(rule => !saved.has(normalizeRule(rule))).join('\n'),
+    rest: splitFontFaceRules(css).rest,
+  }
 }
 
 /** The error to show under the preview of layout `name`, `''` for none. */

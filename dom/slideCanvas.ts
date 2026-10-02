@@ -91,7 +91,7 @@ export function ensureFontFaces(fontFaceCss: string): void {
 const DRAFT_FONT_FACE_STYLE_ATTR = 'data-peitho-draft-fonts'
 
 /** Registers `fontFaceCss` — the `@font-face` rules a layout draft in the
- * layout editor brings (`draftFontFaces`) — in a `<style>` of its own
+ * layout editor brings (`previewDraftCss`) — in a `<style>` of its own
  * beside `ensureFontFaces`' deck one, for the same reason (font
  * registration inside a shadow tree is unconfirmed on WKWebView). `''`
  * empties it, dropping those faces for the whole page again. */

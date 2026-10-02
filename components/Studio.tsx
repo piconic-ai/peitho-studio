@@ -104,8 +104,8 @@ import { SlideList } from './SlideList'
 import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
 import { LayoutContextMenu, type LayoutMenuEntry } from './LayoutContextMenu'
 import { focusDeleteLayoutDialog, focusNewLayoutName } from '../dom/layoutModals'
-import { absolutizedDraft, draftFontFaces, draftPreviewError, previewToDraw } from '../domain/layoutDraftPreview'
-import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
+import { absolutizedDraft, draftPreviewError, previewDraftCss, previewToDraw } from '../domain/layoutDraftPreview'
+import { scopeRootToHost } from '../domain/slideCss'
 import { type LayoutMenuAction, layoutMenuItems, layoutMenuLabel, layoutMenuPosition, layoutMenuTarget, layoutMenuTitle } from '../domain/layoutMenu'
 
 // Just the heading — `addSlide` attaches an explicit, collision-free
@@ -784,14 +784,19 @@ export function Studio() {
   function getLayoutDraftStylesheet(): CSSStyleSheet {
     return layoutDraftStylesheet
   }
+  // The draft's CSS with any family the deck defines and the draft
+  // redefines moved to a preview-only name, so its faces can't change how
+  // the deck's slides draw (`previewDraftCss`).
+  const layoutPreviewCss = createMemo(() => previewDraftCss(layoutPreviewDraw(), render.fontFaceCss()))
   createEffect(() => {
-    const css = layoutPreviewDraw().css
-    layoutDraftStylesheet.replaceSync(css === null ? ui.layoutPreviewStylesheetText() : scopeRootToHost(splitFontFaceRules(css).rest))
+    const rest = layoutPreviewCss().rest
+    layoutDraftStylesheet.replaceSync(rest === null ? ui.layoutPreviewStylesheetText() : scopeRootToHost(rest))
   })
-  // A draft's own `@font-face` rules: registered while its preview is
-  // drawn, dropped as soon as the saved preview is drawn again.
+  // A draft's own `@font-face` rules: registered page-wide while its
+  // preview is drawn on the layout screen, dropped when the saved preview
+  // is drawn again or the slides screen shows (and back when it returns).
   createEffect(() => {
-    setDraftFontFaces(draftFontFaces(layoutPreviewDraw(), render.fontFaceCss()))
+    setDraftFontFaces(ui.studioMode() === 'layouts' ? layoutPreviewCss().fontFaces : '')
   })
 
   // The error bar's way out of peitho-core's "no slot accepts image" (see
