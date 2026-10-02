@@ -1,5 +1,14 @@
 # Changelog
 
+## [v0.1.0](https://github.com/piconic-ai/peitho-studio/compare/v0.1.0-rc.7...v0.1.0) - 2026-10-02
+
+- Automate Homebrew cask update PRs after releases by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/144
+- Add preview deployment script and work around CI identity mismatch by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/145
+- Refresh README and demonstrate slide comments with a hero video by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/146
+- Add Homebrew install and a real Studio UI demo by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/147
+- Use Swiss Style with expressive layout and color in the hero demo by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/148
+- Prevent stale Workers Builds preview commands from hanging CI by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/149
+
 ## [v0.1.0-rc.5](https://github.com/piconic-ai/peitho-studio/compare/v0.1.0-rc.4...v0.1.0-rc.5) - 2026-09-28
 
 - Check off release-build's signing verification item by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/107
