@@ -28,6 +28,10 @@ export default defineConfig({
     // browser's own to keep a Japanese dev machine from changing the
     // outcome of tests that expect English.
     locale: 'en-US',
+    // CI uploads `test-results/` when a run fails (see the e2e job in
+    // .github/workflows/test.yml), so a failure only CI reproduces can
+    // still be stepped through with `playwright show-trace`.
+    trace: process.env.CI ? 'retain-on-failure' : 'off',
   },
   webServer: {
     // `start` alone only serves whatever's already in dist/ — build first
