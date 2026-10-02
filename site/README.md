@@ -1,15 +1,13 @@
 # Peitho Studio site
 
-The landing page for Peitho Studio: what it does, and a download button that
-picks the right build from the latest GitHub Release. A separate Bun project
+The landing page for Peitho Studio: what it does, Homebrew installation and downloads from GitHub Releases. A separate Bun project
 from the app (its own `package.json` and lockfile), living in `site/`.
 
 ## Stack
 
 - One static `index.html`, styled by `public/site.css` (light only):
   - a hero with the app icon, "Peitho Studio", "Write slides with Peitho."
-    ("Edit Markdown. Preview slides. Bring your AI Agent.") and
-    the download button, above a short, user-controlled demo of commenting on a slide and reviewing an AI Agent revision,
+    ("Edit Markdown. Preview slides. Bring your AI Agent.") above a short, user-controlled demo of editing Markdown and asking an AI Agent for an animated HTTP benchmark chart,
     framed as a window (`public/studio-demo.mp4`, with `studio.webp` as its poster);
   - a "Built on Peitho" card: Peitho's one-line description and a small
     Markdown-to-slide illustration, linking to
@@ -17,19 +15,10 @@ from the app (its own `package.json` and lockfile), living in `site/`.
   - a Download section with a Homebrew installation command and every build listed as an accordion.
   It reads without JavaScript, with plain links to GitHub Releases.
 - [BarefootJS](https://barefootjs.dev) (CSR adapter, compiled by
-  `@barefootjs/vite`): `src/components/DownloadPanel.tsx`, mounted twice
+  `@barefootjs/vite`): `src/components/DownloadPanel.tsx`, mounted in the Download section
   from `src/main.ts`.
-  - `part: 'button'` (the hero) detects the visitor's platform (and, on
-    Chromium, the CPU architecture via UA Client Hints) and puts the
-    matching build on the button. On an unrecognised platform (a phone) the
-    button points at the Download section instead.
-  - `part: 'list'` shows one native `<details>` per platform, the visitor's
-    own platform open.
-  - Both share one request to
-    `https://api.github.com/repos/piconic-ai/peitho-studio/releases/latest`
-    (`src/lib/latestRelease.ts`), show button-/row-sized placeholders while
-    it loads, and link GitHub Releases when there is no release, no
-    assets, or the API can't be reached.
+  - Shows one native `<details>` per platform, the visitor's own platform open.
+  - Fetches release metadata from GitHub's latest-release API. Failed requests explain that release downloads could not be loaded; releases with no downloadable files explain that those files are not listed. Both link to GitHub Releases and keep the Homebrew instructions available.
 - `src/domain/releases.ts` holds the pure rules (asset classification,
   platform detection) and their `bun test` specs, following the app's
   `.ts` = pure / `.tsx` = stateful convention.
@@ -44,9 +33,9 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 
 ## Hero demo
 
-`public/studio-demo.mp4` (1280×800) records the real Studio frontend in two steps: edit a Markdown title and watch the HTML preview update, then ask the Agent to research renewable-capacity data and add a JavaScript-animated bar chart. The slide layout and chart use HTML/CSS; their reveal and bar animations run through JavaScript's Web Animations API inside Studio's trusted slide canvas.
+`public/studio-demo.mp4` (1280×800) records the real Studio frontend in two steps: edit a Markdown title and watch the HTML preview update, then ask the Agent to research HTTP benchmark data and add a JavaScript-animated bar chart. The slide layout and chart use HTML/CSS; their reveal and bar animations run through JavaScript's Web Animations API inside Studio's trusted slide canvas.
 
-`site/scripts/demo-deck.ts` holds the capture fixture, HTML layout, animation script and data-source URLs. The chart uses IRENA's published annual capacity additions (473 GW in 2023 and 585 GW in 2024), with an on-slide source citation. Agent research and replies are prerecorded via the e2e Tauri IPC mock and fake crit session; no live AI service runs during capture. The script verifies the directly edited title, externally updated chart, running JavaScript animation and Agent reply, then exports the video and final-frame WebP posters (`studio.webp`, `studio@2x.webp`).
+`site/scripts/demo-deck.ts` holds the capture fixture, HTML layout, animation script and data-source URLs. The chart uses Bun's documented Linux HTTP benchmark (Node 16 ~64k req/s, Bun ~160k req/s), with an on-slide source citation and benchmark context; it is a vendor-published simple-response benchmark, not a general runtime performance claim. Agent research and replies are prerecorded via the e2e Tauri IPC mock and fake crit session; no live AI service runs during capture. The script verifies the directly edited title, externally updated chart, running JavaScript animation and Agent reply, then exports the video and final-frame WebP posters (`studio.webp`, `studio@2x.webp`).
 
 The player has native controls, stays paused until played, and has no audio. A visible caption explains the sequence. The CSP allows local media. Regenerate from the repository root with Chrome and `ffmpeg` installed:
 

@@ -34,7 +34,7 @@ await page.addInitScript(() => {
   const inner = w.__TAURI_INTERNALS__.invoke
   w.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
     const r = await inner(cmd, args)
-    return cmd === 'open_deck' ? { ...r, deckPath: '~/talks/energy-outlook/deck.md', deckDir: '~/talks/energy-outlook' } : r
+    return cmd === 'open_deck' ? { ...r, deckPath: '~/talks/http-performance/deck.md', deckDir: '~/talks/http-performance' } : r
   }
 })
 await page.goto(STUDIO_URL)
@@ -49,13 +49,13 @@ await page.keyboard.press('ControlOrMeta+Home')
 await page.keyboard.press('Home')
 await page.keyboard.press('Shift+End')
 await page.keyboard.press('Backspace')
-await editor.pressSequentially('# The renewable surge', { delay: 100 })
-await expect(page.locator('[data-preview-host] h1')).toHaveText('The renewable surge')
+await editor.pressSequentially('# HTTP throughput', { delay: 100 })
+await expect(page.locator('[data-preview-host] h1')).toHaveText('HTTP throughput')
 await page.waitForTimeout(2200)
 // Then the user delegates research and a JavaScript-animated chart to their agent.
 await page.locator('[data-preview-host] h1').click()
 await page.waitForTimeout(700)
-await page.locator('[data-comment-box] textarea').pressSequentially('Find IRENA data for renewable capacity added in 2023 and 2024. Add a bar chart, cite the source, and animate the bars with JavaScript.', { delay: 28 })
+await page.locator('[data-comment-box] textarea').pressSequentially('Look up Bun’s published HTTP benchmark against Node.js. Add a throughput chart with the source and test conditions. Animate the bars with JavaScript.', { delay: 28 })
 await page.waitForTimeout(1300)
 await page.locator('[data-comment-add]').click()
 await page.waitForTimeout(1500)
@@ -65,8 +65,8 @@ await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
 await page.locator('[data-panel-toggle="editor"][aria-expanded="true"]').click()
 await page.waitForTimeout(2200)
 // Prerecorded agent result: update the deck via the real external-file-change flow.
-await expect.poll(() => deck.source).toContain('# The renewable surge')
-deck.source = deck.source.replace('The next chapter of the energy transition.', chartMarkdown)
+await expect.poll(() => deck.source).toContain('# HTTP throughput')
+deck.source = deck.source.replace('Choosing a runtime for a small HTTP service.', chartMarkdown)
 await page.evaluate(() => {
   (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown) => void })
     .__mockEmitTauriEvent('deck-file-changed', null)
@@ -74,7 +74,7 @@ await page.evaluate(() => {
 await expect(page.locator('[data-preview-host] .chart')).toBeVisible()
 // Check that the slide's own JavaScript actually starts the bar animation.
 await expect.poll(() => page.locator('[data-preview-host] [data-bar]').first().evaluate(el => el.getAnimations().length)).toBeGreaterThan(0)
-crit.reply('c_1', 'IRENA reports 473 GW added in 2023 and 585 GW in 2024. Added the chart, source citation and JavaScript animation.', 'AI Agent')
+crit.reply('c_1', 'Added Bun’s Linux HTTP benchmark: Node 16 ~64k req/s, Bun ~160k req/s. Included the source, test context and JavaScript animation.', 'AI Agent')
 crit.agentConnects()
 await expect(page.locator('[data-review-agent]')).toContainText(['AI Agent'])
 await page.waitForTimeout(5500)

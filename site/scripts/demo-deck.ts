@@ -1,21 +1,18 @@
-// Capture fixture: a Peitho-style HTML layout driven by Markdown headings.
-// Agent research is prerecorded; the figures come from IRENA's 2024/2025 releases.
-export const DATA_SOURCES = [
-  'https://www.irena.org/News/pressreleases/2024/Mar/Record-Growth-in-Renewables-but-Progress-Needs-to-be-Equitable',
-  'https://www.irena.org/News/pressreleases/2025/Mar/Record-Breaking-Annual-Growth-in-Renewable-Power-Capacity',
-]
+// Capture fixture: Markdown-driven HTML slides about HTTP server throughput.
+// Prerecorded research result from Bun's published Linux HTTP benchmark.
+export const DATA_SOURCES = ['https://bun.sh/docs/runtime/http/server#benchmarks']
 
 export const source = `<!-- {"key":"cover"} -->
-# Energy outlook
+# HTTP performance
 
-A presentation built with Markdown and HTML.
+Runtime choices, measured and explained.
 
 ---
 
-<!-- {"key":"renewables"} -->
-# Renewable energy
+<!-- {"key":"throughput"} -->
+# HTTP servers
 
-The next chapter of the energy transition.
+Choosing a runtime for a small HTTP service.
 
 ---
 
@@ -27,8 +24,8 @@ Let's explore the possibilities.
 
 // Web Animations are started by JavaScript, not CSS keyframes.
 const animation = `<script>
-if (!window.__energyDemoAnimate) {
-window.__energyDemoAnimate = root => {
+if (!window.__httpDemoAnimate) {
+window.__httpDemoAnimate = root => {
 const slide = root.querySelector('.peitho-slide');
 if (!slide || slide.dataset.animated) return;
 slide.dataset.animated = 'true';
@@ -41,16 +38,16 @@ slide.querySelectorAll('[data-bar]').forEach((el, i) => {
     { duration: 1600, delay: 300 + i * 300, fill: 'both', easing: 'cubic-bezier(.2,.8,.2,1)' });
 });
 };
-document.addEventListener('peitho:shadow-mounted', event => window.__energyDemoAnimate(event.detail.root));
+document.addEventListener('peitho:shadow-mounted', event => window.__httpDemoAnimate(event.detail.root));
 }
-(window.__peithoShadowRoots || []).forEach(({root}) => window.__energyDemoAnimate(root));
+(window.__peithoShadowRoots || []).forEach(({root}) => window.__httpDemoAnimate(root));
 </script>`
 
 export const chart = `<div class="chart" data-reveal>
-  <p class="chart-label">RENEWABLE CAPACITY ADDED · GLOBAL · GW</p>
-  <div class="chart-row"><span>2023</span><div class="track"><div class="bar" data-bar style="width:80.85%"></div></div><strong>473</strong></div>
-  <div class="chart-row"><span>2024</span><div class="track"><div class="bar accent" data-bar style="width:100%"></div></div><strong>585</strong></div>
-  <p class="chart-source">Source: IRENA · Renewable Capacity Statistics 2024 &amp; 2025</p>
+  <p class="chart-label">HTTP THROUGHPUT · REQUESTS / SECOND ↑</p>
+  <div class="chart-row"><span>Node 16</span><div class="track"><div class="bar" data-bar style="width:40%"></div></div><strong>~64k</strong></div>
+  <div class="chart-row"><span>Bun</span><div class="track"><div class="bar accent" data-bar style="width:100%"></div></div><strong>~160k</strong></div>
+  <p class="chart-source">Source: Bun docs · Linux · simple HTTP response · vendor benchmark</p>
 </div>`
 
 export const chartMarkdown = `\n${chart}\n${animation}\n`
@@ -63,13 +60,13 @@ export function fragmentFor(source: string, title: string): string {
   const at = source.indexOf(`# ${title}`) + 2
   const start = Buffer.byteLength(source.slice(0, at))
   const end = start + Buffer.byteLength(title)
-  const isEnergy = title === 'Renewable energy' || title === 'The renewable surge'
-  const hasChart = isEnergy && source.includes('class="chart"')
+  const isThroughput = title === 'HTTP servers' || title === 'HTTP throughput'
+  const hasChart = isThroughput && source.includes('class="chart"')
   return `<section class="peitho-slide">
-    <p class="eyebrow" data-reveal>ENERGY OUTLOOK / ${isEnergy ? '02' : title === 'Energy outlook' ? '01' : '03'}</p>
+    <p class="eyebrow" data-reveal>HTTP PERFORMANCE / ${isThroughput ? '02' : title === 'HTTP performance' ? '01' : '03'}</p>
     <h1 data-reveal><span data-peitho-src="${start}-${end}" data-peitho-md="${escape(title)}">${escape(title)}</span></h1>
-    ${hasChart ? chart : `<p class="subtitle" data-reveal>${isEnergy ? 'The next chapter of the energy transition.' : title === 'Energy outlook' ? 'A presentation built with Markdown and HTML.' : "Let's explore the possibilities."}</p><div class="orbit" data-reveal><span>HTML + JavaScript</span><b>Ideas in motion</b></div>`}
-    <p class="footer">ENERGY BRIEFING <span>PEITHO STUDIO</span></p>
+    ${hasChart ? chart : `<p class="subtitle" data-reveal>${isThroughput ? 'Choosing a runtime for a small HTTP service.' : title === 'HTTP performance' ? 'Runtime choices, measured and explained.' : "Let's explore the possibilities."}</p><div class="orbit" data-reveal><span>HTML + JavaScript</span><b>Request → Response</b></div>`}
+    <p class="footer">ENGINEERING NOTES <span>PEITHO STUDIO</span></p>
     ${animation}
   </section>`
 }
@@ -86,10 +83,11 @@ export const css = `
 .peitho-slide .footer span { float: right; }
 .peitho-slide .chart { margin-top: 40px; }
 .peitho-slide .chart-label { color: #91c4b3; font-size: 20px; letter-spacing: .08em; margin-bottom: 28px; }
+.peitho-slide .chart-row > span { width: 150px; }
 .peitho-slide .chart-row { display: flex; align-items: center; gap: 24px; font-size: 32px; margin: 24px 0; }
 .peitho-slide .track { flex: 1; }
 .peitho-slide .bar { height: 64px; background: #71b6a1; border-radius: 8px; transform-origin: left; }
 .peitho-slide .bar.accent { background: #d7ff85; }
-.peitho-slide .chart-row strong { width: 90px; text-align: right; }
+.peitho-slide .chart-row strong { width: 130px; text-align: right; }
 .peitho-slide .chart-source { margin-top: 36px; font-size: 18px; color: #91c4b3; }
 `
