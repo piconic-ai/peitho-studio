@@ -89,12 +89,12 @@ function layoutMenuItem(page: Page, action: string) {
   return page.locator(`[data-layout-menu-item="${action}"]`)
 }
 
-test('Given a layout row, when it is right-clicked, then a menu offers Apply, Edit, Duplicate and Delete; Escape and a click outside close it', async ({ page }) => {
+test('Given a layout row, when it is right-clicked, then a menu offers Apply, Edit, Duplicate, Delete and a comment on it; Escape and a click outside close it', async ({ page }) => {
   await openLayoutScreen(page, deckOf())
 
   await row(page, 'quote').click({ button: 'right' })
   await expect(layoutMenu(page)).toBeVisible()
-  await expect(layoutMenu(page).locator('[data-layout-menu-item]')).toHaveText(['Apply to Slide', 'Edit Layout', 'Duplicate Layout', 'Delete Layout'])
+  await expect(layoutMenu(page).locator('[data-layout-menu-item]')).toHaveText(['Apply to Slide', 'Edit Layout', 'Duplicate Layout', 'Delete Layout', 'Comment on This Layout…'])
   await expect(layoutMenuItem(page, 'apply')).toBeEnabled()
 
   await page.keyboard.press('Escape')
@@ -155,7 +155,7 @@ test('Given the deck\'s only layout, when its row is right-clicked, then Delete 
   await expect(layoutMenuItem(page, 'edit')).toBeEnabled()
 })
 
-test('Given empty space in the layout list, when it is right-clicked, then the menu offers New Layout, which opens the form', async ({ page }) => {
+test('Given empty space in the layout list, when it is right-clicked, then the menu offers New Layout, which opens the form, and a comment on every layout', async ({ page }) => {
   await openLayoutScreen(page, deckOf())
 
   const list = page.locator('[data-layout-rows]')
@@ -163,7 +163,7 @@ test('Given empty space in the layout list, when it is right-clicked, then the m
   if (!box) throw new Error('the layout list has no box')
   await page.mouse.click(box.x + box.width / 2, box.y + box.height - 10, { button: 'right' })
 
-  await expect(layoutMenu(page).locator('[data-layout-menu-item]')).toHaveText(['New Layout'])
+  await expect(layoutMenu(page).locator('[data-layout-menu-item]')).toHaveText(['New Layout', 'Comment on All Layouts…'])
   await layoutMenuItem(page, 'new-layout').click()
   await expect(page.locator('[data-new-layout-form]')).toBeVisible()
   await expect(layoutMenu(page)).toBeHidden()
