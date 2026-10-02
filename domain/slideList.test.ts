@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { isExhaustivelyAccountedFor } from './spec'
 import type { ManifestSection, ManifestSlide } from './render'
 import {
-  buildSlideList, manifestIndexAt, manifestIndexToSourceIndex, recordByManifestIndex, sectionStartBySourceIndex,
+  buildSlideList, lastRenderedLayoutOf, manifestIndexAt, manifestIndexToSourceIndex, recordByManifestIndex, renderedLayoutAt, sectionStartBySourceIndex,
   type SlideListEntry,
 } from './slideList'
 import { buildSlideListExamples } from './slideList.examples'
@@ -98,6 +98,58 @@ describe('manifestIndexAt / manifestIndexToSourceIndex', () => {
 
   test('adversarial: an empty entry list maps to an empty array', () => {
     expect(manifestIndexToSourceIndex([])).toEqual([])
+  })
+})
+
+describe('renderedLayoutAt', () => {
+  const entries: SlideListEntry[] = [
+    { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'cover', 'Cover') },
+    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: 'hidden' },
+    { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'points', 'Points') },
+  ]
+  const layouts = { cover: 'title-slide', points: 'title-body', hidden: 'blank' }
+
+  test('spec: Given a rendered slide, Then the layout reported for its key', () => {
+    expect(renderedLayoutAt(entries, layouts, 0)).toBe('title-slide')
+    expect(renderedLayoutAt(entries, layouts, 2)).toBe('title-body')
+  })
+
+  test('adversarial: Given a draft placeholder, Then none, even when its last key has a layout', () => {
+    expect(renderedLayoutAt(entries, layouts, 1)).toBeNull()
+  })
+
+  test('adversarial: Given an index out of range or no reported layouts, Then none rather than throwing', () => {
+    expect(renderedLayoutAt(entries, layouts, -1)).toBeNull()
+    expect(renderedLayoutAt(entries, layouts, 3)).toBeNull()
+    expect(renderedLayoutAt([], layouts, 0)).toBeNull()
+    expect(renderedLayoutAt(entries, {}, 0)).toBeNull()
+  })
+
+  test('spec: lastRenderedLayoutOf — Given the slide has a key, Then its layout by key, wherever it now sits', () => {
+    // `points` moved to the front since the last render: its key still finds it.
+    expect(lastRenderedLayoutOf('points', 0, 3, entries, layouts)).toBe('title-body')
+    expect(lastRenderedLayoutOf('points', 0, 5, entries, layouts)).toBe('title-body')
+  })
+
+  test('spec: lastRenderedLayoutOf — Given no key and the same slide count as the last render, Then the layout at its position', () => {
+    expect(lastRenderedLayoutOf(undefined, 0, 3, entries, layouts)).toBe('title-slide')
+  })
+
+  test('adversarial: lastRenderedLayoutOf — Given no key and a slide added or removed since the last render, Then none rather than a neighbour\'s', () => {
+    expect(lastRenderedLayoutOf(undefined, 0, 4, entries, layouts)).toBeNull()
+    expect(lastRenderedLayoutOf(undefined, 2, 2, entries, layouts)).toBeNull()
+  })
+
+  test('adversarial: lastRenderedLayoutOf — Given a key the last render never reported (new, renamed, or an empty string), Then none', () => {
+    expect(lastRenderedLayoutOf('brand-new', 0, 3, entries, layouts)).toBeNull()
+    expect(lastRenderedLayoutOf('', 0, 3, entries, layouts)).toBeNull()
+    expect(lastRenderedLayoutOf('constructor', 0, 3, entries, layouts)).toBeNull()
+  })
+
+  test('adversarial: Given a key named like an Object property, Then it is not mistaken for a layout', () => {
+    const odd: SlideListEntry[] = [{ kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'constructor', 'C') }]
+    expect(renderedLayoutAt(odd, {}, 0)).toBeNull()
+    expect(renderedLayoutAt(odd, { constructor: 'blank' }, 0)).toBe('blank')
   })
 })
 

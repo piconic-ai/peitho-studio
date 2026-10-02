@@ -26,6 +26,8 @@ export interface FakeDeckIpc extends DeckIpc {
 const emptyRenderPayload: RenderPayload = {
   manifest: { title: '', slideCount: 0, canvasWidth: 1280, canvasHeight: 720, sections: [], slides: [] },
   fragments: {},
+  slideLayouts: {},
+  headingLayouts: [],
   assetBaseUrl: '',
   css: '',
 }

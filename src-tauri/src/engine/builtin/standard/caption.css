@@ -1,0 +1,14 @@
+/* Caption: a short line of text along the bottom of the slide, the rest
+   left open. There's no title here: write the caption as plain text, not
+   a heading. */
+.peitho-slide.layout-caption {
+  justify-content: flex-end;
+}
+
+.layout-caption .slot-body {
+  font-size: 26px;
+}
+
+.layout-caption .slot-body p {
+  margin: 0;
+}

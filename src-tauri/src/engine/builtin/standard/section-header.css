@@ -1,0 +1,12 @@
+/* Section header: the section's name alone, set off by a rule on its
+   left, halfway down the slide. */
+.peitho-slide.layout-section-header {
+  justify-content: center;
+}
+
+.peitho-slide.layout-section-header h1 {
+  padding-left: 28px;
+  border-left: 8px solid #181818;
+  font-size: 64px;
+  line-height: 1.1;
+}

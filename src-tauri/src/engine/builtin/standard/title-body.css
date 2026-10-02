@@ -1,0 +1,7 @@
+/* Title and body: a title over body text, with room for one code block
+   and footnotes under it. css/base.css already lays this out (the shape
+   of peitho's built-in title-body-code layout); add rules here to change
+   only this layout's slides. */
+.peitho-slide.layout-title-body {
+  justify-content: flex-start;
+}

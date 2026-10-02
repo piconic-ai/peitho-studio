@@ -94,6 +94,10 @@ export interface MockDeck {
    * empty by default, so the picker shows name-only cards) — defaults to
    * none ("No layouts found"). */
   layouts?: string[]
+  /** Every render's `headingLayouts` (the layouts a heading-only slide
+   * builds on) — defaults to `layouts` plus any layout a slide names, i.e.
+   * every layout taking a lone heading. */
+  headingLayouts?: string[]
   /** What `check_slide_layouts` answers for the given source/slide index —
    * defaults to `null` (nothing to judge, every layout stays choosable).
    * Stands in for `engine::layout_fit`'s real peitho-core verdicts. */
@@ -289,9 +293,26 @@ const DEFAULT_FRAGMENT_FOR = (title: string): string => `<section class="peitho-
 
 const DEFAULT_CSS = '.peitho-slide { color: black; }'
 
+/** The layout each manifest slide was built on, as peitho-core would
+ * report it for the simple cases this mock models: the layout a slide
+ * names, or the deck's only layout. A slide that names none in a deck of
+ * several (structural matching, not modeled) reports none. */
+function slideLayoutsFor(source: string, slides: readonly ManifestSlide[], layouts: readonly string[]): Record<string, string> {
+  const configs = splitSlides(source).map(range => extractPageComment(range.text).config).filter(config => config.draft !== true)
+  const result: Record<string, string> = {}
+  slides.forEach((slide, i) => {
+    const layout = configs[i]?.layout ?? (layouts.length === 1 ? layouts[0] : undefined)
+    if (layout) result[slide.key] = layout
+  })
+  return result
+}
+
 function renderPayloadFor(source: string, deck: MockDeck): RenderPayload {
   const { manifest, fragments } = buildManifest(source, deck.fragmentFor ?? DEFAULT_FRAGMENT_FOR, deck.canvas ?? canvasFor(source), deck.editAnnotations ?? false)
-  return { manifest, fragments, assetBaseUrl: 'http://localhost:9/', css: deck.css ?? DEFAULT_CSS }
+  const layouts = deck.layouts ?? []
+  const slideLayouts = slideLayoutsFor(source, manifest.slides, layouts)
+  const headingLayouts = deck.headingLayouts ?? [...new Set([...layouts, ...Object.values(slideLayouts)])]
+  return { manifest, fragments, slideLayouts, headingLayouts, assetBaseUrl: 'http://localhost:9/', css: deck.css ?? DEFAULT_CSS }
 }
 
 /** Wires `page` up to open `deck.source` as a fake deck on load, and keeps

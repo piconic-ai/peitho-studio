@@ -1,0 +1,33 @@
+/* Two columns: a title over two side-by-side columns. Their content goes
+   in `::: {slot=left}` and `::: {slot=right}` blocks. */
+.layout-two-column .columns {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+}
+
+.layout-two-column .column {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.layout-two-column .slot-left,
+.layout-two-column .slot-right {
+  font-size: 28px;
+  line-height: 1.35;
+}
+
+.layout-two-column .slot-left p,
+.layout-two-column .slot-right p {
+  margin: 0 0 20px;
+}
+
+.layout-two-column .slot-left ul,
+.layout-two-column .slot-right ul,
+.layout-two-column .slot-left ol,
+.layout-two-column .slot-right ol {
+  margin: 0 0 20px;
+  padding-left: 32px;
+}

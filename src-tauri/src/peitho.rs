@@ -34,6 +34,7 @@ use crate::engine::crit::{self as crit_shapes, DeckSession, FinishedRound, NewRe
 use crate::engine::image_layout;
 use crate::engine::images;
 use crate::engine::layout_fit::{self, LayoutVerdict};
+use crate::engine::layout_preview;
 use crate::engine::pipeline::{self, RenderOutput};
 use crate::engine::serve::AssetServer;
 
@@ -274,6 +275,12 @@ pub struct RenderPayload {
     manifest: serde_json::Value,
     /// Rendered fragment HTML per slide key.
     fragments: std::collections::HashMap<String, String>,
+    /// The layout each slide was built on, per slide key — what the
+    /// manifest leaves out (see `RenderOutput::slide_layouts`).
+    slide_layouts: std::collections::HashMap<String, String>,
+    /// The deck's layouts a heading-only slide builds on (see
+    /// `RenderOutput::heading_layouts`) — the ones New Slide may name.
+    heading_layouts: Vec<String>,
     /// Base URL for the in-process asset server (peitho.css, fonts, images)
     /// — resolves relative `url(...)`/`src="assets/..."` references inside
     /// `css`/`fragments`.
@@ -286,7 +293,14 @@ pub struct RenderPayload {
 
 fn to_payload(output: RenderOutput, asset_base_url: String) -> Result<RenderPayload, String> {
     let manifest = serde_json::from_str(&output.manifest_json).map_err(|err| err.to_string())?;
-    Ok(RenderPayload { manifest, fragments: output.fragments, asset_base_url, css: output.css })
+    Ok(RenderPayload {
+        manifest,
+        fragments: output.fragments,
+        slide_layouts: output.slide_layouts,
+        heading_layouts: output.heading_layouts,
+        asset_base_url,
+        css: output.css,
+    })
 }
 
 #[derive(Serialize)]
@@ -348,8 +362,12 @@ pub fn dev_default_deck() -> Option<String> {
     std::env::var("PEITHO_STUDIO_DEV_DECK").ok()
 }
 
-/// The starter `deck.md` after its frontmatter (see `starter_deck`).
-const STARTER_BODY: &str = "<!-- {\"key\":\"cover\",\"section\":\"Intro\",\"time\":\"1m\"} -->\n\
+/// The starter `deck.md` after its frontmatter (see `starter_deck`): one
+/// slide on the standard `title-slide` layout, named explicitly — with
+/// every standard layout in the deck, a slide that doesn't name one
+/// matches several (see `builtin::STANDARD_LAYOUTS`). Its line under the
+/// title is the layout's one-paragraph body, shown as a subtitle.
+const STARTER_BODY: &str = "<!-- {\"key\":\"cover\",\"layout\":\"title-slide\",\"section\":\"Intro\",\"time\":\"1m\"} -->\n\
 # New Presentation\n\n\
 Start writing your slides here.\n";
 
@@ -414,25 +432,26 @@ fn validate_deck_name(name: &str) -> Result<&str, String> {
 }
 
 /// The file set `create_deck` writes into a freshly created deck
-/// directory — the same shape as `peitho new`'s default scaffold
-/// (default layout, light theme): a starter `deck.md` plus its own
-/// `layouts/`/`css/base.css` to customize instead of silently depending
-/// on peitho-core's built-in fallback, and a `.gitignore` for the
-/// directories `peitho build`/`preview`/`present` write into. Beyond
-/// `peitho new`'s shape, Studio adds a layout (and its CSS) for a slide
-/// holding an image, so an image dropped or pasted into the new deck shows
-/// up (see `builtin::IMAGE_LAYOUT_HTML`). Split out of `create_deck` as its
-/// own pure function so the scaffold's shape is unit-testable without
+/// directory — the shape of `peitho new`'s default scaffold (light theme):
+/// a starter `deck.md` plus its own `layouts/`/`css/base.css` to customize
+/// instead of silently depending on peitho-core's built-in fallback, and a
+/// `.gitignore` for the directories `peitho build`/`preview`/`present`
+/// write into. Its layouts are Studio's own, though: every standard layout
+/// (`builtin::STANDARD_LAYOUTS`, each with its CSS) in place of `peitho
+/// new`'s lone `title-body-code` — `title-body` takes the same content —
+/// and a layout for a slide holding an image, so an image dropped or
+/// pasted into the new deck has somewhere to go (see
+/// `builtin::IMAGE_LAYOUT_HTML`). Split out of `create_deck` as its own
+/// pure function so the scaffold's shape is unit-testable without
 /// touching the filesystem.
 fn scaffold_deck_files(settings: NewDeckSettings) -> Vec<(&'static str, String)> {
-    vec![
-        ("deck.md", starter_deck(settings)),
-        ("layouts/title-body-code.html", builtin::LAYOUT_HTML.to_string()),
-        ("layouts/title-body-image.html", builtin::IMAGE_LAYOUT_HTML.to_string()),
-        ("css/base.css", builtin::scaffolded_base_css()),
-        ("css/title-body-image.css", builtin::IMAGE_LAYOUT_CSS.to_string()),
-        (".gitignore", builtin::GITIGNORE.to_string()),
-    ]
+    let standard = builtin::STANDARD_LAYOUTS;
+    std::iter::once(("deck.md", starter_deck(settings)))
+        .chain(standard.iter().map(|layout| (layout.html_path, layout.html.to_string())))
+        .chain([("layouts/title-body-image.html", builtin::IMAGE_LAYOUT_HTML.to_string()), ("css/base.css", builtin::scaffolded_base_css())])
+        .chain(standard.iter().map(|layout| (layout.css_path, layout.css.to_string())))
+        .chain([("css/title-body-image.css", builtin::IMAGE_LAYOUT_CSS.to_string()), (".gitignore", builtin::GITIGNORE.to_string())])
+        .collect()
 }
 
 /// Creates `<parent_dir>/<name>` scaffolded the way `peitho new` would
@@ -1025,7 +1044,8 @@ pub struct LayoutPreviewsPayload {
 }
 
 /// Renders every layout available to the currently open deck (built-in, or
-/// its own `layouts/` directory) with generic placeholder content, for the
+/// its own `layouts/` directory) with placeholder content written from its
+/// slots (`layout_preview::placeholder_source`), for the
 /// thumbnail context menu's "Change Layout" picker grid. Each layout is
 /// rendered as its own tiny one-slide deck via the normal pipeline — same
 /// as a real slide explicitly pinning `"layout"` in its PageComment, just
@@ -1049,20 +1069,18 @@ pub fn preview_layouts(window: WebviewWindow, session: State<PeithoSession>) -> 
     let resolved = crate::engine::assets::resolve(&deck_dir)?;
     let mut previews = Vec::new();
     let mut css = String::new();
-    for name in resolved.layouts.names() {
-        let synthetic = format!(
-            "<!-- {{\"key\":\"preview\",\"layout\":\"{name}\"}} -->\n# Placeholder title\n\nPlaceholder body copy.\n\n- First point\n- Second point"
-        );
+    for layout in resolved.layouts.iter() {
+        let synthetic = layout_preview::placeholder_source(layout);
         let fragment = pipeline::render_source(&deck_path, &synthetic)
             .ok()
             .and_then(|output| {
                 if css.is_empty() {
                     css = output.css.clone();
                 }
-                output.fragments.get("preview").cloned()
+                output.fragments.get(layout_preview::PREVIEW_KEY).cloned()
             })
             .unwrap_or_default();
-        previews.push(LayoutPreview { name: name.to_string(), fragment });
+        previews.push(LayoutPreview { name: layout.name().to_string(), fragment });
     }
     Ok(LayoutPreviewsPayload { previews, css })
 }
@@ -1705,39 +1723,75 @@ mod tests {
     }
 
     #[test]
-    fn given_the_defaults_when_the_starter_deck_is_built_then_it_is_the_same_as_before_settings_existed() {
-        let before = "---\ntime: 1m\n---\n\
-<!-- {\"key\":\"cover\",\"section\":\"Intro\",\"time\":\"1m\"} -->\n\
+    fn given_the_defaults_when_the_starter_deck_is_built_then_it_is_one_title_slide_naming_its_layout() {
+        let expected = "---\ntime: 1m\n---\n\
+<!-- {\"key\":\"cover\",\"layout\":\"title-slide\",\"section\":\"Intro\",\"time\":\"1m\"} -->\n\
 # New Presentation\n\n\
 Start writing your slides here.\n";
-        assert_eq!(starter_deck(default_new_deck_settings()), before);
+        assert_eq!(starter_deck(default_new_deck_settings()), expected);
     }
 
     #[test]
-    fn scaffold_deck_files_spec_matches_peitho_news_default_scaffold_shape() {
+    fn scaffold_deck_files_spec_holds_every_standard_layout_with_its_css_and_the_image_layout() {
         let files = scaffold_deck_files(default_new_deck_settings());
         let paths: Vec<&str> = files.iter().map(|(path, _)| *path).collect();
         assert_eq!(
             paths,
             vec![
                 "deck.md",
-                "layouts/title-body-code.html",
+                "layouts/title-slide.html",
+                "layouts/section-header.html",
+                "layouts/title-body.html",
+                "layouts/two-column.html",
+                "layouts/title-only.html",
+                "layouts/one-column-text.html",
+                "layouts/main-point.html",
+                "layouts/section-title-description.html",
+                "layouts/caption.html",
+                "layouts/big-number.html",
+                "layouts/blank.html",
                 "layouts/title-body-image.html",
                 "css/base.css",
+                "css/title-slide.css",
+                "css/section-header.css",
+                "css/title-body.css",
+                "css/two-column.css",
+                "css/title-only.css",
+                "css/one-column-text.css",
+                "css/main-point.css",
+                "css/section-title-description.css",
+                "css/caption.css",
+                "css/big-number.css",
+                "css/blank.css",
                 "css/title-body-image.css",
                 ".gitignore"
             ]
         );
 
-        let base_css = &files.iter().find(|(path, _)| *path == "css/base.css").unwrap().1;
+        let content_of = |wanted: &str| &files.iter().find(|(path, _)| *path == wanted).unwrap().1;
+        let base_css = content_of("css/base.css");
         assert!(base_css.starts_with(builtin::BASE_CSS_HEADER));
         assert!(base_css.contains(builtin::BASE_CSS));
+        for layout in builtin::STANDARD_LAYOUTS {
+            assert_eq!(content_of(layout.html_path), layout.html);
+            assert_eq!(content_of(layout.css_path), layout.css);
+        }
+        assert_eq!(content_of(".gitignore"), builtin::GITIGNORE);
+    }
 
-        let layout = &files.iter().find(|(path, _)| *path == "layouts/title-body-code.html").unwrap().1;
-        assert_eq!(layout, builtin::LAYOUT_HTML);
+    #[test]
+    fn scaffold_deck_files_adversarial_peitho_news_title_body_code_is_not_among_them() {
+        // `title-body` takes the same content; both in one deck would make
+        // every heading-and-body slide without a "layout" ambiguous.
+        let files = scaffold_deck_files(default_new_deck_settings());
+        assert!(files.iter().all(|(path, _)| *path != "layouts/title-body-code.html"));
+    }
 
-        let gitignore = &files.iter().find(|(path, _)| *path == ".gitignore").unwrap().1;
-        assert_eq!(gitignore, builtin::GITIGNORE);
+    #[test]
+    fn scaffold_deck_files_adversarial_no_path_is_written_twice() {
+        let files = scaffold_deck_files(default_new_deck_settings());
+        let unique: std::collections::BTreeSet<&str> = files.iter().map(|(path, _)| *path).collect();
+        assert_eq!(unique.len(), files.len());
     }
 
     #[test]
@@ -1755,11 +1809,9 @@ Start writing your slides here.\n";
         let dir = parent.path().join("my-talk");
         assert_eq!(deck_path, dir.join("deck.md"));
         assert!(dir.join("deck.md").is_file());
-        assert!(dir.join("layouts/title-body-code.html").is_file());
-        assert!(dir.join("layouts/title-body-image.html").is_file());
-        assert!(dir.join("css/base.css").is_file());
-        assert!(dir.join("css/title-body-image.css").is_file());
-        assert!(dir.join(".gitignore").is_file());
+        for (relative_path, _) in scaffold_deck_files(NewDeckSettings::parse(None, None).unwrap()) {
+            assert!(dir.join(relative_path).is_file(), "{relative_path}");
+        }
     }
 
     #[test]
@@ -1829,14 +1881,15 @@ Start writing your slides here.\n";
     }
 
     #[test]
-    fn given_a_created_deck_when_an_image_only_paragraph_is_added_then_it_renders_with_the_image_layout() {
+    fn given_a_created_deck_when_a_slide_naming_no_layout_holds_an_image_then_it_renders_with_the_image_layout() {
         let parent = tempfile::tempdir().unwrap();
         let (deck_path, image) = created_deck_with_image(parent.path());
-        let source = format!("{}\n![]({image})\n", std::fs::read_to_string(&deck_path).unwrap());
+        let source = format!("{}\n---\n\n# Screenshot\n\n![]({image})\n", std::fs::read_to_string(&deck_path).unwrap());
 
         let output = pipeline::render_source(&deck_path, &source).unwrap_or_else(|err| panic!("{err}"));
-        let fragment = output.fragments.get("cover").unwrap();
+        let fragment = output.fragments.get("screenshot").unwrap();
         assert!(fragment.contains("<img"), "{fragment}");
+        assert_eq!(output.slide_layouts["screenshot"], "title-body-image");
         assert!(output.image_assets.keys().any(|asset| asset.ends_with("-screenshot.png")), "{:?}", output.image_assets);
         assert!(output.css.contains("object-fit: contain"), "the image layout's own CSS is loaded");
     }
@@ -1846,26 +1899,185 @@ Start writing your slides here.\n";
         let parent = tempfile::tempdir().unwrap();
         let (deck_path, image) = created_deck_with_image(parent.path());
         let source = format!(
-            "{}\n---\n\n# Just text\n\n- a point\n\n---\n\n# With code\n\n```rust\nfn main() {{}}\n```\n\n---\n\n# Only an image\n\n![]({image})\n",
+            "{}\n---\n\n<!-- {{\"layout\":\"title-body\"}} -->\n# Just text\n\n- a point\n\n---\n\n# With code\n\n```rust\nfn main() {{}}\n```\n\n---\n\n# Only an image\n\n![]({image})\n",
             std::fs::read_to_string(&deck_path).unwrap()
         );
 
         let output = pipeline::render_source(&deck_path, &source).unwrap_or_else(|err| panic!("{err}"));
-        let uses_image_layout = |key: &str| output.fragments.get(key).unwrap_or_else(|| panic!("{key}")).contains("<figure class=\"image");
         assert_eq!(output.fragments.len(), 4);
-        assert!(!uses_image_layout("cover"));
-        assert!(!uses_image_layout("just-text"));
-        assert!(!uses_image_layout("with-code"));
-        assert!(uses_image_layout("only-an-image"));
+        let layout_of = |key: &str| output.slide_layouts.get(key).map(String::as_str);
+        assert_eq!(layout_of("cover"), Some("title-slide"));
+        assert_eq!(layout_of("just-text"), Some("title-body"));
+        // Only `title-body` has a code slot, so a code block alone picks it.
+        assert_eq!(layout_of("with-code"), Some("title-body"));
+        assert_eq!(layout_of("only-an-image"), Some("title-body-image"));
+    }
+
+    #[test]
+    fn given_a_created_deck_when_an_image_goes_on_a_slide_naming_a_layout_without_an_image_slot_then_the_image_layout_is_offered() {
+        // The path a drop or paste onto `+`-added slide takes: the build
+        // fails with the error `domain/imageSlot.ts` recognizes, and since
+        // the slide fits the deck's own image layout, the error bar offers
+        // to pick it rather than to add one (`imageSlotFixFor`).
+        let parent = tempfile::tempdir().unwrap();
+        let (deck_path, image) = created_deck_with_image(parent.path());
+        let source = format!(
+            "{}\n---\n\n<!-- {{\"key\":\"new-slide\",\"layout\":\"title-body\"}} -->\n# New Slide\n\n![]({image})\n",
+            std::fs::read_to_string(&deck_path).unwrap()
+        );
+
+        let err = pipeline::render_source(&deck_path, &source).err().expect("title-body has no image slot");
+        assert!(err.contains("no slot accepts image in layout 'title-body'"), "{err}");
+        let verdicts = crate::engine::layout_fit::check_slide_layouts(&deck_path, &source, 1).unwrap().unwrap();
+        let fitting: Vec<&str> = verdicts
+            .iter()
+            .filter(|verdict| verdict.fit == crate::engine::layout_fit::LayoutFit::Fits)
+            .map(|verdict| verdict.layout.as_str())
+            .collect();
+        assert_eq!(fitting, ["title-body-image"]);
     }
 
     #[test]
     fn given_a_created_deck_when_the_image_shares_its_paragraph_with_text_then_peitho_core_refuses_it() {
         let parent = tempfile::tempdir().unwrap();
         let (deck_path, image) = created_deck_with_image(parent.path());
-        let source = format!("{}\n![]({image}) and some text\n", std::fs::read_to_string(&deck_path).unwrap());
+        let source = format!("{}\n---\n\n# Screenshot\n\n![]({image}) and some text\n", std::fs::read_to_string(&deck_path).unwrap());
 
         assert!(pipeline::render_source(&deck_path, &source).is_err());
+    }
+
+    /// Content filling every slot of `name`'s standard layout, written the
+    /// way a deck would: a heading for the title, plain paragraphs for the
+    /// body, `::: {slot=...}` blocks for the rest.
+    fn filled_standard_slide(name: &str) -> String {
+        let fenced = |slot: &str| format!("::: {{slot={slot}}}\n\nSome {slot} text.\n\n:::\n");
+        let content = match name {
+            "title-slide" => "# A title\n\nA subtitle.\n".to_string(),
+            "section-header" | "title-only" | "main-point" => "# A title\n".to_string(),
+            "title-body" => "# A title\n\nA paragraph.\n\n- a point\n\n```rust\nfn main() {}\n```\n".to_string(),
+            "two-column" => format!("# A title\n\n{}\n{}", fenced("left"), fenced("right")),
+            "one-column-text" => "# A title\n\nA paragraph.\n".to_string(),
+            "section-title-description" => format!("# A title\n\n{}\nA description.\n", fenced("subtitle")),
+            "caption" | "blank" => "Just a line of text.\n".to_string(),
+            "big-number" => "# 42%\n\nOf something.\n".to_string(),
+            other => panic!("no filled content for '{other}'"),
+        };
+        format!("<!-- {{\"key\":\"{name}\",\"layout\":\"{name}\"}} -->\n{content}")
+    }
+
+    fn created_deck_source_with(parent: &Path, slides: &[String]) -> (PathBuf, String) {
+        let deck_path = PathBuf::from(create_deck_with(parent, "16:9", "en").unwrap());
+        let starter = std::fs::read_to_string(&deck_path).unwrap();
+        (deck_path, std::iter::once(starter).chain(slides.iter().cloned()).collect::<Vec<_>>().join("\n---\n\n"))
+    }
+
+    #[test]
+    fn given_a_created_deck_when_each_standard_layout_is_named_on_a_filled_slide_then_every_slide_builds_on_it() {
+        let parent = tempfile::tempdir().unwrap();
+        let slides: Vec<String> = builtin::STANDARD_LAYOUTS.iter().map(|layout| filled_standard_slide(layout.name)).collect();
+        let (deck_path, source) = created_deck_source_with(parent.path(), &slides);
+
+        let output = pipeline::render_source(&deck_path, &source).unwrap_or_else(|err| panic!("{err}"));
+        for layout in builtin::STANDARD_LAYOUTS {
+            assert_eq!(output.slide_layouts.get(layout.name).map(String::as_str), Some(layout.name));
+            let fragment = &output.fragments[layout.name];
+            assert!(fragment.contains(&format!("layout-{}", layout.name)), "{}: {fragment}", layout.name);
+        }
+        for layout in builtin::STANDARD_LAYOUTS {
+            assert!(output.css.contains(&format!(".layout-{}", layout.name)), "{}'s CSS is loaded", layout.name);
+        }
+    }
+
+    #[test]
+    fn given_a_created_deck_at_4_3_when_each_standard_layout_is_named_then_every_slide_still_builds() {
+        let parent = tempfile::tempdir().unwrap();
+        let deck_path = PathBuf::from(create_deck_with(parent.path(), "4:3", "ja").unwrap());
+        let slides: Vec<String> = builtin::STANDARD_LAYOUTS.iter().map(|layout| filled_standard_slide(layout.name)).collect();
+        let source = format!("{}\n---\n\n{}", std::fs::read_to_string(&deck_path).unwrap(), slides.join("\n---\n\n"));
+
+        let output = pipeline::render_source(&deck_path, &source).unwrap_or_else(|err| panic!("{err}"));
+        assert_eq!(output.fragments.len(), 1 + builtin::STANDARD_LAYOUTS.len());
+    }
+
+    #[test]
+    fn given_a_created_deck_when_each_standard_layout_is_named_on_its_least_content_then_it_still_builds() {
+        // What a slide holds right after `+` or "Change Layout": a heading
+        // alone for a layout with a title, nothing at all for one without.
+        let parent = tempfile::tempdir().unwrap();
+        let slides: Vec<String> = builtin::STANDARD_LAYOUTS
+            .iter()
+            .map(|layout| {
+                let content = if ["caption", "blank"].contains(&layout.name) { "" } else { "# New Slide\n" };
+                format!("<!-- {{\"key\":\"{0}\",\"layout\":\"{0}\"}} -->\n{content}", layout.name)
+            })
+            .collect();
+        let (deck_path, source) = created_deck_source_with(parent.path(), &slides);
+
+        let output = pipeline::render_source(&deck_path, &source).unwrap_or_else(|err| panic!("{err}"));
+        assert_eq!(output.fragments.len(), 1 + builtin::STANDARD_LAYOUTS.len());
+    }
+
+    #[test]
+    fn adversarial_given_a_created_deck_when_a_heading_only_slide_names_no_layout_then_it_matches_several_and_fails() {
+        // Why Studio names a layout on every slide it writes: with all the
+        // standard layouts in a deck, a heading alone fits many of them.
+        let parent = tempfile::tempdir().unwrap();
+        let (deck_path, source) = created_deck_source_with(parent.path(), &["# Just a heading\n".to_string()]);
+
+        let err = pipeline::render_source(&deck_path, &source).err().expect("ambiguous");
+        assert!(err.contains("slide matches multiple layouts"), "{err}");
+        for name in ["title-slide", "section-header", "title-only", "main-point"] {
+            assert!(err.contains(name), "{name} is among the matches: {err}");
+        }
+    }
+
+    #[test]
+    fn adversarial_given_a_created_deck_when_a_titleless_layout_gets_a_heading_then_it_does_not_build() {
+        // Why `+` never carries `caption`/`blank` over to a new slide that
+        // opens with a heading (`domain/standardLayouts.ts`).
+        let parent = tempfile::tempdir().unwrap();
+        for name in ["caption", "blank"] {
+            let slide = format!("<!-- {{\"key\":\"x\",\"layout\":\"{name}\"}} -->\n# New Slide\n");
+            let (deck_path, source) = created_deck_source_with(parent.path().join(name).as_path(), &[slide]);
+            let err = pipeline::render_source(&deck_path, &source).err().unwrap_or_else(|| panic!("{name} has no title slot"));
+            assert!(err.contains("title"), "{name}: {err}");
+        }
+    }
+
+    #[test]
+    fn adversarial_given_a_created_deck_when_title_slide_gets_more_than_one_paragraph_then_it_does_not_build() {
+        // Its subtitle is one block: a second one is more than it holds.
+        let parent = tempfile::tempdir().unwrap();
+        let slide = "<!-- {\"key\":\"x\",\"layout\":\"title-slide\"} -->\n# A title\n\nOne.\n\nTwo.\n".to_string();
+        let (deck_path, source) = created_deck_source_with(parent.path(), &[slide]);
+
+        let err = pipeline::render_source(&deck_path, &source).err().expect("two subtitle paragraphs");
+        assert!(err.contains("body"), "{err}");
+    }
+
+    #[test]
+    fn given_a_new_deck_when_an_image_is_dropped_on_its_untouched_starter_slide_then_the_image_layout_is_offered() {
+        // The starter text stays as is; the error bar's "pick layout"
+        // (`imageSlotFixFor`) has `title-body-image` to offer, since it
+        // takes the starter's title and subtitle (body) as well as the image.
+        let parent = tempfile::tempdir().unwrap();
+        let (deck_path, image) = created_deck_with_image(parent.path());
+        let source = format!("{}\n![]({image})\n", std::fs::read_to_string(&deck_path).unwrap());
+
+        let err = pipeline::render_source(&deck_path, &source).err().expect("title-slide has no image slot");
+        assert!(err.contains("no slot accepts image in layout 'title-slide'"), "{err}");
+        let verdicts = crate::engine::layout_fit::check_slide_layouts(&deck_path, &source, 0).unwrap().unwrap();
+        let fitting: Vec<&str> = verdicts
+            .iter()
+            .filter(|verdict| verdict.fit == crate::engine::layout_fit::LayoutFit::Fits)
+            .map(|verdict| verdict.layout.as_str())
+            .collect();
+        assert_eq!(fitting, ["title-body-image"]);
+
+        let repinned = source.replace("\"layout\":\"title-slide\"", "\"layout\":\"title-body-image\"");
+        let output = pipeline::render_source(&deck_path, &repinned).unwrap_or_else(|err| panic!("{err}"));
+        assert!(output.fragments["cover"].contains("Start writing your slides here."));
+        assert!(output.fragments["cover"].contains("<img"));
     }
 
     #[test]
@@ -2128,6 +2340,8 @@ Start writing your slides here.\n";
         RenderOutput {
             manifest_json: manifest_json.to_string(),
             fragments: HashMap::from([("slide-1".to_string(), "<section>one</section>".to_string())]),
+            slide_layouts: HashMap::from([("slide-1".to_string(), "title-body".to_string())]),
+            heading_layouts: vec!["title-body".to_string(), "title-slide".to_string()],
             css: css.to_string(),
             has_math: false,
             image_assets: HashMap::new(),
@@ -2145,8 +2359,18 @@ Start writing your slides here.\n";
         let payload = to_payload(output, "http://127.0.0.1:1234/".to_string()).unwrap();
         assert_eq!(payload.manifest["title"], "Deck");
         assert_eq!(payload.fragments["slide-1"], "<section>one</section>");
+        assert_eq!(payload.slide_layouts["slide-1"], "title-body");
+        assert_eq!(payload.heading_layouts, ["title-body", "title-slide"]);
         assert_eq!(payload.css, ".peitho-slide { color: red; }");
         assert_eq!(payload.asset_base_url, "http://127.0.0.1:1234/");
+    }
+
+    #[test]
+    fn given_a_payload_when_serialized_then_its_layouts_reach_the_frontend_in_camel_case() {
+        let payload = to_payload(render_output(r#"{"title":""}"#, ""), String::new()).unwrap();
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["slideLayouts"]["slide-1"], "title-body");
+        assert_eq!(json["headingLayouts"], serde_json::json!(["title-body", "title-slide"]));
     }
 
     #[test]

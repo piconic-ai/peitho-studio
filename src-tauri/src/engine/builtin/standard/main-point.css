@@ -1,0 +1,10 @@
+/* Main point: one statement in large type, taking up most of the slide. */
+.peitho-slide.layout-main-point {
+  justify-content: center;
+}
+
+.peitho-slide.layout-main-point h1 {
+  max-width: 85%;
+  font-size: 80px;
+  line-height: 1.1;
+}

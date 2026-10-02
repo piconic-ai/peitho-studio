@@ -286,17 +286,57 @@ describe('uniqueSlideKey', () => {
 })
 
 describe('newSlideConfig', () => {
-  test('spec: carries over an explicit layout from the previous slide', () => {
-    expect(newSlideConfig({ layout: 'cover' }, 'new-slide')).toEqual({ key: 'new-slide', layout: 'cover' })
+  // The layouts a heading-only slide builds on (`headingLayouts`) in a deck
+  // created by New Deck — every standard one but `caption`/`blank`, and not
+  // the image layout — and in a deck with two layouts of its own.
+  const STANDARD_DECK = ['big-number', 'main-point', 'one-column-text', 'section-header', 'section-title-description', 'title-body', 'title-only', 'title-slide', 'two-column']
+  const OWN_DECK = ['cover', 'title-body-code']
+
+  test('spec: Given the previous slide names a layout, When a slide is added after it, Then the new slide names the same layout', () => {
+    expect(newSlideConfig({ layout: 'cover' }, 'new-slide', null, OWN_DECK)).toEqual({ key: 'new-slide', layout: 'cover' })
+    expect(newSlideConfig({ layout: 'two-column' }, 'new-slide', 'two-column', STANDARD_DECK)).toEqual({ key: 'new-slide', layout: 'two-column' })
   })
 
-  test('adversarial: no layout on the previous slide means no layout field at all (not undefined)', () => {
-    expect(newSlideConfig({}, 'new-slide')).toEqual({ key: 'new-slide' })
-    expect('layout' in newSlideConfig({}, 'new-slide')).toBe(false)
+  test('spec: Given the previous slide names no layout but was built on one, When a slide is added, Then the new slide names that layout', () => {
+    expect(newSlideConfig({}, 'new-slide', 'title-body-code', OWN_DECK)).toEqual({ key: 'new-slide', layout: 'title-body-code' })
+    expect(newSlideConfig({}, 'new-slide', 'two-column', STANDARD_DECK)).toEqual({ key: 'new-slide', layout: 'two-column' })
+  })
+
+  test('spec: Given the previous slide is on the image layout, When a slide is added, Then the new slide (no image) does not take it', () => {
+    // New deck: title and body instead.
+    expect(newSlideConfig({}, 'new-slide', 'title-body-image', STANDARD_DECK)).toEqual({ key: 'new-slide', layout: 'title-body' })
+    expect(newSlideConfig({ layout: 'title-body-image' }, 'new-slide', 'title-body-image', STANDARD_DECK)).toEqual({ key: 'new-slide', layout: 'title-body' })
+    // A deck from before the standard layouts: no layout, so peitho-core
+    // still finds title-body-code for the heading, as it always did.
+    expect(newSlideConfig({}, 'new-slide', 'title-body-image', ['title-body-code'])).toEqual({ key: 'new-slide' })
+  })
+
+  test('spec: Given the previous slide names a layout and was built on it, Then the named one is what counts', () => {
+    expect(newSlideConfig({ layout: 'cover' }, 'new-slide', 'title-body-code', OWN_DECK)).toEqual({ key: 'new-slide', layout: 'cover' })
+  })
+
+  test('spec: Given a new deck, When a slide is added after its title slide, Then the new slide is "title and body"', () => {
+    expect(newSlideConfig({ key: 'cover', layout: 'title-slide' }, 'new-slide', 'title-slide', STANDARD_DECK)).toEqual({ key: 'new-slide', layout: 'title-body' })
+  })
+
+  test('spec: Given a new deck, When nothing says which layout the previous slide is on, Then the new slide is "title and body"', () => {
+    expect(newSlideConfig({}, 'new-slide', null, STANDARD_DECK)).toEqual({ key: 'new-slide', layout: 'title-body' })
+  })
+
+  test('adversarial: Given a deck without the standard layouts and nothing to go on, Then the new slide names no layout (no layout field, not undefined)', () => {
+    expect(newSlideConfig({}, 'new-slide', null, OWN_DECK)).toEqual({ key: 'new-slide' })
+    expect('layout' in newSlideConfig({}, 'new-slide', null, OWN_DECK)).toBe(false)
+    expect(newSlideConfig({}, 'new-slide', null, [])).toEqual({ key: 'new-slide' })
+  })
+
+  test('adversarial: Given an empty layout name, explicit or built, Then it counts as none', () => {
+    expect(newSlideConfig({ layout: '' }, 'new-slide', '', STANDARD_DECK)).toEqual({ key: 'new-slide', layout: 'title-body' })
+    expect(newSlideConfig({ layout: '' }, 'new-slide', 'cover', OWN_DECK)).toEqual({ key: 'new-slide', layout: 'cover' })
+    expect(newSlideConfig({}, 'new-slide', '', OWN_DECK)).toEqual({ key: 'new-slide' })
   })
 
   test('adversarial: other fields on the previous slide (section, key, draft) are never carried over', () => {
-    expect(newSlideConfig({ key: 'old', section: 'Intro', draft: true, layout: 'cover' }, 'new-slide'))
+    expect(newSlideConfig({ key: 'old', section: 'Intro', draft: true, layout: 'cover' }, 'new-slide', 'cover', OWN_DECK))
       .toEqual({ key: 'new-slide', layout: 'cover' })
   })
 })

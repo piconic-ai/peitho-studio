@@ -46,6 +46,11 @@ export function createRenderStore() {
   // produced it removes the mismatched read entirely, regardless of when
   // `fullSource()` itself gets around to catching up.
   const [renderedSource, setRenderedSource] = createSignal('')
+  // The layout each slide of `manifest()` was built on (by key) and the
+  // deck's layouts, written with it — read when a slide is added, to name
+  // the new slide's layout (`domain/standardLayouts.ts`).
+  const [slideLayouts, setSlideLayouts] = createSignal<Record<string, string>>({})
+  const [headingLayouts, setHeadingLayouts] = createSignal<string[]>([])
   const sectionStartByIndex = createMemo<Record<number, ManifestSection>>(() => computeSectionStartByIndex(manifest()?.sections ?? []))
   const [sectionDrafts, setSectionDrafts] = createSignal<Record<number, SectionDraft>>({})
   /** The draft for the section starting at slide `startIndex`, or that
@@ -159,6 +164,8 @@ export function createRenderStore() {
       if (canvasWidth() !== payload.manifest.canvasWidth) setCanvasWidth(payload.manifest.canvasWidth)
       if (canvasHeight() !== payload.manifest.canvasHeight) setCanvasHeight(payload.manifest.canvasHeight)
       if (renderedSource() !== source) setRenderedSource(source)
+      setSlideLayouts(payload.slideLayouts)
+      setHeadingLayouts(payload.headingLayouts)
       const previousSlides = manifest()?.slides ?? []
       setManifest({ ...payload.manifest, slides: stabilizeByKey(previousSlides, payload.manifest.slides) })
       const drafts: Record<number, SectionDraft> = {}
@@ -170,7 +177,7 @@ export function createRenderStore() {
   }
 
   return {
-    assetBaseUrl, canvasWidth, canvasHeight, manifest, renderedSource, sectionStartByIndex,
+    assetBaseUrl, canvasWidth, canvasHeight, manifest, renderedSource, slideLayouts, headingLayouts, sectionStartByIndex,
     sectionDrafts, setSectionDrafts, sectionDraftOf,
     fragmentSignal, fragmentOf, canvasFragmentOf, previewFragmentOf, applyRenderPayload,
     slideStylesheetText, fontFaceCss,
