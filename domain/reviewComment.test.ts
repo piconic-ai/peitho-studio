@@ -3,10 +3,11 @@ import type { CritDeckSession, ReviewComment } from './critReview'
 import { messagesFor } from './messages'
 import type { ManifestSlide } from './render'
 import {
-  liveReplies, rewriteUnsent, unsentBody,
+  REVIEW_AUTHOR, liveReplies, rewriteUnsent, unsentBody,
   agentCommentBody, annotatedSpan, commentSlideKey, explicitSlideKey, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
   awaitingAgentCount, newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, pinOfQuote, previewPinsOf, relocateTarget, reviewStatusText, sendAvailability, slideIndexOfComment, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
   utf8OffsetToIndex, type CommentTarget, type PendingComment, type PendingReply, type PinSpot,
+  layoutAgentLabel, layoutHtmlFile, layoutTargetLabel, layoutTargetOfComment, newLayoutComment, splitLayoutLabel, type PendingLayoutComment,
 } from './reviewComment'
 
 const bytes = (text: string) => new TextEncoder().encode(text).length
@@ -390,7 +391,7 @@ describe('slideIndexOfLine / commentCountsBySlide', () => {
     { key: 'two', span: { start: source.indexOf('# Two'), end: source.length } },
   ]
   const sent = (start: number, resolved = false): ReviewComment => ({
-    id: `c${String(start)}`, lines: { start, end: start }, body: 'b', quote: null, author: 'Peitho Studio', resolved, replies: [], createdAt: null,
+    id: `c${String(start)}`, place: { kind: 'deck' }, lines: { start, end: start }, body: 'b', quote: null, author: 'Peitho Studio', resolved, replies: [], createdAt: null,
   })
 
   test('spec: Given line 5 is in the second slide, Then that slide is found', () => {
@@ -575,7 +576,7 @@ describe('previewPinsOf', () => {
   const unsent = (id: string, slideKey: string, pin: PinSpot | null): PendingComment => ({ id, slideKey, target, pin, body: 'b', createdAt: '2026-09-29T00:00:00Z' })
   const spot = (x: number, y: number): PinSpot => ({ x, y, anchor: null })
   const inCrit = (id: string, body: string, resolved = false): ReviewComment => ({
-    id, lines: { start: 1, end: 1 }, body, quote: null, author: 'Peitho Studio', resolved, replies: [], createdAt: null,
+    id, place: { kind: 'deck' }, lines: { start: 1, end: 1 }, body, quote: null, author: 'Peitho Studio', resolved, replies: [], createdAt: null,
   })
 
   test('spec: Given a sent comment, an unsent one and the box being written on this slide, Then all three pins show, numbered in that order', () => {
@@ -647,7 +648,7 @@ describe('previewPinsOf', () => {
 
 describe('awaitingAgentCount', () => {
   const thread = (id: string, replies: [string, string][], resolved = false): ReviewComment => ({
-    id, lines: null, body: 'b', quote: null, author: 'Peitho Studio', resolved, createdAt: null,
+    id, place: { kind: 'deck' }, lines: null, body: 'b', quote: null, author: 'Peitho Studio', resolved, createdAt: null,
     replies: replies.map(([author, body], i) => ({ id: `r${String(i)}`, author, body, createdAt: null })),
   })
 
@@ -671,7 +672,7 @@ describe('awaitingAgentCount', () => {
 })
 
 describe('liveReplies', () => {
-  const comment = (id: string): ReviewComment => ({ id, lines: null, body: 'b', quote: null, author: 'a', resolved: false, replies: [], createdAt: null })
+  const comment = (id: string): ReviewComment => ({ id, place: { kind: 'deck' }, lines: null, body: 'b', quote: null, author: 'a', resolved: false, replies: [], createdAt: null })
 
   test('spec: Given replies to comments crit has and to one it lost, Then only the former are live, in order', () => {
     const replies = [{ id: 'r1', commentId: 'c1', body: 'a', createdAt: '2026-09-29T00:00:00Z' }, { id: 'r2', commentId: 'gone', body: 'b', createdAt: '2026-09-29T00:00:00Z' }, { id: 'r3', commentId: 'c2', body: 'c', createdAt: '2026-09-29T00:00:00Z' }]
@@ -718,5 +719,110 @@ describe('rewriteUnsent / unsentBody', () => {
     expect(unsentBody([comment], [reply], 'reply-3')).toBe('Old reply')
     expect(unsentBody([comment], [reply], 'c_1')).toBeNull()
     expect(unsentBody([], [], '')).toBeNull()
+  })
+})
+
+// --- Comments written on the layout screen (todo/layout-review-comments.md) ---
+
+describe('layoutHtmlFile', () => {
+  test('spec: Given a layout name, Then its HTML file is under layouts/', () => {
+    expect(layoutHtmlFile('cover')).toBe('layouts/cover.html')
+    expect(layoutHtmlFile('two-col_2')).toBe('layouts/two-col_2.html')
+  })
+
+  test('adversarial: Given a name with a path separator, a dot, a space or nothing, Then it names no file', () => {
+    for (const name of ['', ' ', '../deck', 'a/b', 'a\\b', '.hidden', '-x', 'a.b', 'a b', 'x'.repeat(65), 'ä']) {
+      expect(layoutHtmlFile(name)).toBeNull()
+    }
+    expect(layoutHtmlFile('x'.repeat(64))).toBe(`layouts/${'x'.repeat(64)}.html`)
+  })
+})
+
+describe('layoutTargetLabel / layoutAgentLabel', () => {
+  test('spec: Given a comment on a layout, Then the panel says which and the agent is told its files', () => {
+    expect(layoutTargetLabel({ kind: 'layout', name: 'cover' })).toBe('Layout cover')
+    expect(layoutAgentLabel({ kind: 'layout', name: 'cover' })).toBe('Layout cover (layouts/cover.html, css/cover.css)')
+  })
+
+  test('spec: Given a comment on every layout, Then the agent is pointed at both folders', () => {
+    expect(layoutTargetLabel({ kind: 'all-layouts' })).toBe('All layouts')
+    expect(layoutAgentLabel({ kind: 'all-layouts' })).toBe('All layouts (layouts/, css/)')
+  })
+
+  test('adversarial: Given a name no layout can have, Then no file path is made from it', () => {
+    expect(layoutAgentLabel({ kind: 'layout', name: '../deck' })).toBe('Layout ../deck')
+    expect(layoutAgentLabel({ kind: 'layout', name: '' })).toBe('Layout ')
+    const long = 'x'.repeat(200)
+    expect(layoutAgentLabel({ kind: 'layout', name: long })).toBe(`Layout ${long}`)
+  })
+})
+
+describe('newLayoutComment', () => {
+  const pending = (target: PendingLayoutComment['target'], body = '  Darker title  '): PendingLayoutComment => ({ id: 'p1', target, body, createdAt: '2026-10-02T00:00:00Z' })
+
+  test('spec: Given an unsent comment on a layout, Then crit gets the layout name and a labelled body', () => {
+    expect(newLayoutComment(pending({ kind: 'layout', name: 'cover' }))).toEqual({
+      layout: 'cover', body: '[Layout cover (layouts/cover.html, css/cover.css)] Darker title', author: REVIEW_AUTHOR,
+    })
+  })
+
+  test('spec: Given an unsent comment on every layout, Then no layout is named', () => {
+    expect(newLayoutComment(pending({ kind: 'all-layouts' }, 'Calmer\ncolors'))).toEqual({
+      layout: null, body: '[All layouts (layouts/, css/)] Calmer\ncolors', author: REVIEW_AUTHOR,
+    })
+  })
+})
+
+describe('splitLayoutLabel', () => {
+  test('spec: Given a layout comment Studio sent, Then its target and text come apart', () => {
+    expect(splitLayoutLabel('[Layout cover (layouts/cover.html, css/cover.css)] Darker title'))
+      .toEqual({ target: { kind: 'layout', name: 'cover' }, text: 'Darker title' })
+    expect(splitLayoutLabel('[All layouts (layouts/, css/)] Line one\nline two'))
+      .toEqual({ target: { kind: 'all-layouts' }, text: 'Line one\nline two' })
+    expect(splitLayoutLabel('[Layout cover] x')).toEqual({ target: { kind: 'layout', name: 'cover' }, text: 'x' })
+  })
+
+  test('adversarial: Given a slide label, no label, an empty or a malformed one, Then there is no layout target', () => {
+    for (const body of ['[Slide 2] x', 'plain text', '', '[Layout ] x', '[Layout ../x] y', '[All layouts]x', '[Layout cover (unclosed x', '[layout cover] x']) {
+      expect(splitLayoutLabel(body)).toBeNull()
+    }
+  })
+})
+
+describe('layoutTargetOfComment', () => {
+  const sent = (place: ReviewComment['place'], body: string): Pick<ReviewComment, 'place' | 'body'> => ({ place, body })
+
+  test('spec: Given a comment on a layout\'s HTML or CSS file, Then it is about that layout', () => {
+    expect(layoutTargetOfComment(sent({ kind: 'file', path: 'layouts/cover.html' }, 'x'))).toEqual({ kind: 'layout', name: 'cover' })
+    expect(layoutTargetOfComment(sent({ kind: 'file', path: 'css/cover.css' }, 'x'))).toEqual({ kind: 'layout', name: 'cover' })
+  })
+
+  test('spec: Given a review-level comment, Then its label says which layout, or every layout', () => {
+    expect(layoutTargetOfComment(sent({ kind: 'review' }, '[All layouts (layouts/, css/)] x'))).toEqual({ kind: 'all-layouts' })
+    expect(layoutTargetOfComment(sent({ kind: 'review' }, '[Layout title-body-code (layouts/title-body-code.html, css/title-body-code.css)] x')))
+      .toEqual({ kind: 'layout', name: 'title-body-code' })
+  })
+
+  test('adversarial: Given a deck comment, an unlabelled review comment or another file, Then it is about no layout', () => {
+    expect(layoutTargetOfComment(sent({ kind: 'deck' }, '[Layout cover] x'))).toBeNull()
+    expect(layoutTargetOfComment(sent({ kind: 'review' }, 'Looks good overall'))).toBeNull()
+    expect(layoutTargetOfComment(sent({ kind: 'file', path: 'css/base/x.css' }, 'x'))).toBeNull()
+    expect(layoutTargetOfComment(sent({ kind: 'file', path: 'img/x.png' }, 'x'))).toBeNull()
+    expect(layoutTargetOfComment(sent({ kind: 'file', path: '' }, ''))).toBeNull()
+  })
+})
+
+describe('a layout comment among the deck\'s comments', () => {
+  const source = '# One\n\n---\n\n# Two\n'
+  const slides = [{ key: 'one', span: { start: 0, end: 7 } }, { key: 'two', span: { start: 11, end: source.length } }]
+  const onLayout: ReviewComment = {
+    id: 'c_l', place: { kind: 'file', path: 'layouts/cover.html' }, lines: { start: 5, end: 5 }, body: '[Layout cover] x', quote: null,
+    author: REVIEW_AUTHOR, resolved: false, replies: [], createdAt: null,
+  }
+
+  test('adversarial: Given a comment on line 5 of a layout file, Then it is on no slide and counts on none', () => {
+    expect(slideIndexOfComment(source, slides, onLayout)).toBeNull()
+    expect(commentCountsBySlide(source, slides, [], [onLayout])).toEqual({})
+    expect(slideIndexOfComment(source, slides, { ...onLayout, place: { kind: 'deck' } })).toBe(1)
   })
 })

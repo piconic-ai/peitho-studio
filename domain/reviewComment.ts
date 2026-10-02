@@ -13,7 +13,7 @@
 // only `&`, `"`, `<`, CR and LF, all as entities the HTML parser resolves),
 // so no decoding happens here.
 
-import type { CritDeckSession, LineRange, NewReviewComment, ReviewComment } from './critReview'
+import type { CritDeckSession, LineRange, NewLayoutComment, NewReviewComment, ReviewComment } from './critReview'
 import type { Messages } from './messages'
 import type { ManifestSlide } from './render'
 import { buildSlideList, type SlideListEntry } from './slideList'
@@ -70,11 +70,95 @@ export interface PendingComment {
   createdAt: string
 }
 
-/** The box a comment is written in, over the preview: closed, or open on a
- * target — with where the pin goes and where on screen the box sits. */
+/** The box a comment is written in: closed, open on a target on the
+ * preview — with where the pin goes and where on screen the box sits — or
+ * open on a layout (or every layout) from the layout screen's menu. */
 export type CommentBox =
   | { kind: 'closed' }
   | { kind: 'open'; slideKey: string; target: CommentTarget; pin: PinSpot | null; at: { x: number; y: number } }
+  | { kind: 'open-layout'; target: LayoutCommentTarget; at: { x: number; y: number } }
+
+/** What a comment written on the layout screen is on: one layout, or every
+ * layout (the deck's look as a whole). There is no finer target: a
+ * layout's preview points at nothing in its HTML. */
+export type LayoutCommentTarget = { kind: 'layout'; name: string } | { kind: 'all-layouts' }
+
+/** A comment written on the layout screen and not yet sent. */
+export interface PendingLayoutComment {
+  id: string
+  target: LayoutCommentTarget
+  body: string
+  /** When it was written (RFC 3339). */
+  createdAt: string
+}
+
+const LAYOUT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
+
+/** Layout `name`'s HTML file, relative to the deck's folder — or `null`
+ * for a name no layout can have (a path separator, a dot, a space: see
+ * `engine::layout_files::validate_layout_name`), so a name never points
+ * outside `layouts/`. */
+export function layoutHtmlFile(name: string): string | null {
+  return LAYOUT_NAME.test(name) ? `layouts/${name}.html` : null
+}
+
+/** `Layout cover` or `All layouts` — what the comment box and the panel
+ * say a layout comment is on. */
+export function layoutTargetLabel(target: LayoutCommentTarget): string {
+  return target.kind === 'layout' ? `Layout ${target.name}` : 'All layouts'
+}
+
+/** The label heading a layout comment as the agent reads it: what it's
+ * on, and the files that means — a layout is its HTML and the CSS file of
+ * the same name; every layout is both folders. A name no layout can have
+ * is named without files. English on purpose, like `targetLabel`. */
+export function layoutAgentLabel(target: LayoutCommentTarget): string {
+  if (target.kind === 'all-layouts') return 'All layouts (layouts/, css/)'
+  const html = layoutHtmlFile(target.name)
+  return html === null ? layoutTargetLabel(target) : `${layoutTargetLabel(target)} (${html}, css/${target.name}.css)`
+}
+
+/** `pending` as crit takes it: the layout it's on (`null` for every
+ * layout), headed by `layoutAgentLabel`. */
+export function newLayoutComment(pending: PendingLayoutComment): NewLayoutComment {
+  return {
+    layout: pending.target.kind === 'layout' ? pending.target.name : null,
+    body: agentCommentBody(layoutAgentLabel(pending.target), pending.body),
+    author: REVIEW_AUTHOR,
+  }
+}
+
+const LAYOUT_LABEL = /^\[(?:Layout ([A-Za-z0-9][A-Za-z0-9_-]*)|(All layouts))(?: \([^\]\n]*\))?\] ([\s\S]*)$/
+
+/** A sent comment's text split back into the layout target its label
+ * names (`layoutAgentLabel`) and the text itself — `null` for a comment
+ * with no such label. */
+export function splitLayoutLabel(body: string): { target: LayoutCommentTarget; text: string } | null {
+  const match = LAYOUT_LABEL.exec(body)
+  if (match === null) return null
+  return { target: match[1] === undefined ? { kind: 'all-layouts' } : { kind: 'layout', name: match[1] }, text: match[3] }
+}
+
+const LAYOUT_FILE = /^(?:layouts\/([A-Za-z0-9][A-Za-z0-9_-]*)\.html|css\/([A-Za-z0-9][A-Za-z0-9_-]*)\.css)$/
+
+/** Which layout a sent comment is about: the layout whose file it's on,
+ * else — for one on the review as a whole — the layout its label names.
+ * `null` for a comment on the deck, or one no layout label heads. */
+export function layoutTargetOfComment(comment: Pick<ReviewComment, 'place' | 'body'>): LayoutCommentTarget | null {
+  switch (comment.place.kind) {
+    case 'deck': return null
+    case 'file': {
+      const match = LAYOUT_FILE.exec(comment.place.path)
+      const name = match?.[1] ?? match?.[2]
+      return name === undefined ? splitLayoutLabel(comment.body)?.target ?? null : { kind: 'layout', name }
+    }
+    case 'review': return splitLayoutLabel(comment.body)?.target ?? null
+    default: {
+      const exhaustive: never = comment.place
+      return exhaustive
+    }
+  }
+}
 
 /** A reply written under a comment already in crit, not yet sent. */
 export interface PendingReply {
@@ -97,12 +181,12 @@ export function liveReplies(replies: readonly PendingReply[], comments: readonly
 /** The unsent comments and replies with the one `id` names now reading
  * `body` (trimmed). `null` when there's nothing to rewrite: a blank body,
  * or no unsent comment or reply by that id (it was sent or discarded). */
-export function rewriteUnsent(
-  pending: readonly PendingComment[],
+export function rewriteUnsent<P extends { id: string; body: string }>(
+  pending: readonly P[],
   replies: readonly PendingReply[],
   id: string,
   body: string,
-): { pending: PendingComment[]; replies: PendingReply[] } | null {
+): { pending: P[]; replies: PendingReply[] } | null {
   const text = body.trim()
   if (text === '' || ![...pending, ...replies].some(item => item.id === id)) return null
   return {
@@ -112,7 +196,7 @@ export function rewriteUnsent(
 }
 
 /** The text of the unsent comment or reply `id`, or `null` for none. */
-export function unsentBody(pending: readonly PendingComment[], replies: readonly PendingReply[], id: string): string | null {
+export function unsentBody(pending: readonly { id: string; body: string }[], replies: readonly PendingReply[], id: string): string | null {
   return [...pending, ...replies].find(item => item.id === id)?.body ?? null
 }
 
@@ -495,8 +579,10 @@ export function slideIndexOfLine(source: string, slides: readonly CharSpan[], li
 }
 
 /** Which of `slides` a sent comment is on: the slide its label names by key,
- * else the one its first line is in, else `null`. */
-export function slideIndexOfComment(source: string, slides: readonly { key: string; span: CharSpan }[], comment: Pick<ReviewComment, 'body' | 'lines'>): number | null {
+ * else the one its first line is in, else `null` — always `null` for a
+ * comment that isn't on the deck file (its lines are another file's). */
+export function slideIndexOfComment(source: string, slides: readonly { key: string; span: CharSpan }[], comment: Pick<ReviewComment, 'body' | 'lines' | 'place'>): number | null {
+  if (comment.place.kind !== 'deck') return null
   const key = commentSlideKey(comment.body)
   const byKey = key === null ? -1 : slides.findIndex(slide => slide.key === key)
   if (byKey !== -1) return byKey

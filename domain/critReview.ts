@@ -26,11 +26,21 @@ export interface ReviewReply {
   createdAt: string | null
 }
 
+/** Where a comment sits in the session: on the deck file, on another file
+ * of the deck (a layout's HTML — `path` relative to the deck's folder, as
+ * `layouts/cover.html`), or on the review as a whole (no file). */
+export type CommentPlace =
+  | { kind: 'deck' }
+  | { kind: 'file'; path: string }
+  | { kind: 'review' }
+
 /** A comment in the crit session, with its thread. crit renumbers ids
  * between rounds, so follow a comment by `lines` and `quote`, not `id`. */
 export interface ReviewComment {
   id: string
-  /** `null` for a comment on the whole file. */
+  place: CommentPlace
+  /** `null` for a comment on the whole file (or the whole review). Lines
+   * of the file at `place` — of deck.md only for a `deck` comment. */
   lines: LineRange | null
   body: string
   quote: string | null
@@ -48,6 +58,15 @@ export interface NewReviewComment {
   body: string
   /** The Markdown commented on, so the agent can find it after lines move. */
   quote: string
+  author: string
+}
+
+/** A comment written on the layout screen: on layout `layout`, or on every
+ * layout (`null`). The Rust side puts it on that layout's HTML file when
+ * the deck has one, else on the review as a whole. */
+export interface NewLayoutComment {
+  layout: string | null
+  body: string
   author: string
 }
 

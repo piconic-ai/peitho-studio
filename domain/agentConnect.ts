@@ -24,10 +24,15 @@ export function deckLocation(deckPath: string | null): { dir: string; file: stri
   return { dir, file }
 }
 
-/** The command that makes an agent wait for the deck's review. */
-export function agentConnectCommand(deckPath: string | null, critPath: string): string {
+/** The command that makes an agent wait for the deck's review. `dirs`:
+ * the layout folders the deck has (`layouts`, `css` — `critIpc.sessionDirs`),
+ * named after the deck file exactly as Studio starts its session
+ * (`engine::crit::session_args`): crit tells sessions apart by these
+ * arguments, so naming fewer starts another session instead of joining
+ * Studio's. */
+export function agentConnectCommand(deckPath: string | null, critPath: string, dirs: readonly string[] = []): string {
   const { dir, file } = deckLocation(deckPath)
-  return `cd ${shellQuote(dir)} && ${shellQuote(critPath)} --no-open ${shellQuote(file)}`
+  return [`cd ${shellQuote(dir)} && ${shellQuote(critPath)} --no-open ${shellQuote(file)}`, ...dirs.map(shellQuote)].join(' ')
 }
 
 /** The language the agent is asked to reply in, by the UI language. */
@@ -37,15 +42,16 @@ const REPLY_LANGUAGE: Record<Language, string> = { en: 'English', ja: 'Japanese'
  * answering review rounds, replying in `language` (the UI language: the
  * replies are read in the comments column). The prompt itself is English
  * whatever the UI language: it's an instruction to the agent. */
-export function agentConnectPrompt(deckPath: string | null, critPath: string, language: Language): string {
+export function agentConnectPrompt(deckPath: string | null, critPath: string, language: Language, dirs: readonly string[] = []): string {
   const crit = shellQuote(critPath)
   return [
     'Start a review loop for my Peitho deck.',
     '',
-    `1. Run: ${agentConnectCommand(deckPath, critPath)}`,
+    `1. Run: ${agentConnectCommand(deckPath, critPath, dirs)}`,
     '   It waits until I send review comments from Peitho Studio.',
     '2. When it returns, follow the instructions it prints: address each comment',
-    `   in the deck, reply to each one with ${crit} comment --reply-to …, then run`,
+    '   in the deck — or, for a comment on a layout, in the layout files it names',
+    `   (layouts/, css/) — reply to each one with ${crit} comment --reply-to …, then run`,
     '   the command it prints to wait for my next round.',
     `3. Wherever those instructions say \`crit\`, use ${crit} instead.`,
     '4. Repeat until the review is approved.',

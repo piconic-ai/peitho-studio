@@ -40,6 +40,16 @@ describe('agentConnectCommand', () => {
       .toBe(`cd /Users/me/Desktop/test && '${CRIT}' --no-open deck.md`)
   })
 
+  test('spec: Given a deck with layout folders, Then the agent names them too, as Studio\'s session does', () => {
+    expect(agentConnectCommand('/d/deck.md', 'crit', ['layouts', 'css'])).toBe('cd /d && crit --no-open deck.md layouts css')
+    expect(agentConnectCommand('/d/deck.md', 'crit', ['css'])).toBe('cd /d && crit --no-open deck.md css')
+    expect(agentConnectCommand('/d/deck.md', 'crit', [])).toBe('cd /d && crit --no-open deck.md')
+  })
+
+  test('adversarial: Given a folder name that needs quoting, Then it is quoted on its own', () => {
+    expect(agentConnectCommand('/d/deck.md', 'crit', ["it's dir"])).toBe(`cd /d && crit --no-open deck.md 'it'\\''s dir'`)
+  })
+
   test('adversarial: Given a folder and file name that need quoting, Then each is quoted on its own', () => {
     expect(agentConnectCommand("/Users/me/My Talks/it's.md", '/opt/crit'))
       .toBe(`cd '/Users/me/My Talks' && /opt/crit --no-open 'it'\\''s.md'`)
@@ -58,6 +68,12 @@ describe('agentConnectPrompt', () => {
   test('spec: Given the UI in Japanese or English, Then the agent is asked to reply in that language', () => {
     expect(agentConnectPrompt('/d/deck.md', 'crit', 'ja')).toContain('5. Write your replies in Japanese.')
     expect(agentConnectPrompt('/d/deck.md', 'crit', 'en')).toContain('5. Write your replies in English.')
+  })
+
+  test('spec: Given layout folders, Then the prompt\'s command names them and layout comments are pointed at them', () => {
+    const prompt = agentConnectPrompt('/d/deck.md', 'crit', 'en', ['layouts', 'css'])
+    expect(prompt).toContain('1. Run: cd /d && crit --no-open deck.md layouts css')
+    expect(prompt).toContain('for a comment on a layout, in the layout files it names')
   })
 
   test('adversarial: Given no deck path, Then the prompt still names deck.md in the current folder', () => {
