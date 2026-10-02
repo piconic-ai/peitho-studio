@@ -4,6 +4,7 @@ import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
 import { menuItemEnabled, menuItemChecked, type MenuItem } from '../domain/contextMenu'
 import { entryTitle, isSelectable, layoutNoticeText, type LayoutFitCheck, type LayoutNotice } from '../domain/layoutFit'
+import { layoutDisplayName } from '../domain/standardLayouts'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 
 export interface SlideContextMenuProps {
@@ -158,7 +159,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
                         />
                       ) : null}
                     </span>
-                    <span className="text-[10px] text-muted-foreground truncate">{preview.name}</span>
+                    <span className="text-[10px] text-muted-foreground truncate">{layoutDisplayName(preview.name, props.language)}</span>
                   </button>
                 ))}
               </div>
