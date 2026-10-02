@@ -35,8 +35,8 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 The hero embeds `public/studio-demo.mp4`, recorded from the **unchanged Studio frontend**, with its real editor, preview, panel controls and comments UI. The sample deck introduces Peitho Studio itself: write in Markdown, see changes instantly, and refine with an AI Agent.
 
 1. The editor and preview show a simple introductory slide. Typing a new Markdown title changes the preview.
-2. The comments panel opens and a comment asks the Agent to preserve the words while refining the layout.
-3. The editor is folded using Studio's own panel control. The Agent's example result changes the slide to an HTML layout with feature cards, typography and JavaScript reveal animations.
+2. The comments panel opens and a comment specifies a light editorial style: warm white (#FFFCF7), charcoal (#252525), a large Georgia title, 40px sans-serif bullets, left alignment and wide margins. It explicitly disallows extra text, cards, numbers and icons.
+3. The editor is folded using Studio's own panel control. The Agent's example result changes the slide to a light HTML layout containing only the same heading and three bullets, with the specified typography, spacing and a JavaScript fade-in.
 
 `site/scripts/demo-deck.ts` supplies the sample Markdown and before/after slide fragments. Only the slide's layout metadata changes in the simulated Agent result; an assertion checks that the Markdown content remains unchanged. The e2e Tauri IPC mock and fake crit session provide backend responses; the Studio UI itself is not recreated or restyled. No live agent runs during capture.
 
@@ -49,7 +49,7 @@ PORT=3013 bun server.ts
 bun site/scripts/capture-hero.ts
 ```
 
-Capture asserts the edited preview, sent comment, rich HTML layout, running slide animation and Agent reply, and fails on page errors. The site uses native video controls without autoplay.
+Capture asserts the edited preview, sent comment, light background, unchanged three bullets, absence of extra visible elements, running slide animation and Agent reply, and fails on page errors. The site uses native video controls without autoplay.
 
 ## Brand
 
