@@ -474,14 +474,6 @@ mod tests {
         }
     }
 
-    /// A 1x1 PNG.
-    const TINY_PNG: &[u8] = &[
-        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01,
-        0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41,
-        0x54, 0x78, 0x9c, 0x63, 0x60, 0x00, 0x02, 0x00, 0x00, 0x05, 0x00, 0x01, 0xe9, 0xfa, 0xdc, 0xd8, 0x00, 0x00, 0x00, 0x00,
-        0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-    ];
-
     #[test]
     fn given_a_deck_scaffolded_before_standard_layouts_when_new_slide_follows_an_image_slide_then_a_bare_heading_still_builds() {
         // The shape New Deck used to write: title-body-code next to the
@@ -494,7 +486,7 @@ mod tests {
         std::fs::write(dir.path().join("layouts/title-body-code.html"), builtin::LAYOUT_HTML).unwrap();
         std::fs::write(dir.path().join("layouts/title-body-image.html"), builtin::IMAGE_LAYOUT_HTML).unwrap();
         let deck_path = dir.path().join("deck.md");
-        crate::engine::images::import_image(dir.path(), "photo.png", TINY_PNG).unwrap();
+        crate::engine::images::import_image(dir.path(), "photo.png", crate::engine::image_layout::tests::TINY_PNG).unwrap();
         let before = "# Photo\n\n![](img/photo.png)\n";
 
         let output = render_source(&deck_path, before).unwrap_or_else(|err| panic!("{err}"));
