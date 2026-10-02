@@ -31,12 +31,17 @@ import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, indexAfterCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
-import { type FrontmatterStep, type HistoryStep, type PageNumbersStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inversePageNumbersStep, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
+import { type FrontmatterStep, type HistoryStep, type LayoutPinsStep, type PageNumbersStep, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyLayoutPinsStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inverseLayoutPinsStep, inversePageNumbersStep, layoutPinsStepFor, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
 import { type DeckSettingsState, frontmatterValueOf, pickChangesNothing, readDeckSettings, resolveDeckSettingPick, sameDeckSettings } from '../domain/deckSettings'
 import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
-import { type LayoutVerdict } from '../domain/layoutFit'
+import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
+import { type LayoutNameProblem, type StudioMode, layoutRows, layoutUsage, shownLayout } from '../domain/layoutScreen'
+import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
+import { editorDraft } from '../domain/layoutEditor'
+import { layoutDisplayName } from '../domain/standardLayouts'
+import type { Messages } from '../domain/messages'
 import { type ImageSlotFix, imageLayoutPin, imageSlotFixFor, parseImageSlotError, shownImageSlotFix } from '../domain/imageSlot'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
 import { buildSlideList, lastRenderedLayoutOf, manifestIndexAt, sectionStartBySourceIndex } from '../domain/slideList'
@@ -59,6 +64,7 @@ import { focusSettingsPanel, restoreFocusAfterSettingsPanel } from '../dom/setti
 import { slideRowMenuAnchor } from '../dom/slideRow'
 import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, remountSlideCanvases, setManifestKeysSource, setScriptsBlockedListener, setSlideScriptsTrusted } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
+import { createLayoutScreenStore } from '../state/layoutScreenStore'
 import { createRenderStore } from '../state/renderStore'
 import { createEditorStore } from '../state/editorStore'
 import { createDeckStore } from '../state/deckStore'
@@ -95,6 +101,7 @@ import { SlidePreview } from './SlidePreview'
 import { SlideEditor } from './SlideEditor'
 import { SlideContextMenu } from './SlideContextMenu'
 import { SlideList } from './SlideList'
+import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
 
 // Just the heading — `addSlide` attaches an explicit, collision-free
 // PageComment `key` around this (see its own comment for why).
@@ -225,6 +232,9 @@ export function Studio() {
   // reactivity tracking, which `bf debug graph`'s static analysis doesn't
   // capture. See CLAUDE.md's BarefootJS pitfalls for the full account.
   const ui = createUiStore()
+  // The layout screen (the header's Layouts mode) — see
+  // `state/layoutScreenStore.ts`; its file operations run from here.
+  const layouts = createLayoutScreenStore()
   // Undo/redo (Edit menu, Cmd+Z / Cmd+Shift+Z): one timeline of slide
   // operations and the editors' typing — see `state/historyStore.ts` and
   // `replayHistory` below.
@@ -1483,6 +1493,20 @@ export function Studio() {
     return ok ? { kind: 'done', inverse } : { kind: 'failed' }
   }
 
+  // Writes several slides' `"layout"` at once through the same
+  // `commitChange` path as every structural operation — the layout screen
+  // moving a deleted layout's slides to another — as one undoable step.
+  // The open slide stays open: no slide moves. A step that changes no text
+  // records nothing.
+  async function runLayoutPinsStep(step: LayoutPinsStep): Promise<StepOutcome> {
+    const texts = currentSlideTexts()
+    const next = applyLayoutPinsStep(texts, step)
+    if (next.every((text, i) => text === texts[i])) return { kind: 'rejected' }
+    const inverse = inverseLayoutPinsStep(texts, step)
+    const ok = await commitChange(rebuildSource(next), { kind: 'keep' })
+    return ok ? { kind: 'done', inverse } : { kind: 'failed' }
+  }
+
   // Edit menu's deck settings: writes the picked choice into the deck's
   // frontmatter as one undoable step, removing the key for peitho-core's
   // default. Page numbers
@@ -1579,17 +1603,19 @@ export function Studio() {
   // other stack; a failed commit puts the step back so it can be retried; a
   // rejected one means the history no longer matches the deck, so it is
   // dropped whole rather than left to misfire on the next press.
-  function runReplayedStep(step: StructuralStep | PageNumbersStep | FrontmatterStep): Promise<StepOutcome> {
+  function runReplayedStep(step: StructuralStep | PageNumbersStep | FrontmatterStep | LayoutPinsStep): Promise<StepOutcome> {
     switch (step.kind) {
       case 'page-numbers':
         return runPageNumbersStep(step)
+      case 'layout-pins':
+        return runLayoutPinsStep(step)
       case 'frontmatter':
         return runFrontmatterStep(step)
       default:
         return runStep(step, cmd => selectionForReplay(step, cmd, editor.selectedIndex()))
     }
   }
-  async function replayStructuralStep(step: StructuralStep | PageNumbersStep | FrontmatterStep, direction: 'undo' | 'redo'): Promise<void> {
+  async function replayStructuralStep(step: StructuralStep | PageNumbersStep | FrontmatterStep | LayoutPinsStep, direction: 'undo' | 'redo'): Promise<void> {
     const isUndo = direction === 'undo'
     const outcome = await runReplayedStep(step)
     if (outcome.kind === 'done') {
@@ -1784,7 +1810,230 @@ export function Studio() {
     } catch {
       ui.setLayoutPreviews([])
     }
+    layouts.bumpPreviewGeneration()
   }
+
+  // ---- The layout screen (the header's Layouts mode) ----
+  //
+  // Its list is the "Change Layout" picker's: the same `preview_layouts`
+  // previews, cached in `ui.layoutPreviews` until a layout file changes.
+  // Every file operation (`engine::layout_files`) is followed by
+  // `refreshLayouts`, which drops that cache and re-renders the deck, so
+  // the slides' thumbnails pick up a changed layout too: only deck.md is
+  // watched for changes.
+  const layoutNames = createMemo<string[]>(() => (ui.layoutPreviews() ?? []).map(preview => preview.name))
+  const slidesByLayout = createMemo(() => layoutUsage(slideEntries(), render.slideLayouts()))
+  const layoutRowsShown = createMemo(() => layoutRows(layoutNames(), slidesByLayout(), settings.language(), layouts.previewGeneration()))
+  function layoutFragmentOf(name: string): string {
+    return (ui.layoutPreviews() ?? []).find(preview => preview.name === name)?.fragment ?? ''
+  }
+
+  function setStudioMode(mode: StudioMode): void {
+    ui.setStudioMode(mode)
+    if (mode === 'layouts') void enterLayoutScreen()
+  }
+
+  async function enterLayoutScreen(): Promise<void> {
+    await loadLayoutPreviews()
+    const name = shownLayout(layouts.selectedLayout(), layoutNames())
+    if (name !== layouts.selectedLayout() || layouts.editor().kind === 'none') await openLayout(name)
+  }
+
+  // Shows layout `name` and reads its files into the editor. Unsaved edits
+  // to the one open now keep it open instead: they'd be lost otherwise.
+  function selectLayout(name: string): void {
+    if (name === layouts.selectedLayout()) return
+    if (layouts.editorDirty()) {
+      layouts.setNotice(settings.messages().layoutSaveFirst)
+      return
+    }
+    void openLayout(name)
+  }
+
+  async function openLayout(name: string | null): Promise<void> {
+    layouts.setSelectedLayout(name)
+    layouts.setNotice(null)
+    if (name === null) return
+    layouts.editorLoading(name)
+    try {
+      layouts.editorLoaded(name, await deckIpc.readLayout(name))
+    } catch (err) {
+      layouts.editorUnavailable(name, String(err))
+    }
+  }
+
+  // After a layout file changed: fresh previews, the slides re-rendered
+  // against the deck's new layouts, and `select` (or the layout shown, or
+  // the first) shown — its files read again unless they hold unsaved edits.
+  async function refreshLayouts(select: string | null): Promise<void> {
+    ui.setLayoutPreviews(null)
+    await loadLayoutPreviews()
+    await renderPreview(liveSource())
+    const name = shownLayout(select ?? layouts.selectedLayout(), layoutNames())
+    if (name !== layouts.selectedLayout() || !layouts.editorDirty()) await openLayout(name)
+  }
+
+  // Runs one layout-file operation with the screen's buttons disabled,
+  // showing its refusal on the screen. Resolves whether it went through.
+  async function runLayoutAction(action: () => Promise<void>): Promise<boolean> {
+    if (layouts.busy()) return false
+    layouts.setBusy(true)
+    layouts.setNotice(null)
+    try {
+      await action()
+      return true
+    } catch (err) {
+      layouts.setNotice(settings.messages().layoutActionFailed(err instanceof Error ? err.message : String(err)))
+      return false
+    } finally {
+      layouts.setBusy(false)
+    }
+  }
+
+  function layoutNameProblemText(problem: LayoutNameProblem | null, messages: Messages): string {
+    switch (problem) {
+      case null: return ''
+      case 'empty': return messages.layoutNameEmpty
+      case 'too-long': return messages.layoutNameTooLong
+      case 'invalid': return messages.layoutNameInvalid
+      case 'start': return messages.layoutNameStart
+      case 'taken': return messages.layoutNameTaken
+    }
+  }
+  // Nothing is said about a name not typed yet: the form opens empty.
+  const newLayoutProblem = createMemo(() => {
+    if (layouts.newLayoutName() === '') return ''
+    return layoutNameProblemText(layouts.newLayoutNameProblem(layoutNames()), settings.messages())
+  })
+
+  async function createLayout(): Promise<void> {
+    if (layouts.newLayoutNameProblem(layoutNames()) !== null) return
+    let created = ''
+    const ok = await runLayoutAction(async () => {
+      created = await deckIpc.createLayout(liveSource(), layouts.newLayoutName(), layouts.newLayoutTemplate() || null)
+    })
+    if (!ok) return
+    layouts.closeNewLayout()
+    await refreshLayouts(created)
+    setStatusMessage({ kind: 'layout-created', layout: created })
+  }
+
+  async function duplicateLayout(): Promise<void> {
+    const name = layouts.selectedLayout()
+    if (name === null) return
+    if (layouts.editorDirty()) {
+      layouts.setNotice(settings.messages().layoutSaveFirst)
+      return
+    }
+    let copy = ''
+    if (!await runLayoutAction(async () => { copy = await deckIpc.duplicateLayout(liveSource(), name) })) return
+    await refreshLayouts(copy)
+    setStatusMessage({ kind: 'layout-created', layout: copy })
+  }
+
+  // Pins the slide open in the slides screen to the shown layout, through
+  // the same Undo-able path as the context menu's Change Layout — after the
+  // same fit check, so a layout the slide doesn't fit is refused with
+  // peitho-core's reason instead of a build error.
+  async function applyShownLayout(): Promise<void> {
+    const name = layouts.selectedLayout()
+    const index = editor.selectedIndex()
+    if (name === null || index === null) return
+    await runLayoutAction(async () => {
+      let verdicts: LayoutVerdict[] | null = null
+      try {
+        verdicts = await deckIpc.checkSlideLayouts(liveSource(), index)
+      } catch {
+        // Unavailable: `commitChange` renders before it saves anyway.
+      }
+      const availability = availabilityOf(settledFitCheck(verdicts), name)
+      if (availability.kind === 'mismatch') throw new Error(settings.messages().layoutMismatch(name, availability.reason))
+      await changeSlideLayout(index, name)
+      setStatusMessage({ kind: 'layout-applied', layout: name })
+    })
+  }
+
+  function startLayoutDelete(): void {
+    const name = layouts.selectedLayout()
+    if (name === null) return
+    layouts.setNotice(null)
+    layouts.beginDelete(name, layoutNames(), slidesByLayout()[name] ?? [])
+  }
+
+  // Deletes the layout the delete flow is about: checks first that the deck
+  // still builds with its slides moved, then moves them (one Undo-able
+  // step — the file deletion itself can't be undone, like adding the image
+  // layout) and deletes the files.
+  async function confirmLayoutDelete(): Promise<void> {
+    const flow = layouts.confirmDeleteFlow()
+    if (flow === null || flow.kind !== 'deleting') return
+    const { name, slides, replacement } = flow
+    const ok = await runLayoutAction(async () => {
+      const texts = currentSlideTexts()
+      const original = rebuildSource(texts)
+      const step = replacement === null || slides.length === 0 ? null : layoutPinsStepFor(slides, replacement)
+      const repinned = step === null ? original : rebuildSource(applyLayoutPinsStep(texts, step))
+      await deckIpc.checkLayoutRemoval(original, repinned, name)
+      if (step !== null) {
+        let moved = false
+        await performStep(async () => {
+          const outcome = await runLayoutPinsStep(step)
+          moved = outcome.kind === 'done'
+          return outcome
+        })
+        if (!moved) throw new Error(errorMessage() ?? 'the slides could not be moved')
+      }
+      await deckIpc.deleteLayout(rebuildSource(currentSlideTexts()), name)
+    })
+    layouts.finishDelete()
+    if (!ok) return
+    await refreshLayouts(null)
+    setStatusMessage({ kind: 'layout-deleted', layout: name })
+  }
+
+  async function saveShownLayout(): Promise<void> {
+    const shown = layouts.editor()
+    if (shown.kind !== 'ready' || shown.saving) return
+    const { name } = shown
+    const texts = editorDraft(shown)
+    layouts.editorSaving()
+    try {
+      await deckIpc.saveLayout(name, texts.html, texts.css)
+    } catch (err) {
+      layouts.editorSaveFailed(name, String(err))
+      return
+    }
+    layouts.editorSaved(name, texts)
+    await refreshLayouts(name)
+    setStatusMessage({ kind: 'layout-saved', layout: name })
+  }
+
+  const deleteView = createMemo<LayoutDeleteView>(() => layouts.deleteFlow().kind)
+  const deleteText = createMemo(() => {
+    const flow = layouts.deleteFlow()
+    if (flow.kind === 'idle') return ''
+    const messages = settings.messages()
+    const label = layoutDisplayName(flow.name, settings.language())
+    return flow.kind === 'confirming' || flow.slides.length === 0
+      ? messages.deleteLayoutConfirm(label)
+      : messages.deleteLayoutMoveSlides(label, flow.slides.length)
+  })
+  const deleteChoices = createMemo(() =>
+    replacementChoices(layouts.deleteFlow(), layoutNames()).map(name => ({ name, label: layoutDisplayName(name, settings.language()) })))
+  const deleteReplacement = createMemo(() => {
+    const flow = layouts.deleteFlow()
+    return flow.kind === 'choosing-replacement' || flow.kind === 'deleting' ? flow.replacement ?? '' : ''
+  })
+  const layoutEditorMessage = createMemo(() => {
+    const shown = layouts.editor()
+    if (shown.kind === 'unavailable') return shown.message
+    if (shown.kind === 'ready') return shown.error ?? ''
+    return ''
+  })
+  const layoutEditorSaving = createMemo(() => {
+    const shown = layouts.editor()
+    return shown.kind === 'ready' && shown.saving
+  })
 
   function copySlide(index: number): void {
     ui.setClipboardSlideText(currentSlideText(index))
@@ -2157,6 +2406,9 @@ export function Studio() {
         return
       }
       if (isTypingInField()) return
+      // The slide shortcuts (arrows, Delete, Cmd+X/C/V…) would act on slides
+      // out of sight while the layout screen shows.
+      if (ui.studioMode() === 'layouts') return
       // Cmd+Z / Cmd+Shift+Z aren't handled here: left alone, they reach the
       // Edit menu's Undo/Redo accelerators, the one path for both keyboard
       // and mouse (see `onMenuHistory` above).
@@ -2306,6 +2558,8 @@ export function Studio() {
         onTogglePresentMenu={() => ui.setPresentMenuOpen(!ui.presentMenuOpen())}
         onClosePresentMenu={() => ui.setPresentMenuOpen(false)}
         onPresent={rehearsal => void handlePresent(rehearsal)}
+        studioMode={ui.studioMode()}
+        onStudioMode={setStudioMode}
       />
 
       <ScriptTrustBanner
@@ -2333,6 +2587,9 @@ export function Studio() {
         </div>
       ) : (
       <div className="flex-1 flex min-h-0">
+        {/* The slides screen: its four panels, hidden (not unmounted) while
+            the layout screen shows, so the editors keep their state. */}
+        <div data-slides-screen className={ui.studioMode() === 'slides' ? 'contents' : 'hidden'}>
         <div data-panel-rail="" className="panel-rail" hidden={ui.slidesOpen() && ui.editorOpen() && ui.previewOpen() && (ui.reviewOpen() || !render.assetBaseUrl())}>
           <PanelToggle panel="slides" language={settings.language()} hidden={ui.slidesOpen()} open={false} onToggle={() => ui.setSlidesOpen(true)} />
           <PanelToggle panel="editor" language={settings.language()} hidden={ui.editorOpen()} open={false} onToggle={() => ui.setEditorOpen(true)} />
@@ -2485,6 +2742,57 @@ export function Studio() {
             />
           </div>
         </div>
+        </div>
+        <LayoutScreen
+          language={settings.language()}
+          hidden={ui.studioMode() !== 'layouts'}
+          rows={layoutRowsShown()}
+          selectedName={layouts.selectedLayout()}
+          onSelect={selectLayout}
+          fragmentOf={layoutFragmentOf}
+          layoutPreviewStylesheet={getLayoutPreviewStylesheet}
+          canvasWidth={render.canvasWidth()}
+          canvasHeight={render.canvasHeight()}
+          listWidth={layouts.listWidth()}
+          editorWidth={layouts.editorWidth()}
+          onListResize={startColumnResize(layouts.listWidth, layouts.setListWidth, 1)}
+          onEditorResize={startColumnResize(layouts.editorWidth, layouts.setEditorWidth, 1)}
+          busy={layouts.busy()}
+          notice={layouts.notice()}
+          canApply={layouts.selectedLayout() !== null && editor.selectedIndex() !== null}
+          canDelete={layoutNames().length > 1 && layouts.selectedLayout() !== null}
+          onApply={() => void applyShownLayout()}
+          onDuplicate={() => void duplicateLayout()}
+          onStartDelete={startLayoutDelete}
+          newLayoutOpen={layouts.newLayoutOpen()}
+          newLayoutName={layouts.newLayoutName()}
+          newLayoutTemplate={layouts.newLayoutTemplate()}
+          newLayoutProblem={newLayoutProblem()}
+          onOpenNewLayout={layouts.openNewLayout}
+          onNewLayoutName={layouts.setNewLayoutName}
+          onNewLayoutTemplate={layouts.setNewLayoutTemplate}
+          onCreateLayout={() => void createLayout()}
+          onCancelNewLayout={layouts.closeNewLayout}
+          deleteView={deleteView()}
+          deleteText={deleteText()}
+          replacementChoices={deleteChoices()}
+          replacement={deleteReplacement()}
+          canConfirmDelete={canConfirmDelete(layouts.deleteFlow())}
+          onPickReplacement={name => layouts.chooseReplacement(name, layoutNames())}
+          onConfirmDelete={() => void confirmLayoutDelete()}
+          onCancelDelete={layouts.cancelDeleteFlow}
+          editorTab={layouts.editorTab()}
+          onEditorTab={layouts.setEditorTab}
+          editorReady={layouts.editor().kind === 'ready'}
+          editorMessage={layoutEditorMessage()}
+          editorHtml={editorDraft(layouts.editor()).html}
+          editorCss={editorDraft(layouts.editor()).css}
+          editorDirty={layouts.editorDirty()}
+          editorSaving={layoutEditorSaving()}
+          onType={layouts.typeInEditor}
+          onSave={() => void saveShownLayout()}
+          onRevert={layouts.revertEditor}
+        />
       </div>
       )}
 
