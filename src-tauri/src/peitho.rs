@@ -30,7 +30,9 @@ use crate::deck_variants;
 use crate::edit_menu;
 use crate::i18n::{self, Language, MenuLabels};
 use crate::engine::builtin;
-use crate::engine::crit::{self as crit_shapes, DeckSession, FinishedRound, NewReviewComment, NewReviewReply, ReviewComment, ReviewUpdate};
+use crate::engine::crit::{
+    self as crit_shapes, DeckSession, FinishedRound, NewLayoutComment, NewReviewComment, NewReviewReply, ReviewComment, ReviewUpdate,
+};
 use crate::engine::image_layout;
 use crate::engine::images;
 use crate::engine::layout_files;
@@ -1199,6 +1201,15 @@ pub fn preview_layout_draft(
     Ok(preview)
 }
 
+/// A fingerprint of this window's deck's layout files
+/// (`layout_files::layout_files_stamp`): it changes when one is added,
+/// removed or written — by the Coding Agent, say — which only deck.md's
+/// watcher wouldn't notice.
+#[tauri::command(async)]
+pub fn layout_files_stamp(window: WebviewWindow, session: State<PeithoSession>) -> Result<String, String> {
+    Ok(layout_files::layout_files_stamp(&session_deck_dir(&session, window.label())?))
+}
+
 /// Layout `name`'s HTML and own CSS, for the layout screen's editor.
 #[tauri::command(async)]
 pub fn read_layout(name: String, window: WebviewWindow, session: State<PeithoSession>) -> Result<layout_files::LayoutSource, String> {
@@ -1446,7 +1457,35 @@ pub fn crit_add_comments(
     for comment in crit_shapes::unsent_comments(&comments, &existing) {
         crit::add_comment(target.port, &target.file, comment)?;
     }
-    crit::list_comments(target.port, &target.file)
+    crit::list_all_comments(target.port, &target.file)
+}
+
+/// Adds `comments` written on the layout screen — on one layout, or on
+/// every one — and returns every comment afterwards. Each goes on its
+/// layout's HTML file when the deck has it, else on the review as a whole
+/// (`crit_shapes::layout_comment_place`); all are checked before the first
+/// is sent, and ones already there are skipped, as in `crit_add_comments`.
+#[tauri::command(async)]
+pub fn crit_add_layout_comments(
+    comments: Vec<NewLayoutComment>,
+    window: WebviewWindow,
+    session: State<PeithoSession>,
+) -> Result<Vec<ReviewComment>, String> {
+    let deck_dir = session_deck_dir(&session, window.label())?;
+    let placed = comments
+        .into_iter()
+        .map(|comment| {
+            let place = crit_shapes::layout_comment_place(&comment, |path| deck_dir.join(path).is_file())?;
+            crit_shapes::new_layout_comment_body(&comment, &place)?;
+            Ok((comment, place))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let target = deck_crit_session(&session, window.label())?;
+    let existing = crit::list_all_comments(target.port, &target.file)?;
+    for (comment, place) in crit_shapes::unsent_layout_comments(&placed, &existing) {
+        crit::add_layout_comment(target.port, &target.file, comment, place)?;
+    }
+    crit::list_all_comments(target.port, &target.file)
 }
 
 /// Adds `replies` under their comments in the deck's crit session and
@@ -1464,11 +1503,12 @@ pub fn crit_add_replies(
     let target = deck_crit_session(&session, window.label())?;
     // Replies already there (`crit_shapes::unsent_replies`) are skipped, so
     // retrying a send whose finish failed doesn't post them twice.
-    let existing = crit::list_comments(target.port, &target.file)?;
+    let existing = crit::list_all_comments(target.port, &target.file)?;
     for reply in crit_shapes::unsent_replies(&replies, &existing) {
-        crit::add_reply(target.port, &target.file, reply)?;
+        let place = crit_shapes::place_of(&existing, &reply.comment_id)?;
+        crit::add_reply(target.port, &target.file, reply, &place)?;
     }
-    crit::list_comments(target.port, &target.file)
+    crit::list_all_comments(target.port, &target.file)
 }
 
 /// Marks comment `id` resolved and returns every comment afterwards. crit
@@ -1477,8 +1517,18 @@ pub fn crit_add_replies(
 #[tauri::command(async)]
 pub fn crit_resolve_comment(id: String, window: WebviewWindow, session: State<PeithoSession>) -> Result<Vec<ReviewComment>, String> {
     let target = deck_crit_session(&session, window.label())?;
-    crit::resolve_comment(target.port, &target.file, &id)?;
-    crit::list_comments(target.port, &target.file)
+    let place = crit_shapes::place_of(&crit::list_all_comments(target.port, &target.file)?, &id)?;
+    crit::resolve_comment(target.port, &target.file, &id, &place)?;
+    crit::list_all_comments(target.port, &target.file)
+}
+
+/// The layout folders (`layouts`, `css`) this window's deck has, which a
+/// review session on it covers too (`crit::session_args`): the agent's
+/// `crit` names the same ones to join Studio's session
+/// (`domain/agentConnect.ts`).
+#[tauri::command]
+pub fn crit_session_dirs(window: WebviewWindow, session: State<PeithoSession>) -> Result<Vec<String>, String> {
+    Ok(crit::session_args(&session_deck_path(&session, window.label())?)?.into_iter().skip(1).collect())
 }
 
 /// Finishes the review round: the agent waiting in crit gets the comments.
@@ -1497,7 +1547,7 @@ pub fn crit_finish(window: WebviewWindow, session: State<PeithoSession>) -> Resu
 #[tauri::command(async)]
 pub fn crit_list_comments(window: WebviewWindow, session: State<PeithoSession>) -> Result<Vec<ReviewComment>, String> {
     let target = deck_crit_session(&session, window.label())?;
-    crit::list_comments(target.port, &target.file)
+    crit::list_all_comments(target.port, &target.file)
 }
 
 /// Every window's deck settings, and which window the Edit menu's
