@@ -11,6 +11,10 @@ import {
   LAYOUT_MENU_CLOSED, openOnLayout, openOnList, withLayoutMenuFit, withLayoutMenuPosition, type LayoutMenu,
 } from '../domain/layoutMenu'
 import type { LayoutVerdict } from '../domain/layoutFit'
+import {
+  NO_DRAFT_PREVIEW, draftPreviewFailed, draftPreviewRendered, requestDraftPreview, resetDraftPreview,
+  type DraftPreview, type RenderedDraft,
+} from '../domain/layoutDraftPreview'
 
 const LIST_WIDTH = 220
 const EDITOR_WIDTH = 420
@@ -138,6 +142,25 @@ export function createLayoutScreenStore() {
     setMenu(LAYOUT_MENU_CLOSED)
   }
 
+  // The layout editor's live preview (`domain/layoutDraftPreview.ts`).
+  const [draftPreview, setDraftPreview] = createSignal<DraftPreview>(NO_DRAFT_PREVIEW)
+  /** Starts a draft preview of `name`; returns the number its answer must
+   * carry. */
+  function requestPreview(name: string): number {
+    const next = requestDraftPreview(draftPreview(), name)
+    setDraftPreview(next.state)
+    return next.seq
+  }
+  function previewRendered(seq: number, rendered: RenderedDraft): void {
+    setDraftPreview(current => draftPreviewRendered(current, seq, rendered))
+  }
+  function previewFailed(seq: number, message: string): void {
+    setDraftPreview(current => draftPreviewFailed(current, seq, message))
+  }
+  function resetPreview(): void {
+    setDraftPreview(resetDraftPreview)
+  }
+
   // True while a create/duplicate/delete/apply runs: their buttons are
   // disabled meanwhile, so a second click can't start another beside it.
   const [busy, setBusy] = createSignal(false)
@@ -156,5 +179,6 @@ export function createLayoutScreenStore() {
     editorLoading, editorLoaded, editorUnavailable, typeInEditor, revertEditor, editorSaving, editorSaved, editorSaveFailed,
     busy, setBusy, notice, setNotice,
     menu, openMenuOnLayout, openMenuOnList, settleMenuFit, moveMenu, closeMenu,
+    draftPreview, requestPreview, previewRendered, previewFailed, resetPreview,
   }
 }

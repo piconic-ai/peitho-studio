@@ -104,6 +104,8 @@ import { SlideList } from './SlideList'
 import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
 import { LayoutContextMenu, type LayoutMenuEntry } from './LayoutContextMenu'
 import { focusDeleteLayoutDialog, focusNewLayoutName } from '../dom/layoutModals'
+import { draftPreviewError, previewToDraw } from '../domain/layoutDraftPreview'
+import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { type LayoutMenuAction, layoutMenuItems, layoutMenuLabel, layoutMenuPosition, layoutMenuTarget, layoutMenuTitle } from '../domain/layoutMenu'
 
 // Just the heading — `addSlide` attaches an explicit, collision-free
@@ -448,7 +450,10 @@ export function Studio() {
       monospace: true,
       spellcheck: false,
       lineWrapping: false,
-      onChange: text => { layouts.typeInEditor(field, text) },
+      onChange: text => {
+        layouts.typeInEditor(field, text)
+        scheduleDraftPreview()
+      },
     })
   }
 
@@ -472,6 +477,37 @@ export function Studio() {
   function revertShownLayout(): void {
     layouts.revertEditor()
     syncLayoutEditors()
+    resetDraftPreview()
+  }
+
+  // The live preview: typing that pauses for `DRAFT_PREVIEW_DELAY_MS`
+  // renders the shown layout's draft (`preview_layout_draft`, writing
+  // nothing). Only the latest request's answer is shown (the store drops
+  // older ones); a draft that doesn't render leaves the last good one up,
+  // with the reason under it. A draft back to the saved files shows their
+  // preview again.
+  const DRAFT_PREVIEW_DELAY_MS = 250
+  let draftPreviewTimer: ReturnType<typeof setTimeout> | undefined
+  function scheduleDraftPreview(): void {
+    clearTimeout(draftPreviewTimer)
+    draftPreviewTimer = setTimeout(() => { void renderDraftPreview() }, DRAFT_PREVIEW_DELAY_MS)
+  }
+  async function renderDraftPreview(): Promise<void> {
+    const shown = layouts.editor()
+    if (shown.kind !== 'ready' || !layouts.editorDirty()) {
+      layouts.resetPreview()
+      return
+    }
+    const seq = layouts.requestPreview(shown.name)
+    try {
+      layouts.previewRendered(seq, await deckIpc.previewLayoutDraft(shown.name, shown.draft.html, shown.draft.css))
+    } catch (err) {
+      layouts.previewFailed(seq, err instanceof Error ? err.message : String(err))
+    }
+  }
+  function resetDraftPreview(): void {
+    clearTimeout(draftPreviewTimer)
+    layouts.resetPreview()
   }
 
   // A host remounts only with the whole editor pane (a deck-lifecycle
@@ -735,6 +771,21 @@ export function Studio() {
   }
   createEffect(() => {
     layoutPreviewStylesheet.replaceSync(ui.layoutPreviewStylesheetText())
+  })
+
+  // The layout screen's preview: the saved files' preview with the sheet
+  // above, or the editor's rendered draft with that draft's own CSS.
+  const layoutPreviewDraw = createMemo(() => {
+    const name = layouts.selectedLayout()
+    return previewToDraw(layouts.draftPreview(), name, name === null ? '' : layoutFragmentOf(name))
+  })
+  const layoutDraftStylesheet = createSlideStylesheet(ui.layoutPreviewStylesheetText())
+  function getLayoutDraftStylesheet(): CSSStyleSheet {
+    return layoutDraftStylesheet
+  }
+  createEffect(() => {
+    const css = layoutPreviewDraw().css
+    layoutDraftStylesheet.replaceSync(css === null ? ui.layoutPreviewStylesheetText() : scopeRootToHost(splitFontFaceRules(css).rest))
   })
 
   // The error bar's way out of peitho-core's "no slot accepts image" (see
@@ -1938,6 +1989,7 @@ export function Studio() {
   }
 
   async function openLayout(name: string | null): Promise<void> {
+    resetDraftPreview()
     layouts.setSelectedLayout(name)
     layouts.setNotice(null)
     if (name === null) return
@@ -2918,6 +2970,9 @@ export function Studio() {
           onContextMenu={openLayoutMenu}
           fragmentOf={layoutFragmentOf}
           layoutPreviewStylesheet={getLayoutPreviewStylesheet}
+          previewFragment={layoutPreviewDraw().fragment}
+          previewStylesheet={getLayoutDraftStylesheet}
+          previewError={draftPreviewError(layouts.draftPreview(), layouts.selectedLayout())}
           canvasWidth={render.canvasWidth()}
           canvasHeight={render.canvasHeight()}
           listWidth={layouts.listWidth()}

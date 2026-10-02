@@ -700,3 +700,74 @@ test('Given a long line in the layout HTML, then it is not wrapped but scrolls s
   await expect.poll(() => scroller.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true)
   await expect(editorContent(page, 'body')).toHaveClass(/cm-lineWrapping/)
 })
+
+// Live preview while the layout is edited (`preview_layout_draft`, mocked:
+// the draft HTML is the preview's fragment).
+test.describe('the layout preview while editing', () => {
+  const QUOTE = { quote: { html: '<section class="peitho-slide layout-quote"><h1>saved</h1></section>', css: '' } }
+  const preview = (page: Page) => page.locator('[data-layout-preview]')
+
+  test('Given an edit to the layout HTML, when typing pauses, then the preview shows the draft without saving it', async ({ page }) => {
+    const deck = deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' })
+    await openLayoutScreen(page, deck)
+    await row(page, 'quote').click()
+    await expect(preview(page).locator('h1')).toHaveText('saved')
+
+    await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>draft</h1></section>', 'layout-html')
+
+    await expect(preview(page).locator('h1')).toHaveText('draft')
+    expect(deck.invokedCommands).not.toContain('save_layout')
+    expect(deck.layoutFiles?.quote.html).toBe(QUOTE.quote.html)
+  })
+
+  test('Given a draft that does not render, then the last good preview stays and the error shows by it; typing goes on', async ({ page }) => {
+    await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' }))
+    await row(page, 'quote').click()
+    await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>good</h1></section>', 'layout-html')
+    await expect(preview(page).locator('h1')).toHaveText('good')
+
+    await fillEditor(page, '<div>broken</div>', 'layout-html')
+
+    await expect(page.locator('[data-layout-preview-error]')).toContainText('a layout needs a <section> element')
+    await expect(preview(page).locator('h1')).toHaveText('good')
+    await page.keyboard.type('!')
+    await expect.poll(() => editorText(page, 'layout-html')).toBe('<div>broken</div>!')
+
+    await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>fixed</h1></section>', 'layout-html')
+    await expect(preview(page).locator('h1')).toHaveText('fixed')
+    await expect(page.locator('[data-layout-preview-error]')).toBeHidden()
+  })
+
+  test('Given an earlier draft whose preview answers last, then the latest draft\'s preview is the one shown', async ({ page }) => {
+    await openLayoutScreen(page, deckOf({
+      layoutFiles: QUOTE,
+      layoutFragment: '<h1>saved</h1>',
+      layoutDraftPreviewDelayMs: html => (html.includes('slow') ? 1_200 : 0),
+    }))
+    await row(page, 'quote').click()
+
+    await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>slow</h1></section>', 'layout-html')
+    await page.waitForTimeout(400)
+    await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>fast</h1></section>', 'layout-html')
+
+    await expect(preview(page).locator('h1')).toHaveText('fast')
+    await page.waitForTimeout(1_200)
+    await expect(preview(page).locator('h1')).toHaveText('fast')
+  })
+
+  test('Given a draft previewed, when it is reverted or another layout is opened, then the saved preview comes back', async ({ page }) => {
+    await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' }))
+    await row(page, 'quote').click()
+    await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>draft</h1></section>', 'layout-html')
+    await expect(preview(page).locator('h1')).toHaveText('draft')
+
+    await page.locator('[data-revert-layout]').click()
+    await expect(preview(page).locator('h1')).toHaveText('saved')
+
+    await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>draft again</h1></section>', 'layout-html')
+    await expect(preview(page).locator('h1')).toHaveText('draft again')
+    await page.locator('[data-revert-layout]').click()
+    await row(page, 'title-body').click()
+    await expect(preview(page).locator('h1')).toHaveText('saved')
+  })
+})

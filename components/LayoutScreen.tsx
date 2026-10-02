@@ -25,6 +25,15 @@ export interface LayoutScreenProps {
   /** A layout's placeholder preview (`preview_layouts`), `''` for none. */
   fragmentOf: (name: string) => string
   layoutPreviewStylesheet: () => CSSStyleSheet
+  /** What the selected layout's preview draws: the editor's unsaved draft
+   * once it rendered (`preview_layout_draft`), else the saved files'. */
+  previewFragment: string
+  /** The sheet that preview is drawn with (an accessor: a constructed
+   * object, see CLAUDE.md's BarefootJS pitfalls on `const` props). */
+  previewStylesheet: () => CSSStyleSheet
+  /** Why the latest draft didn't render, `''` for nothing — the preview
+   * keeps the last one that did. */
+  previewError: string
   canvasWidth: number
   canvasHeight: number
   listWidth: number
@@ -208,8 +217,7 @@ export function LayoutScreen(props: LayoutScreenProps) {
               ref={el => {
                 createEffect(() => {
                   const canvas = { width: props.canvasWidth, height: props.canvasHeight }
-                  const name = props.selectedName
-                  mountSlideCanvas(el, props.layoutPreviewStylesheet(), name === null ? '' : props.fragmentOf(name), canvas, 'thumbnail')
+                  mountSlideCanvas(el, props.previewStylesheet(), props.previewFragment, canvas, 'thumbnail')
                   observeCanvasScale(el, canvas)
                 })
               }}
@@ -217,6 +225,7 @@ export function LayoutScreen(props: LayoutScreenProps) {
             />
           </div>
         </div>
+        <p role="alert" data-layout-preview-error hidden={props.previewError === ''} className="shrink-0 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words border-t border-border">{props.previewError}</p>
       </div>
       {/* New Layout, opened from the list's empty-space menu: an in-app
           modal (never `window.confirm`/`prompt`, CLAUDE.md), permanently

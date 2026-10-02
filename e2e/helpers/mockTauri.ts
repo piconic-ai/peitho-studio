@@ -146,6 +146,10 @@ export interface MockDeck {
    * `repinned` still names the layout, and `save_layout` refuses HTML with
    * no `<section`. */
   layoutFiles?: Record<string, { html: string; css: string | null }>
+  /** Milliseconds `preview_layout_draft` waits for the given draft HTML —
+   * defaults to 0. Make an earlier draft slower than a later one to
+   * deliver the answers out of order. */
+  layoutDraftPreviewDelayMs?: (html: string) => number
   /** Milliseconds `delete_layout` waits before resolving/rejecting —
    * defaults to 0. Set this to act (e.g. Undo) while a deletion is in
    * flight. */
@@ -363,6 +367,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
     if (cmd === 'check_slide_layouts' && deck.checkSlideLayoutsDelayMs) await sleep(deck.checkSlideLayoutsDelayMs)
     if (cmd === 'render_draft' && deck.renderDraftDelayMs) await sleep(deck.renderDraftDelayMs)
     if (cmd === 'delete_layout' && deck.deleteLayoutDelayMs) await sleep(deck.deleteLayoutDelayMs)
+    if (cmd === 'preview_layout_draft' && deck.layoutDraftPreviewDelayMs) await sleep(deck.layoutDraftPreviewDelayMs(args.html as string))
     if (cmd.startsWith('import_deck_image_') && deck.importImageDelayMs) await sleep(deck.importImageDelayMs)
     deck.onInvoke?.(cmd, args)
     if (error !== null && error !== undefined) throw new Error(error)
@@ -391,6 +396,14 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         await deck.beforeSave?.(args.content as string)
         deck.source = args.content as string
         return null
+      // Stands in for `engine::layout_files::preview_layout_draft`: the draft
+      // HTML itself is the preview's fragment, and its CSS the CSS; HTML with
+      // no `<section` is refused, as `save_layout` is here.
+      case 'preview_layout_draft': {
+        const html = args.html as string
+        if (!html.includes('<section')) throw new Error('a layout needs a <section> element')
+        return { fragment: html, css: args.css as string }
+      }
       case 'preview_layouts': return { previews: (deck.layouts ?? []).map(name => ({ name, fragment: deck.layoutFragment ?? '' })), css: '' }
       case 'list_deck_variants': return deck.deckVariants ?? []
       case 'check_slide_layouts':

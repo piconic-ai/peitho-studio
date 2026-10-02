@@ -101,6 +101,9 @@ export interface DeckIpc {
    * `content`. */
   deleteLayout(content: string, name: string): Promise<void>
   readLayout(name: string): Promise<LayoutFiles>
+  /** Layout `name`'s placeholder preview rendered from unsaved `html` and
+   * `css`, writing nothing — the layout editor's live preview. */
+  previewLayoutDraft(name: string, html: string, css: string): Promise<{ fragment: string; css: string }>
   /** Overwrites layout `name`'s HTML and CSS; refuses HTML that doesn't
    * parse as a layout, and an edit that would stop `content` (the deck
    * source now) from building as it does. */
@@ -182,6 +185,7 @@ export function createTauriDeckIpc(): DeckIpc {
     checkLayoutRemoval: (original, repinned, name) => invoke('check_layout_removal', { original, repinned, name }),
     deleteLayout: (content, name) => invoke('delete_layout', { content, name }),
     readLayout: name => invoke('read_layout', { name }),
+    previewLayoutDraft: (name, html, css) => invoke('preview_layout_draft', { name, html, css }),
     saveLayout: (content, name, html, css) => invoke('save_layout', { content, name, html, css }),
     presentDeck: rehearsal => invoke('present_deck', { rehearsal }),
     reportDeckSettings: settings => invoke('report_deck_settings', { settings }),

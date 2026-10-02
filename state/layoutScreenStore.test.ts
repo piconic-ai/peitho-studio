@@ -144,3 +144,21 @@ describe('the layout list\'s right-click menu', () => {
     })
   })
 })
+
+describe('the layout editor\'s live preview', () => {
+  test('spec: Given two requests, When the older one answers last, Then the newer one\'s draft stays; a reset drops both', () => {
+    createRoot(() => {
+      const layouts = createLayoutScreenStore()
+      const older = layouts.requestPreview('quote')
+      const newer = layouts.requestPreview('quote')
+      layouts.previewRendered(newer, { fragment: 'new', css: '' })
+      layouts.previewRendered(older, { fragment: 'old', css: '' })
+      expect(layouts.draftPreview().shown?.fragment).toBe('new')
+      layouts.previewFailed(older, 'stale')
+      expect(layouts.draftPreview().error).toBeNull()
+      layouts.resetPreview()
+      layouts.previewRendered(newer, { fragment: 'late', css: '' })
+      expect(layouts.draftPreview().shown).toBeNull()
+    })
+  })
+})

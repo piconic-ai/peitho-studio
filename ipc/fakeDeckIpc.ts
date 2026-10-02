@@ -73,6 +73,7 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
     checkLayoutRemoval: async (original, repinned, name) => { record('checkLayoutRemoval', [original, repinned, name]) },
     deleteLayout: async (content, name) => { record('deleteLayout', [content, name]) },
     readLayout: async name => { record('readLayout', [name]); return { html: '', css: null } },
+    previewLayoutDraft: async (name, html, css) => { record('previewLayoutDraft', [name, html, css]); return { fragment: html, css } },
     saveLayout: async (content, name, html, css) => { record('saveLayout', [content, name, html, css]) },
     presentDeck: async rehearsal => { record('presentDeck', [rehearsal]) },
     reportDeckSettings: async settings => { record('reportDeckSettings', [settings]) },

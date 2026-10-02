@@ -1175,6 +1175,21 @@ pub fn delete_layout(content: String, name: String, window: WebviewWindow, sessi
     layout_files::delete_layout(&session_deck_path(&session, window.label())?, &content, &name)
 }
 
+/// Layout `name`'s placeholder preview rendered from the editor's unsaved
+/// `html` and `css`, for the layout screen's live preview. Writes nothing.
+/// `async`: it renders a deck, and touches no shared state (like
+/// `preview_layouts`, it never goes through the live deck's `AssetServer`).
+#[tauri::command(async)]
+pub fn preview_layout_draft(
+    name: String,
+    html: String,
+    css: String,
+    window: WebviewWindow,
+    session: State<PeithoSession>,
+) -> Result<layout_files::LayoutDraftPreview, String> {
+    layout_files::preview_layout_draft(&session_deck_path(&session, window.label())?, &name, &html, &css)
+}
+
 /// Layout `name`'s HTML and own CSS, for the layout screen's editor.
 #[tauri::command(async)]
 pub fn read_layout(name: String, window: WebviewWindow, session: State<PeithoSession>) -> Result<layout_files::LayoutSource, String> {

@@ -25,6 +25,7 @@ use super::assets::ResolvedAssets;
 use super::builtin;
 use super::image_layout::{dispatched_layout, refuse_taken, write_new_file, Written};
 use super::layout_fit::{self, LayoutFit};
+use super::layout_preview;
 use super::pipeline;
 
 /// The longest name a layout may be given — a file stem, and a class name.
@@ -400,6 +401,42 @@ pub fn save_layout(deck_path: &Path, content: &str, name: &str, html: &str, css:
         std::fs::write(&css_path, css).map_err(|err| format!("failed to write {}: {err}", css_path.display()))?;
     }
     Ok(())
+}
+
+/// A layout's placeholder preview (`layout_preview::placeholder_source`)
+/// rendered from its unsaved HTML and CSS: the slide's fragment, and the
+/// deck CSS it's drawn with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LayoutDraftPreview {
+    pub fragment: String,
+    pub css: String,
+}
+
+/// Renders layout `name`'s placeholder preview with `html` and `css` in
+/// place of its files, writing nothing — the layout editor's live preview
+/// while the user types. The rest of the deck's layouts and CSS are as on
+/// disk (and the CSS set as `save_layout` would leave it,
+/// `css_with_layout_css`). An error when `name` isn't a plain layout name,
+/// the HTML doesn't parse as a layout, or the placeholder doesn't build on
+/// it (a required slot placeholder text can't fill, CSS peitho-core
+/// refuses).
+pub fn preview_layout_draft(deck_path: &Path, name: &str, html: &str, css: &str) -> Result<LayoutDraftPreview, String> {
+    let deck_dir = pipeline::deck_dir_of(deck_path);
+    let (_, css_path) = layout_paths(deck_dir, name)?;
+    let layout = parse_layout(name, html).map_err(|err| err.to_string())?;
+    let source = layout_preview::placeholder_source(&layout);
+    let mut parsed = pipeline::parse_source(deck_path, &source)?;
+    let others: Vec<Layout> = parsed.assets.layouts.iter().filter(|other| other.name() != name).cloned().collect();
+    parsed.assets.layouts = Layouts::new(others.into_iter().chain([layout]).collect()).map_err(|err| err.to_string())?;
+    let css_files = std::mem::take(&mut parsed.assets.css);
+    parsed.assets.css = css_with_layout_css(css_files, name, css, css_path.is_file(), deck_dir.join("css").is_dir());
+    let output = pipeline::render_parsed(deck_path, parsed)?;
+    let fragment = output
+        .fragments
+        .get(layout_preview::PREVIEW_KEY)
+        .cloned()
+        .ok_or_else(|| format!("the '{name}' layout's preview has no slide"))?;
+    Ok(LayoutDraftPreview { fragment, css: output.css })
 }
 
 /// `current` without layout `name`: an error when the deck has no such
@@ -980,6 +1017,81 @@ mod tests {
         save_layout(&deck_path, &broken, "big-number", &html, css).unwrap();
 
         assert_eq!(std::fs::read_to_string(dir.path().join("css/big-number.css")).unwrap(), css);
+    }
+
+    // --- preview_layout_draft ---
+
+    #[test]
+    fn given_edited_html_and_css_when_previewed_then_the_preview_uses_them_and_no_file_changes() {
+        let (dir, deck_path) = standard_deck(PINNED);
+        let before = files_under(dir.path());
+        let before_html = std::fs::read_to_string(dir.path().join("layouts/title-slide.html")).unwrap();
+        let html = "<section class=\"peitho-slide layout-title-slide edited\"><h1><slot name=\"title\" accepts=\"inline\" arity=\"1\"></slot></h1></section>";
+        let css = ".peitho-slide.layout-title-slide { color: rebeccapurple; }";
+
+        let preview = preview_layout_draft(&deck_path, "title-slide", html, css).unwrap_or_else(|err| panic!("{err}"));
+
+        assert!(preview.fragment.contains("edited"), "{}", preview.fragment);
+        assert!(preview.fragment.contains("Placeholder title"), "{}", preview.fragment);
+        assert!(preview.css.contains("rebeccapurple"));
+        assert_eq!(files_under(dir.path()), before);
+        assert_eq!(std::fs::read_to_string(dir.path().join("layouts/title-slide.html")).unwrap(), before_html);
+    }
+
+    #[test]
+    fn given_empty_css_when_previewed_then_the_layout_renders_without_its_saved_rules() {
+        let (dir, deck_path) = standard_deck(PINNED);
+        std::fs::write(dir.path().join("css/big-number.css"), ".peitho-slide.layout-big-number { color: tomato; }\n").unwrap();
+        let html = std::fs::read_to_string(dir.path().join("layouts/big-number.html")).unwrap();
+
+        let preview = preview_layout_draft(&deck_path, "big-number", &html, "").unwrap_or_else(|err| panic!("{err}"));
+
+        assert!(!preview.fragment.is_empty());
+        assert!(!preview.css.contains("tomato"), "the saved CSS is replaced by the (empty) draft");
+        assert!(std::fs::read_to_string(dir.path().join("css/big-number.css")).unwrap().contains("tomato"));
+    }
+
+    #[test]
+    fn adversarial_html_that_is_not_a_layout_is_an_error_and_writes_nothing() {
+        let (dir, deck_path) = standard_deck(PINNED);
+        let before = files_under(dir.path());
+        for html in [
+            "",
+            "<div>no section</div>",
+            "<section></section><section></section>",
+            "<section><slot accepts=\"inline\" arity=\"1\"></slot></section>",
+            "<section><slot name=\"title\" accepts=\"nonsense\" arity=\"1\"></slot></section>",
+        ] {
+            assert!(preview_layout_draft(&deck_path, "title-slide", html, "").is_err(), "{html:?}");
+        }
+        assert_eq!(files_under(dir.path()), before);
+    }
+
+    #[test]
+    fn adversarial_a_draft_whose_placeholder_cannot_build_is_an_error() {
+        // A required code slot gets no placeholder text.
+        let (_dir, deck_path) = standard_deck(PINNED);
+        let html = "<section><pre><slot name=\"code\" accepts=\"code\" arity=\"1\"></slot></pre></section>";
+        assert!(preview_layout_draft(&deck_path, "title-slide", html, "").is_err());
+    }
+
+    #[test]
+    fn adversarial_css_peitho_core_refuses_and_path_like_names_are_errors() {
+        let (dir, deck_path) = standard_deck(PINNED);
+        let html = std::fs::read_to_string(dir.path().join("layouts/title-slide.html")).unwrap();
+        let err = preview_layout_draft(&deck_path, "title-slide", &html, ".slot-nowhere { color: red; }").unwrap_err();
+        assert!(err.contains("slot-nowhere"), "{err}");
+        for name in ["../deck", "a/b", "", ".hidden"] {
+            assert!(preview_layout_draft(&deck_path, name, COVER, "").is_err(), "{name:?}");
+        }
+    }
+
+    #[test]
+    fn given_a_deck_on_the_built_in_layout_and_theme_when_a_new_layout_is_previewed_then_it_renders_beside_it() {
+        let (_dir, deck_path) = deck_with(&[], "# A\n");
+        let preview = preview_layout_draft(&deck_path, "cover", COVER, "h1 { color: teal; }").unwrap_or_else(|err| panic!("{err}"));
+        assert!(preview.fragment.contains("Placeholder title"), "{}", preview.fragment);
+        assert!(preview.css.contains("teal"));
     }
 
     // --- css_with_layout_css ---
