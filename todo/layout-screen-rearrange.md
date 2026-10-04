@@ -126,8 +126,10 @@ tags: [layout, ui, screen, viewport]
   描画、PC/スマホ切替、列幅のドラッグ。mockTauriのe2eは、下書きが実際の
   `preview_layout_draft`(peitho-core)の出力で描かれること、実機WKWebViewで
   再マウントされたShadow DOMキャンバスが描き直されることまでは保証しない。
-- [ ] サムネイルが小さくて細部が見づらくないか(既定幅は220→280pxに広げた。
-  さらに要るか)
+- [ ] サムネイルが小さくて細部が見づらくないか(既定幅はエディタと等分に
+  変更済み — 上記「実機確認後の追加」2)
+- [ ] 実機での追加分の確認: 見出しの削除、等分の既定幅、選択行サムネイルの
+  クリックでのコメント(スロット名の表示、実際のpeitho-core出力でのスロット特定)
 
 ## 実装メモ
 
@@ -138,4 +140,37 @@ tags: [layout, ui, screen, viewport]
   マウントし直す。`data-canvas="fixed"`のレイアウトはスマホ表示でもデッキの形。
 - 切替UIは`components/ViewportToggle.tsx`に切り出して両画面で共有。
 
+## 実機確認後の追加(2026-10-04)
+
+ユーザーが実機で試した結果の要望。PR #163に追加:
+
+1. **一覧の見出し「Layouts」を削除**。PC/スマホ切替は同じ行(エディタのタブ行と
+   同じ高さの、文字の無いツールバー)に右寄せで残す。画面名はウィンドウの
+   Slides / Layouts切替が既に示している。
+2. **一覧の既定幅=エディタの幅**。初めてレイアウト画面が表示された時、エディタと
+   一覧が共有する幅を測り、その半分を一覧の幅にする
+   (`domain/layoutScreen.ts`の`initialLayoutListWidth`、
+   `state/layoutScreenStore.ts`の`settleListWidth`)。ドラッグの範囲
+   (180〜640px、`dom/columnResize.ts`の`COLUMN_WIDTH_BOUNDS`)に収めるので、
+   非常に広い画面では一覧は640pxで止まりエディタの方が広くなる(最初のドラッグで
+   幅が飛ばないように)。ドラッグ後は、画面を行き来してもドラッグした幅のまま。
+   コメント列は自分の幅のまま。
+3. **選択中の行のサムネイルを左クリック→AIコメントボックス**(スライド画面の
+   プレビュークリックと同じ`CommentBox`)。未選択の行のクリックは従来通り選択だけ。
+   ラベルはクリックしたスロットを名指しする: `Layout title-body › slot "title"`、
+   スロット外なら`Layout title-body › whole layout`。コメントは従来通り
+   `layouts/<name>.html`へのファイル単位のコメントで、スロットはラベル
+   (`[Layout title-body › slot "title" (layouts/title-body.html, css/title-body.css)] …`)
+   にだけ載る。ドラッグ・右クリックでは開かない。ボックスはウィンドウ内に収める。
+   - スロットの特定: peitho-coreは埋まったスロットの中身を`slot-<name>`クラスの
+     要素で包む(`render_slot`、v1.34.0で実出力を確認、Rustテスト
+     `given_a_layouts_placeholder_rendered_then_each_filled_slots_content_is_wrapped_in_its_slot_class`
+     で固定)。サムネイルのキャンバスは`pointer-events: none`なので、クリック位置を
+     含む`slot-*`要素の箱のうち最小のものを選ぶ(`slotAtPoint`)。
+   - ピン/ハイライトは**未実装**: スライドのプレビューのピンは選択スライドの
+     プレビュー1枚に重ねる仕組みで、サムネイル各行への重ね描きは安くないため
+     見送った。
+
 ## 先送り事項
+
+- レイアウトコメントのピン/クリックしたスロットのハイライト(上記3)。
