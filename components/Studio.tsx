@@ -2230,7 +2230,9 @@ export function Studio() {
       await getCurrentWindow().close()
       return
     }
-    layouts.setNotice(settings.messages().layoutCloseUnsaved)
+    const messages = settings.messages()
+    // A conflict didn't fail to save: it waits for "load" or "keep mine".
+    layouts.setNotice(leaveBlocker(layouts.editor()) === 'conflict' ? messages.layoutCloseConflict : messages.layoutCloseUnsaved)
   }
 
   // Leaving the layout screen saves its draft first; resolves whether the
