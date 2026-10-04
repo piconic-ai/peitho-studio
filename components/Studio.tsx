@@ -517,15 +517,15 @@ export function Studio() {
     await queueLayoutSave()
     return leaveBlocker(layouts.editor()) === null
   }
-  // `flushLayoutEditor` before the editor is left — another layout opened,
-  // the slides screen, a new layout. When it can't be, says why and
-  // resolves `false`: the caller stays where it is.
   // Tells this window's close whether there's a draft to save first
   // (`report_layout_draft`); quiet with no deck open.
   createEffect(() => {
     const pending = layouts.editorDirty()
     untrack(() => { deckIpc.reportLayoutDraft(pending).catch(() => {}) })
   })
+  // `flushLayoutEditor` before the editor is left — another layout opened,
+  // the slides screen, a new layout. When it can't be, says why and
+  // resolves `false`: the caller stays where it is.
   async function leaveLayoutEditor(): Promise<boolean> {
     if (await flushLayoutEditor()) return true
     const messages = settings.messages()
