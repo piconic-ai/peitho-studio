@@ -3,7 +3,7 @@
 // only when asked for, and what the panel shows of each — what it's on, the
 // text, when, and which slide a click on it opens.
 import type { ReviewComment } from './critReview'
-import { REVIEW_AUTHOR, liveReplies, type PendingReply } from './reviewComment'
+import { REVIEW_AUTHOR, layoutTargetLabel, liveReplies, splitLayoutLabel, type LayoutCommentTarget, type PendingReply } from './reviewComment'
 
 /** One line of the comments panel. `id`: the crit comment a `comment` or
  * `reply` row belongs to (what reply and resolve act on), or an unsent
@@ -24,6 +24,9 @@ export interface ReviewRow {
   resolved: boolean
   /** The slide a click on the row opens (0-based), when known. */
   slideIndex: number | null
+  /** The layout a click on the row opens — on the layout screen — for a
+   * comment on a layout or on every layout; `null` otherwise. */
+  layout: LayoutCommentTarget | null
   /** The reply box opens right under this row: the thread's last row,
    * while a reply to it is being written. */
   replyBoxHere: boolean
@@ -68,6 +71,7 @@ export interface UnsentRowSource {
   body: string
   createdAt: string
   slideIndex: number | null
+  layout: LayoutCommentTarget | null
 }
 
 export interface ReviewRowsInput {
@@ -79,15 +83,19 @@ export interface ReviewRowsInput {
   replyingTo: string | null
   /** The slide (0-based) a sent comment is on, when known. */
   slideOf: (comment: ReviewComment) => number | null
+  /** The layout a sent comment is on, when it's a layout comment. */
+  layoutOf: (comment: ReviewComment) => LayoutCommentTarget | null
 }
 
 /** A sent comment's text split back into the label Studio put in front of
- * it (`[Slide 2 › heading "Hi"] Make it bigger`) and the text itself. The
- * slide key a label may carry is for the agent and for finding the slide,
- * so the target leaves it out. */
+ * it (`[Slide 2 › heading "Hi"] Make it bigger`, `[Layout cover (…)] …`)
+ * and the text itself. The slide key a label may carry, and the files a
+ * layout label names, are for the agent, so the target leaves them out. */
 export function splitCommentLabel(body: string): { target: string | null; text: string } {
   const match = /^\[(Slide \d+)(?: \(key: [A-Za-z0-9_-]+\))?([^\n]*?)\] ([\s\S]*)$/.exec(body)
-  return match ? { target: match[1] + match[2], text: match[3] } : { target: null, text: body }
+  if (match) return { target: match[1] + match[2], text: match[3] }
+  const layout = splitLayoutLabel(body)
+  return layout ? { target: layoutTargetLabel(layout.target), text: layout.text } : { target: null, text: body }
 }
 
 function timeOf(createdAt: string | null): number {
@@ -107,14 +115,15 @@ export function reviewRows(input: ReviewRowsInput): ReviewRow[] {
     if (comment.resolved && !input.showResolved) return
     const { target, text } = splitCommentLabel(comment.body)
     const slideIndex = input.slideOf(comment)
+    const layout = slideIndex === null ? input.layoutOf(comment) : null
     const rows: RowDraft[] = [{
       key: `comment:${comment.id}`, kind: 'comment', id: comment.id, byAgent: comment.author !== REVIEW_AUTHOR, author: comment.author,
-      target, body: text, createdAt: comment.createdAt, resolved: comment.resolved, slideIndex, replyBoxHere: false, replyHere: false,
+      target, body: text, createdAt: comment.createdAt, resolved: comment.resolved, slideIndex, layout, replyBoxHere: false, replyHere: false,
     }]
     for (const reply of comment.replies) {
       rows.push({
         key: `reply:${comment.id}:${reply.id}`, kind: 'reply', id: comment.id, byAgent: reply.author !== REVIEW_AUTHOR, author: reply.author,
-        target: null, body: reply.body, createdAt: reply.createdAt, resolved: comment.resolved, slideIndex, replyBoxHere: false, replyHere: false,
+        target: null, body: reply.body, createdAt: reply.createdAt, resolved: comment.resolved, slideIndex, layout, replyBoxHere: false, replyHere: false,
       })
     }
     // Only an open thread holds its unsent replies; one resolved meanwhile
@@ -123,7 +132,7 @@ export function reviewRows(input: ReviewRowsInput): ReviewRow[] {
       if (reply.commentId !== comment.id) continue
       rows.push({
         key: `unsent-reply:${reply.id}`, kind: 'unsent-reply', id: reply.id, byAgent: false, author: REVIEW_AUTHOR,
-        target: null, body: reply.body, createdAt: reply.createdAt, resolved: comment.resolved, slideIndex, replyBoxHere: false, replyHere: false,
+        target: null, body: reply.body, createdAt: reply.createdAt, resolved: comment.resolved, slideIndex, layout, replyBoxHere: false, replyHere: false,
       })
     }
     const last = rows[rows.length - 1]
@@ -137,7 +146,7 @@ export function reviewRows(input: ReviewRowsInput): ReviewRow[] {
       order: input.comments.length + i,
       rows: [{
         key: `unsent:${comment.id}`, kind: 'unsent-comment', id: comment.id, byAgent: false, author: REVIEW_AUTHOR,
-        target: comment.label, body: comment.body.trim(), createdAt: comment.createdAt, resolved: false, slideIndex: comment.slideIndex, replyBoxHere: false, replyHere: false,
+        target: comment.label, body: comment.body.trim(), createdAt: comment.createdAt, resolved: false, slideIndex: comment.slideIndex, layout: comment.layout, replyBoxHere: false, replyHere: false,
       }],
     })
   })
@@ -149,7 +158,7 @@ export function reviewRows(input: ReviewRowsInput): ReviewRow[] {
     // Each on its own: its thread is gone or closed.
     groups.push([{
       key: `unsent-reply:${reply.id}`, kind: 'unsent-reply', id: reply.id, byAgent: false, author: REVIEW_AUTHOR,
-      target: null, body: reply.body, createdAt: reply.createdAt, resolved: false, slideIndex: null, replyBoxHere: false, replyHere: false,
+      target: null, body: reply.body, createdAt: reply.createdAt, resolved: false, slideIndex: null, layout: null, replyBoxHere: false, replyHere: false,
     }])
   }
   return markThreads(groups)

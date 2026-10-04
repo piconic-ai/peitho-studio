@@ -11,11 +11,11 @@ import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
-  REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, newReviewComment, pollsForAgent, previewPinsOf, reviewStatusText, slideIndexOfComment,
-  slideSpans, targetLabel,
-  type PreviewPin,
+  REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, layoutTargetLabel, layoutTargetOfComment, newLayoutComment, newReviewComment, pollsForAgent,
+  previewPinsOf, reviewStatusText, slideIndexOfComment, slideSpans, targetLabel,
+  type LayoutCommentTarget, type PreviewPin,
 } from '../domain/reviewComment'
-import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, showsConnectGuide } from '../domain/agentConnect'
+import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, connectTargetOf, showsConnectGuide } from '../domain/agentConnect'
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
 import { focusCommentBox, focusUnsentEdit, placePreviewPins, revealReviewThread, watchPreviewLayout, type PreviewClick } from '../dom/previewComments'
 import { createReviewStore } from '../state/reviewStore'
@@ -37,7 +37,7 @@ import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatt
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
-import { type LayoutNameProblem, type StudioMode, layoutRows, layoutUsage, shownLayout } from '../domain/layoutScreen'
+import { type LayoutNameProblem, type StudioMode, layoutFilesChanged, layoutRows, layoutUsage, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
 import { editorDraft, editorLayoutName, type LayoutField } from '../domain/layoutEditor'
 import { layoutDisplayName } from '../domain/standardLayouts'
@@ -165,6 +165,7 @@ export function Studio() {
       void refreshDeckVariants()
       review.reset()
       void refreshReview()
+      void noteLayoutFiles()
     } catch (err) {
       setErrorMessage(String(err))
       // A failure here often means the path was a Recent entry pointing
@@ -995,6 +996,9 @@ export function Studio() {
   // sent — replies, resolved state — is read back from crit.
   const critIpc = createTauriCritIpc()
   const review = createReviewStore()
+  // The layout folders the deck has (`critIpc.sessionDirs`): with no
+  // session yet, the connect card's command names them (`connectTargetOf`).
+  const [sessionDirs, setSessionDirs] = createSignal<string[]>([])
 
   // Each slide's comment key and span in the source the preview shows.
   const renderedSlideSpans = createMemo(() => slideSpans(render.renderedSource(), render.manifest()?.slides ?? []))
@@ -1008,6 +1012,12 @@ export function Studio() {
   // without crit (a dev build that never ran `crit:fetch`) there is simply
   // no session; acting on one is what reports errors.
   async function refreshReview(): Promise<void> {
+    // The layout folders the connect card's command names; quiet on failure
+    // too, keeping what was last known.
+    critIpc.sessionDirs().then(dirs => {
+      const next = dirs ?? []
+      if (next.join('/') !== sessionDirs().join('/')) setSessionDirs(next)
+    }, () => {})
     const generation = ++reviewGeneration
     try {
       const session = (await critIpc.sessionStatus()) ?? { kind: 'none' as const }
@@ -1061,17 +1071,27 @@ export function Studio() {
   }
 
   function addComment(): void {
-    if (review.commitBox() !== null) void startReviewSession()
+    const filed = review.box().kind === 'open-layout' ? review.commitLayoutBox() : review.commitBox()
+    if (filed !== null) void startReviewSession()
+  }
+
+  // The layout screen's menu opens the box on a layout, or on every layout
+  // (todo/layout-review-comments.md), where the menu was.
+  function openLayoutCommentBox(target: LayoutCommentTarget, from: { x: number; y: number }): void {
+    const at = clampMenuPosition(from, { width: 336, height: 180 }, { width: window.innerWidth, height: window.innerHeight }, 8)
+    review.openLayoutBox(target, at)
+    focusCommentBox()
   }
 
   const commentBoxLabel = createMemo(() => {
     const box = review.box()
+    if (box.kind === 'open-layout') return layoutTargetLabel(box.target)
     return box.kind === 'open' ? targetLabel(slideNumberOf(box.slideKey), box.target) : ''
   })
 
   const commentBoxAt = createMemo(() => {
     const box = review.box()
-    return box.kind === 'open' ? box.at : { x: 0, y: 0 }
+    return box.kind === 'closed' ? { x: 0, y: 0 } : box.at
   })
 
   // Hands every unsent comment and reply to the agent waiting in crit and
@@ -1092,12 +1112,15 @@ export function Studio() {
         const index = slides.findIndex(slide => slide.key === comment.slideKey)
         return newReviewComment(comment, source, slides[index]?.span ?? null, index + 1 || slideNumberOf(comment.slideKey))
       })
+      const layoutPending = review.layoutPending()
+      const layoutComments = layoutPending.map(newLayoutComment)
       const sendable = review.sendableReplies()
       const replies = sendable.map(reply => ({ commentId: reply.commentId, body: reply.body, author: REVIEW_AUTHOR }))
       if (comments.length > 0) await critIpc.addComments(comments)
+      if (layoutComments.length > 0) await critIpc.addLayoutComments(layoutComments)
       if (replies.length > 0) await critIpc.addReplies(replies)
       await critIpc.finish()
-      review.markSent(pending, comments.map(comment => comment.body), sendable)
+      review.markSent(pending, comments.map(comment => comment.body), sendable, layoutPending)
     } catch (err) {
       review.setError(settings.messages().reviewFailed(String(err)))
     } finally {
@@ -1167,8 +1190,9 @@ export function Studio() {
   // back to plain `crit` on the agent's PATH.
   const [bundledCritPath, setBundledCritPath] = createSignal<string | null>(null)
   critIpc.bundledCritPath().then(setBundledCritPath, () => setBundledCritPath(null))
-  const connectPrompt = createMemo(() => agentConnectPrompt(deck.deckPath(), bundledCritPath() ?? 'crit', settings.language()))
-  const connectCommand = createMemo(() => agentConnectCommand(deck.deckPath(), bundledCritPath() ?? 'crit'))
+  const connectTarget = createMemo(() => connectTargetOf(review.session(), sessionDirs()))
+  const connectPrompt = createMemo(() => agentConnectPrompt(deck.deckPath(), bundledCritPath() ?? 'crit', settings.language(), connectTarget()))
+  const connectCommand = createMemo(() => agentConnectCommand(deck.deckPath(), bundledCritPath() ?? 'crit', connectTarget()))
   const [connectCopied, setConnectCopied] = createSignal<'prompt' | 'command' | null>(null)
   let connectCopiedTimer: number | undefined
   async function copyConnectText(which: 'prompt' | 'command'): Promise<void> {
@@ -1190,13 +1214,19 @@ export function Studio() {
     return reviewRows({
       comments: review.comments(),
       unsentReplies: review.pendingReplies(),
-      unsent: review.pending().map(comment => {
-        const number = slideNumberOf(comment.slideKey)
-        return { id: comment.id, label: targetLabel(number, comment.target), body: comment.body, createdAt: comment.createdAt, slideIndex: number > 0 ? number - 1 : null }
-      }),
+      unsent: [
+        ...review.pending().map(comment => {
+          const number = slideNumberOf(comment.slideKey)
+          return { id: comment.id, label: targetLabel(number, comment.target), body: comment.body, createdAt: comment.createdAt, slideIndex: number > 0 ? number - 1 : null, layout: null }
+        }),
+        ...review.layoutPending().map(comment => (
+          { id: comment.id, label: layoutTargetLabel(comment.target), body: comment.body, createdAt: comment.createdAt, slideIndex: null, layout: comment.target }
+        )),
+      ],
       showResolved: review.showResolved(),
       replyingTo: review.replyDraft()?.commentId ?? null,
       slideOf: comment => slideIndexOfComment(source, slides, comment),
+      layoutOf: layoutTargetOfComment,
     }).map(row => ({ ...row, time: formatReviewTime(row.createdAt, now), editing: isUnsentEditing(row, review.unsentEdit()?.id ?? null) }))
   })
   const reviewResolvedCount = createMemo(() => resolvedCount(review.comments()))
@@ -1976,6 +2006,43 @@ export function Studio() {
     await selectSlide(index)
   }
 
+  // A comment on a layout opens the layout screen on it; one on every
+  // layout, the layout screen as it was.
+  async function selectLayoutFromReview(target: LayoutCommentTarget): Promise<void> {
+    if (ui.studioMode() !== 'layouts') {
+      ui.setStudioMode('layouts')
+      layouts.closeMenu()
+      await enterLayoutScreen()
+    }
+    if (target.kind === 'layout' && layoutNames().includes(target.name)) selectLayout(target.name)
+  }
+
+  // The layout files' fingerprint as last seen (`layout_files_stamp`). Only
+  // deck.md is watched, so a layout the Coding Agent edits is noticed when
+  // crit reports something (its edit to a file the session covers, or its
+  // reply): a changed fingerprint refreshes the layouts and the slides.
+  let layoutStamp: string | null = null
+  async function readLayoutStamp(): Promise<string | null> {
+    try {
+      return (await deckIpc.layoutFilesStamp()) ?? ''
+    } catch {
+      return null
+    }
+  }
+  // Takes the files as they are now as seen — on opening a deck, and after
+  // Studio changed them itself.
+  async function noteLayoutFiles(): Promise<void> {
+    const stamp = await readLayoutStamp()
+    if (stamp !== null) layoutStamp = stamp
+  }
+  async function syncLayoutFiles(): Promise<void> {
+    const stamp = await readLayoutStamp()
+    if (stamp === null) return
+    const previous = layoutStamp
+    layoutStamp = stamp
+    if (layoutFilesChanged(previous, stamp)) await refreshLayouts(null)
+  }
+
   function setStudioMode(mode: StudioMode): void {
     ui.setStudioMode(mode)
     layouts.closeMenu()
@@ -2017,6 +2084,7 @@ export function Studio() {
   // against the deck's new layouts, and `select` (or the layout shown, or
   // the first) shown — its files read again unless they hold unsaved edits.
   async function refreshLayouts(select: string | null): Promise<void> {
+    void noteLayoutFiles()
     ui.setLayoutPreviews(null)
     await loadLayoutPreviews()
     await renderPreview(liveSource())
@@ -2162,6 +2230,7 @@ export function Studio() {
 
   function runLayoutMenuAction(action: LayoutMenuAction): void {
     const name = layoutMenuTarget(layouts.menu())
+    const at = layoutMenuPosition(layouts.menu())
     layouts.closeMenu()
     switch (action) {
       case 'new-layout':
@@ -2180,6 +2249,12 @@ export function Studio() {
       case 'delete':
         startLayoutDelete(name)
         focusDeleteLayoutDialog()
+        return
+      case 'comment-layout':
+        if (name !== null) openLayoutCommentBox({ kind: 'layout', name }, at)
+        return
+      case 'comment-all-layouts':
+        openLayoutCommentBox({ kind: 'all-layouts' }, at)
         return
       default: {
         const _exhaustive: never = action
@@ -2633,6 +2708,7 @@ export function Studio() {
     const unlistenReview = critIpc.onReviewEvent(() => {
       noteAgentActivity()
       void refreshReview()
+      void syncLayoutFiles()
     })
     const unlistenMenuUndo = deckIpc.onMenuUndo(() => { onMenuHistory('undo') })
     const unlistenMenuRedo = deckIpc.onMenuRedo(() => { onMenuHistory('redo') })
@@ -3057,6 +3133,7 @@ export function Studio() {
               resolvedToggleLabel={review.showResolved() ? settings.messages().hideResolved : settings.messages().showResolved(reviewResolvedCount())}
               onToggleResolved={review.toggleShowResolved}
               onSelectSlide={index => void selectSlideFromReview(index)}
+              onSelectLayout={target => void selectLayoutFromReview(target)}
               highlightedThread={highlightedThread()}
               replyText={review.replyDraft()?.text ?? ''}
               onSend={() => void sendReview()}
@@ -3099,7 +3176,7 @@ export function Studio() {
 
       <CommentBox
         language={settings.language()}
-        open={review.box().kind === 'open'}
+        open={review.box().kind !== 'closed'}
         label={commentBoxLabel()}
         draft={review.boxDraft()}
         left={commentBoxAt().x}

@@ -108,6 +108,10 @@ export interface DeckIpc {
    * parse as a layout, and an edit that would stop `content` (the deck
    * source now) from building as it does. */
   saveLayout(content: string, name: string, html: string, css: string): Promise<void>
+  /** A fingerprint of the deck's layout files (`layouts/*.html`,
+   * `css/*.css`): it changes when one is added, removed or written — by
+   * the Coding Agent, say. Only deck.md itself is watched for changes. */
+  layoutFilesStamp(): Promise<string>
   presentDeck(rehearsal: boolean): Promise<void>
   /** Tells the Edit menu's deck settings what this window's deck holds
    * (checks and current-value labels), shown while this window is in
@@ -185,6 +189,7 @@ export function createTauriDeckIpc(): DeckIpc {
     checkLayoutRemoval: (original, repinned, name) => invoke('check_layout_removal', { original, repinned, name }),
     deleteLayout: (content, name) => invoke('delete_layout', { content, name }),
     readLayout: name => invoke('read_layout', { name }),
+    layoutFilesStamp: () => invoke('layout_files_stamp'),
     previewLayoutDraft: (name, html, css) => invoke('preview_layout_draft', { name, html, css }),
     saveLayout: (content, name, html, css) => invoke('save_layout', { content, name, html, css }),
     presentDeck: rehearsal => invoke('present_deck', { rehearsal }),

@@ -102,6 +102,8 @@ export interface Messages {
   editLayout: string
   duplicateLayout: string
   deleteLayout: string
+  commentOnLayout: string
+  commentOnAllLayouts: string
   layoutUsage: (count: number) => string
   /** Why Delete is off for the deck's only layout. */
   onlyLayoutCannotBeDeleted: string
@@ -302,6 +304,8 @@ const en: Messages = {
   editLayout: 'Edit Layout',
   duplicateLayout: 'Duplicate Layout',
   deleteLayout: 'Delete Layout',
+  commentOnLayout: 'Comment on This Layout…',
+  commentOnAllLayouts: 'Comment on All Layouts…',
   layoutUsage: count => (count === 0 ? 'Unused' : count === 1 ? '1 slide' : `${String(count)} slides`),
   onlyLayoutCannotBeDeleted: "The deck's only layout can't be deleted",
   deleteLayoutConfirm: layout => `Delete "${layout}"? Its files are removed from layouts/ and css/.`,
@@ -490,6 +494,8 @@ const ja: Messages = {
   editLayout: 'レイアウトを編集',
   duplicateLayout: 'レイアウトを複製',
   deleteLayout: 'レイアウトを削除',
+  commentOnLayout: 'このレイアウトにコメント…',
+  commentOnAllLayouts: 'レイアウト全体にコメント…',
   layoutUsage: count => (count === 0 ? '未使用' : `${String(count)}枚で使用中`),
   onlyLayoutCannotBeDeleted: 'デッキに1つしかないレイアウトは削除できません',
   deleteLayoutConfirm: layout => `「${layout}」を削除しますか? layouts/ と css/ からファイルが削除されます。`,

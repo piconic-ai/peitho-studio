@@ -5,7 +5,8 @@
 // starting its next round, and `reply` an agent answering a comment. Also
 // what the mocked e2e suite answers the crit commands with
 // (`e2e/helpers/mockTauri.ts`).
-import type { CritDeckSession, CritIpc, CritReviewEvent, NewReviewComment, NewReviewReply, ReviewComment } from './critIpc'
+import { layoutHtmlFile } from '../domain/reviewComment'
+import type { CommentPlace, CritDeckSession, CritIpc, CritReviewEvent, NewLayoutComment, NewReviewComment, NewReviewReply, ReviewComment } from './critIpc'
 
 export interface RecordedCritCall {
   method: keyof CritIpc
@@ -39,6 +40,8 @@ export interface FakeCritOptions {
   critPath?: string | null
   /** The time stamped on each comment and reply added. */
   now?: () => string
+  /** What `sessionDirs` answers — defaults to none (a deck with no layouts/ or css/). */
+  sessionDirs?: string[]
 }
 
 export const FAKE_CRIT_PATH = '/Applications/Peitho Studio.app/Contents/MacOS/crit'
@@ -67,6 +70,7 @@ export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
     return {
       createdAt: now(),
       id: `c_${String(nextId++)}`,
+      place: { kind: 'deck' },
       lines: { start: comment.startLine, end: comment.endLine },
       body: comment.body,
       quote: comment.quote === '' ? null : comment.quote,
@@ -74,6 +78,13 @@ export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
       resolved: false,
       replies: [],
     }
+  }
+
+  // As `engine::crit::layout_comment_place` puts it for a deck whose
+  // layouts all have their own file: on that file, or on the review.
+  function toLayoutComment(comment: NewLayoutComment): ReviewComment {
+    const place: CommentPlace = comment.layout === null ? { kind: 'review' } : { kind: 'file', path: `layouts/${comment.layout}.html` }
+    return { createdAt: now(), id: `${place.kind === 'review' ? 'r' : 'c'}_${String(nextId++)}`, place, lines: null, body: comment.body, quote: null, author: comment.author, resolved: false, replies: [] }
   }
 
   function commentById(id: string): ReviewComment {
@@ -118,6 +129,15 @@ export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
       comments.push(...added.map(toComment))
       return structuredClone(comments)
     },
+    addLayoutComments: async added => {
+      record('addLayoutComments', added)
+      if (added.some(comment => comment.body.trim() === '' || comment.author.trim() === '' || (comment.layout !== null && layoutHtmlFile(comment.layout) === null))) {
+        throw new Error('a layout comment is malformed')
+      }
+      found()
+      comments.push(...added.map(toLayoutComment))
+      return structuredClone(comments)
+    },
     addReplies: async replies => {
       record('addReplies', replies)
       if (replies.some(isMalformedReply)) throw new Error('a reply is malformed')
@@ -141,6 +161,10 @@ export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
       record('listComments')
       found()
       return structuredClone(comments)
+    },
+    sessionDirs: async () => {
+      record('sessionDirs')
+      return [...(options.sessionDirs ?? [])]
     },
     onReviewEvent: callback => {
       listeners.add(callback)

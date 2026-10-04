@@ -109,6 +109,70 @@ pub fn deck_file_in(info: &CritSessionInfo, deck_path: &Path) -> Option<String> 
     info.files.iter().find(|file| normalize(&info.cwd.join(file)).as_deref() == Some(deck.as_path())).cloned()
 }
 
+/// The folders next to the deck file that hold its layouts: a review
+/// session covers them too, so a comment on a layout lands on its file.
+pub const LAYOUT_DIRS: [&str; 2] = ["layouts", "css"];
+
+/// What `crit` is run with on a deck (in the deck's folder): the deck file,
+/// then each of `LAYOUT_DIRS` the deck has (`has_dir`) — crit refuses a
+/// folder that isn't there. crit tells sessions apart by these arguments
+/// (in any order), so the agent's `crit` (`domain/agentConnect.ts`) joins
+/// Studio's session only when it is run with the same ones.
+pub fn session_args(deck_file_name: &str, has_dir: impl Fn(&str) -> bool) -> Vec<String> {
+    std::iter::once(deck_file_name.to_string()).chain(LAYOUT_DIRS.iter().filter(|dir| has_dir(dir)).map(|dir| dir.to_string())).collect()
+}
+
+/// The deck's folder as the session knows it, with a trailing `/` — `""`
+/// when crit runs in the deck's folder itself. `deck_file` is the deck's
+/// path in the session (`deck_file_in`).
+fn deck_dir_prefix(deck_file: &str) -> &str {
+    deck_file.rfind('/').map_or("", |at| &deck_file[..=at])
+}
+
+/// A file of the deck (`path`, relative to the deck's folder) as the
+/// session knows it: crit runs at a git repository's root when the deck is
+/// in one, and names files from there.
+pub fn session_path(deck_file: &str, path: &str) -> String {
+    format!("{}{path}", deck_dir_prefix(deck_file))
+}
+
+/// `path` (as the session knows it) relative to the deck's folder — the
+/// way back from `session_path`. `None` outside that folder.
+pub fn deck_relative_path(deck_file: &str, path: &str) -> Option<String> {
+    path.strip_prefix(deck_dir_prefix(deck_file)).filter(|rest| !rest.is_empty()).map(str::to_string)
+}
+
+/// Whether `path` (relative to the deck's folder) is one of the deck's
+/// layout files: `layouts/<name>.html` or `css/<name>.css`, directly in
+/// that folder.
+fn is_layout_file(path: &str) -> bool {
+    let in_dir = |dir: &str, ext: &str| {
+        path.strip_prefix(dir)
+            .and_then(|rest| rest.strip_prefix('/'))
+            .and_then(|file| file.strip_suffix(ext))
+            .is_some_and(|stem| !stem.is_empty() && !stem.contains('/'))
+    };
+    in_dir("layouts", ".html") || in_dir("css", ".css")
+}
+
+/// Those of `files` (a session's, as `/api/session` lists them) that are
+/// the deck's layout files (`is_layout_file`), as the session knows them.
+pub fn layout_files_in_session(files: &[String], deck_file: &str) -> Vec<String> {
+    files
+        .iter()
+        .filter(|file| deck_relative_path(deck_file, file).is_some_and(|path| is_layout_file(&path)))
+        .cloned()
+        .collect()
+}
+
+/// Layout `name`'s HTML file relative to the deck's folder, or why `name`
+/// can't be one (it must be a plain file stem, so the path stays inside
+/// `layouts/`).
+pub fn layout_html_path(name: &str) -> Result<String, String> {
+    let name = super::layout_files::validate_layout_name(name, &[])?;
+    Ok(format!("layouts/{name}.html"))
+}
+
 /// A session found reviewing the open deck.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeckSessionMatch {
@@ -230,6 +294,18 @@ pub struct LineRange {
     pub end: u32,
 }
 
+/// Where a comment sits in the session: on the deck file, on another file
+/// of the deck (a layout's HTML — `path` relative to the deck's folder, as
+/// `layouts/cover.html`), or on the review as a whole (crit's review-level
+/// comments, which carry no file).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum CommentPlace {
+    Deck,
+    File { path: String },
+    Review,
+}
+
 /// A comment in the session and the replies under it, as Studio shows it.
 /// crit renumbers comment ids between review rounds, so a comment is
 /// followed by its `lines` and `quote`, not its `id`.
@@ -237,6 +313,7 @@ pub struct LineRange {
 #[serde(rename_all = "camelCase")]
 pub struct ReviewComment {
     pub id: String,
+    pub place: CommentPlace,
     /// `None` for a comment on the whole file (crit's line 0).
     pub lines: Option<LineRange>,
     pub body: String,
@@ -300,9 +377,10 @@ fn nonempty(value: Option<String>) -> Option<String> {
     value.filter(|value| !value.is_empty())
 }
 
-/// The comments `GET /api/file/comments?path=…` returns. An empty quote is
-/// read as none.
-pub fn parse_comments(json: &str) -> Result<Vec<ReviewComment>, String> {
+/// The comments `GET /api/file/comments?path=…` (or, for review-level
+/// comments, `GET /api/comments`) returns, each at `place`. An empty quote
+/// is read as none.
+pub fn parse_comments(json: &str, place: &CommentPlace) -> Result<Vec<ReviewComment>, String> {
     // crit answers `null` for a file with no comments yet.
     let comments: Option<Vec<CommentJson>> = serde_json::from_str(json).map_err(|err| format!("unexpected crit comments: {err}"))?;
     Ok(comments
@@ -310,6 +388,7 @@ pub fn parse_comments(json: &str) -> Result<Vec<ReviewComment>, String> {
         .into_iter()
         .map(|comment| ReviewComment {
             id: comment.id,
+            place: place.clone(),
             lines: line_range(comment.start_line, comment.end_line),
             body: comment.body,
             quote: comment.quote.filter(|quote| !quote.is_empty()),
@@ -395,6 +474,93 @@ pub fn comments_endpoint(file: &str) -> String {
 /// ("/resolve"). The id is encoded as one path segment.
 pub fn comment_endpoint(id: &str, action: &str, file: &str) -> String {
     format!("/api/comment/{}{action}?path={}", percent_encode(id, b""), percent_encode(file, b"/"))
+}
+
+/// The endpoint for comment `id` at `place` (`comment_endpoint`'s
+/// `action`s): a review-level comment has routes of its own, without a
+/// file. `deck_file` is the deck's path in the session.
+pub fn comment_endpoint_at(id: &str, action: &str, place: &CommentPlace, deck_file: &str) -> String {
+    match place {
+        CommentPlace::Deck => comment_endpoint(id, action, deck_file),
+        CommentPlace::File { path } => comment_endpoint(id, action, &session_path(deck_file, path)),
+        CommentPlace::Review => format!("/api/review-comment/{}{action}", percent_encode(id, b"")),
+    }
+}
+
+/// Where a new comment at `place` is posted: a file's comments, or the
+/// review's own (`POST /api/comments`).
+pub fn add_endpoint_at(place: &CommentPlace, deck_file: &str) -> String {
+    match place {
+        CommentPlace::Deck => comments_endpoint(deck_file),
+        CommentPlace::File { path } => comments_endpoint(&session_path(deck_file, path)),
+        CommentPlace::Review => "/api/comments".to_string(),
+    }
+}
+
+/// A comment on one of the deck's layouts (`layout`: its name), or on all
+/// of them (`None`) — written on the layout screen. No lines: the preview
+/// of a layout points at nothing in its HTML.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewLayoutComment {
+    pub layout: Option<String>,
+    pub body: String,
+    pub author: String,
+}
+
+/// Where `comment` goes: on layout `name`'s HTML file as a whole when the
+/// deck has that file (`has_file`, given its path relative to the deck's
+/// folder), else on the review — a comment on every layout, or on a
+/// layout with no file of its own yet (the built-in one) — its label
+/// saying what it is about. A name that can't be a layout's is refused.
+pub fn layout_comment_place(comment: &NewLayoutComment, has_file: impl Fn(&str) -> bool) -> Result<CommentPlace, String> {
+    let Some(name) = &comment.layout else { return Ok(CommentPlace::Review) };
+    let path = layout_html_path(name)?;
+    Ok(if has_file(&path) { CommentPlace::File { path } } else { CommentPlace::Review })
+}
+
+#[derive(Serialize)]
+struct NewWholeCommentJson<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scope: Option<&'a str>,
+    body: &'a str,
+    author: &'a str,
+}
+
+/// The JSON body that posts `comment` at `place` (`layout_comment_place`):
+/// a comment on a whole file (crit's `scope: "file"`), or a review-level
+/// one. Refused without a body or an author, or for the deck file —
+/// comments there are on lines (`new_comment_body`).
+pub fn new_layout_comment_body(comment: &NewLayoutComment, place: &CommentPlace) -> Result<String, String> {
+    if comment.body.trim().is_empty() {
+        return Err("a comment needs a body".to_string());
+    }
+    if comment.author.trim().is_empty() {
+        return Err("a comment needs an author".to_string());
+    }
+    let scope = match place {
+        CommentPlace::File { .. } => Some("file"),
+        CommentPlace::Review => None,
+        CommentPlace::Deck => return Err("a comment on the deck file is on its lines".to_string()),
+    };
+    serde_json::to_string(&NewWholeCommentJson { scope, body: &comment.body, author: &comment.author }).map_err(|err| err.to_string())
+}
+
+/// Those of `comments` (each with where it goes) not yet in the session:
+/// an unresolved comment at the same place with the same body and author
+/// is taken to be the same one, as in `unsent_comments`.
+pub fn unsent_layout_comments<'a>(comments: &'a [(NewLayoutComment, CommentPlace)], existing: &[ReviewComment]) -> Vec<&'a (NewLayoutComment, CommentPlace)> {
+    comments
+        .iter()
+        .filter(|(comment, place)| {
+            !existing.iter().any(|sent| !sent.resolved && sent.place == *place && sent.body == comment.body && sent.author == comment.author)
+        })
+        .collect()
+}
+
+/// Where comment `id` is among `comments`, or why it can't be acted on.
+pub fn place_of(comments: &[ReviewComment], id: &str) -> Result<CommentPlace, String> {
+    comments.iter().find(|comment| comment.id == id).map(|comment| comment.place.clone()).ok_or_else(|| format!("no comment {id} in the review session"))
 }
 
 /// The author Studio's comments carry (`REVIEW_AUTHOR` in
@@ -515,6 +681,7 @@ pub fn unsent_comments<'a>(comments: &'a [NewReviewComment], existing: &[ReviewC
 
 fn is_same_comment(comment: &NewReviewComment, sent: &ReviewComment) -> bool {
     !sent.resolved
+        && sent.place == CommentPlace::Deck
         && sent.lines == Some(LineRange { start: comment.start_line, end: comment.end_line })
         && sent.body == comment.body
         && sent.author == comment.author
@@ -683,9 +850,10 @@ mod tests {
         let json = r##"[{"id":"c_ead7d5","start_line":5,"end_line":5,"body":"Make it bigger","quote":"# Hello","anchor":"# Hello","author":"Studio","scope":"line","created_at":"2026-09-28T14:38:37Z","updated_at":"2026-09-28T14:38:51Z","carried_forward":true,"review_round":1,"replies":[{"id":"rp_35db49","body":"Made it bigger","author":"Agent","created_at":"2026-09-28T14:38:51Z","review_round":1}]}]"##;
         // When they are read, Then the comment and its reply come back.
         assert_eq!(
-            parse_comments(json).unwrap(),
+            parse_comments(json, &CommentPlace::Deck).unwrap(),
             vec![ReviewComment {
                 id: "c_ead7d5".into(),
+                place: CommentPlace::Deck,
                 lines: Some(LineRange { start: 5, end: 5 }),
                 body: "Make it bigger".into(),
                 quote: Some("# Hello".into()),
@@ -705,7 +873,7 @@ mod tests {
     #[test]
     fn comment_without_replies_or_quote_reads_as_empty_thread_and_no_quote() {
         let json = r#"[{"id":"c1","start_line":2,"end_line":4,"body":"b","author":"a"},{"id":"c2","start_line":1,"end_line":1,"body":"b","quote":"","author":"a"}]"#;
-        let comments = parse_comments(json).unwrap();
+        let comments = parse_comments(json, &CommentPlace::Deck).unwrap();
         assert_eq!(comments[0].replies, vec![]);
         assert_eq!(comments[0].quote, None);
         assert_eq!(comments[0].lines, Some(LineRange { start: 2, end: 4 }));
@@ -715,7 +883,7 @@ mod tests {
     #[test]
     fn comment_without_or_with_an_empty_time_reads_as_no_time() {
         let json = r#"[{"id":"c1","start_line":1,"end_line":1,"body":"b","author":"a"},{"id":"c2","start_line":1,"end_line":1,"body":"b","author":"a","created_at":"","replies":[{"id":"r","body":"x","author":"y","created_at":""}]}]"#;
-        let comments = parse_comments(json).unwrap();
+        let comments = parse_comments(json, &CommentPlace::Deck).unwrap();
         assert_eq!(comments[0].created_at, None);
         assert_eq!(comments[1].created_at, None);
         assert_eq!(comments[1].replies[0].created_at, None);
@@ -724,13 +892,13 @@ mod tests {
     #[test]
     fn comment_on_line_zero_is_a_whole_file_comment() {
         let json = r#"[{"id":"c1","start_line":0,"end_line":0,"body":"overall","author":"a","scope":"file"}]"#;
-        assert_eq!(parse_comments(json).unwrap()[0].lines, None);
+        assert_eq!(parse_comments(json, &CommentPlace::Deck).unwrap()[0].lines, None);
     }
 
     #[test]
     fn comment_with_negative_or_reversed_lines_is_read_leniently() {
         let json = r#"[{"id":"c1","start_line":-1,"end_line":3,"body":"b"},{"id":"c2","start_line":7,"end_line":3,"body":"b"}]"#;
-        let comments = parse_comments(json).unwrap();
+        let comments = parse_comments(json, &CommentPlace::Deck).unwrap();
         assert_eq!(comments[0].lines, None);
         assert_eq!(comments[1].lines, Some(LineRange { start: 7, end: 7 }));
     }
@@ -738,19 +906,19 @@ mod tests {
     #[test]
     fn unknown_fields_and_a_resolved_flag_are_handled() {
         let json = r#"[{"id":"c1","start_line":1,"end_line":1,"body":"b","author":"a","resolved":true,"future_field":{"x":1}}]"#;
-        assert!(parse_comments(json).unwrap()[0].resolved);
+        assert!(parse_comments(json, &CommentPlace::Deck).unwrap()[0].resolved);
     }
 
     #[test]
     fn no_comments_yet_reads_as_empty() {
-        assert_eq!(parse_comments("[]").unwrap(), vec![]);
-        assert_eq!(parse_comments("null").unwrap(), vec![]);
+        assert_eq!(parse_comments("[]", &CommentPlace::Deck).unwrap(), vec![]);
+        assert_eq!(parse_comments("null", &CommentPlace::Deck).unwrap(), vec![]);
     }
 
     #[test]
     fn broken_comments_json_is_an_error() {
         for json in ["", "{}", "[{\"body\":\"no id\"}]", "[1]"] {
-            assert!(parse_comments(json).is_err(), "{json:?} should be rejected");
+            assert!(parse_comments(json, &CommentPlace::Deck).is_err(), "{json:?} should be rejected");
         }
     }
 
@@ -913,7 +1081,7 @@ mod tests {
     // --- session_opener_id ---
 
     fn review_comment(id: &str, body: &str, author: &str) -> ReviewComment {
-        ReviewComment { id: id.into(), lines: None, body: body.into(), quote: None, author: author.into(), resolved: false, replies: vec![], created_at: None }
+        ReviewComment { id: id.into(), place: CommentPlace::Deck, lines: None, body: body.into(), quote: None, author: author.into(), resolved: false, replies: vec![], created_at: None }
     }
 
     #[test]
@@ -1001,6 +1169,7 @@ mod tests {
     fn sent(new: &NewReviewComment, resolved: bool) -> ReviewComment {
         ReviewComment {
             id: "c_1".into(),
+            place: CommentPlace::Deck,
             lines: Some(LineRange { start: new.start_line, end: new.end_line }),
             body: new.body.clone(),
             quote: (!new.quote.is_empty()).then(|| new.quote.clone()),
@@ -1055,6 +1224,7 @@ mod tests {
     fn thread(id: &str, replies: &[(&str, &str)]) -> ReviewComment {
         ReviewComment {
             id: id.into(),
+            place: CommentPlace::Deck,
             lines: Some(LineRange { start: 1, end: 1 }),
             body: "b".into(),
             quote: None,
@@ -1093,5 +1263,203 @@ mod tests {
         let batch = [new_reply("c_1", "a")];
         assert_eq!(unsent_replies(&batch, &[]), vec![&batch[0]]);
         assert!(unsent_replies(&[], &[thread("c_1", &[])]).is_empty());
+    }
+
+    // --- session_args ---
+
+    #[test]
+    fn given_a_deck_with_layouts_and_css_when_crit_is_started_then_it_reviews_both_folders_too() {
+        assert_eq!(session_args("deck.md", |_| true), vec!["deck.md", "layouts", "css"]);
+    }
+
+    #[test]
+    fn given_a_deck_missing_a_layout_folder_when_crit_is_started_then_that_folder_is_left_out() {
+        // crit refuses a folder that isn't there.
+        assert_eq!(session_args("deck.md", |_| false), vec!["deck.md"]);
+        assert_eq!(session_args("deck.md", |dir| dir == "css"), vec!["deck.md", "css"]);
+        assert_eq!(session_args("talk.ja.md", |dir| dir == "layouts"), vec!["talk.ja.md", "layouts"]);
+    }
+
+    // --- session_path / deck_relative_path ---
+
+    #[test]
+    fn given_crit_in_the_decks_folder_then_a_deck_file_keeps_its_own_path() {
+        assert_eq!(session_path("deck.md", "layouts/cover.html"), "layouts/cover.html");
+        assert_eq!(deck_relative_path("deck.md", "layouts/cover.html"), Some("layouts/cover.html".into()));
+    }
+
+    #[test]
+    fn given_crit_at_a_repository_root_then_deck_files_are_named_under_the_decks_folder() {
+        assert_eq!(session_path("talks/a/deck.md", "layouts/cover.html"), "talks/a/layouts/cover.html");
+        assert_eq!(deck_relative_path("talks/a/deck.md", "talks/a/css/base.css"), Some("css/base.css".into()));
+    }
+
+    #[test]
+    fn a_file_outside_the_decks_folder_or_the_folder_itself_has_no_deck_relative_path() {
+        assert_eq!(deck_relative_path("talks/a/deck.md", "talks/b/layouts/x.html"), None);
+        assert_eq!(deck_relative_path("talks/a/deck.md", "talks/a/"), None);
+        assert_eq!(deck_relative_path("talks/a/deck.md", ""), None);
+    }
+
+    // --- layout_files_in_session ---
+
+    #[test]
+    fn given_a_session_on_the_deck_and_its_folders_then_its_layout_files_are_picked_out() {
+        let files: Vec<String> = ["deck.md", "layouts/cover.html", "css/base.css", "css/cover.css"].iter().map(|f| f.to_string()).collect();
+        assert_eq!(layout_files_in_session(&files, "deck.md"), vec!["layouts/cover.html", "css/base.css", "css/cover.css"]);
+    }
+
+    #[test]
+    fn given_files_that_are_not_layout_files_then_they_are_left_out() {
+        let files: Vec<String> = [
+            "talks/a/deck.md",
+            "talks/a/layouts/cover.html",
+            "talks/a/layouts/nested/x.html",
+            "talks/a/layouts/.html",
+            "talks/a/layouts/notes.md",
+            "talks/a/css/x.html",
+            "talks/b/layouts/other.html",
+            "layouts/root.html",
+            "talks/a/img/x.css",
+        ]
+        .iter()
+        .map(|f| f.to_string())
+        .collect();
+        assert_eq!(layout_files_in_session(&files, "talks/a/deck.md"), vec!["talks/a/layouts/cover.html"]);
+        assert!(layout_files_in_session(&[], "deck.md").is_empty());
+    }
+
+    // --- layout_html_path / layout_comment_place ---
+
+    #[test]
+    fn a_layout_name_maps_to_its_html_file() {
+        assert_eq!(layout_html_path("cover").unwrap(), "layouts/cover.html");
+        assert_eq!(layout_html_path("two-col_2").unwrap(), "layouts/two-col_2.html");
+    }
+
+    #[test]
+    fn a_name_that_could_leave_the_layouts_folder_is_refused() {
+        for name in ["", " ", "../deck", "a/b", "a\\b", ".hidden", "-x", "a.b", &"x".repeat(65)] {
+            assert!(layout_html_path(name).is_err(), "{name:?} should be refused");
+        }
+    }
+
+    fn layout_comment(layout: Option<&str>) -> NewLayoutComment {
+        NewLayoutComment { layout: layout.map(str::to_string), body: "[Layout cover] Bigger".into(), author: STUDIO_AUTHOR.into() }
+    }
+
+    #[test]
+    fn given_a_layout_with_a_file_when_commented_on_then_the_comment_goes_on_that_file() {
+        let place = layout_comment_place(&layout_comment(Some("cover")), |path| path == "layouts/cover.html").unwrap();
+        assert_eq!(place, CommentPlace::File { path: "layouts/cover.html".into() });
+    }
+
+    #[test]
+    fn given_every_layout_or_a_layout_without_a_file_when_commented_on_then_the_comment_goes_on_the_review() {
+        assert_eq!(layout_comment_place(&layout_comment(None), |_| true).unwrap(), CommentPlace::Review);
+        assert_eq!(layout_comment_place(&layout_comment(Some("title-body-code")), |_| false).unwrap(), CommentPlace::Review);
+    }
+
+    #[test]
+    fn given_a_layout_name_with_a_path_in_it_when_commented_on_then_it_is_refused() {
+        assert!(layout_comment_place(&layout_comment(Some("../deck")), |_| true).is_err());
+        assert!(layout_comment_place(&layout_comment(Some("")), |_| true).is_err());
+    }
+
+    // --- new_layout_comment_body ---
+
+    #[test]
+    fn a_comment_on_a_layout_file_is_sent_as_a_whole_file_comment() {
+        let body: serde_json::Value =
+            serde_json::from_str(&new_layout_comment_body(&layout_comment(Some("cover")), &CommentPlace::File { path: "layouts/cover.html".into() }).unwrap()).unwrap();
+        assert_eq!(body, serde_json::json!({"scope":"file","body":"[Layout cover] Bigger","author":"Peitho Studio"}));
+    }
+
+    #[test]
+    fn a_comment_on_the_review_is_sent_without_a_scope() {
+        let body: serde_json::Value = serde_json::from_str(&new_layout_comment_body(&layout_comment(None), &CommentPlace::Review).unwrap()).unwrap();
+        assert_eq!(body, serde_json::json!({"body":"[Layout cover] Bigger","author":"Peitho Studio"}));
+    }
+
+    #[test]
+    fn a_layout_comment_without_text_or_author_or_aimed_at_the_deck_is_refused() {
+        let review = CommentPlace::Review;
+        assert!(new_layout_comment_body(&NewLayoutComment { body: " \n".into(), ..layout_comment(None) }, &review).is_err());
+        assert!(new_layout_comment_body(&NewLayoutComment { author: "".into(), ..layout_comment(None) }, &review).is_err());
+        assert!(new_layout_comment_body(&layout_comment(None), &CommentPlace::Deck).is_err());
+    }
+
+    #[test]
+    fn a_layout_comment_arrives_from_the_frontend_in_camel_case() {
+        let parsed: NewLayoutComment = serde_json::from_str(r#"{"layout":null,"body":"b","author":"a"}"#).unwrap();
+        assert_eq!(parsed, NewLayoutComment { layout: None, body: "b".into(), author: "a".into() });
+    }
+
+    // --- endpoints by place ---
+
+    #[test]
+    fn a_comment_is_reached_through_its_file_or_the_reviews_own_routes() {
+        let file = CommentPlace::File { path: "layouts/cover.html".into() };
+        assert_eq!(comment_endpoint_at("c_1", "/replies", &CommentPlace::Deck, "talks/a/deck.md"), "/api/comment/c_1/replies?path=talks/a/deck.md");
+        assert_eq!(comment_endpoint_at("c_1", "/resolve", &file, "talks/a/deck.md"), "/api/comment/c_1/resolve?path=talks/a/layouts/cover.html");
+        assert_eq!(comment_endpoint_at("r_1", "/replies", &CommentPlace::Review, "deck.md"), "/api/review-comment/r_1/replies");
+        assert_eq!(comment_endpoint_at("r/1?x", "", &CommentPlace::Review, "deck.md"), "/api/review-comment/r%2F1%3Fx");
+        assert_eq!(add_endpoint_at(&file, "deck.md"), "/api/file/comments?path=layouts/cover.html");
+        assert_eq!(add_endpoint_at(&CommentPlace::Review, "deck.md"), "/api/comments");
+        assert_eq!(add_endpoint_at(&CommentPlace::Deck, "my deck.md"), "/api/file/comments?path=my%20deck.md");
+    }
+
+    // --- unsent_layout_comments / place_of ---
+
+    fn sent_at(place: CommentPlace, body: &str, resolved: bool) -> ReviewComment {
+        ReviewComment { place, resolved, ..review_comment("c_9", body, STUDIO_AUTHOR) }
+    }
+
+    #[test]
+    fn given_a_layout_comment_already_at_its_place_when_retried_then_it_is_not_sent_again() {
+        let file = CommentPlace::File { path: "layouts/cover.html".into() };
+        let batch = [(layout_comment(Some("cover")), file.clone()), (layout_comment(None), CommentPlace::Review)];
+        let existing = [sent_at(file, "[Layout cover] Bigger", false)];
+        assert_eq!(unsent_layout_comments(&batch, &existing), vec![&batch[1]]);
+    }
+
+    #[test]
+    fn given_the_same_text_elsewhere_or_resolved_when_checked_then_the_layout_comment_is_still_unsent() {
+        let batch = [(layout_comment(None), CommentPlace::Review)];
+        for existing in [sent_at(CommentPlace::Deck, "[Layout cover] Bigger", false), sent_at(CommentPlace::Review, "[Layout cover] Bigger", true)] {
+            assert_eq!(unsent_layout_comments(&batch, &[existing]), vec![&batch[0]]);
+        }
+        assert!(unsent_layout_comments(&[], &[]).is_empty());
+    }
+
+    #[test]
+    fn a_deck_comment_with_the_same_lines_and_text_on_a_layout_file_does_not_count_as_sent() {
+        let new = comment(1, 1, "a");
+        let mut on_layout = sent(&new, false);
+        on_layout.place = CommentPlace::File { path: "layouts/cover.html".into() };
+        assert_eq!(unsent_comments(std::slice::from_ref(&new), &[on_layout]), vec![&new]);
+    }
+
+    #[test]
+    fn a_comments_place_is_found_by_its_id() {
+        let comments = [sent_at(CommentPlace::Review, "b", false)];
+        assert_eq!(place_of(&comments, "c_9").unwrap(), CommentPlace::Review);
+        assert!(place_of(&comments, "c_missing").is_err());
+        assert!(place_of(&[], "").is_err());
+    }
+
+    #[test]
+    fn a_comments_place_reaches_the_frontend_as_a_tagged_union() {
+        assert_eq!(serde_json::to_string(&CommentPlace::Deck).unwrap(), r#"{"kind":"deck"}"#);
+        assert_eq!(serde_json::to_string(&CommentPlace::File { path: "layouts/a.html".into() }).unwrap(), r#"{"kind":"file","path":"layouts/a.html"}"#);
+        assert_eq!(serde_json::to_string(&CommentPlace::Review).unwrap(), r#"{"kind":"review"}"#);
+    }
+
+    #[test]
+    fn review_level_comments_are_read_with_their_place() {
+        let json = r#"[{"id":"r_377d11","start_line":0,"end_line":0,"body":"[All layouts] Calmer","author":"Peitho Studio","scope":"review","created_at":"2026-10-02T14:45:51Z","review_round":1}]"#;
+        let comments = parse_comments(json, &CommentPlace::Review).unwrap();
+        assert_eq!(comments[0].place, CommentPlace::Review);
+        assert_eq!(comments[0].lines, None);
     }
 }

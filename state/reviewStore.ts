@@ -1,6 +1,6 @@
 import { batch, createMemo, createSignal } from '@barefootjs/client'
 import type { CritDeckSession, ReviewComment } from '../domain/critReview'
-import { awaitingAgentCount, liveReplies, rewriteUnsent, sendAvailability, unsentBody, type CommentBox, type CommentTarget, type PendingComment, type PendingReply, type PinSpot, type SentPins } from '../domain/reviewComment'
+import { awaitingAgentCount, liveReplies, rewriteUnsent, sendAvailability, unsentBody, type CommentBox, type CommentTarget, type LayoutCommentTarget, type PendingComment, type PendingLayoutComment, type PendingReply, type PinSpot, type SentPins } from '../domain/reviewComment'
 
 /** The review round trip with the Coding Agent as the comment UI shows it
  * (todo/archive/review-comment-ui.md): what crit last reported (the session and its
@@ -44,6 +44,8 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
     if (!sameJson(comments(), next)) setCommentsSignal(next)
   }
   const [pending, setPending] = createSignal<PendingComment[]>([])
+  // Comments written on the layout screen, not sent yet.
+  const [layoutPending, setLayoutPending] = createSignal<PendingLayoutComment[]>([])
   const [pendingReplies, setPendingReplies] = createSignal<PendingReply[]>([])
   const [box, setBox] = createSignal<CommentBox>({ kind: 'closed' })
   const [boxDraft, setBoxDraft] = createSignal('')
@@ -61,7 +63,7 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
 
   // The unsent replies that can still be sent (`liveReplies`).
   const sendableReplies = createMemo(() => liveReplies(pendingReplies(), comments()))
-  const unsentCount = createMemo(() => pending().length + sendableReplies().length)
+  const unsentCount = createMemo(() => pending().length + layoutPending().length + sendableReplies().length)
   // What a send hands the agent: everything unsent, plus open threads still
   // waiting on it (`awaitingAgentCount`) — sending again redelivers those.
   const sendCount = createMemo(() => unsentCount() + awaitingAgentCount(comments(), new Set(sendableReplies().map(reply => reply.commentId))))
@@ -74,12 +76,21 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
     })
   }
 
+  /** Opens the box on a layout (or every layout), at `at` on screen. */
+  function openLayoutBox(target: LayoutCommentTarget, at: { x: number; y: number }): void {
+    batch(() => {
+      setBox({ kind: 'open-layout', target, at })
+      setBoxDraft('')
+    })
+  }
+
   function closeBox(): void {
     setBox({ kind: 'closed' })
   }
 
   /** Files the open box's comment as unsent and closes the box. `null`
-   * (nothing filed, the box stays open) for a blank comment or no box. */
+   * (nothing filed, the box stays open) for a blank comment, or no box
+   * open on the preview. */
   function commitBox(): PendingComment | null {
     const current = box()
     const body = boxDraft().trim()
@@ -92,10 +103,24 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
     return comment
   }
 
+  /** `commitBox` for the box open on a layout (`openLayoutBox`). */
+  function commitLayoutBox(): PendingLayoutComment | null {
+    const current = box()
+    const body = boxDraft().trim()
+    if (current.kind !== 'open-layout' || body === '') return null
+    const comment: PendingLayoutComment = { id: `pending-${String(nextId++)}`, target: current.target, body, createdAt: now() }
+    batch(() => {
+      setLayoutPending([...layoutPending(), comment])
+      setBox({ kind: 'closed' })
+    })
+    return comment
+  }
+
   /** Drops the unsent comment or reply with `id`. */
   function discard(id: string): void {
     batch(() => {
       setPending(pending().filter(comment => comment.id !== id))
+      setLayoutPending(layoutPending().filter(comment => comment.id !== id))
       setPendingReplies(pendingReplies().filter(reply => reply.id !== id))
       if (unsentEdit()?.id === id) setUnsentEdit(null)
     })
@@ -103,7 +128,7 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
 
   /** Starts rewriting the unsent comment or reply `id` from its text. */
   function startEdit(id: string): void {
-    const body = unsentBody(pending(), pendingReplies(), id)
+    const body = unsentBody([...pending(), ...layoutPending()], pendingReplies(), id)
     if (body !== null) setUnsentEdit({ id, text: body })
   }
 
@@ -124,11 +149,13 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
     const current = unsentEdit()
     if (current === null || current.text.trim() === '') return
     const next = rewriteUnsent(pending(), pendingReplies(), current.id, current.text)
+    const nextLayout = rewriteUnsent(layoutPending(), [], current.id, current.text)
     batch(() => {
       if (next !== null) {
         setPending(next.pending)
         setPendingReplies(next.replies)
       }
+      if (nextLayout !== null) setLayoutPending(nextLayout.pending)
       setUnsentEdit(null)
     })
   }
@@ -157,10 +184,11 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
     })
   }
 
-  /** `sent` and `sentReplies` reached crit: forget them, keeping each
-   * comment's pin under the body it was sent with (`sentBodies[i]` for
-   * `sent[i]`). Anything written while the send ran stays unsent. */
-  function markSent(sent: readonly PendingComment[], sentBodies: readonly string[], sentReplies: readonly PendingReply[]): void {
+  /** `sent`, `sentReplies` and `sentLayout` reached crit: forget them,
+   * keeping each comment's pin under the body it was sent with
+   * (`sentBodies[i]` for `sent[i]`). Anything written while the send ran
+   * stays unsent. */
+  function markSent(sent: readonly PendingComment[], sentBodies: readonly string[], sentReplies: readonly PendingReply[], sentLayout: readonly PendingLayoutComment[] = []): void {
     const pins: Record<string, SentPins[string]> = { ...sentPins() }
     sent.forEach((comment, i) => {
       const body = sentBodies[i]
@@ -168,10 +196,11 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
       // still lines up with its own place in crit's order.
       if (body !== undefined) pins[body] = [...(Object.hasOwn(pins, body) ? pins[body] : []), { slideKey: comment.slideKey, pin: comment.pin }]
     })
-    const sentIds = new Set([...sent.map(comment => comment.id), ...sentReplies.map(reply => reply.id)])
+    const sentIds = new Set([...sent.map(comment => comment.id), ...sentReplies.map(reply => reply.id), ...sentLayout.map(comment => comment.id)])
     batch(() => {
       setSentPins(pins)
       setPending(pending().filter(comment => !sentIds.has(comment.id)))
+      setLayoutPending(layoutPending().filter(comment => !sentIds.has(comment.id)))
       setPendingReplies(pendingReplies().filter(reply => !sentIds.has(reply.id)))
     })
   }
@@ -211,6 +240,7 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
       setSeenAgentIn(null)
       setComments([])
       setPending([])
+      setLayoutPending([])
       setPendingReplies([])
       setBox({ kind: 'closed' })
       setReplyDraft(null)
@@ -222,8 +252,8 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
   }
 
   return {
-    session, setSession, agentSeen, forgetAgent, comments, setComments, pending, pendingReplies, sendableReplies, unsentCount, sendCount, availability,
-    box, boxDraft, setBoxDraft, openBox, closeBox, commitBox, discard,
+    session, setSession, agentSeen, forgetAgent, comments, setComments, pending, layoutPending, pendingReplies, sendableReplies, unsentCount, sendCount, availability,
+    box, boxDraft, setBoxDraft, openBox, openLayoutBox, closeBox, commitBox, commitLayoutBox, discard,
     unsentEdit, startEdit, setEditText, cancelEdit, commitEdit,
     replyDraft, editReply, setReplyText, cancelReply, commitReply, markSent, sentPins,
     busy, setBusy, error, setError, showResolved, toggleShowResolved: () => setShowResolved(!showResolved()),

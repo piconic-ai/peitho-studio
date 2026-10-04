@@ -86,3 +86,11 @@ export function layoutNameProblem(name: string, existing: readonly string[]): La
   if (existing.some(taken => taken.toLowerCase() === lower)) return 'taken'
   return null
 }
+
+/** Whether the deck's layout files changed outside Studio — the Coding
+ * Agent editing one — going by their fingerprint (`layout_files_stamp`)
+ * before (`previous`) and now (`next`). Nothing is known to have changed
+ * before there is a first fingerprint to compare with. */
+export function layoutFilesChanged(previous: string | null, next: string): boolean {
+  return previous !== null && previous !== next
+}

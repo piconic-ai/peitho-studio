@@ -22,7 +22,7 @@ export type LayoutMenu =
 
 export const LAYOUT_MENU_CLOSED: LayoutMenu = { kind: 'closed' }
 
-export type LayoutMenuAction = 'new-layout' | 'apply' | 'edit' | 'duplicate' | 'delete'
+export type LayoutMenuAction = 'new-layout' | 'apply' | 'edit' | 'duplicate' | 'delete' | 'comment-layout' | 'comment-all-layouts'
 
 export interface LayoutMenuItem {
   action: LayoutMenuAction
@@ -103,21 +103,24 @@ function applyReason(menu: Extract<LayoutMenu, { kind: 'on-layout' }>, ctx: Layo
 }
 
 /** The menu's items, in order, each with whether it can run now. Empty
- * space offers New Layout; a layout offers Apply to Slide (only with a
- * slide open that fits it), Edit, Duplicate and Delete (not the deck's
- * last layout). Everything but Edit waits while another operation runs. */
+ * space offers New Layout and a comment on every layout; a layout offers
+ * Apply to Slide (only with a slide open that fits it), Edit, Duplicate,
+ * Delete (not the deck's last layout) and a comment on it. Everything but
+ * Edit and the comments waits while another operation runs — a comment
+ * touches no file until it's sent. */
 export function layoutMenuItems(menu: LayoutMenu, ctx: LayoutMenuContext): LayoutMenuItem[] {
   switch (menu.kind) {
     case 'closed':
       return []
     case 'on-list':
-      return [item('new-layout', null, ctx.busy)]
+      return [item('new-layout', null, ctx.busy), item('comment-all-layouts', null, false)]
     case 'on-layout':
       return [
         item('apply', applyReason(menu, ctx), ctx.busy),
         item('edit', null, false),
         item('duplicate', null, ctx.busy),
         item('delete', ctx.layoutCount > 1 ? null : { kind: 'only-layout' }, ctx.busy),
+        item('comment-layout', null, false),
       ]
     default: {
       const _exhaustive: never = menu
@@ -134,6 +137,8 @@ export function layoutMenuLabel(action: LayoutMenuAction, messages: Messages): s
     case 'edit': return messages.editLayout
     case 'duplicate': return messages.duplicateLayout
     case 'delete': return messages.deleteLayout
+    case 'comment-layout': return messages.commentOnLayout
+    case 'comment-all-layouts': return messages.commentOnAllLayouts
     default: {
       const _exhaustive: never = action
       return _exhaustive

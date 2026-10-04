@@ -520,10 +520,106 @@ pub fn delete_layout(deck_path: &Path, content: &str, name: &str) -> Result<(), 
     Ok(())
 }
 
+/// One layout file as `layout_files_stamp` sees it: its path relative to
+/// the deck's folder, its size, and when it was last written (nanoseconds
+/// since the epoch, 0 when unknown).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayoutFileState {
+    pub path: String,
+    pub len: u64,
+    pub modified_ns: u128,
+}
+
+/// A fingerprint of `files`, the same whatever order they're listed in: it
+/// changes when a file is added, removed, resized or written again.
+pub fn stamp_of(files: &[LayoutFileState]) -> String {
+    let mut lines: Vec<String> = files.iter().map(|file| format!("{}\t{}\t{}", file.path, file.len, file.modified_ns)).collect();
+    lines.sort();
+    lines.join("\n")
+}
+
+/// The files directly in `dir` (relative to `deck_dir`) ending in `ext`.
+fn layout_file_states(deck_dir: &Path, dir: &str, ext: &str) -> Vec<LayoutFileState> {
+    let Ok(entries) = std::fs::read_dir(deck_dir.join(dir)) else { return Vec::new() };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let meta = entry.metadata().ok().filter(|meta| meta.is_file())?;
+            name.ends_with(ext).then(|| LayoutFileState {
+                path: format!("{dir}/{name}"),
+                len: meta.len(),
+                modified_ns: meta
+                    .modified()
+                    .ok()
+                    .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |since| since.as_nanos()),
+            })
+        })
+        .collect()
+}
+
+/// `stamp_of` the deck's layout files — `layouts/*.html` and `css/*.css`
+/// in `deck_dir` — so a change made outside Studio (the Coding Agent
+/// editing a layout) can be told from none. A folder that isn't there has
+/// no files.
+pub fn layout_files_stamp(deck_dir: &Path) -> String {
+    let mut files = layout_file_states(deck_dir, "layouts", ".html");
+    files.extend(layout_file_states(deck_dir, "css", ".css"));
+    stamp_of(&files)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::engine::pipeline::render_source;
+
+    // --- stamp_of / layout_files_stamp ---
+
+    fn state(path: &str, len: u64, modified_ns: u128) -> LayoutFileState {
+        LayoutFileState { path: path.into(), len, modified_ns }
+    }
+
+    #[test]
+    fn given_the_same_files_in_another_order_then_the_stamp_is_the_same() {
+        let a = [state("layouts/a.html", 10, 1), state("css/a.css", 5, 2)];
+        let b = [state("css/a.css", 5, 2), state("layouts/a.html", 10, 1)];
+        assert_eq!(stamp_of(&a), stamp_of(&b));
+    }
+
+    #[test]
+    fn given_a_file_added_removed_resized_or_rewritten_then_the_stamp_changes() {
+        let before = stamp_of(&[state("layouts/a.html", 10, 1)]);
+        for after in [
+            vec![state("layouts/a.html", 10, 1), state("layouts/b.html", 1, 1)],
+            vec![],
+            vec![state("layouts/a.html", 11, 1)],
+            vec![state("layouts/a.html", 10, 2)],
+            vec![state("layouts/b.html", 10, 1)],
+        ] {
+            assert_ne!(stamp_of(&after), before, "{after:?}");
+        }
+        assert_eq!(stamp_of(&[]), "");
+    }
+
+    #[test]
+    fn given_a_deck_folder_then_only_its_layout_html_and_css_files_count() {
+        let dir = tempfile::tempdir().unwrap();
+        // No layouts/ or css/ at all: nothing to fingerprint.
+        assert_eq!(layout_files_stamp(dir.path()), "");
+        std::fs::create_dir_all(dir.path().join("layouts").join("nested")).unwrap();
+        std::fs::create_dir_all(dir.path().join("css")).unwrap();
+        std::fs::write(dir.path().join("layouts").join("a.html"), "<section></section>").unwrap();
+        std::fs::write(dir.path().join("layouts").join("notes.md"), "x").unwrap();
+        std::fs::write(dir.path().join("css").join("a.css"), "a{}").unwrap();
+        std::fs::write(dir.path().join("deck.md"), "# x").unwrap();
+        let stamp = layout_files_stamp(dir.path());
+        let paths: Vec<&str> = stamp.lines().map(|line| line.split('\t').next().unwrap()).collect();
+        assert_eq!(paths, vec!["css/a.css", "layouts/a.html"]);
+        // Writing a layout file changes it.
+        std::fs::write(dir.path().join("css").join("a.css"), "a{color:red}").unwrap();
+        assert_ne!(layout_files_stamp(dir.path()), stamp);
+    }
 
     // --- validate_layout_name ---
 
