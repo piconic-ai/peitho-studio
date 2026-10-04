@@ -62,7 +62,7 @@ import { readPastedImage } from '../dom/imagePaste'
 import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
 import { focusSettingsPanel, restoreFocusAfterSettingsPanel } from '../dom/settingsPanel'
 import { slideRowMenuAnchor } from '../dom/slideRow'
-import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, remountSlideCanvases, setDraftFontFaces, setManifestKeysSource, setScriptsBlockedListener, setSlideScriptsTrusted } from '../dom/slideCanvas'
+import { createSlideStylesheet, ensureFontFaces, mountSlideCanvas, observeCanvasScale, patchSlideCanvas, remountSlideCanvases, setDraftFontFaces, setManifestKeysSource, setScriptsBlockedListener, setSlideScriptsTrusted } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
 import { createLayoutScreenStore } from '../state/layoutScreenStore'
 import { createRenderStore } from '../state/renderStore'
@@ -104,7 +104,7 @@ import { SlideList } from './SlideList'
 import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
 import { LayoutContextMenu, type LayoutMenuEntry } from './LayoutContextMenu'
 import { focusDeleteLayoutDialog, focusNewLayoutName } from '../dom/layoutModals'
-import { absolutizedDraft, draftPreviewError, previewDraftCss, previewToDraw } from '../domain/layoutDraftPreview'
+import { absolutizedDraft, draftPreviewError, draftedLayout, previewDraftCss, previewToDraw } from '../domain/layoutDraftPreview'
 import { scopeRootToHost } from '../domain/slideCss'
 import { type LayoutMenuAction, layoutMenuItems, layoutMenuLabel, layoutMenuPosition, layoutMenuTarget, layoutMenuTitle } from '../domain/layoutMenu'
 
@@ -721,7 +721,7 @@ export function Studio() {
   // The canvas the *preview pane* lays the selected slide out on: the
   // deck's own, or (phone display, tall shape) the same width grown to a
   // phone's proportion — see `domain/viewport.ts`. Phone display with the
-  // deck-ratio shape is the deck's own canvas again. The thumbnail list and
+  // deck-ratio shape is the deck's own canvas again. The slide list and
   // layout picker keep reading `render.canvasWidth()/canvasHeight()`
   // directly.
   //
@@ -775,16 +775,13 @@ export function Studio() {
     layoutPreviewStylesheet.replaceSync(ui.layoutPreviewStylesheetText())
   })
 
-  // The layout screen's preview: the saved files' preview with the sheet
+  // The selected layout's drawing: the saved files' preview with the sheet
   // above, or the editor's rendered draft with that draft's own CSS.
   const layoutPreviewDraw = createMemo(() => {
     const name = layouts.selectedLayout()
     return previewToDraw(layouts.draftPreview(), name, name === null ? '' : layoutFragmentOf(name))
   })
   const layoutDraftStylesheet = createSlideStylesheet(ui.layoutPreviewStylesheetText())
-  function getLayoutDraftStylesheet(): CSSStyleSheet {
-    return layoutDraftStylesheet
-  }
   // The draft's CSS with any family the deck defines and the draft
   // redefines moved to a preview-only name, so its faces can't change how
   // the deck's slides draw (`previewDraftCss`).
@@ -798,6 +795,46 @@ export function Studio() {
   // is drawn again or the slides screen shows (and back when it returns).
   createEffect(() => {
     setDraftFontFaces(ui.studioMode() === 'layouts' ? layoutPreviewCss().fontFaces : '')
+  })
+
+  // The layout list's thumbnails: each draws its layout's saved files, and
+  // the one with a rendered draft (`draftedLayout`) draws that instead, on
+  // the PC / Phone switch's canvas. A row's `ref` hands its host over once,
+  // at mount (`mountLayoutThumbnail`); a row re-keyed by a fresh set of
+  // previews or a switch change mounts again and reads the current draw.
+  function layoutThumbnailDraw(name: string): { fragment: string; css: string | null } {
+    return previewToDraw(layouts.draftPreview(), name, layoutFragmentOf(name))
+  }
+  function layoutCanvasOf(name: string): Size {
+    const deck = { width: render.canvasWidth(), height: render.canvasHeight() }
+    return viewportCanvas(deck, ui.viewportMode(), ui.phoneShape(), hasFixedCanvas(layoutThumbnailDraw(name).fragment))
+  }
+  function mountLayoutThumbnail(el: HTMLElement, name: string): void {
+    el.dataset.layoutCanvas = name
+    const draw = untrack(() => layoutThumbnailDraw(name))
+    const canvas = untrack(() => layoutCanvasOf(name))
+    mountSlideCanvas(el, draw.css === null ? layoutPreviewStylesheet : layoutDraftStylesheet, draw.fragment, canvas, 'thumbnail')
+    observeCanvasScale(el, canvas)
+  }
+  // A keyed row's `ref` never runs again (CLAUDE.md's BarefootJS
+  // pitfalls), so a draft arriving, changing or going away redraws the
+  // rows concerned from here: the row drawing a draft now, and the one that
+  // drew it before (back to its saved files). Tracks the drawn draft object
+  // itself, which a failed later draft or a new request leaves as it is —
+  // so neither redraws anything.
+  const draftedLayoutName = createMemo(() => draftedLayout(layouts.draftPreview()))
+  const draftedLayoutShown = createMemo(() => layouts.draftPreview().shown)
+  let layoutRowDrawingDraft: string | null = null
+  createEffect(() => {
+    const drafted = draftedLayoutName()
+    draftedLayoutShown()
+    untrack(() => {
+      for (const name of new Set([layoutRowDrawingDraft, drafted])) {
+        if (name === null) continue
+        for (const host of document.querySelectorAll<HTMLElement>(`[data-layout-canvas="${CSS.escape(name)}"]`)) mountLayoutThumbnail(host, name)
+      }
+    })
+    layoutRowDrawingDraft = drafted
   })
 
   // The error bar's way out of peitho-core's "no slot accepts image" (see
@@ -1996,7 +2033,7 @@ export function Studio() {
 
   // The comments column takes the rest of the row only on the slides screen
   // with both the editor and the preview closed; on the layout screen, the
-  // layout's preview does.
+  // layout editor does.
   const reviewFillsRow = createMemo(() => ui.studioMode() === 'slides' && !ui.previewOpen() && !ui.editorOpen())
 
   // A comment's row names a slide: from the layout screen, the slides
@@ -3055,17 +3092,11 @@ export function Studio() {
           selectedName={layouts.selectedLayout()}
           onSelect={selectLayout}
           onContextMenu={openLayoutMenu}
-          fragmentOf={layoutFragmentOf}
-          layoutPreviewStylesheet={getLayoutPreviewStylesheet}
-          previewFragment={layoutPreviewDraw().fragment}
-          previewStylesheet={getLayoutDraftStylesheet}
+          onThumbnailHost={mountLayoutThumbnail}
+          canvasOf={layoutCanvasOf}
           previewError={draftPreviewError(layouts.draftPreview(), layouts.selectedLayout())}
-          canvasWidth={render.canvasWidth()}
-          canvasHeight={render.canvasHeight()}
           listWidth={layouts.listWidth()}
-          editorWidth={layouts.editorWidth()}
-          onListResize={startColumnResize(layouts.listWidth, layouts.setListWidth, 1)}
-          onEditorResize={startColumnResize(layouts.editorWidth, layouts.setEditorWidth, 1)}
+          onListResize={startColumnResize(layouts.listWidth, layouts.setListWidth, -1)}
           busy={layouts.busy()}
           notice={layouts.notice()}
           newLayoutOpen={layouts.newLayoutOpen()}

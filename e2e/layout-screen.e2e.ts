@@ -585,7 +585,7 @@ test('Given the layout screen, when Delete or an arrow key is pressed outside a 
   const deck = deckOf()
   await openLayoutScreen(page, deck)
 
-  await page.locator('[data-layout-preview]').click()
+  await page.locator('[data-layout-list-header] > span').click()
   await page.keyboard.press('Delete')
   await page.keyboard.press('Backspace')
   await page.keyboard.press('ArrowDown')
@@ -701,44 +701,82 @@ test('Given a long line in the layout HTML, then it is not wrapped but scrolls s
   await expect(editorContent(page, 'body')).toHaveClass(/cm-lineWrapping/)
 })
 
-// Live preview while the layout is edited (`preview_layout_draft`, mocked:
-// the draft HTML is the preview's fragment).
-test.describe('the layout preview while editing', () => {
-  const QUOTE = { quote: { html: '<section class="peitho-slide layout-quote"><h1>saved</h1></section>', css: '' } }
-  const preview = (page: Page) => page.locator('[data-layout-preview]')
+// The screen's arrangement: the editor on the left, the list (which also
+// shows the layout being edited) on its right, the comments column last.
+test.describe('the layout screen\'s arrangement', () => {
+  test('Given the layout screen, then the editor, the list and the comments column stand left to right, with no separate preview', async ({ page }) => {
+    await openLayoutScreen(page, deckOf())
 
-  test('Given an edit to the layout HTML, when typing pauses, then the preview shows the draft without saving it', async ({ page }) => {
+    const editor = await page.locator('[data-layout-editor]').boundingBox()
+    const list = await page.locator('[data-layout-list]').boundingBox()
+    const comments = await page.locator('[data-panel="review"]').boundingBox()
+    if (!editor || !list || !comments) throw new Error('a column has no box')
+    expect(editor.x + editor.width).toBeLessThanOrEqual(list.x)
+    expect(list.x + list.width).toBeLessThanOrEqual(comments.x)
+    await expect(page.locator('[data-layout-preview]')).toHaveCount(0)
+  })
+
+  test('Given the layout screen, when the divider between the editor and the list is dragged left, then the list grows and the editor shrinks by as much', async ({ page }) => {
+    await openLayoutScreen(page, deckOf())
+    const before = await page.locator('[data-layout-list]').boundingBox()
+    const editorBefore = await page.locator('[data-layout-editor]').boundingBox()
+    if (!before || !editorBefore) throw new Error('a column has no box')
+
+    // The divider is the 4px strip just left of the list.
+    await page.mouse.move(before.x - 2, before.y + 200)
+    await page.mouse.down()
+    await page.mouse.move(before.x - 62, before.y + 200, { steps: 5 })
+    await page.mouse.up()
+
+    const after = await page.locator('[data-layout-list]').boundingBox()
+    const editorAfter = await page.locator('[data-layout-editor]').boundingBox()
+    expect(after?.width).toBeCloseTo(before.width + 60, 0)
+    expect(editorAfter?.width).toBeCloseTo(editorBefore.width - 60, 0)
+  })
+})
+
+// Live preview while the layout is edited (`preview_layout_draft`, mocked:
+// the draft HTML is the preview's fragment), drawn in the selected row's
+// thumbnail.
+test.describe('the selected row while the layout is edited', () => {
+  const QUOTE = { quote: { html: '<section class="peitho-slide layout-quote"><h1>saved</h1></section>', css: '' } }
+  const thumbnail = (page: Page, name: string) => row(page, name).locator('[data-layout-canvas]')
+  const selected = (page: Page) => page.locator('[data-layout-row][aria-current="true"] [data-layout-canvas]')
+
+  test('Given an edit to the layout HTML, when typing pauses, then the selected row\'s thumbnail shows the draft without saving it, and the other rows keep their saved look', async ({ page }) => {
     const deck = deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' })
     await openLayoutScreen(page, deck)
     await row(page, 'quote').click()
-    await expect(preview(page).locator('h1')).toHaveText('saved')
+    await expect(selected(page).locator('h1')).toHaveText('saved')
 
     await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>draft</h1></section>', 'layout-html')
 
-    await expect(preview(page).locator('h1')).toHaveText('draft')
+    await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('draft')
+    await expect(thumbnail(page, 'title-slide').locator('h1')).toHaveText('saved')
+    await expect(thumbnail(page, 'title-body').locator('h1')).toHaveText('saved')
     expect(deck.invokedCommands).not.toContain('save_layout')
     expect(deck.layoutFiles?.quote.html).toBe(QUOTE.quote.html)
   })
 
-  test('Given a draft that does not render, then the last good preview stays and the error shows by it; typing goes on', async ({ page }) => {
+  test('Given a draft that does not render, then the last good thumbnail stays and the error shows by the editor; typing goes on', async ({ page }) => {
     await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' }))
     await row(page, 'quote').click()
     await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>good</h1></section>', 'layout-html')
-    await expect(preview(page).locator('h1')).toHaveText('good')
+    await expect(selected(page).locator('h1')).toHaveText('good')
 
     await fillEditor(page, '<div>broken</div>', 'layout-html')
 
-    await expect(page.locator('[data-layout-preview-error]')).toContainText('a layout needs a <section> element')
-    await expect(preview(page).locator('h1')).toHaveText('good')
+    await expect(page.locator('[data-layout-editor] [data-layout-preview-error]')).toContainText('a layout needs a <section> element')
+    await expect(selected(page).locator('h1')).toHaveText('good')
     await page.keyboard.type('!')
     await expect.poll(() => editorText(page, 'layout-html')).toBe('<div>broken</div>!')
 
     await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>fixed</h1></section>', 'layout-html')
-    await expect(preview(page).locator('h1')).toHaveText('fixed')
+    await expect(selected(page).locator('h1')).toHaveText('fixed')
     await expect(page.locator('[data-layout-preview-error]')).toBeHidden()
   })
 
-  test('Given an earlier draft whose preview answers last, then the latest draft\'s preview is the one shown', async ({ page }) => {
+  test('Given an earlier draft whose preview answers last, then the latest draft is the one the row shows', async ({ page }) => {
     await openLayoutScreen(page, deckOf({
       layoutFiles: QUOTE,
       layoutFragment: '<h1>saved</h1>',
@@ -750,21 +788,21 @@ test.describe('the layout preview while editing', () => {
     await page.waitForTimeout(400)
     await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>fast</h1></section>', 'layout-html')
 
-    await expect(preview(page).locator('h1')).toHaveText('fast')
+    await expect(selected(page).locator('h1')).toHaveText('fast')
     await page.waitForTimeout(1_200)
-    await expect(preview(page).locator('h1')).toHaveText('fast')
+    await expect(selected(page).locator('h1')).toHaveText('fast')
   })
 
-  test('Given a draft naming an asset, then its preview loads it from the deck\'s asset server', async ({ page }) => {
+  test('Given a draft naming an asset, then the row loads it from the deck\'s asset server', async ({ page }) => {
     await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' }))
     await row(page, 'quote').click()
 
     await fillEditor(page, '<section class="peitho-slide layout-quote"><img src="assets/bbbb-logo.png"><h1>draft</h1></section>', 'layout-html')
 
-    await expect(preview(page).locator('img')).toHaveAttribute('src', 'http://localhost:9/assets/bbbb-logo.png')
+    await expect(selected(page).locator('img')).toHaveAttribute('src', 'http://localhost:9/assets/bbbb-logo.png')
   })
 
-  test('Given a font face added in the draft CSS, then it is registered for the preview, and dropped once the draft is reverted', async ({ page }) => {
+  test('Given a font face added in the draft CSS, then it is registered for the row, and dropped once the draft is reverted', async ({ page }) => {
     await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' }))
     await row(page, 'quote').click()
     await page.locator('[data-layout-tab="css"]').click()
@@ -806,28 +844,36 @@ test.describe('the layout preview while editing', () => {
     await fillEditor(page, '@font-face { font-family: "DeckFace"; src: url(fonts/other.woff2); }\n.peitho-slide.layout-quote h1 { font: italic 2rem/1.2 DeckFace, serif !important; }', 'layout-css')
 
     await expect.poll(draftFonts).toContain('fonts/other.woff2')
-    // The preview's own sheet names the draft's face by its preview-only name.
-    const previewCss = () => page.locator('[data-layout-preview] > div').evaluate(host =>
+    // The row's own sheet names the draft's face by its preview-only name.
+    const rowCss = () => thumbnail(page, 'quote').evaluate(host =>
       (host.shadowRoot?.adoptedStyleSheets ?? []).flatMap(sheet => [...sheet.cssRules].map(rule => rule.cssText)).join('\n'))
-    await expect.poll(previewCss).toContain('"DeckFace (Peitho draft)", serif !important')
+    await expect.poll(rowCss).toContain('"DeckFace (Peitho draft)", serif !important')
     expect(await draftFonts()).not.toMatch(/font-family:\s*"DeckFace"\s*;/)
     const families = await page.evaluate(() => [...document.fonts].map(face => face.family.replace(/"/g, '')))
     expect(families.filter(family => family === 'DeckFace')).toHaveLength(1)
   })
 
-  test('Given a draft previewed, when it is reverted or another layout is opened, then the saved preview comes back', async ({ page }) => {
+  test('Given a draft drawn in the row, when it is reverted, saved, or another layout is opened, then the row draws the saved files again', async ({ page }) => {
     await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' }))
     await row(page, 'quote').click()
     await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>draft</h1></section>', 'layout-html')
-    await expect(preview(page).locator('h1')).toHaveText('draft')
+    await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('draft')
 
     await page.locator('[data-revert-layout]').click()
-    await expect(preview(page).locator('h1')).toHaveText('saved')
+    await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('saved')
 
     await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>draft again</h1></section>', 'layout-html')
-    await expect(preview(page).locator('h1')).toHaveText('draft again')
+    await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('draft again')
+    await page.locator('[data-save-layout]').click()
+    await expect(page.locator('[data-save-layout]')).toBeDisabled()
+    // The mock's `preview_layouts` draws every layout as `layoutFragment`.
+    await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('saved')
+
+    await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>third draft</h1></section>', 'layout-html')
+    await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('third draft')
     await page.locator('[data-revert-layout]').click()
     await row(page, 'title-body').click()
-    await expect(preview(page).locator('h1')).toHaveText('saved')
+    await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('saved')
+    await expect(thumbnail(page, 'title-body').locator('h1')).toHaveText('saved')
   })
 })

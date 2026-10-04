@@ -16,8 +16,9 @@ import {
   type DraftPreview, type RenderedDraft,
 } from '../domain/layoutDraftPreview'
 
-const LIST_WIDTH = 220
-const EDITOR_WIDTH = 420
+// Wider than the slides screen's list: with no preview column, the
+// selected row's thumbnail is where the layout being edited is seen.
+const LIST_WIDTH = 280
 
 /** The layout screen's own state (Studio's "Layouts" mode): which layout is
  * shown, the New Layout form, a delete in progress, the HTML/CSS editor,
@@ -31,10 +32,9 @@ const EDITOR_WIDTH = 420
 export function createLayoutScreenStore() {
   const [selectedLayout, setSelectedLayout] = createSignal<string | null>(null)
 
-  // The list and editor columns' widths (`dom/columnResize.ts`), session-only
-  // like the slides screen's.
+  // The list column's width (`dom/columnResize.ts`), session-only like the
+  // slides screen's; the editor, left of it, takes the rest of the row.
   const [listWidth, setListWidth] = createSignal(LIST_WIDTH)
-  const [editorWidth, setEditorWidth] = createSignal(EDITOR_WIDTH)
 
   // Bumped whenever a fresh set of layout previews arrives, so the list's
   // rows get new keys and redraw their thumbnails (see `layoutRows`).
@@ -170,7 +170,7 @@ export function createLayoutScreenStore() {
 
   return {
     selectedLayout, setSelectedLayout,
-    listWidth, setListWidth, editorWidth, setEditorWidth,
+    listWidth, setListWidth,
     previewGeneration, bumpPreviewGeneration,
     newLayoutOpen, newLayoutName, setNewLayoutName, newLayoutTemplate, setNewLayoutTemplate,
     openNewLayout, closeNewLayout, newLayoutNameProblem,
