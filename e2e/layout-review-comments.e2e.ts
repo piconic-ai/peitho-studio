@@ -255,3 +255,21 @@ test.describe('a click on a layout\'s thumbnail', () => {
     expect(shown.y + shown.height).toBeLessThanOrEqual(viewport.height)
   })
 })
+
+test('Given an open comment box, When the screen is switched between slides and layouts, Then the box closes and nothing is filed', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  await openLayoutScreen(page, crit)
+  await page.locator('[data-layout-row="cover"]').click({ button: 'right' })
+  await page.locator('[data-layout-menu-item="comment-layout"]').click()
+  await expect(page.locator(BOX)).toBeVisible()
+  await page.locator(`${BOX} textarea`).fill('Half-written')
+
+  await page.locator('[data-studio-mode-option="slides"]').click()
+  await expect(page.locator(BOX)).toBeHidden()
+  await expect(page.locator('[data-review-row]')).toHaveCount(0)
+
+  await page.locator('[data-preview-host] h1').first().click()
+  await expect(page.locator(BOX)).toBeVisible()
+  await page.locator('[data-studio-mode-option="layouts"]').click()
+  await expect(page.locator(BOX)).toBeHidden()
+})
