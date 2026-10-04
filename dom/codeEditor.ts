@@ -262,6 +262,29 @@ export function setCodeEditorText(view: EditorView, text: string): void {
   })
 }
 
+/** Replaces the editor's text with `text` — written by someone else (the
+ * Coding Agent editing a layout file) — as one step of its own in the undo
+ * history, so Undo takes it back and brings back what was there. Touches
+ * only the part that differs, so the cursor stays put where it can. Not
+ * reported to `onChange`: the caller already holds `text`.
+ *
+ * Does nothing while an IME composition is in progress, like
+ * `setCodeEditorText` — check `isCodeEditorComposing` first. */
+export function replaceCodeEditorTextUndoable(view: EditorView, text: string): void {
+  if (view.composing) return
+  const change = editorTextChange(view.state.doc.toString(), text)
+  if (change === null) return
+  view.dispatch({
+    changes: change,
+    annotations: [fromApp.of(true), isolateHistory.of('full')],
+  })
+}
+
+/** Whether an IME composition is in progress in the editor. */
+export function isCodeEditorComposing(view: EditorView): boolean {
+  return view.composing
+}
+
 /** The editor's text and its main selection (`from === to` for a caret). */
 export function codeEditorSelection(view: EditorView): { doc: string; from: number; to: number } {
   const { from, to } = view.state.selection.main
