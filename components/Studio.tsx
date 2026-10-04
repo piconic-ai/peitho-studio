@@ -42,7 +42,7 @@ import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isL
 import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
 import { type LayoutNameProblem, type StudioMode, initialLayoutListWidth, layoutFilesChanged, layoutListGeneration, layoutRows, layoutUsage, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
-import { LAYOUT_AUTOSAVE_DELAY_MS, editorDraft, editorLayoutName, isLayoutChangedOnDisk, layoutTextsOf, leaveBlocker, type LayoutField } from '../domain/layoutEditor'
+import { LAYOUT_AUTOSAVE_DELAY_MS, editorDraft, editorLayoutName, isLayoutChangedOnDisk, layoutTextsOf, leaveBlocker, type LayoutField, type LayoutTexts } from '../domain/layoutEditor'
 import { layoutDisplayName } from '../domain/standardLayouts'
 import type { Messages } from '../domain/messages'
 import { type ImageSlotFix, imageLayoutPin, imageSlotFixFor, parseImageSlotError, shownImageSlotFix } from '../domain/imageSlot'
@@ -2173,7 +2173,7 @@ export function Studio() {
     if (shown.kind !== 'ready') return
     let disk
     try {
-      disk = layoutTextsOf(await deckIpc.readLayout(shown.name))
+      disk = await readLayoutTexts(shown.name)
     } catch {
       return
     }
@@ -2186,6 +2186,11 @@ export function Studio() {
     resetDraftPreview()
   }
 
+  // Layout `name`'s files as the editor's texts, read again from disk.
+  async function readLayoutTexts(name: string): Promise<LayoutTexts> {
+    return layoutTextsOf(await deckIpc.readLayout(name))
+  }
+
   // The conflict's two ways out: the files as they are on disk now (read
   // again), the typing set aside — Undo brings it back — or the typing,
   // saved over them next.
@@ -2194,7 +2199,7 @@ export function Studio() {
     if (shown.kind !== 'ready' || shown.external === null || shown.saving) return
     let disk
     try {
-      disk = layoutTextsOf(await deckIpc.readLayout(shown.name))
+      disk = await readLayoutTexts(shown.name)
     } catch (err) {
       layouts.setNotice(settings.messages().layoutActionFailed(err instanceof Error ? err.message : String(err)))
       return
