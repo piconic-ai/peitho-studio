@@ -1,5 +1,5 @@
 // The layout editor and the Coding Agent editing the same layout
-// (todo/layout-editor-sync.md): the agent's (or an external editor's)
+// (todo/archive/layout-editor-sync.md): the agent's (or an external editor's)
 // write to `layouts/*.html` / `css/*.css` reaches the open editor, and
 // unsaved typing is never dropped by it.
 //
