@@ -6,6 +6,8 @@ import { type Size } from '../domain/geometry'
 import { type LayoutField } from '../domain/layoutEditor'
 import { type LayoutRow } from '../domain/layoutScreen'
 import { STANDARD_LAYOUTS } from '../domain/standardLayouts'
+import type { PhoneShape, ViewportMode } from '../domain/viewport'
+import { ViewportToggle } from './ViewportToggle'
 
 /** Where a delete stands, as the screen shows it (`domain/layoutDelete.ts`). */
 export type LayoutDeleteView = 'idle' | 'confirming' | 'choosing-replacement' | 'deleting'
@@ -35,6 +37,15 @@ export interface LayoutScreenProps {
   previewError: string
   listWidth: number
   onListResize: (event: MouseEvent) => void
+  /** The PC / Phone switch over the list, the same state as the slide
+   * preview's (`ViewportToggle`). */
+  viewportMode: ViewportMode
+  onToggleViewportMode: () => void
+  phoneShape: PhoneShape
+  phoneShapeMenuOpen: boolean
+  onTogglePhoneShapeMenu: () => void
+  onClosePhoneShapeMenu: () => void
+  onSelectPhoneShape: (shape: PhoneShape) => void
   /** A create/duplicate/delete/apply is running. */
   busy: boolean
   /** The last refused operation's reason, `null` for none. */
@@ -162,6 +173,17 @@ export function LayoutScreen(props: LayoutScreenProps) {
       <div data-layout-list className="shrink-0 flex flex-col min-h-0" style={`width: ${String(props.listWidth)}px`}>
         <div data-layout-list-header className="shrink-0 h-9 flex items-center justify-between gap-2 px-3 border-b border-border">
           <span className="text-xs font-medium text-muted-foreground truncate">{messagesFor(props.language).layoutList}</span>
+          <ViewportToggle
+            language={props.language}
+            viewportMode={props.viewportMode}
+            onToggleViewportMode={props.onToggleViewportMode}
+            phoneShape={props.phoneShape}
+            phoneShapeMenuOpen={props.phoneShapeMenuOpen}
+            onTogglePhoneShapeMenu={props.onTogglePhoneShapeMenu}
+            onClosePhoneShapeMenu={props.onClosePhoneShapeMenu}
+            onSelectPhoneShape={props.onSelectPhoneShape}
+            menuSide="right"
+          />
         </div>
         <p role="alert" data-layout-notice hidden={props.notice === null} className="shrink-0 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words border-b border-border">{props.notice ?? ''}</p>
         <div

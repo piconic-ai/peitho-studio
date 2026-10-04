@@ -877,3 +877,84 @@ test.describe('the selected row while the layout is edited', () => {
     await expect(thumbnail(page, 'title-body').locator('h1')).toHaveText('saved')
   })
 })
+
+// The PC / Phone switch over the list: the same switch, and the same state,
+// as the slide preview's.
+test.describe('the layout list\'s PC / Phone switch', () => {
+  const toggle = (page: Page) => page.locator('[data-layout-list] [data-viewport-toggle]')
+  const ratio = async (page: Page, name: string) => {
+    const box = await row(page, name).locator('[data-layout-thumbnail]').boundingBox()
+    if (!box) throw new Error('the thumbnail has no box')
+    return box.height / box.width
+  }
+
+  test('Given the layout list in PC display, when Phone is switched on, then every thumbnail takes the phone\'s tall shape, and back in PC display the deck\'s', async ({ page }) => {
+    await openLayoutScreen(page, deckOf({ layoutFragment: '<h1>saved</h1>' }))
+    const pc = await ratio(page, 'quote')
+    expect(pc).toBeLessThan(1)
+
+    await toggle(page).click()
+
+    await expect(toggle(page)).toHaveAttribute('aria-checked', 'true')
+    for (const name of ['title-slide', 'title-body', 'quote']) {
+      await expect.poll(() => ratio(page, name)).toBeGreaterThan(1.5)
+      await expect(row(page, name).locator('[data-layout-canvas] h1')).toHaveText('saved')
+    }
+
+    await toggle(page).click()
+    await expect.poll(() => ratio(page, 'quote')).toBeCloseTo(pc, 1)
+  })
+
+  test('Given phone display, when the deck\'s own shape is picked from the list\'s menu, then the thumbnails return to the deck\'s proportion while phone display stays on', async ({ page }) => {
+    await openLayoutScreen(page, deckOf())
+    const pc = await ratio(page, 'quote')
+    await toggle(page).click()
+    await expect.poll(() => ratio(page, 'quote')).toBeGreaterThan(1.5)
+
+    await page.locator('[data-layout-list] [data-phone-shape-menu-button]').click()
+    await page.locator('[data-layout-list] [data-phone-shape-option="deck"]').click()
+
+    await expect.poll(() => ratio(page, 'quote')).toBeCloseTo(pc, 1)
+    await expect(toggle(page)).toHaveAttribute('aria-checked', 'true')
+  })
+
+  test('Given Phone switched on in the layout list, when the window goes to Slides, then the preview is in phone display too; switched off there, the layout list is back in PC display', async ({ page }) => {
+    await openLayoutScreen(page, deckOf())
+    const pc = await ratio(page, 'quote')
+    await toggle(page).click()
+
+    await page.locator('[data-studio-mode-option="slides"]').click()
+    const slidesToggle = page.locator('[data-panel="preview"] [data-viewport-toggle]')
+    await expect(slidesToggle).toHaveAttribute('aria-checked', 'true')
+    await slidesToggle.click()
+    await expect(slidesToggle).toHaveAttribute('aria-checked', 'false')
+
+    await page.locator('[data-studio-mode-option="layouts"]').click()
+    await expect(toggle(page)).toHaveAttribute('aria-checked', 'false')
+    await expect.poll(() => ratio(page, 'quote')).toBeCloseTo(pc, 1)
+  })
+
+  test('Given a draft drawn in the selected row, when Phone is switched on, then the row keeps drawing the draft on the tall canvas', async ({ page }) => {
+    await openLayoutScreen(page, deckOf({ layoutFiles: { quote: { html: '<section class="peitho-slide layout-quote"><h1>saved</h1></section>', css: '' } }, layoutFragment: '<h1>saved</h1>' }))
+    await row(page, 'quote').click()
+    await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>draft</h1></section>', 'layout-html')
+    await expect(row(page, 'quote').locator('[data-layout-canvas] h1')).toHaveText('draft')
+
+    await toggle(page).click()
+
+    await expect.poll(() => ratio(page, 'quote')).toBeGreaterThan(1.5)
+    await expect(row(page, 'quote').locator('[data-layout-canvas] h1')).toHaveText('draft')
+    await expect(row(page, 'title-body').locator('[data-layout-canvas] h1')).toHaveText('saved')
+  })
+
+  test('Given a layout whose slide opts out with data-canvas="fixed", when Phone is switched on, then its thumbnail keeps the deck\'s shape', async ({ page }) => {
+    await openLayoutScreen(page, deckOf({ layoutFragment: '<section class="peitho-slide" data-canvas="fixed"><h1>fixed</h1></section>' }))
+    const pc = await ratio(page, 'quote')
+
+    await toggle(page).click()
+
+    await expect(toggle(page)).toHaveAttribute('aria-checked', 'true')
+    await expect(row(page, 'quote').locator('[data-layout-canvas] h1')).toHaveText('fixed')
+    expect(await ratio(page, 'quote')).toBeCloseTo(pc, 1)
+  })
+})

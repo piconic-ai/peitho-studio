@@ -2083,6 +2083,9 @@ export function Studio() {
   function setStudioMode(mode: StudioMode): void {
     ui.setStudioMode(mode)
     layouts.closeMenu()
+    // Both screens show the PC / Phone switch; its menu belongs to the one
+    // it was opened on.
+    ui.closePhoneShapeMenu()
     if (mode === 'layouts') void enterLayoutScreen()
   }
 
@@ -3097,6 +3100,13 @@ export function Studio() {
           previewError={draftPreviewError(layouts.draftPreview(), layouts.selectedLayout())}
           listWidth={layouts.listWidth()}
           onListResize={startColumnResize(layouts.listWidth, layouts.setListWidth, -1)}
+          viewportMode={ui.viewportMode()}
+          onToggleViewportMode={ui.toggleViewportMode}
+          phoneShape={ui.phoneShape()}
+          phoneShapeMenuOpen={ui.phoneShapeMenuOpen()}
+          onTogglePhoneShapeMenu={ui.togglePhoneShapeMenu}
+          onClosePhoneShapeMenu={ui.closePhoneShapeMenu}
+          onSelectPhoneShape={ui.selectPhoneShape}
           busy={layouts.busy()}
           notice={layouts.notice()}
           newLayoutOpen={layouts.newLayoutOpen()}
