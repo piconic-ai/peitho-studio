@@ -11,12 +11,13 @@ import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
-  REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, layoutTargetLabel, layoutTargetOfComment, newLayoutComment, newReviewComment, pollsForAgent,
+  REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, layoutClickTarget, layoutTargetLabel, layoutTargetOfComment, newLayoutComment, newReviewComment, pollsForAgent,
   previewPinsOf, reviewStatusText, slideIndexOfComment, slideSpans, targetLabel,
   type LayoutCommentTarget, type PreviewPin,
 } from '../domain/reviewComment'
 import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, connectTargetOf, showsConnectGuide } from '../domain/agentConnect'
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
+import { layoutThumbnailClickOf, noteLayoutRowPress } from '../dom/layoutComments'
 import { focusCommentBox, focusUnsentEdit, placePreviewPins, revealReviewThread, watchPreviewLayout, type PreviewClick } from '../dom/previewComments'
 import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
@@ -1118,6 +1119,18 @@ export function Studio() {
     const at = clampMenuPosition(from, { width: 336, height: 180 }, { width: window.innerWidth, height: window.innerHeight }, 8)
     review.openLayoutBox(target, at)
     focusCommentBox()
+  }
+
+  // A click on a layout row selects it; on the selected row's thumbnail it
+  // opens a comment on the layout, naming the slot clicked — the layout
+  // screen's counterpart of a click on the slide preview.
+  function clickLayoutRow(name: string, event: MouseEvent): void {
+    const click = layoutThumbnailClickOf(event)
+    if (name !== layouts.selectedLayout()) {
+      selectLayout(name)
+      return
+    }
+    if (click !== null) openLayoutCommentBox(layoutClickTarget(name, click.slot), click.at)
   }
 
   const commentBoxLabel = createMemo(() => {
@@ -3098,7 +3111,8 @@ export function Studio() {
           hidden={ui.studioMode() !== 'layouts'}
           rows={layoutRowsShown()}
           selectedName={layouts.selectedLayout()}
-          onSelect={selectLayout}
+          onRowClick={clickLayoutRow}
+          onRowPress={noteLayoutRowPress}
           onContextMenu={openLayoutMenu}
           onThumbnailHost={mountLayoutThumbnail}
           canvasOf={layoutCanvasOf}

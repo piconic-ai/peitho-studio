@@ -116,6 +116,20 @@ mod tests {
     }
 
     #[test]
+    fn given_a_layouts_placeholder_rendered_then_each_filled_slots_content_is_wrapped_in_its_slot_class() {
+        // The layout screen names the slot a click on a thumbnail landed in
+        // by this class (`dom/layoutComments.ts`, `slotNameOfClasses`).
+        let layouts: Vec<(&str, &str)> = builtin::STANDARD_LAYOUTS.iter().map(|layout| (layout.name, layout.html)).collect();
+        let (_dir, deck_path) = deck_with(&layouts, builtin::BASE_CSS);
+        let layout = builtin::STANDARD_LAYOUTS.iter().find(|layout| layout.name == "one-column-text").unwrap();
+        let source = placeholder_source(&parse_layout(layout.name, layout.html).unwrap());
+        let output = render_source(&deck_path, &source).unwrap_or_else(|err| panic!("{err}\n{source}"));
+        let fragment = &output.fragments[PREVIEW_KEY];
+        assert!(fragment.contains(r#"<span class="slot-title">"#), "{fragment}");
+        assert!(fragment.contains(r#"<div class="slot-body">"#), "{fragment}");
+    }
+
+    #[test]
     fn given_each_standard_layout_when_its_placeholder_is_rendered_in_a_deck_holding_them_all_then_it_builds() {
         let layouts: Vec<(&str, &str)> = builtin::STANDARD_LAYOUTS.iter().map(|layout| (layout.name, layout.html)).collect();
         let (_dir, deck_path) = deck_with(&layouts, builtin::BASE_CSS);

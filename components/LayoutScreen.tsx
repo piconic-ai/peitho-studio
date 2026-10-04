@@ -19,7 +19,11 @@ export interface LayoutScreenProps {
   hidden: boolean
   rows: LayoutRow[]
   selectedName: string | null
-  onSelect: (name: string) => void
+  /** A left-click on layout `name`'s row: selects it, and on the selected
+   * row's thumbnail, opens a comment on it (`dom/layoutComments.ts`). */
+  onRowClick: (name: string, event: MouseEvent) => void
+  /** A press on a row, for telling the click that follows from a drag. */
+  onRowPress: (event: MouseEvent) => void
   /** A right-click on layout `name`'s row, or on the list's empty space
    * (`null`) — opens the layout menu (`LayoutContextMenu.tsx`). */
   onContextMenu: (name: string | null, event: MouseEvent) => void
@@ -113,7 +117,9 @@ function aspectRatio(canvas: Size): string {
 /** The deck's layouts in one screen: the selected layout's HTML/CSS
  * (left) and the list (right), whose selected row draws the editor's
  * unsaved draft as it's typed — code on the left, what it looks like on
- * the right; the comments column sits right of both (`Studio.tsx`). Every
+ * the right; the comments column sits right of both (`Studio.tsx`). A
+ * click on the selected row's thumbnail opens a comment on that layout, as
+ * a click on the slide preview does on the slide. Every
  * operation on a layout is in the list's right-click menu
  * (`LayoutContextMenu.tsx`); New Layout and Delete open the modals at the
  * end. Every part is permanently mounted and shown or hidden by class —
@@ -207,7 +213,8 @@ export function LayoutScreen(props: LayoutScreenProps) {
               key={row.key}
               data-layout-row={row.name}
               aria-current={props.selectedName === row.name ? 'true' : 'false'}
-              onClick={() => props.onSelect(row.name)}
+              onMouseDown={e => props.onRowPress(e)}
+              onClick={e => props.onRowClick(row.name, e)}
               onContextMenu={e => props.onContextMenu(row.name, e)}
               className={(props.selectedName === row.name ? 'border-primary bg-accent ' : 'border-transparent hover:bg-accent ') + 'flex flex-col gap-1 p-1.5 rounded-md border-2 text-left'}
             >

@@ -31,6 +31,13 @@ export function isPointInRect(point: Point, rect: Rect): boolean {
   return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom
 }
 
+/** Whether the mouse moved more than `slop` (CSS px) between a press at
+ * `from` and a release at `to`, making it a drag rather than a click. A
+ * press not seen (`null`) or not a number counts as a click. */
+export function isDrag(from: Point | null, to: Point, slop: number): boolean {
+  return from !== null && Math.hypot(to.x - from.x, to.y - from.y) > slop
+}
+
 /** A file drop's position as Tauri reports it, in CSS pixels. Tauri calls
  * it a `PhysicalPosition`, but on macOS wry passes AppKit's
  * `draggingLocation` through unscaled (wry 0.55

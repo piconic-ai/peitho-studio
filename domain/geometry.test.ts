@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { clampMenuPosition, containScale, isPointInRect, dropPointToCss, fractionInRect, pinInSlide } from './geometry'
+import { clampMenuPosition, containScale, isDrag, isPointInRect, dropPointToCss, fractionInRect, pinInSlide } from './geometry'
 
 describe('clampMenuPosition', () => {
   test('spec: a point that already fits within the viewport is left unchanged', () => {
@@ -147,5 +147,18 @@ describe('pinInSlide', () => {
 
   test('adversarial: Given an element partly off the slide, Then the pin may fall outside 0-1 rather than be moved', () => {
     expect(pinInSlide({ x: 1, y: 1 }, { left: 400, top: 200, right: 600, bottom: 300 }, slide)).toEqual({ x: 1.25, y: 1.25 })
+  })
+})
+
+describe('isDrag', () => {
+  test('spec: Given a press and a release a few pixels apart, Then it is a click; further apart, a drag', () => {
+    expect(isDrag({ x: 10, y: 10 }, { x: 12, y: 13 }, 4)).toBe(false)
+    expect(isDrag({ x: 10, y: 10 }, { x: 20, y: 10 }, 4)).toBe(true)
+  })
+
+  test('adversarial: Given exactly the slop, no press seen, or a non-number, Then the slop counts as a click, an unseen press as a click, and NaN as no drag', () => {
+    expect(isDrag({ x: 0, y: 0 }, { x: 4, y: 0 }, 4)).toBe(false)
+    expect(isDrag(null, { x: 100, y: 100 }, 4)).toBe(false)
+    expect(isDrag({ x: Number.NaN, y: 0 }, { x: 100, y: 0 }, 4)).toBe(false)
   })
 })

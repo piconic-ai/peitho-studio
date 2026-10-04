@@ -15,6 +15,7 @@
 
 import type { CritDeckSession, LineRange, NewLayoutComment, NewReviewComment, ReviewComment } from './critReview'
 import type { Messages } from './messages'
+import { isPointInRect, type Point, type Rect } from './geometry'
 import type { ManifestSlide } from './render'
 import { buildSlideList, type SlideListEntry } from './slideList'
 import { splitSlides } from './slides'
@@ -79,9 +80,51 @@ export type CommentBox =
   | { kind: 'open-layout'; target: LayoutCommentTarget; at: { x: number; y: number } }
 
 /** What a comment written on the layout screen is on: one layout, or every
- * layout (the deck's look as a whole). There is no finer target: a
- * layout's preview points at nothing in its HTML. */
-export type LayoutCommentTarget = { kind: 'layout'; name: string } | { kind: 'all-layouts' }
+ * layout (the deck's look as a whole). A comment from a click on a
+ * layout's thumbnail also says where it was clicked (`part`); one from the
+ * layout menu doesn't. The comment still goes on the layout's files as a
+ * whole: the part is in its label, for the agent to read. */
+export type LayoutCommentTarget = { kind: 'layout'; name: string; part?: LayoutPart } | { kind: 'all-layouts' }
+
+/** Where on a layout's thumbnail a click landed: inside a slot's content,
+ * or on nothing a slot holds (the whole layout). */
+export type LayoutPart = { kind: 'slot'; slot: string } | { kind: 'whole' }
+
+/** The target of a click on layout `name`'s thumbnail that landed in
+ * `slot` (`null` for none). */
+export function layoutClickTarget(name: string, slot: string | null): LayoutCommentTarget {
+  return { kind: 'layout', name, part: slot === null ? { kind: 'whole' } : { kind: 'slot', slot } }
+}
+
+// A slot's name as peitho-core allows it (`SlotName::new`): lowercase
+// ASCII, digits and '-'.
+const SLOT = '[a-z0-9-]+'
+const SLOT_CLASS = new RegExp(`^slot-(${SLOT})$`)
+
+/** The slot an element holds the content of, from its classes: peitho-core
+ * wraps each filled slot's content in an element classed `slot-<name>`
+ * (`SlotName::class_name`). `null` for none; of several, the first. */
+export function slotNameOfClasses(classes: readonly string[]): string | null {
+  for (const name of classes) {
+    const match = SLOT_CLASS.exec(name)
+    if (match !== null) return match[1]
+  }
+  return null
+}
+
+/** The slot whose box holds `point` — the smallest such, as a slot can sit
+ * inside another's box; of equal ones, the first listed. A box with no
+ * area (an empty slot, or one not laid out) holds nothing. `null` when no
+ * slot holds the point. */
+export function slotAtPoint(point: Point, slots: readonly { slot: string; rect: Rect }[]): string | null {
+  let best: { slot: string; area: number } | null = null
+  for (const { slot, rect } of slots) {
+    const area = (rect.right - rect.left) * (rect.bottom - rect.top)
+    if (!(area > 0) || !isPointInRect(point, rect)) continue
+    if (best === null || area < best.area) best = { slot, area }
+  }
+  return best?.slot ?? null
+}
 
 /** A comment written on the layout screen and not yet sent. */
 export interface PendingLayoutComment {
@@ -107,7 +150,12 @@ export function layoutHtmlFile(name: string): string | null {
 /** `Layout cover` or `All layouts` — what the comment box and the panel
  * say a layout comment is on. */
 export function layoutTargetLabel(target: LayoutCommentTarget): string {
-  return target.kind === 'layout' ? `Layout ${target.name}` : 'All layouts'
+  if (target.kind === 'all-layouts') return 'All layouts'
+  return `Layout ${target.name}${target.part === undefined ? '' : ` › ${layoutPartLabel(target.part)}`}`
+}
+
+function layoutPartLabel(part: LayoutPart): string {
+  return part.kind === 'slot' ? `slot "${part.slot}"` : 'whole layout'
 }
 
 /** The label heading a layout comment as the agent reads it: what it's
@@ -130,7 +178,7 @@ export function newLayoutComment(pending: PendingLayoutComment): NewLayoutCommen
   }
 }
 
-const LAYOUT_LABEL = new RegExp(`^\\[(?:Layout (${NAME})|(All layouts))(?: \\([^\\]\\n]*\\))?\\] ([\\s\\S]*)$`)
+const LAYOUT_LABEL = new RegExp(`^\\[(?:Layout (${NAME})(?: › (?:slot "(${SLOT})"|(whole layout)))?|(All layouts))(?: \\([^\\]\\n]*\\))?\\] ([\\s\\S]*)$`)
 
 /** A sent comment's text split back into the layout target its label
  * names (`layoutAgentLabel`) and the text itself — `null` for a comment
@@ -138,7 +186,10 @@ const LAYOUT_LABEL = new RegExp(`^\\[(?:Layout (${NAME})|(All layouts))(?: \\([^
 export function splitLayoutLabel(body: string): { target: LayoutCommentTarget; text: string } | null {
   const match = LAYOUT_LABEL.exec(body)
   if (match === null) return null
-  return { target: match[1] === undefined ? { kind: 'all-layouts' } : { kind: 'layout', name: match[1] }, text: match[3] }
+  const [, name, slot, whole, , text] = match
+  if (name === undefined) return { target: { kind: 'all-layouts' }, text }
+  const part: LayoutPart | undefined = slot !== undefined ? { kind: 'slot', slot } : whole !== undefined ? { kind: 'whole' } : undefined
+  return { target: part === undefined ? { kind: 'layout', name } : { kind: 'layout', name, part }, text }
 }
 
 const LAYOUT_FILE = new RegExp(`^(?:layouts/(${NAME})\\.html|css/(${NAME})\\.css)$`)
