@@ -2070,14 +2070,19 @@ export function Studio() {
 
   async function loadLayoutPreviews(): Promise<void> {
     if (ui.layoutPreviews() !== null) return
+    if (!await fetchLayoutPreviews()) ui.setLayoutPreviews([])
+    layouts.bumpPreviewGeneration()
+  }
+  // Fetches the layout previews into the cache; resolves whether it could.
+  async function fetchLayoutPreviews(): Promise<boolean> {
     try {
       const payload = await deckIpc.previewLayouts()
       ui.setLayoutPreviewCss(payload.css)
       ui.setLayoutPreviews(payload.previews)
+      return true
     } catch {
-      ui.setLayoutPreviews([])
+      return false
     }
-    layouts.bumpPreviewGeneration()
   }
 
   // ---- The layout screen (the header's Layouts mode) ----
@@ -2145,9 +2150,10 @@ export function Studio() {
     const previous = layoutStamp
     layoutStamp = stamp
     if (!layoutFilesChanged(previous, stamp)) return false
-    await reloadLayoutPreviews()
-    showSavedLayoutPreview()
-    await renderPreview(liveSource())
+    await Promise.all([
+      reloadLayoutPreviews().then(showSavedLayoutPreview),
+      renderPreview(liveSource()),
+    ])
     const name = shownLayout(layouts.selectedLayout(), layoutNames())
     if (name !== layouts.selectedLayout()) await openLayout(name)
     else await pullShownLayout()
@@ -2208,14 +2214,7 @@ export function Studio() {
   // Fresh previews in place of the ones shown (the list keeps its rows
   // meanwhile, unlike `refreshLayouts`); on failure the old ones stay.
   async function reloadLayoutPreviews(): Promise<void> {
-    try {
-      const payload = await deckIpc.previewLayouts()
-      ui.setLayoutPreviewCss(payload.css)
-      ui.setLayoutPreviews(payload.previews)
-    } catch {
-      return
-    }
-    layouts.bumpPreviewGeneration()
+    if (await fetchLayoutPreviews()) layouts.bumpPreviewGeneration()
   }
 
   // The window was asked to close with a layout draft not saved yet
@@ -2569,10 +2568,8 @@ export function Studio() {
     if (typeof stamp === 'string') layoutStamp = stamp
     layouts.editorSaved(name, texts)
     setStatusMessage({ kind: 'layout-saved', layout: name })
-    void reloadLayoutPreviews().then(() => {
-      showSavedLayoutPreview()
-      return renderPreview(liveSource())
-    })
+    void reloadLayoutPreviews().then(showSavedLayoutPreview)
+    void renderPreview(liveSource())
   }
 
   // Once fresh previews are in and nothing was typed since, the shown
