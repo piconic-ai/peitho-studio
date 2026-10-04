@@ -178,9 +178,10 @@ export function LayoutScreen(props: LayoutScreenProps) {
 
       <div data-layout-list className="shrink-0 flex flex-col min-h-0" style={`width: ${String(props.listWidth)}px`}>
         {/* A toolbar for the switch alone, no heading: the window's
-            Slides / Layouts switch already says what this column is. As
-            tall as the editor's tab row, so the two columns' rules line up. */}
-        <div data-layout-list-header className="shrink-0 h-9 flex items-center justify-end px-3 border-b border-border">
+            Slides / Layouts switch already says what this column is. At the
+            top-left, as tall as the editor's tab row, where the tabs sit in
+            theirs; no rule under it. */}
+        <div data-layout-list-header className="shrink-0 h-9 flex items-center justify-start px-2">
           <ViewportToggle
             language={props.language}
             viewportMode={props.viewportMode}
@@ -190,7 +191,7 @@ export function LayoutScreen(props: LayoutScreenProps) {
             onTogglePhoneShapeMenu={props.onTogglePhoneShapeMenu}
             onClosePhoneShapeMenu={props.onClosePhoneShapeMenu}
             onSelectPhoneShape={props.onSelectPhoneShape}
-            menuSide="right"
+            menuSide="left"
           />
         </div>
         <p role="alert" data-layout-notice hidden={props.notice === null} className="shrink-0 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words border-b border-border">{props.notice ?? ''}</p>

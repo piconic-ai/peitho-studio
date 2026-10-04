@@ -943,6 +943,42 @@ test.describe('the layout list\'s PC / Phone switch', () => {
     await expect.poll(() => ratio(page, 'quote')).toBeCloseTo(pc, 1)
   })
 
+  test('Given the layout list, then the switch sits at its top-left, level with the editor\'s tabs, with no rule under its row', async ({ page }) => {
+    await openLayoutScreen(page, deckOf())
+    const header = page.locator('[data-layout-list-header]')
+    const list = (await page.locator('[data-layout-list]').boundingBox())!
+    const pill = (await toggle(page).boundingBox())!
+    expect(pill.x - list.x).toBeLessThanOrEqual(12)
+
+    const tabs = (await page.locator('[data-layout-tab="html"]').locator('..').boundingBox())!
+    const row = (await header.boundingBox())!
+    expect(row.y).toBeCloseTo(tabs.y, 0)
+    expect(row.height).toBeCloseTo(tabs.height, 0)
+    expect(await header.evaluate(el => getComputedStyle(el).borderBottomWidth)).toBe('0px')
+  })
+
+  test('Given the list narrowed against the window\'s right edge, when the phone shape menu opens, then it stays inside the window', async ({ page }) => {
+    await openLayoutScreen(page, deckOf())
+    await page.locator('[data-panel="review"] [data-panel-toggle]').click()
+    await expect(page.locator('[data-panel="review"]')).toBeHidden()
+    // Drag the divider right as far as it goes: the list at its narrowest.
+    const list = (await page.locator('[data-layout-list]').boundingBox())!
+    await page.mouse.move(list.x - 2, list.y + 200)
+    await page.mouse.down()
+    await page.mouse.move(list.x + 600, list.y + 200, { steps: 5 })
+    await page.mouse.up()
+
+    await toggle(page).click()
+    await page.locator('[data-layout-list] [data-phone-shape-menu-button]').click()
+    const menu = page.locator('[data-layout-list] [data-phone-shape-menu]')
+    await expect(menu).toBeVisible()
+    const viewport = page.viewportSize()!
+    await expect.poll(async () => {
+      const box = (await menu.boundingBox())!
+      return box.x >= 0 && box.x + box.width <= viewport.width
+    }).toBe(true)
+  })
+
   test('Given phone display, when the deck\'s own shape is picked from the list\'s menu, then the thumbnails return to the deck\'s proportion while phone display stays on', async ({ page }) => {
     await openLayoutScreen(page, deckOf())
     const pc = await ratio(page, 'quote')

@@ -18,8 +18,9 @@ export interface ViewportToggleProps {
   onClosePhoneShapeMenu: () => void
   onSelectPhoneShape: (shape: PhoneShape) => void
   /** Which edge of the toggle the shape menu lines up with: `left` grows it
-   * rightwards (the slide preview, at the left of its pane), `right` grows
-   * it leftwards (the layout list, near the window's right edge). */
+   * rightwards (the slide preview and the layout list, both with the switch
+   * at their left), `right` grows it leftwards. Either way `Studio.tsx`
+   * shifts it back inside the window if it would cross the edge. */
   menuSide: 'left' | 'right'
 }
 

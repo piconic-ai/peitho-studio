@@ -18,6 +18,7 @@ import {
 import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, connectTargetOf, showsConnectGuide } from '../domain/agentConnect'
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
 import { layoutThumbnailClickOf, noteLayoutRowPress } from '../dom/layoutComments'
+import { keepShownPopupsInWindow } from '../dom/popupFit'
 import { focusCommentBox, focusUnsentEdit, placePreviewPins, revealReviewThread, watchPreviewLayout, type PreviewClick } from '../dom/previewComments'
 import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
@@ -2320,6 +2321,13 @@ export function Studio() {
       }
     }
   }
+
+  // Keeps the PC / Phone switch's shape menu on-screen: it opens rightwards
+  // from the switch, which on the layout screen can sit near the window's
+  // right edge (the list narrowed, the comments column closed).
+  createEffect(() => {
+    if (ui.phoneShapeMenuOpen()) keepShownPopupsInWindow('[data-phone-shape-menu]')
+  })
 
   // Keeps the layout menu on-screen, as the slide menu's effect above does.
   let layoutMenuEl: HTMLElement | undefined
