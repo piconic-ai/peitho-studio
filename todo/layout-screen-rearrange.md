@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: レイアウト画面の配置を「エディタ | 一覧(選択行が下書きのライブプレビュー) | コメント」に組み替え、右のプレビューを廃止し、一覧にPC/スマホ切替を付ける
 tags: [layout, ui, screen, viewport]
 ---
@@ -117,13 +117,25 @@ tags: [layout, ui, screen, viewport]
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] (Rust変更があれば) `cargo test` グリーン
-- [ ] `bun run test:e2e` グリーン
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] (Rust変更があれば) `cargo test` グリーン — Rust変更なし
+- [x] `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機での見た目/挙動確認(ユーザー自身に依頼): 配置、選択行のライブ
-  描画、PC/スマホ切替、列幅のドラッグ
-- [ ] サムネイルが小さくて細部が見づらくないか(必要なら一覧の既定幅を広げる)
+  描画、PC/スマホ切替、列幅のドラッグ。mockTauriのe2eは、下書きが実際の
+  `preview_layout_draft`(peitho-core)の出力で描かれること、実機WKWebViewで
+  再マウントされたShadow DOMキャンバスが描き直されることまでは保証しない。
+- [ ] サムネイルが小さくて細部が見づらくないか(既定幅は220→280pxに広げた。
+  さらに要るか)
+
+## 実装メモ
+
+- 選択行の描き直しは`Studio.tsx`の`createEffect`から行う(keyed `.map()`行の
+  `ref`はマウント時の1回だけ)。対象は「今下書きを描く行」と「前に描いていた行」
+  だけで、他の行には触れない。
+- PC/スマホ切替は行のキーに含め(`layoutListGeneration`)、切替で全行を
+  マウントし直す。`data-canvas="fixed"`のレイアウトはスマホ表示でもデッキの形。
+- 切替UIは`components/ViewportToggle.tsx`に切り出して両画面で共有。
 
 ## 先送り事項
