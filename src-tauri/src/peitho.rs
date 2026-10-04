@@ -1373,8 +1373,9 @@ pub fn preview_layout_draft(
 
 /// A fingerprint of this window's deck's layout files
 /// (`layout_files::layout_files_stamp`): it changes when one is added,
-/// removed or written — by the Coding Agent, say — which only deck.md's
-/// watcher wouldn't notice.
+/// removed or written — by the Coding Agent, say. Compared with what
+/// Studio itself last wrote (`save_layout`'s answer), it tells the layout
+/// watcher's report of someone else's change from Studio's own.
 #[tauri::command(async)]
 pub fn layout_files_stamp(window: WebviewWindow, session: State<PeithoSession>) -> Result<String, String> {
     Ok(layout_files::layout_files_stamp(&session_deck_dir(&session, window.label())?))

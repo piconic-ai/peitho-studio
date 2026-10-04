@@ -2085,9 +2085,10 @@ export function Studio() {
   // Its list is the "Change Layout" picker's: the same `preview_layouts`
   // previews, cached in `ui.layoutPreviews` until a layout file changes.
   // Every file operation (`engine::layout_files`) is followed by
-  // `refreshLayouts`, which drops that cache and re-renders the deck, so
-  // the slides' thumbnails pick up a changed layout too: only deck.md is
-  // watched for changes.
+  // `refreshLayouts` (an autosave by `reloadLayoutPreviews`), which
+  // replaces that cache and re-renders the deck, so the slides' thumbnails
+  // pick up a changed layout too; a change made outside Studio arrives
+  // through the layout files' watcher (`syncLayoutFiles`).
   const layoutNames = createMemo<string[]>(() => (ui.layoutPreviews() ?? []).map(preview => preview.name))
   const slidesByLayout = createMemo(() => layoutUsage(slideEntries(), render.slideLayouts()))
   const layoutRowsShown = createMemo(() => layoutRows(layoutNames(), slidesByLayout(), settings.language(), layoutListGeneration(layouts.previewGeneration(), ui.viewportMode(), ui.phoneShape())))
