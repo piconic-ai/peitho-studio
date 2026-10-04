@@ -29,6 +29,10 @@ async function openLayoutScreen(page: Page, deck: MockDeck): Promise<void> {
   await page.locator('[data-slide-row="0"]').click()
   await page.locator('[data-studio-mode-option="layouts"]').click()
   await expect(page.locator('[data-layout-screen]')).toBeVisible()
+  // The list takes its first width (as wide as the editor) a frame after the
+  // screen shows: measuring columns before then reads them mid-change.
+  const width = async (selector: string) => (await page.locator(selector).boundingBox())?.width ?? 0
+  await expect.poll(async () => Math.abs(await width('[data-layout-list]') - await width('[data-layout-editor]'))).toBeLessThanOrEqual(1)
 }
 
 function row(page: Page, name: string) {
