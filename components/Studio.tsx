@@ -42,7 +42,7 @@ import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isL
 import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
 import { type LayoutNameProblem, type StudioMode, initialLayoutListWidth, layoutFilesChanged, layoutListGeneration, layoutRows, layoutUsage, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
-import { LAYOUT_AUTOSAVE_DELAY_MS, editorDraft, editorLayoutName, layoutTextsOf, leaveBlocker, type LayoutField } from '../domain/layoutEditor'
+import { LAYOUT_AUTOSAVE_DELAY_MS, editorDraft, editorLayoutName, isLayoutChangedOnDisk, layoutTextsOf, leaveBlocker, type LayoutField } from '../domain/layoutEditor'
 import { layoutDisplayName } from '../domain/standardLayouts'
 import type { Messages } from '../domain/messages'
 import { type ImageSlotFix, imageLayoutPin, imageSlotFixFor, parseImageSlotError, shownImageSlotFix } from '../domain/imageSlot'
@@ -2553,9 +2553,17 @@ export function Studio() {
     layouts.editorSaving()
     let stamp: string
     try {
-      stamp = await deckIpc.saveLayout(await persistedSource(), name, texts.html, texts.css)
+      // `saved` goes along: a file the agent wrote meanwhile — even during
+      // this save's own build check — is refused rather than overwritten.
+      stamp = await deckIpc.saveLayout(await persistedSource(), name, texts.html, texts.css, shown.saved)
     } catch (err) {
-      layouts.editorSaveFailed(name, String(err))
+      const message = String(err)
+      if (isLayoutChangedOnDisk(message)) {
+        layouts.editorSaveInterrupted(name)
+        await pullShownLayout()
+        return
+      }
+      layouts.editorSaveFailed(name, message, texts)
       return
     }
     if (typeof stamp === 'string') layoutStamp = stamp

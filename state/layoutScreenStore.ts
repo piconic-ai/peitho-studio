@@ -3,7 +3,7 @@ import {
   DELETE_IDLE, cancelDelete, confirmDelete, pickReplacement, startDelete, type DeleteFlow,
 } from '../domain/layoutDelete'
 import {
-  NO_LAYOUT_EDITOR, editorLayoutName, isEditorDirty, keptDraft, loadedEditor, saveFailedEditor, savedEditor, savingEditor, shouldAutosave,
+  NO_LAYOUT_EDITOR, editorLayoutName, isEditorDirty, keptDraft, loadedEditor, saveFailedEditor, saveInterruptedEditor, savedEditor, savingEditor, shouldAutosave,
   withExternalChange, withExternalLoaded, withTyped,
   type ExternalChangeOutcome, type LayoutEditor, type LayoutField, type LayoutTexts,
 } from '../domain/layoutEditor'
@@ -158,8 +158,11 @@ export function createLayoutScreenStore() {
   function editorSaved(name: string, texts: LayoutTexts): void {
     setEditor(current => savedEditor(current, name, texts))
   }
-  function editorSaveFailed(name: string, message: string): void {
-    setEditor(current => saveFailedEditor(current, name, message))
+  function editorSaveFailed(name: string, message: string, sent: LayoutTexts): void {
+    setEditor(current => saveFailedEditor(current, name, message, sent))
+  }
+  function editorSaveInterrupted(name: string): void {
+    setEditor(current => saveInterruptedEditor(current, name))
   }
 
   // The layout list's right-click menu (`domain/layoutMenu.ts`). Each open
@@ -222,7 +225,7 @@ export function createLayoutScreenStore() {
     openNewLayout, closeNewLayout, newLayoutNameProblem,
     deleteFlow, beginDelete, chooseReplacement, confirmDeleteFlow, cancelDeleteFlow, finishDelete,
     editor, editorDirty, editorConflict, editorTab, setEditorTab,
-    editorLoading, editorLoaded, editorUnavailable, typeInEditor, editorSaving, editorSaved, editorSaveFailed,
+    editorLoading, editorLoaded, editorUnavailable, typeInEditor, editorSaving, editorSaved, editorSaveFailed, editorSaveInterrupted,
     wantsAutosave, externalChange, loadExternal, keepDraft,
     busy, setBusy, notice, setNotice,
     menu, openMenuOnLayout, openMenuOnList, settleMenuFit, moveMenu, closeMenu,

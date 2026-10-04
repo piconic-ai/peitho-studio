@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   LAYOUT_AUTOSAVE_DELAY_MS, NO_LAYOUT_EDITOR, editorDraft, editorLayoutName, isEditorDirty, keptDraft, layoutTextsOf, leaveBlocker, loadedEditor,
-  saveFailedEditor, savedEditor, savingEditor, shouldAutosave, withExternalChange, withExternalLoaded, withTyped,
+  LAYOUT_CHANGED_ON_DISK, isLayoutChangedOnDisk, saveFailedEditor, saveInterruptedEditor, savedEditor, savingEditor, shouldAutosave, withExternalChange, withExternalLoaded, withTyped,
   type LayoutEditor, type LayoutTexts,
 } from './layoutEditor'
 
@@ -45,7 +45,7 @@ describe('editing a layout\'s HTML/CSS', () => {
 
   test('spec: Given a save refused (HTML that doesn\'t parse), Then the reason shows, the typing stays, and the next edit clears the reason', () => {
     const typed = withTyped(loadedEditor('quote', FILES), 'html', '<div>')
-    const failed = saveFailedEditor(savingEditor(typed), 'quote', 'no <section>')
+    const failed = saveFailedEditor(savingEditor(typed), 'quote', 'no <section>', editorDraft(typed))
     expect(failed.kind === 'ready' && failed.error).toBe('no <section>')
     expect(editorDraft(failed).html).toBe('<div>')
     const edited = withTyped(failed, 'html', '<div>!')
@@ -55,7 +55,8 @@ describe('editing a layout\'s HTML/CSS', () => {
   test('adversarial: Given a save result for another layout (the selection moved on), Then the editor is left as it is', () => {
     const other = withTyped(loadedEditor('other', FILES), 'html', 'x')
     expect(savedEditor(other, 'quote', FILES)).toBe(other)
-    expect(saveFailedEditor(other, 'quote', 'why')).toBe(other)
+    expect(saveFailedEditor(other, 'quote', 'why', FILES)).toBe(other)
+    expect(saveInterruptedEditor(other, 'quote')).toBe(other)
   })
 
   test('adversarial: Given an editor that isn\'t ready (none, loading, unavailable), Then typing and saving change nothing and it is never dirty', () => {
@@ -112,7 +113,7 @@ describe('saving the draft on its own (autosave)', () => {
   })
 
   test('spec: Given a save the build check refused, Then the draft stays unsaved and is not tried again until the next edit', () => {
-    const refused = saveFailedEditor(savingEditor(typedEditor('<div>')), 'quote', 'a layout needs a <section> element')
+    const refused = saveFailedEditor(savingEditor(typedEditor('<div>')), 'quote', 'a layout needs a <section> element', editorDraft(typedEditor('<div>')))
     expect(editorDraft(refused).html).toBe('<div>')
     expect(isEditorDirty(refused)).toBe(true)
     expect(shouldAutosave(refused)).toBe(false)
@@ -148,7 +149,7 @@ describe('the files changing on disk (the agent editing the layout)', () => {
   })
 
   test('spec: Given a draft the build check refused, When the agent rewrites the files, Then it is a conflict too, not a silent replace', () => {
-    const refused = saveFailedEditor(savingEditor(typedEditor('<div>')), 'quote', 'no <section>')
+    const refused = saveFailedEditor(savingEditor(typedEditor('<div>')), 'quote', 'no <section>', editorDraft(typedEditor('<div>')))
     expect(withExternalChange(refused, 'quote', AGENT).outcome).toBe('conflict')
   })
 
@@ -232,7 +233,35 @@ describe('leaving the editor (another layout, the slides, closing the window)', 
   })
 
   test('spec: Given a draft that still could not be saved, Then leaving is held back', () => {
-    const refused = saveFailedEditor(savingEditor(typedEditor('<div>')), 'quote', 'no <section>')
+    const refused = saveFailedEditor(savingEditor(typedEditor('<div>')), 'quote', 'no <section>', editorDraft(typedEditor('<div>')))
     expect(leaveBlocker(refused)).toBe('unsaved')
+  })
+})
+
+describe('a save meeting newer text', () => {
+  test('spec: Given a draft fixed while its save was running, When that save is refused, Then the fix carries no error and is saved next', () => {
+    const invalid = typedEditor('<div>invalid</div>')
+    const fixed = withTyped(savingEditor(invalid), 'html', '<section>fixed</section>')
+    const refused = saveFailedEditor(fixed, 'quote', 'a layout needs a <section> element', editorDraft(invalid))
+    expect(refused.kind === 'ready' && refused.error).toBeNull()
+    expect(shouldAutosave(refused)).toBe(true)
+  })
+
+  test('spec: Given the agent wrote the files during a save, When the save finds them changed, Then nothing is an error of the draft, and reading the change makes it a conflict', () => {
+    const running = savingEditor(typedEditor())
+    const interrupted = saveInterruptedEditor(running, 'quote')
+    expect(interrupted.kind === 'ready' && interrupted.saving).toBe(false)
+    expect(interrupted.kind === 'ready' && interrupted.error).toBeNull()
+    const { editor, outcome } = withExternalChange(interrupted, 'quote', AGENT)
+    expect(outcome).toBe('conflict')
+    expect(shouldAutosave(editor)).toBe(false)
+  })
+
+  test('adversarial: only the changed-on-disk refusal is told apart, whatever wraps it', () => {
+    expect(isLayoutChangedOnDisk(LAYOUT_CHANGED_ON_DISK)).toBe(true)
+    expect(isLayoutChangedOnDisk(`Error: ${LAYOUT_CHANGED_ON_DISK}`)).toBe(true)
+    for (const message of ['', 'a layout needs a <section> element', 'changed on disk', 'Error: the slides have changes']) {
+      expect(isLayoutChangedOnDisk(message)).toBe(false)
+    }
   })
 })

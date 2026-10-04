@@ -108,8 +108,10 @@ export interface DeckIpc {
    * parse as a layout, and an edit that would stop `content` (the deck
    * source now) from building as it does. Resolves with the layout files'
    * fingerprint once written (`layoutFilesStamp`), so the watcher's report
-   * of this write can be told from someone else's. */
-  saveLayout(content: string, name: string, html: string, css: string): Promise<string>
+   * of this write can be told from someone else's. With `base` (what the
+   * editor last read or wrote), refuses with `LAYOUT_CHANGED_ON_DISK`
+   * (`domain/layoutEditor.ts`) when the files no longer hold it. */
+  saveLayout(content: string, name: string, html: string, css: string, base?: { html: string; css: string }): Promise<string>
   /** A fingerprint of the deck's layout files (`layouts/*.html`,
    * `css/*.css`): it changes when one is added, removed or written — by
    * the Coding Agent, say. */
@@ -205,7 +207,7 @@ export function createTauriDeckIpc(): DeckIpc {
     layoutFilesStamp: () => invoke('layout_files_stamp'),
     reportLayoutDraft: pending => invoke('report_layout_draft', { pending }),
     previewLayoutDraft: (name, html, css) => invoke('preview_layout_draft', { name, html, css }),
-    saveLayout: (content, name, html, css) => invoke('save_layout', { content, name, html, css }),
+    saveLayout: (content, name, html, css, base) => invoke('save_layout', { content, name, html, css, base: base ?? null }),
     presentDeck: rehearsal => invoke('present_deck', { rehearsal }),
     reportDeckSettings: settings => invoke('report_deck_settings', { settings }),
     trustOpenDeck: () => invoke('trust_open_deck'),

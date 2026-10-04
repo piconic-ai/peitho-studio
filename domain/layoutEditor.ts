@@ -82,10 +82,32 @@ export function savedEditor(editor: LayoutEditor, name: string, texts: LayoutTex
   return { ...editor, saved: texts, saving: false, error: null }
 }
 
-/** `editor` once a save of layout `name` was refused with `message`. */
-export function saveFailedEditor(editor: LayoutEditor, name: string, message: string): LayoutEditor {
+/** `editor` once a save of layout `name`, sending `sent`, was refused with
+ * `message`. The refusal is the draft's only while the draft is still what
+ * was sent: typing during the save (a fix, say) leaves no error behind, so
+ * the newer text is saved next. */
+export function saveFailedEditor(editor: LayoutEditor, name: string, message: string, sent: LayoutTexts): LayoutEditor {
   if (editor.kind !== 'ready' || editor.name !== name) return editor
-  return { ...editor, saving: false, error: message }
+  return { ...editor, saving: false, error: sameTexts(editor.draft, sent) ? message : null }
+}
+
+/** The text `save_layout` refuses with when the files no longer hold what
+ * the editor last read or wrote (`LAYOUT_CHANGED_ON_DISK` in
+ * `engine::layout_files`): someone else wrote them during the save. */
+export const LAYOUT_CHANGED_ON_DISK = 'the layout\'s files changed on disk since they were read'
+
+/** Whether a save's refusal (`message`, as shown) is the files having
+ * changed on disk meanwhile rather than the draft itself. */
+export function isLayoutChangedOnDisk(message: string): boolean {
+  return message.includes(LAYOUT_CHANGED_ON_DISK)
+}
+
+/** `editor` once a save of layout `name` found the files changed on disk
+ * meanwhile: nothing was written and the draft has no error of its own —
+ * the change is read next (`withExternalChange`). */
+export function saveInterruptedEditor(editor: LayoutEditor, name: string): LayoutEditor {
+  if (editor.kind !== 'ready' || editor.name !== name) return editor
+  return { ...editor, saving: false, error: null }
 }
 
 /** What a change on disk to layout `name`'s files did to the editor:
