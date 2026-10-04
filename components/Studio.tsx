@@ -2129,7 +2129,15 @@ export function Studio() {
   // slides and the editor (`pullShownLayout`). Studio's own writes take
   // their fingerprint as seen, so the watcher's report of them changes
   // nothing.
+  // Every update counts up `layoutStampRevision`, so a read that was in
+  // flight while a newer fingerprint was taken (an autosave's, say) can tell
+  // and never puts the older one back.
   let layoutStamp: string | null = null
+  let layoutStampRevision = 0
+  function takeLayoutStamp(stamp: string): void {
+    layoutStamp = stamp
+    layoutStampRevision += 1
+  }
   async function readLayoutStamp(): Promise<string | null> {
     try {
       return (await deckIpc.layoutFilesStamp()) ?? ''
@@ -2140,15 +2148,25 @@ export function Studio() {
   // Takes the files as they are now as seen — on opening a deck, and after
   // Studio changed them itself.
   async function noteLayoutFiles(): Promise<void> {
+    const revision = layoutStampRevision
     const stamp = await readLayoutStamp()
-    if (stamp !== null) layoutStamp = stamp
+    if (stamp !== null && revision === layoutStampRevision) takeLayoutStamp(stamp)
   }
-  // Resolves whether the files had changed.
+  // Resolves whether the files had changed. A newer fingerprint taken while
+  // this one was being read makes it stale: the files are read again
+  // against that newer one.
   async function syncLayoutFiles(): Promise<boolean> {
-    const stamp = await readLayoutStamp()
-    if (stamp === null) return false
-    const previous = layoutStamp
-    layoutStamp = stamp
+    let stamp: string | null
+    let previous: string | null
+    do {
+      const revision = layoutStampRevision
+      stamp = await readLayoutStamp()
+      if (stamp === null) return false
+      if (revision !== layoutStampRevision) continue
+      previous = layoutStamp
+      takeLayoutStamp(stamp)
+      break
+    } while (true)
     if (!layoutFilesChanged(previous, stamp)) return false
     await Promise.all([
       reloadLayoutPreviews().then(showSavedLayoutPreview),
@@ -2572,7 +2590,7 @@ export function Studio() {
       layouts.editorSaveFailed(name, message, texts)
       return
     }
-    if (typeof stamp === 'string') layoutStamp = stamp
+    if (typeof stamp === 'string') takeLayoutStamp(stamp)
     layouts.editorSaved(name, texts)
     setStatusMessage({ kind: 'layout-saved', layout: name })
     void reloadLayoutPreviews().then(showSavedLayoutPreview)
