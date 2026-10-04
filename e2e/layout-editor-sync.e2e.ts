@@ -233,3 +233,20 @@ test('adversarial: Given an invalid draft fixed while its save is running, then 
   await expect.poll(() => deck.layoutFiles?.quote.html, { timeout: 8_000 }).toBe(MINE)
   await expect(page.locator('[data-layout-editor-message]')).toBeHidden()
 })
+
+test('adversarial: Given a conflict, when the window is closed, then the notice asks for the choice rather than calling the edits unsaveable', async ({ page }) => {
+  const deck = deckOf()
+  await openQuote(page, deck)
+  await fillEditor(page, MINE, 'layout-html')
+  await agentWrites(page, deck, AGENT, 'agent-1')
+  await expect(page.locator('[data-layout-conflict]')).toBeVisible()
+
+  await page.evaluate(() => {
+    (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, toWindow?: string) => void })
+      .__mockEmitTauriEvent('layout:flush-before-close', null, 'main')
+  })
+
+  await expect(page.locator('[data-layout-notice]')).toContainText('load them or keep your edits, or close the window again')
+  await expect(page.locator('[data-layout-notice]')).not.toContainText('could not be saved')
+  expect(deck.layoutFiles?.quote.html).toBe(AGENT)
+})
