@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: レイアウトのHTML/CSSエディタを自動保存にし、Coding Agentなど外部からのレイアウトファイルの変更をエディタへ自動反映して、Studioとエージェントが相互に編集できるようにする
 tags: [layout, editor, autosave, agent, watch]
 ---
@@ -160,10 +160,10 @@ tags: [layout, editor, autosave, agent, watch]
 - [x] `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 「保存」「元に戻す」ボタンを外してよいか
-- [ ] 実機で、実際のエージェントにレイアウトを直してもらい、開いている
+- [x] 「保存」「元に戻す」ボタンを外してよいか
+- [x] 実機で、実際のエージェントにレイアウトを直してもらい、開いている
   エディタに反映されるか(ユーザー自身に依頼)
-- [ ] 実機で、レイアウトを編集してすぐウィンドウを閉じると、保存されてから
+- [x] 実機で、レイアウトを編集してすぐウィンドウを閉じると、保存されてから
   閉じるか(`CloseRequested`→`layout:flush-before-close`→再度の`close()`の
   流れはmock e2eでは通せない)
 
