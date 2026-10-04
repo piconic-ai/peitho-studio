@@ -222,7 +222,7 @@ export function LayoutScreen(props: LayoutScreenProps) {
               onMouseDown={e => props.onRowPress(e)}
               onClick={e => props.onRowClick(row.name, e)}
               onContextMenu={e => props.onContextMenu(row.name, e)}
-              className={(props.selectedName === row.name ? 'border-primary bg-accent ' : 'border-transparent hover:bg-accent ') + 'flex flex-col gap-1 p-1.5 rounded-md border-2 text-left'}
+              className={(props.selectedName === row.name ? 'border-primary ' : 'border-transparent hover:bg-accent ') + 'flex flex-col gap-1 p-1.5 rounded-md border-2 text-left'}
             >
               <span
                 data-layout-thumbnail
