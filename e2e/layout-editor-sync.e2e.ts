@@ -203,3 +203,33 @@ test('adversarial: Given the watcher reporting the same change twice, then the e
   await pressUndo(page)
   await expect.poll(() => editorText(page, 'layout-html')).toBe(ORIGINAL)
 })
+
+test('adversarial: Given the agent rewrites the file while an autosave is running, then the save does not overwrite it, and Load from disk shows the agent\'s file', async ({ page }) => {
+  const deck = deckOf({ saveLayoutDelayMs: 1_500 })
+  await openQuote(page, deck)
+
+  await fillEditor(page, MINE, 'layout-html')
+  await expect(page.locator('[data-layout-saving]')).toBeVisible()
+  await agentWrites(page, deck, AGENT, 'agent-1')
+
+  await expect(page.locator('[data-layout-conflict]')).toBeVisible()
+  await expect(page.locator('[data-layout-saving]')).toBeHidden({ timeout: 5_000 })
+  await page.waitForTimeout(1_500)
+  expect(deck.layoutFiles?.quote.html).toBe(AGENT)
+  expect(await editorText(page, 'layout-html')).toBe(MINE)
+
+  await page.locator('[data-layout-conflict-load]').click()
+  await expect.poll(() => editorText(page, 'layout-html')).toBe(AGENT)
+})
+
+test('adversarial: Given an invalid draft fixed while its save is running, then the refusal does not stick to the fix, which is saved next', async ({ page }) => {
+  const deck = deckOf({ saveLayoutDelayMs: 1_500 })
+  await openQuote(page, deck)
+
+  await fillEditor(page, '<div>invalid</div>', 'layout-html')
+  await expect(page.locator('[data-layout-saving]')).toBeVisible()
+  await fillEditor(page, MINE, 'layout-html')
+
+  await expect.poll(() => deck.layoutFiles?.quote.html, { timeout: 8_000 }).toBe(MINE)
+  await expect(page.locator('[data-layout-editor-message]')).toBeHidden()
+})

@@ -526,7 +526,10 @@ test('Given an edit that would stop a slide from building, when it is autosaved,
   await expect(page.locator('[data-layout-unsaved]')).toBeVisible()
   // A refused draft isn't tried again until it's edited.
   await page.waitForTimeout(1_500)
-  expect(saves).toEqual([{ content: SOURCE, name: 'title-body', html: '<section class="peitho-slide layout-title-body"><h1>no body</h1></section>', css: '' }])
+  expect(saves).toEqual([{
+    content: SOURCE, name: 'title-body', html: '<section class="peitho-slide layout-title-body"><h1>no body</h1></section>', css: '',
+    base: { html: '<section class="peitho-slide layout-title-body"></section>', css: '' },
+  }])
   expect(deck.layoutFiles?.['title-body'].html).toBe('<section class="peitho-slide layout-title-body"></section>')
 })
 

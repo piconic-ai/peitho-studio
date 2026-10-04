@@ -472,6 +472,13 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'save_layout': {
         const html = args.html as string
         if (!html.includes('<section')) throw new Error('a layout needs a <section> element')
+        // Like `engine::layout_files::save_layout`, refuses files that no
+        // longer hold what the editor last read or wrote.
+        const base = args.base as { html: string; css: string } | null
+        const current = layoutFileOf(deck, args.name as string)
+        if (base && current && (current.html !== base.html || (current.css ?? '') !== base.css)) {
+          throw new Error('the layout\'s files changed on disk since they were read')
+        }
         ;(deck.layoutFiles ??= {})[args.name as string] = { html, css: args.css as string }
         savedLayouts++
         deck.layoutFilesStamp = `saved-${String(savedLayouts)}`
