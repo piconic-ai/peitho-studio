@@ -1389,7 +1389,9 @@ pub fn read_layout(name: String, window: WebviewWindow, session: State<PeithoSes
 
 /// Overwrites layout `name`'s HTML and CSS in this window's deck — nothing
 /// is written when the HTML doesn't parse as a layout, or when the edit
-/// would stop the deck (`content`, its source now) from building. Returns
+/// would stop the deck (`content`, its source now) from building, or when
+/// the files no longer hold `base` (what the editor last read or wrote:
+/// someone else wrote them meanwhile). Returns
 /// the layout files' fingerprint once written (`layout_files_stamp`), so
 /// the frontend can tell the watcher's report of this very write
 /// (`LAYOUT_FILES_CHANGED_EVENT`) from someone else's.
@@ -1399,11 +1401,12 @@ pub fn save_layout(
     name: String,
     html: String,
     css: String,
+    base: Option<layout_files::LayoutBase>,
     window: WebviewWindow,
     session: State<PeithoSession>,
 ) -> Result<String, String> {
     let deck_path = session_deck_path(&session, window.label())?;
-    layout_files::save_layout(&deck_path, &content, &name, &html, &css)?;
+    layout_files::save_layout(&deck_path, &content, &name, &html, &css, base.as_ref())?;
     Ok(layout_files::layout_files_stamp(&deck_dir_of(&deck_path)))
 }
 

@@ -375,6 +375,26 @@ fn check_layout_edit(deck_path: &Path, content: &str, layout: Layout, css: &str,
         .map_err(|err| format!("this edit to the '{name}' layout would stop the deck from building: {err}"))
 }
 
+/// The error `save_layout` refuses with when the files changed since
+/// `base` — the frontend tells it from a build refusal by this text.
+pub const LAYOUT_CHANGED_ON_DISK: &str = "the layout's files changed on disk since they were read";
+
+/// A layout's HTML and CSS as the editor last read or wrote them (a CSS
+/// file not there reads as blank CSS).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub struct LayoutBase {
+    pub html: String,
+    pub css: String,
+}
+
+/// Whether the layout files at `html_path` and `css_path` hold `base`: the
+/// HTML exactly, the CSS exactly or, with no CSS file, blank `base` CSS.
+fn files_hold(html_path: &Path, css_path: &Path, base: &LayoutBase) -> bool {
+    let html = std::fs::read_to_string(html_path).ok();
+    let css = if css_path.is_file() { std::fs::read_to_string(css_path).ok() } else { Some(String::new()) };
+    html.as_deref() == Some(base.html.as_str()) && css.as_deref() == Some(base.css.as_str())
+}
+
 /// Saves `html` and `css` as layout `name`'s files in `deck_path`'s deck —
 /// the one place a layout file is overwritten. Nothing is written unless
 /// the HTML parses as a layout, the layout already exists, and the deck
@@ -382,7 +402,13 @@ fn check_layout_edit(deck_path: &Path, content: &str, layout: Layout, css: &str,
 /// (`check_layout_edit`). Its CSS file is created only for CSS that isn't
 /// blank (along with the built-in theme when the deck has no `css/`, as in
 /// `layout_files`).
-pub fn save_layout(deck_path: &Path, content: &str, name: &str, html: &str, css: &str) -> Result<(), String> {
+///
+/// With `base` (the HTML and CSS the caller last read or wrote), nothing is
+/// written either when the files no longer hold them — someone else (the
+/// Coding Agent) wrote them meanwhile: the error is
+/// `LAYOUT_CHANGED_ON_DISK`, so an autosave can't overwrite that change
+/// unseen. Compared right before writing, after the build check.
+pub fn save_layout(deck_path: &Path, content: &str, name: &str, html: &str, css: &str, base: Option<&LayoutBase>) -> Result<(), String> {
     let deck_dir = pipeline::deck_dir_of(deck_path);
     let (html_path, css_path) = layout_paths(deck_dir, name)?;
     if !html_path.is_file() {
@@ -392,6 +418,11 @@ pub fn save_layout(deck_path: &Path, content: &str, name: &str, html: &str, css:
     let css_exists = css_path.is_file();
     let has_css_dir = deck_dir.join("css").is_dir();
     check_layout_edit(deck_path, content, layout, css, css_exists, has_css_dir)?;
+    if let Some(base) = base {
+        if !files_hold(&html_path, &css_path, base) {
+            return Err(LAYOUT_CHANGED_ON_DISK.to_string());
+        }
+    }
     if !css_exists && !css.trim().is_empty() && !has_css_dir {
         let mut written = Written::default();
         write_new_file(&deck_dir.join("css/base.css"), &builtin::scaffolded_base_css(), &mut written)?;
@@ -1111,12 +1142,52 @@ mod tests {
         let html = "<section class=\"peitho-slide layout-title-slide edited\"><h1><slot name=\"title\" accepts=\"inline\" arity=\"1\"></slot></h1><div><slot name=\"body\" accepts=\"blocks\" arity=\"0..1\"></slot></div></section>";
         let css = ".peitho-slide.layout-title-slide { color: rebeccapurple; }";
 
-        save_layout(&deck_path, PINNED, "title-slide", html, css).unwrap();
+        save_layout(&deck_path, PINNED, "title-slide", html, css, None).unwrap();
 
         assert_eq!(std::fs::read_to_string(dir.path().join("layouts/title-slide.html")).unwrap(), html);
         let output = render_source(&deck_path, PINNED).unwrap_or_else(|err| panic!("{err}"));
         assert!(output.fragments["cover"].contains("edited"), "{}", output.fragments["cover"]);
         assert!(output.css.contains("rebeccapurple"));
+    }
+
+    #[test]
+    fn given_the_files_as_the_editor_last_read_them_when_saved_over_then_they_are_written() {
+        let (dir, deck_path) = standard_deck(PINNED);
+        let base = LayoutBase {
+            html: std::fs::read_to_string(dir.path().join("layouts/title-slide.html")).unwrap(),
+            css: std::fs::read_to_string(dir.path().join("css/title-slide.css")).unwrap(),
+        };
+        let html = base.html.replace("<h1", "<h1 data-edited");
+        save_layout(&deck_path, PINNED, "title-slide", &html, &base.css, Some(&base)).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.path().join("layouts/title-slide.html")).unwrap(), html);
+    }
+
+    #[test]
+    fn given_the_agent_rewrote_a_file_since_the_editor_read_it_when_saved_then_nothing_is_written_and_the_error_says_so() {
+        let (dir, deck_path) = standard_deck(PINNED);
+        let html_path = dir.path().join("layouts/title-slide.html");
+        let css_path = dir.path().join("css/title-slide.css");
+        let base = LayoutBase { html: std::fs::read_to_string(&html_path).unwrap(), css: std::fs::read_to_string(&css_path).unwrap() };
+        let edited = base.html.replace("<h1", "<h1 data-edited");
+        for (file, agent) in [(&css_path, "/* agent */"), (&html_path, "<!-- agent -->")] {
+            let original = std::fs::read_to_string(file).unwrap();
+            std::fs::write(file, format!("{original}{agent}")).unwrap();
+            let err = save_layout(&deck_path, PINNED, "title-slide", &edited, &base.css, Some(&base)).unwrap_err();
+            assert_eq!(err, LAYOUT_CHANGED_ON_DISK);
+            assert!(std::fs::read_to_string(file).unwrap().ends_with(agent), "the agent's write stays");
+            std::fs::write(file, original).unwrap();
+        }
+    }
+
+    #[test]
+    fn adversarial_given_no_css_file_then_blank_base_css_matches_and_anything_else_does_not() {
+        let (dir, deck_path) = standard_deck(PINNED);
+        std::fs::remove_file(dir.path().join("css/title-slide.css")).unwrap();
+        let html = std::fs::read_to_string(dir.path().join("layouts/title-slide.html")).unwrap();
+        let stale = LayoutBase { html: html.clone(), css: "x {}".into() };
+        assert_eq!(save_layout(&deck_path, PINNED, "title-slide", &html, "", Some(&stale)).unwrap_err(), LAYOUT_CHANGED_ON_DISK);
+        let blank = LayoutBase { html: html.clone(), css: String::new() };
+        save_layout(&deck_path, PINNED, "title-slide", &html, "", Some(&blank)).unwrap();
     }
 
     #[test]
@@ -1132,7 +1203,7 @@ mod tests {
             "<section><slot name=\"title\" accepts=\"nonsense\" arity=\"1\"></slot></section>",
             "<div>no section</div>",
         ] {
-            assert!(save_layout(&deck_path, PINNED, "title-slide", html, "x {}").is_err(), "{html:?}");
+            assert!(save_layout(&deck_path, PINNED, "title-slide", html, "x {}", None).is_err(), "{html:?}");
         }
         assert_eq!(std::fs::read_to_string(dir.path().join("layouts/title-slide.html")).unwrap(), before_html);
         assert_eq!(std::fs::read_to_string(dir.path().join("css/title-slide.css")).unwrap(), before_css);
@@ -1143,7 +1214,7 @@ mod tests {
         let (dir, deck_path) = standard_deck(PINNED);
         let before = files_under(dir.path());
         for name in ["nope", "../deck", ""] {
-            assert!(save_layout(&deck_path, PINNED, name, COVER, "").is_err(), "{name:?}");
+            assert!(save_layout(&deck_path, PINNED, name, COVER, "", None).is_err(), "{name:?}");
         }
         assert_eq!(files_under(dir.path()), before);
     }
@@ -1153,10 +1224,10 @@ mod tests {
         let source = "<!-- {\"key\":\"a\",\"layout\":\"cover\"} -->\n# A\n";
         let (dir, deck_path) = deck_with(&[("cover", COVER), ("statement", STATEMENT)], source);
 
-        save_layout(&deck_path, source, "cover", COVER, "  \n").unwrap();
+        save_layout(&deck_path, source, "cover", COVER, "  \n", None).unwrap();
         assert!(!dir.path().join("css").exists());
 
-        save_layout(&deck_path, source, "cover", COVER, "h1 { color: red; }").unwrap();
+        save_layout(&deck_path, source, "cover", COVER, "h1 { color: red; }", None).unwrap();
         assert_eq!(std::fs::read_to_string(dir.path().join("css/cover.css")).unwrap(), "h1 { color: red; }");
         assert!(dir.path().join("css/base.css").is_file(), "the built-in theme comes along with the first css/ file");
     }
@@ -1171,7 +1242,7 @@ mod tests {
         let before_html = std::fs::read_to_string(dir.path().join("layouts/title-body.html")).unwrap();
         let title_only = "<section class=\"peitho-slide layout-title-body\"><h1><slot name=\"title\" accepts=\"inline\" arity=\"1\"></slot></h1></section>";
 
-        let err = save_layout(&deck_path, PINNED, "title-body", title_only, "").unwrap_err();
+        let err = save_layout(&deck_path, PINNED, "title-body", title_only, "", None).unwrap_err();
 
         assert!(err.contains("slide 2 ('intro')"), "{err}");
         assert_eq!(files_under(dir.path()), before);
@@ -1186,7 +1257,7 @@ mod tests {
         let before_css = std::fs::read_to_string(dir.path().join("css/title-slide.css")).unwrap();
         let html = std::fs::read_to_string(dir.path().join("layouts/title-slide.html")).unwrap();
 
-        let err = save_layout(&deck_path, PINNED, "title-slide", &html, ".slot-nowhere { color: red; }").unwrap_err();
+        let err = save_layout(&deck_path, PINNED, "title-slide", &html, ".slot-nowhere { color: red; }", None).unwrap_err();
 
         assert!(err.contains("stop the deck from building"), "{err}");
         assert_eq!(std::fs::read_to_string(dir.path().join("css/title-slide.css")).unwrap(), before_css);
@@ -1200,7 +1271,7 @@ mod tests {
         let css = ".peitho-slide.layout-big-number { color: teal; }";
         let html = std::fs::read_to_string(dir.path().join("layouts/big-number.html")).unwrap();
 
-        save_layout(&deck_path, &broken, "big-number", &html, css).unwrap();
+        save_layout(&deck_path, &broken, "big-number", &html, css, None).unwrap();
 
         assert_eq!(std::fs::read_to_string(dir.path().join("css/big-number.css")).unwrap(), css);
     }
