@@ -2,7 +2,8 @@
 // "model-based testing" note) — a test supplies just the responses it
 // cares about via `overrides`; every call still lands in `calls` so a
 // test can assert on what was invoked and with what arguments, without a
-// real Tauri window. `emitDeckFileChanged`/`emitMenuNewDeck`/
+// real Tauri window. `emitDeckFileChanged`/`emitLayoutFilesChanged`/
+// `emitLayoutFlushBeforeClose`/`emitMenuNewDeck`/
 // `emitMenuUndo`/`emitMenuRedo`/`emitMenuDeckSetting`/`emitPresentReady`/`emitPresentFailed`
 // let a test simulate the Rust side pushing an event.
 import type { DeckIpc, DeckSessionInfo, LayoutPreviewsPayload, RenderPayload } from './deckIpc'
@@ -15,6 +16,8 @@ export interface RecordedCall {
 export interface FakeDeckIpc extends DeckIpc {
   calls: RecordedCall[]
   emitDeckFileChanged(): void
+  emitLayoutFilesChanged(): void
+  emitLayoutFlushBeforeClose(): void
   emitMenuNewDeck(): void
   emitMenuUndo(): void
   emitMenuRedo(): void
@@ -35,6 +38,8 @@ const emptyRenderPayload: RenderPayload = {
 export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc {
   const calls: RecordedCall[] = []
   const deckFileChangedListeners = new Set<() => void>()
+  const layoutFilesChangedListeners = new Set<() => void>()
+  const layoutFlushBeforeCloseListeners = new Set<() => void>()
   const menuNewDeckListeners = new Set<() => void>()
   const menuUndoListeners = new Set<() => void>()
   const menuRedoListeners = new Set<() => void>()
@@ -74,14 +79,23 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
     deleteLayout: async (content, name) => { record('deleteLayout', [content, name]) },
     readLayout: async name => { record('readLayout', [name]); return { html: '', css: null } },
     previewLayoutDraft: async (name, html, css) => { record('previewLayoutDraft', [name, html, css]); return { fragment: html, css } },
-    saveLayout: async (content, name, html, css) => { record('saveLayout', [content, name, html, css]) },
+    saveLayout: async (content, name, html, css) => { record('saveLayout', [content, name, html, css]); return '' },
     layoutFilesStamp: async () => { record('layoutFilesStamp', []); return '' },
+    reportLayoutDraft: async pending => { record('reportLayoutDraft', [pending]) },
     presentDeck: async rehearsal => { record('presentDeck', [rehearsal]) },
     reportDeckSettings: async settings => { record('reportDeckSettings', [settings]) },
     trustOpenDeck: async () => { record('trustOpenDeck', []) },
     onDeckFileChanged: callback => {
       deckFileChangedListeners.add(callback)
       return () => { deckFileChangedListeners.delete(callback) }
+    },
+    onLayoutFilesChanged: callback => {
+      layoutFilesChangedListeners.add(callback)
+      return () => { layoutFilesChangedListeners.delete(callback) }
+    },
+    onLayoutFlushBeforeClose: callback => {
+      layoutFlushBeforeCloseListeners.add(callback)
+      return () => { layoutFlushBeforeCloseListeners.delete(callback) }
     },
     onMenuNewDeck: callback => {
       menuNewDeckListeners.add(callback)
@@ -114,6 +128,8 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
     ...overrides,
     calls,
     emitDeckFileChanged: () => { for (const cb of deckFileChangedListeners) cb() },
+    emitLayoutFilesChanged: () => { for (const cb of layoutFilesChangedListeners) cb() },
+    emitLayoutFlushBeforeClose: () => { for (const cb of layoutFlushBeforeCloseListeners) cb() },
     emitMenuNewDeck: () => { for (const cb of menuNewDeckListeners) cb() },
     emitMenuUndo: () => { for (const cb of menuUndoListeners) cb() },
     emitMenuRedo: () => { for (const cb of menuRedoListeners) cb() },

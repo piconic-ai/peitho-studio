@@ -58,6 +58,25 @@ describe('createFakeDeckIpc', () => {
     expect(b).toBe(2)
   })
 
+  test('spec: Given a layout-files and a flush-before-close subscriber, When each event is emitted, Then only its own subscriber hears it, until unsubscribed', () => {
+    const ipc = createFakeDeckIpc()
+    const heard: string[] = []
+    const stopFiles = ipc.onLayoutFilesChanged(() => { heard.push('files') })
+    ipc.onLayoutFlushBeforeClose(() => { heard.push('flush') })
+    ipc.emitLayoutFilesChanged()
+    ipc.emitLayoutFlushBeforeClose()
+    stopFiles()
+    ipc.emitLayoutFilesChanged()
+    expect(heard).toEqual(['files', 'flush'])
+  })
+
+  test('spec: saveLayout resolves with a fingerprint and reportLayoutDraft records whether a draft is pending', async () => {
+    const ipc = createFakeDeckIpc()
+    expect(await ipc.saveLayout('src', 'quote', '<section></section>', '')).toBe('')
+    await ipc.reportLayoutDraft(true)
+    expect(ipc.calls.at(-1)).toEqual({ method: 'reportLayoutDraft', args: [true] })
+  })
+
   test('spec: the Unsubscribe returned by onMenuNewDeck stops further callbacks', () => {
     const ipc = createFakeDeckIpc()
     let count = 0
