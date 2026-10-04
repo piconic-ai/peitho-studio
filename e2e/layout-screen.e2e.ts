@@ -585,7 +585,7 @@ test('Given the layout screen, when Delete or an arrow key is pressed outside a 
   const deck = deckOf()
   await openLayoutScreen(page, deck)
 
-  await page.locator('[data-layout-list-header] > span').click()
+  await page.locator('[data-layout-list-header]').click({ position: { x: 4, y: 4 } })
   await page.keyboard.press('Delete')
   await page.keyboard.press('Backspace')
   await page.keyboard.press('ArrowDown')
@@ -714,6 +714,16 @@ test.describe('the layout screen\'s arrangement', () => {
     expect(editor.x + editor.width).toBeLessThanOrEqual(list.x)
     expect(list.x + list.width).toBeLessThanOrEqual(comments.x)
     await expect(page.locator('[data-layout-preview]')).toHaveCount(0)
+  })
+
+  test('Given the layout screen, then the list column has no text heading, only the PC / Phone switch over it', async ({ page }) => {
+    await openLayoutScreen(page, deckOf())
+
+    const header = page.locator('[data-layout-list-header]')
+    // What's on screen (the shape menu, closed, holds hidden text).
+    expect((await header.innerText()).trim()).toBe('')
+    await expect(page.locator('[data-layout-list]').getByText('Layouts', { exact: true })).toHaveCount(0)
+    await expect(header.locator('[data-viewport-toggle]')).toBeVisible()
   })
 
   test('Given the layout screen, when the divider between the editor and the list is dragged left, then the list grows and the editor shrinks by as much', async ({ page }) => {

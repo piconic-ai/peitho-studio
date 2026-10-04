@@ -86,7 +86,6 @@ export interface Messages {
   // Layout screen (the header's Slides / Layouts switch)
   studioModeSlides: string
   studioModeLayouts: string
-  layoutList: string
   newLayout: string
   newLayoutName: string
   newLayoutFrom: string
@@ -289,7 +288,6 @@ const en: Messages = {
 
   studioModeSlides: 'Slides',
   studioModeLayouts: 'Layouts',
-  layoutList: 'Layouts',
   newLayout: 'New Layout',
   newLayoutName: 'Layout name (a-z, 0-9, -, _)',
   newLayoutFrom: 'Start from',
@@ -479,7 +477,6 @@ const ja: Messages = {
 
   studioModeSlides: 'スライド',
   studioModeLayouts: 'レイアウト',
-  layoutList: 'レイアウト一覧',
   newLayout: '新規レイアウト',
   newLayoutName: 'レイアウト名(英数字・-・_)',
   newLayoutFrom: '元にするレイアウト',

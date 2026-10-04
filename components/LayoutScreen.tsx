@@ -171,8 +171,10 @@ export function LayoutScreen(props: LayoutScreenProps) {
       <div className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40" onMouseDown={event => props.onListResize(event)} />
 
       <div data-layout-list className="shrink-0 flex flex-col min-h-0" style={`width: ${String(props.listWidth)}px`}>
-        <div data-layout-list-header className="shrink-0 h-9 flex items-center justify-between gap-2 px-3 border-b border-border">
-          <span className="text-xs font-medium text-muted-foreground truncate">{messagesFor(props.language).layoutList}</span>
+        {/* A toolbar for the switch alone, no heading: the window's
+            Slides / Layouts switch already says what this column is. As
+            tall as the editor's tab row, so the two columns' rules line up. */}
+        <div data-layout-list-header className="shrink-0 h-9 flex items-center justify-end px-3 border-b border-border">
           <ViewportToggle
             language={props.language}
             viewportMode={props.viewportMode}
