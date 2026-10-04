@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { MAX_LAYOUT_NAME_LENGTH, layoutFilesChanged, layoutListGeneration, layoutNameProblem, layoutRows, layoutUsage, shownLayout } from './layoutScreen'
+import { MAX_LAYOUT_NAME_LENGTH, initialLayoutListWidth, layoutFilesChanged, layoutListGeneration, layoutNameProblem, layoutRows, layoutUsage, shownLayout } from './layoutScreen'
 import type { ManifestSlide } from './render'
 import { buildSlideList } from './slideList'
 
@@ -173,5 +173,35 @@ describe('layoutFilesChanged', () => {
     expect(layoutFilesChanged('', 'layouts/a.html\t1\t1')).toBe(true)
     expect(layoutFilesChanged('layouts/a.html\t1\t1', '')).toBe(true)
     expect(layoutFilesChanged('', '')).toBe(false)
+  })
+})
+
+describe('initialLayoutListWidth', () => {
+  const BOUNDS = { min: 180, max: 640 }
+
+  test('spec: Given the width the editor and the list share, Then the list takes half of it, so both start equally wide', () => {
+    expect(initialLayoutListWidth(960, BOUNDS)).toBe(480)
+    expect(initialLayoutListWidth(1000, BOUNDS)).toBe(500)
+  })
+
+  test('spec: Given an odd shared width, Then the list takes the smaller half in whole pixels and the editor the rest', () => {
+    expect(initialLayoutListWidth(961, BOUNDS)).toBe(480)
+  })
+
+  test('adversarial: Given a share whose half falls outside the range a drag keeps a column in, Then it is clamped to that range, so the first drag does not jump', () => {
+    expect(initialLayoutListWidth(2000, BOUNDS)).toBe(640)
+    expect(initialLayoutListWidth(300, BOUNDS)).toBe(180)
+    expect(initialLayoutListWidth(360, BOUNDS)).toBe(180)
+    expect(initialLayoutListWidth(1280, BOUNDS)).toBe(640)
+  })
+
+  test('adversarial: Given no width yet (the screen hidden, or not measurable), Then there is no width to settle on', () => {
+    for (const width of [0, -10, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(initialLayoutListWidth(width, BOUNDS)).toBeNull()
+    }
+  })
+
+  test('adversarial: Given a range with no room in it (min above max), Then the minimum wins, as a drag would', () => {
+    expect(initialLayoutListWidth(1000, { min: 700, max: 600 })).toBe(700)
   })
 })

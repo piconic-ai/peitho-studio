@@ -16,8 +16,8 @@ import {
   type DraftPreview, type RenderedDraft,
 } from '../domain/layoutDraftPreview'
 
-// Wider than the slides screen's list: with no preview column, the
-// selected row's thumbnail is where the layout being edited is seen.
+// The list's width until the screen is first laid out
+// (`settleListWidth`): only ever seen if it can't be measured.
 const LIST_WIDTH = 280
 
 /** The layout screen's own state (Studio's "Layouts" mode): which layout is
@@ -34,7 +34,22 @@ export function createLayoutScreenStore() {
 
   // The list column's width (`dom/columnResize.ts`), session-only like the
   // slides screen's; the editor, left of it, takes the rest of the row.
-  const [listWidth, setListWidth] = createSignal(LIST_WIDTH)
+  // Worked out once, the first time the screen is laid out
+  // (`initialLayoutListWidth`); a drag sets it from then on.
+  const [listWidth, setListWidthValue] = createSignal(LIST_WIDTH)
+  let listWidthSettled = false
+  /** The divider dragged to `width`. */
+  function setListWidth(width: number): void {
+    listWidthSettled = true
+    setListWidthValue(width)
+  }
+  /** The screen laid out, with `width` worked out for the list (`null`
+   * for none yet): taken only the first time, and never over a drag. */
+  function settleListWidth(width: number | null): void {
+    if (listWidthSettled || width === null) return
+    listWidthSettled = true
+    setListWidthValue(width)
+  }
 
   // Bumped whenever a fresh set of layout previews arrives, so the list's
   // rows get new keys and redraw their thumbnails (see `layoutRows`).
@@ -170,7 +185,7 @@ export function createLayoutScreenStore() {
 
   return {
     selectedLayout, setSelectedLayout,
-    listWidth, setListWidth,
+    listWidth, setListWidth, settleListWidth,
     previewGeneration, bumpPreviewGeneration,
     newLayoutOpen, newLayoutName, setNewLayoutName, newLayoutTemplate, setNewLayoutTemplate,
     openNewLayout, closeNewLayout, newLayoutNameProblem,

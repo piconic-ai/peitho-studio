@@ -104,3 +104,15 @@ export function layoutNameProblem(name: string, existing: readonly string[]): La
 export function layoutFilesChanged(previous: string | null, next: string): boolean {
   return previous !== null && previous !== next
 }
+
+/** The layout list's width the first time the layout screen is laid out:
+ * half of `shared`, the width the editor and the list share (the divider
+ * between them and the comments column aside), so the two start equally
+ * wide — in whole pixels, the editor taking the odd one. Clamped to
+ * `bounds`, the range dragging the divider keeps a column in, so the first
+ * drag doesn't jump. `null` when there's no width to go by yet (the screen
+ * hidden), to be worked out again once there is. */
+export function initialLayoutListWidth(shared: number, bounds: { min: number; max: number }): number | null {
+  if (!Number.isFinite(shared) || shared <= 0) return null
+  return Math.max(bounds.min, Math.min(bounds.max, Math.floor(shared / 2)))
+}

@@ -37,7 +37,7 @@ import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatt
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
-import { type LayoutNameProblem, type StudioMode, layoutFilesChanged, layoutListGeneration, layoutRows, layoutUsage, shownLayout } from '../domain/layoutScreen'
+import { type LayoutNameProblem, type StudioMode, initialLayoutListWidth, layoutFilesChanged, layoutListGeneration, layoutRows, layoutUsage, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
 import { editorDraft, editorLayoutName, type LayoutField } from '../domain/layoutEditor'
 import { layoutDisplayName } from '../domain/standardLayouts'
@@ -53,7 +53,7 @@ import { type StatusMessage, statusText } from '../domain/statusMessage'
 import { type ScriptTrust, type ScriptTrustEvent, nextScriptTrust, scriptTrustOnOpen, trustBannerShown } from '../domain/scriptTrust'
 import { takesCommandKeys, type VimMode } from '../domain/vimMode'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
-import { startColumnResize } from '../dom/columnResize'
+import { COLUMN_WIDTH_BOUNDS, measureWidthsNextFrame, startColumnResize } from '../dom/columnResize'
 import { blurEditorFieldOnRowPress, isFocusWithin, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
 import { canReplayCodeEditorGroup, codeEditorPositionAt, codeEditorSelection, createCodeEditor, insertIntoCodeEditor, isolateCodeEditorHistory, replayCodeEditorGroup, replayFocusedCodeEditorHistory, resetCodeEditorText, restoreCodeEditor, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, snapshotCodeEditor, type CodeEditorOptions, type CodeEditorSnapshot } from '../dom/codeEditor'
 import { createEditorSlideStates } from '../dom/editorSlideStates'
@@ -2090,6 +2090,11 @@ export function Studio() {
   }
 
   async function enterLayoutScreen(): Promise<void> {
+    // The list starts as wide as the editor: their shared width is known
+    // only once the screen shows, so it's measured on its first frame.
+    measureWidthsNextFrame(['[data-layout-editor]', '[data-layout-list]'], shared => {
+      layouts.settleListWidth(initialLayoutListWidth(shared, COLUMN_WIDTH_BOUNDS))
+    })
     await loadLayoutPreviews()
     const name = shownLayout(layouts.selectedLayout(), layoutNames())
     if (name !== layouts.selectedLayout() || layouts.editor().kind === 'none') await openLayout(name)

@@ -35,13 +35,22 @@ function row(page: Page, name: string) {
   return page.locator(`[data-layout-row="${name}"]`)
 }
 
+/** Right-clicks the list's empty space below the rows — scrolled into view
+ * first: the rows can fill the column, the list starting half the screen
+ * wide with thumbnails as tall as that makes them. */
+async function rightClickListSpace(page: Page): Promise<void> {
+  const list = page.locator('[data-layout-rows]')
+  await list.evaluate(el => { el.scrollTop = el.scrollHeight })
+  const box = await list.boundingBox()
+  if (!box) throw new Error('the layout list has no box')
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height - 10, { button: 'right' })
+}
+
 /** Runs a layout menu item: on layout `name`'s row (the selected row by
  * default), or, for New Layout, on the list's empty space below the rows. */
 async function act(page: Page, action: 'apply' | 'edit' | 'duplicate' | 'delete' | 'new-layout', name?: string): Promise<void> {
   if (action === 'new-layout') {
-    const box = await page.locator('[data-layout-rows]').boundingBox()
-    if (!box) throw new Error('the layout list has no box')
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height - 10, { button: 'right' })
+    await rightClickListSpace(page)
   } else {
     const target = name === undefined ? page.locator('[data-layout-row][aria-current="true"]') : row(page, name)
     await target.click({ button: 'right' })
@@ -158,10 +167,7 @@ test('Given the deck\'s only layout, when its row is right-clicked, then Delete 
 test('Given empty space in the layout list, when it is right-clicked, then the menu offers New Layout, which opens the form, and a comment on every layout', async ({ page }) => {
   await openLayoutScreen(page, deckOf())
 
-  const list = page.locator('[data-layout-rows]')
-  const box = await list.boundingBox()
-  if (!box) throw new Error('the layout list has no box')
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height - 10, { button: 'right' })
+  await rightClickListSpace(page)
 
   await expect(layoutMenu(page).locator('[data-layout-menu-item]')).toHaveText(['New Layout', 'Comment on All Layouts…'])
   await layoutMenuItem(page, 'new-layout').click()
@@ -724,6 +730,28 @@ test.describe('the layout screen\'s arrangement', () => {
     expect((await header.innerText()).trim()).toBe('')
     await expect(page.locator('[data-layout-list]').getByText('Layouts', { exact: true })).toHaveCount(0)
     await expect(header.locator('[data-viewport-toggle]')).toBeVisible()
+  })
+
+  test('Given the layout screen shown for the first time, then the list is as wide as the editor; a width dragged to stays after going to Slides and back', async ({ page }) => {
+    await openLayoutScreen(page, deckOf())
+    const width = async (selector: string) => (await page.locator(selector).boundingBox())?.width ?? 0
+
+    await expect.poll(async () => Math.abs(await width('[data-layout-list]') - await width('[data-layout-editor]'))).toBeLessThanOrEqual(1)
+
+    const before = await page.locator('[data-layout-list]').boundingBox()
+    if (!before) throw new Error('the list has no box')
+    await page.mouse.move(before.x - 2, before.y + 200)
+    await page.mouse.down()
+    await page.mouse.move(before.x - 42, before.y + 200, { steps: 5 })
+    await page.mouse.up()
+    const dragged = await width('[data-layout-list]')
+    expect(dragged).toBeCloseTo(before.width + 40, 0)
+
+    await page.locator('[data-studio-mode-option="slides"]').click()
+    await page.locator('[data-studio-mode-option="layouts"]').click()
+    await expect(page.locator('[data-layout-screen]')).toBeVisible()
+    await page.waitForTimeout(100)
+    expect(await width('[data-layout-list]')).toBeCloseTo(dragged, 0)
   })
 
   test('Given the layout screen, when the divider between the editor and the list is dragged left, then the list grows and the editor shrinks by as much', async ({ page }) => {

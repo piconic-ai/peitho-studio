@@ -38,6 +38,8 @@ async function openLayoutScreen(page: Page, crit: FakeCritIpc, overrides: Partia
  * space). */
 async function commentOnLayout(page: Page, name: string | null, text: string): Promise<void> {
   if (name === null) {
+    // Below the rows, which can fill the column.
+    await page.locator('[data-layout-rows]').evaluate(el => { el.scrollTop = el.scrollHeight })
     const box = (await page.locator('[data-layout-rows]').boundingBox())!
     await page.mouse.click(box.x + box.width / 2, box.y + box.height - 10, { button: 'right' })
     await page.locator('[data-layout-menu-item="comment-all-layouts"]').click()
