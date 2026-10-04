@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  DRAFT_FAMILY_SUFFIX, NO_DRAFT_PREVIEW, absolutizedDraft, aliasFontFamilies, draftPreviewError, fontFaceFamily, previewDraftCss, draftPreviewFailed, draftPreviewRendered, previewToDraw, requestDraftPreview, resetDraftPreview,
+  DRAFT_FAMILY_SUFFIX, NO_DRAFT_PREVIEW, absolutizedDraft, aliasFontFamilies, draftPreviewError, fontFaceFamily, previewDraftCss, draftPreviewFailed, draftPreviewRendered, draftedLayout, previewToDraw, requestDraftPreview, resetDraftPreview,
 } from './layoutDraftPreview'
 
 const A = { fragment: '<section>a</section>', css: '.a {}' }
@@ -193,5 +193,35 @@ describe('the layout editor\'s live preview', () => {
   test('adversarial: Given an empty fragment or empty CSS rendered, Then it is still the draft drawn', () => {
     const { state, seq } = requestDraftPreview(NO_DRAFT_PREVIEW, 'blank')
     expect(previewToDraw(draftPreviewRendered(state, seq, { fragment: '', css: '' }), 'blank', 'saved')).toEqual({ fragment: '', css: '' })
+  })
+})
+
+describe('draftedLayout: which list thumbnail draws the draft', () => {
+  test('spec: Given no draft rendered yet, Then every list thumbnail draws its saved files', () => {
+    expect(draftedLayout(NO_DRAFT_PREVIEW)).toBeNull()
+    expect(draftedLayout(requestDraftPreview(NO_DRAFT_PREVIEW, 'quote').state)).toBeNull()
+  })
+
+  test('spec: Given a draft of "quote" rendered, Then the "quote" row draws it, and keeps drawing it while a later draft is requested or fails', () => {
+    const first = requestDraftPreview(NO_DRAFT_PREVIEW, 'quote')
+    const rendered = draftPreviewRendered(first.state, first.seq, A)
+    expect(draftedLayout(rendered)).toBe('quote')
+    const second = requestDraftPreview(rendered, 'quote')
+    expect(draftedLayout(second.state)).toBe('quote')
+    expect(draftedLayout(draftPreviewFailed(second.state, second.seq, 'broken'))).toBe('quote')
+  })
+
+  test('adversarial: Given a reset (save, revert, another layout) or a request for another layout, Then no row draws a draft', () => {
+    const first = requestDraftPreview(NO_DRAFT_PREVIEW, 'quote')
+    const rendered = draftPreviewRendered(first.state, first.seq, A)
+    expect(draftedLayout(resetDraftPreview(rendered))).toBeNull()
+    expect(draftedLayout(requestDraftPreview(rendered, 'title-body').state)).toBeNull()
+  })
+
+  test('adversarial: Given only a failure and no good draft, or a layout named by an empty string, Then it is handled as written', () => {
+    const first = requestDraftPreview(NO_DRAFT_PREVIEW, 'quote')
+    expect(draftedLayout(draftPreviewFailed(first.state, first.seq, 'broken'))).toBeNull()
+    const blank = requestDraftPreview(NO_DRAFT_PREVIEW, '')
+    expect(draftedLayout(draftPreviewRendered(blank.state, blank.seq, { fragment: '', css: '' }))).toBe('')
   })
 })

@@ -26,7 +26,7 @@ import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../do
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
 import { imageParagraphInsertion, insertionRangeAfterWait } from '../domain/editorText'
 import { fileNameOf, partitionDroppedPaths } from '../domain/images'
-import { deviceForShape, effectiveCanvas } from '../domain/viewport'
+import { viewportCanvas } from '../domain/viewport'
 import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
@@ -37,7 +37,7 @@ import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatt
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
-import { type LayoutNameProblem, type StudioMode, layoutFilesChanged, layoutRows, layoutUsage, shownLayout } from '../domain/layoutScreen'
+import { type LayoutNameProblem, type StudioMode, layoutFilesChanged, layoutListGeneration, layoutRows, layoutUsage, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
 import { editorDraft, editorLayoutName, type LayoutField } from '../domain/layoutEditor'
 import { layoutDisplayName } from '../domain/standardLayouts'
@@ -725,7 +725,7 @@ export function Studio() {
   // layout picker keep reading `render.canvasWidth()/canvasHeight()`
   // directly.
   //
-  // Number memos, not one memo of a `Size`: `effectiveCanvas` returns a
+  // Number memos, not one memo of a `Size`: `viewportCanvas` returns a
   // fresh object every call, and `SlidePreview`'s mount effect would
   // re-mount on every notification. `selectedSlideIsFixedCanvas` reads the
   // fragment, so it re-runs on every edit of the selected slide; as its own
@@ -736,7 +736,7 @@ export function Studio() {
   })
   function previewCanvas(): Size {
     const deck = { width: render.canvasWidth(), height: render.canvasHeight() }
-    return effectiveCanvas(deck, ui.viewportMode(), deviceForShape(ui.phoneShape(), deck), selectedSlideIsFixedCanvas())
+    return viewportCanvas(deck, ui.viewportMode(), ui.phoneShape(), selectedSlideIsFixedCanvas())
   }
   const previewCanvasWidth = createMemo<number>(() => previewCanvas().width)
   const previewCanvasHeight = createMemo<number>(() => previewCanvas().height)
@@ -1989,7 +1989,7 @@ export function Studio() {
   // watched for changes.
   const layoutNames = createMemo<string[]>(() => (ui.layoutPreviews() ?? []).map(preview => preview.name))
   const slidesByLayout = createMemo(() => layoutUsage(slideEntries(), render.slideLayouts()))
-  const layoutRowsShown = createMemo(() => layoutRows(layoutNames(), slidesByLayout(), settings.language(), layouts.previewGeneration()))
+  const layoutRowsShown = createMemo(() => layoutRows(layoutNames(), slidesByLayout(), settings.language(), layoutListGeneration(layouts.previewGeneration(), ui.viewportMode(), ui.phoneShape())))
   function layoutFragmentOf(name: string): string {
     return (ui.layoutPreviews() ?? []).find(preview => preview.name === name)?.fragment ?? ''
   }

@@ -4,6 +4,7 @@
 import type { Language } from './language'
 import type { SlideListEntry } from './slideList'
 import { layoutDisplayName } from './standardLayouts'
+import type { PhoneShape, ViewportMode } from './viewport'
 
 /** Which screen an open deck's window shows: the slides (list, editor,
  * preview, comments) or the deck's layouts. */
@@ -31,9 +32,10 @@ export function layoutUsage(
 }
 
 /** One row of the layout list. `key` is the row's `.map()` key: it
- * changes with `generation` (each fresh set of previews), so a row whose
- * preview was re-rendered is mounted afresh and its canvas `ref` runs
- * again — a keyed row kept across an update never re-runs it. */
+ * changes with `generation` (`layoutListGeneration`), so a row whose
+ * preview was re-rendered, or whose canvas changed shape, is mounted afresh
+ * and its canvas `ref` runs again — a keyed row kept across an update
+ * never re-runs it. */
 export interface LayoutRow {
   key: string
   name: string
@@ -44,15 +46,23 @@ export interface LayoutRow {
   deletable: boolean
 }
 
+/** What the layout list's thumbnails were last drawn from: the set of
+ * previews (`previews`, bumped with each fresh one) and the PC / Phone
+ * switch's state, which reshapes every thumbnail's canvas. Rows are keyed
+ * by it (`layoutRows`), so a change to any part draws them all again. */
+export function layoutListGeneration(previews: number, mode: ViewportMode, shape: PhoneShape): string {
+  return `${String(previews)}/${mode}/${shape}`
+}
+
 /** The layout list's rows, in the deck's own layout order (`names`). */
 export function layoutRows(
   names: readonly string[],
   usage: ReadonlyMap<string, readonly number[]>,
   language: Language,
-  generation: number,
+  generation: string,
 ): LayoutRow[] {
   return names.map(name => ({
-    key: `${String(generation)}:${name}`,
+    key: `${generation}:${name}`,
     name,
     label: layoutDisplayName(name, language),
     usage: usage.get(name)?.length ?? 0,
