@@ -2145,6 +2145,7 @@ export function Studio() {
     layoutStamp = stamp
     if (!layoutFilesChanged(previous, stamp)) return false
     await reloadLayoutPreviews()
+    showSavedLayoutPreview()
     await renderPreview(liveSource())
     const name = shownLayout(layouts.selectedLayout(), layoutNames())
     if (name !== layouts.selectedLayout()) await openLayout(name)
@@ -2559,7 +2560,18 @@ export function Studio() {
     if (typeof stamp === 'string') layoutStamp = stamp
     layouts.editorSaved(name, texts)
     setStatusMessage({ kind: 'layout-saved', layout: name })
-    void reloadLayoutPreviews().then(() => renderPreview(liveSource()))
+    void reloadLayoutPreviews().then(() => {
+      showSavedLayoutPreview()
+      return renderPreview(liveSource())
+    })
+  }
+
+  // Once fresh previews are in and nothing was typed since, the shown
+  // layout's row draws its saved files again rather than the last draft
+  // render — which a later change to another file (the deck's base CSS)
+  // would leave stale.
+  function showSavedLayoutPreview(): void {
+    if (!layouts.editorDirty()) resetDraftPreview()
   }
 
   const deleteView = createMemo<LayoutDeleteView>(() => layouts.deleteFlow().kind)
