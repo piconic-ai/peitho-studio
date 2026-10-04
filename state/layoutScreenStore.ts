@@ -3,8 +3,9 @@ import {
   DELETE_IDLE, cancelDelete, confirmDelete, pickReplacement, startDelete, type DeleteFlow,
 } from '../domain/layoutDelete'
 import {
-  NO_LAYOUT_EDITOR, editorLayoutName, isEditorDirty, loadedEditor, reverted, saveFailedEditor, savedEditor, savingEditor, withTyped,
-  type LayoutEditor, type LayoutField, type LayoutTexts,
+  NO_LAYOUT_EDITOR, editorLayoutName, isEditorDirty, keptDraft, loadedEditor, saveFailedEditor, savedEditor, savingEditor, shouldAutosave,
+  withExternalChange, withExternalLoaded, withTyped,
+  type ExternalChangeOutcome, type LayoutEditor, type LayoutField, type LayoutTexts,
 } from '../domain/layoutEditor'
 import { type LayoutNameProblem, layoutNameProblem } from '../domain/layoutScreen'
 import {
@@ -108,6 +109,12 @@ export function createLayoutScreenStore() {
 
   const [editor, setEditor] = createSignal<LayoutEditor>(NO_LAYOUT_EDITOR)
   const editorDirty = createMemo(() => isEditorDirty(editor()))
+  /** Whether the layout's files changed on disk under unsaved typing, until
+   * the user picks a side (`loadExternal` / `keepDraft`). */
+  const editorConflict = createMemo(() => {
+    const current = editor()
+    return current.kind === 'ready' && current.external !== null
+  })
   const [editorTab, setEditorTab] = createSignal<LayoutField>('html')
   function editorLoading(name: string): void {
     setEditor({ kind: 'loading', name })
@@ -126,8 +133,24 @@ export function createLayoutScreenStore() {
   function typeInEditor(field: LayoutField, text: string): void {
     setEditor(current => withTyped(current, field, text))
   }
-  function revertEditor(): void {
-    setEditor(reverted)
+  /** Whether the draft should be saved now (`shouldAutosave`). */
+  function wantsAutosave(): boolean {
+    return shouldAutosave(editor())
+  }
+  /** Layout `name`'s files as read after a change on disk; returns what
+   * that did to the editor (`withExternalChange`). */
+  function externalChange(name: string, disk: LayoutTexts): ExternalChangeOutcome {
+    const next = withExternalChange(editor(), name, disk)
+    setEditor(next.editor)
+    return next.outcome
+  }
+  /** A conflict settled for the files on disk, as read again (`disk`). */
+  function loadExternal(name: string, disk: LayoutTexts): void {
+    setEditor(current => withExternalLoaded(current, name, disk))
+  }
+  /** A conflict settled for the unsaved typing. */
+  function keepDraft(): void {
+    setEditor(keptDraft)
   }
   function editorSaving(): void {
     setEditor(savingEditor)
@@ -198,8 +221,9 @@ export function createLayoutScreenStore() {
     newLayoutOpen, newLayoutName, setNewLayoutName, newLayoutTemplate, setNewLayoutTemplate,
     openNewLayout, closeNewLayout, newLayoutNameProblem,
     deleteFlow, beginDelete, chooseReplacement, confirmDeleteFlow, cancelDeleteFlow, finishDelete,
-    editor, editorDirty, editorTab, setEditorTab,
-    editorLoading, editorLoaded, editorUnavailable, typeInEditor, revertEditor, editorSaving, editorSaved, editorSaveFailed,
+    editor, editorDirty, editorConflict, editorTab, setEditorTab,
+    editorLoading, editorLoaded, editorUnavailable, typeInEditor, editorSaving, editorSaved, editorSaveFailed,
+    wantsAutosave, externalChange, loadExternal, keepDraft,
     busy, setBusy, notice, setNotice,
     menu, openMenuOnLayout, openMenuOnList, settleMenuFit, moveMenu, closeMenu,
     draftPreview, requestPreview, previewRendered, previewFailed, resetPreview,

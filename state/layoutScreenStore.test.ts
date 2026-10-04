@@ -86,6 +86,39 @@ describe('the layout screen\'s state', () => {
     })
   })
 
+  test('spec: Given typing, When it is autosaved and the agent then rewrites the files, Then the editor takes them; with typing pending instead, it waits for the user to pick a side', () => {
+    createRoot(() => {
+      const store = createLayoutScreenStore()
+      store.editorLoading('quote')
+      store.editorLoaded('quote', { html: '<section></section>', css: null })
+      store.typeInEditor('html', '<section>mine</section>')
+      expect(store.wantsAutosave()).toBe(true)
+      store.editorSaving()
+      expect(store.wantsAutosave()).toBe(false)
+      store.editorSaved('quote', editorDraft(store.editor()))
+      expect(store.wantsAutosave()).toBe(false)
+
+      // Studio's own write coming back changes nothing.
+      expect(store.externalChange('quote', { html: '<section>mine</section>', css: '' })).toBe('unchanged')
+      expect(store.externalChange('quote', { html: '<section>agent</section>', css: '' })).toBe('replaced')
+      expect(editorDraft(store.editor()).html).toBe('<section>agent</section>')
+
+      store.typeInEditor('html', '<section>mine again</section>')
+      expect(store.externalChange('quote', { html: '<section>agent 2</section>', css: '' })).toBe('conflict')
+      expect(store.editorConflict()).toBe(true)
+      expect(store.wantsAutosave()).toBe(false)
+      store.keepDraft()
+      expect(store.editorConflict()).toBe(false)
+      expect(store.wantsAutosave()).toBe(true)
+
+      expect(store.externalChange('quote', { html: '<section>agent 3</section>', css: '' })).toBe('conflict')
+      store.loadExternal('quote', { html: '<section>agent 3</section>', css: '' })
+      expect(store.editorConflict()).toBe(false)
+      expect(store.editorDirty()).toBe(false)
+      expect(editorDraft(store.editor()).html).toBe('<section>agent 3</section>')
+    })
+  })
+
   test('adversarial: Given another layout selected while the first one\'s files were read, When they arrive late, Then they are dropped', () => {
     createRoot(() => {
       const store = createLayoutScreenStore()
