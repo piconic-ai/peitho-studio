@@ -2062,8 +2062,7 @@ export function Studio() {
   // layout, the layout screen as it was.
   async function selectLayoutFromReview(target: LayoutCommentTarget): Promise<void> {
     if (ui.studioMode() !== 'layouts') {
-      ui.setStudioMode('layouts')
-      layouts.closeMenu()
+      leaveScreen('layouts')
       await enterLayoutScreen()
     }
     if (target.kind === 'layout' && layoutNames().includes(target.name)) selectLayout(target.name)
@@ -2096,12 +2095,19 @@ export function Studio() {
   }
 
   function setStudioMode(mode: StudioMode): void {
+    leaveScreen(mode)
+    if (mode === 'layouts') void enterLayoutScreen()
+  }
+
+  // What a screen switch closes: the layout menu, the PC / Phone switch's
+  // menu (both screens show the switch; its menu belongs to the one it was
+  // opened on) and the comment box, whose target is on the screen being
+  // left.
+  function leaveScreen(mode: StudioMode): void {
+    if (ui.studioMode() !== mode) review.closeBox()
     ui.setStudioMode(mode)
     layouts.closeMenu()
-    // Both screens show the PC / Phone switch; its menu belongs to the one
-    // it was opened on.
     ui.closePhoneShapeMenu()
-    if (mode === 'layouts') void enterLayoutScreen()
   }
 
   async function enterLayoutScreen(): Promise<void> {
