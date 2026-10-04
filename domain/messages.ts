@@ -110,12 +110,19 @@ export interface Messages {
   deleteLayoutMoveSlides: (layout: string, count: number) => string
   deleteLayoutMoveTo: string
   deleting: string
-  saveLayout: string
   savingLayout: string
-  revertLayout: string
   layoutUnsaved: string
-  /** Why another layout can't be opened yet: this one has unsaved edits. */
+  /** Why the layout editor can't be left yet (another layout, the slides,
+   * a new layout): its edits couldn't be saved. */
   layoutSaveFirst: string
+  /** The files changed on disk while the editor held unsaved edits. */
+  layoutConflict: string
+  layoutConflictLoad: string
+  layoutConflictKeep: string
+  /** Why the layout editor can't be left yet: that change is undecided. */
+  layoutConflictFirst: string
+  /** The window was closed, but the layout's edits couldn't be saved. */
+  layoutCloseUnsaved: string
   layoutActionFailed: (error: string) => string
   deckChangeFailed: string
   layoutDeckUnsaved: string
@@ -310,11 +317,14 @@ const en: Messages = {
   deleteLayoutMoveSlides: (layout, count) => `${count === 1 ? '1 slide uses' : `${String(count)} slides use`} "${layout}". Move ${count === 1 ? 'it' : 'them'} to another layout before it is deleted.`,
   deleteLayoutMoveTo: 'Move to',
   deleting: 'Deleting…',
-  saveLayout: 'Save',
   savingLayout: 'Saving…',
-  revertLayout: 'Revert',
   layoutUnsaved: 'Unsaved changes',
-  layoutSaveFirst: 'Save or revert the changes to this layout before opening another',
+  layoutSaveFirst: 'The changes to this layout could not be saved. Fix them, or undo them, before leaving this layout',
+  layoutConflict: 'This layout\'s files changed on disk while you had unsaved edits here.',
+  layoutConflictLoad: 'Load from disk',
+  layoutConflictKeep: 'Keep my edits',
+  layoutConflictFirst: 'This layout\'s files changed on disk: load them or keep your edits before leaving this layout',
+  layoutCloseUnsaved: 'The changes to this layout could not be saved. Fix them, or close the window again to discard them',
   layoutActionFailed: error => `Could not change the layouts: ${error}`,
   deckChangeFailed: 'deck.md could not be updated',
   layoutDeckUnsaved: 'the slides have changes that could not be saved to deck.md. Layouts are checked against the saved deck, so save the slides first',
@@ -499,11 +509,14 @@ const ja: Messages = {
   deleteLayoutMoveSlides: (layout, count) => `「${layout}」は${String(count)}枚のスライドで使われています。削除する前に、別のレイアウトへ移してください。`,
   deleteLayoutMoveTo: '移動先',
   deleting: '削除中…',
-  saveLayout: '保存',
   savingLayout: '保存中…',
-  revertLayout: '元に戻す',
   layoutUnsaved: '未保存の変更があります',
-  layoutSaveFirst: '別のレイアウトを開く前に、このレイアウトの変更を保存するか元に戻してください',
+  layoutSaveFirst: 'このレイアウトの変更を保存できませんでした。修正するか取り消してから、このレイアウトを離れてください',
+  layoutConflict: '未保存の編集がある間に、このレイアウトのファイルがディスク上で変更されました。',
+  layoutConflictLoad: 'ディスクの内容を読み込む',
+  layoutConflictKeep: '自分の編集を残す',
+  layoutConflictFirst: 'このレイアウトのファイルがディスク上で変更されました。読み込むか自分の編集を残すかを選んでから、このレイアウトを離れてください',
+  layoutCloseUnsaved: 'このレイアウトの変更を保存できませんでした。修正するか、もう一度ウィンドウを閉じて変更を破棄してください',
   layoutActionFailed: error => `レイアウトを変更できませんでした: ${error}`,
   deckChangeFailed: 'deck.md を更新できませんでした',
   layoutDeckUnsaved: 'deck.md に保存できていないスライドの変更があります。レイアウトは保存済みのデッキに対して確認するため、先にスライドを保存してください',

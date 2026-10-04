@@ -90,24 +90,24 @@ export interface LayoutScreenProps {
   editorReady: boolean
   /** Why they aren't (or the last save's refusal), `''` for nothing. */
   editorMessage: string
+  /** The draft holds edits not saved yet (each pause in typing saves it). */
   editorDirty: boolean
   editorSaving: boolean
+  /** The files changed on disk while the draft held unsaved edits: the
+   * user picks a side (`onLoadExternal` / `onKeepDraft`). */
+  editorConflict: boolean
+  onLoadExternal: () => void
+  onKeepDraft: () => void
   /** The HTML and CSS editors' host elements: `Studio.tsx` creates a
    * CodeMirror editor (`dom/codeEditor.ts`) in each, as for the slide
    * body, so vim mode reaches them too. Typing comes back through the
    * editors' own `onChange`. */
   onHtmlEditorHost: (el: HTMLElement) => void
   onCssEditorHost: (el: HTMLElement) => void
-  onSave: () => void
-  onRevert: () => void
 }
 
 function usageText(messages: Messages, count: number): string {
   return messages.layoutUsage(count)
-}
-
-function saveLabel(messages: Messages, saving: boolean): string {
-  return saving ? messages.savingLayout : messages.saveLayout
 }
 
 function confirmLabel(messages: Messages, view: LayoutDeleteView): string {
@@ -136,27 +136,22 @@ export function LayoutScreen(props: LayoutScreenProps) {
           <button type="button" data-layout-tab="html" aria-pressed={props.editorTab === 'html' ? 'true' : 'false'} onClick={() => props.onEditorTab('html')} className={tabClass(props.editorTab === 'html')}>HTML</button>
           <button type="button" data-layout-tab="css" aria-pressed={props.editorTab === 'css' ? 'true' : 'false'} onClick={() => props.onEditorTab('css')} className={tabClass(props.editorTab === 'css')}>CSS</button>
           <div className="flex-1" />
-          <span data-layout-unsaved hidden={!props.editorDirty} aria-hidden="true" title={messagesFor(props.language).layoutUnsaved} className="text-xs text-muted-foreground">●</span>
-          <button
-            type="button"
-            data-revert-layout
-            disabled={!props.editorDirty || props.editorSaving}
-            onClick={() => props.onRevert()}
-            className="px-2 py-0.5 rounded-md text-xs hover:bg-accent disabled:opacity-40"
-          >
-            {messagesFor(props.language).revertLayout}
-          </button>
-          <button
-            type="button"
-            data-save-layout
-            disabled={!props.editorReady || !props.editorDirty || props.editorSaving}
-            onClick={() => props.onSave()}
-            className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground text-xs disabled:opacity-40"
-          >
-            {saveLabel(messagesFor(props.language), props.editorSaving)}
-          </button>
+          {/* No Save button: each pause in typing saves the draft. */}
+          <span data-layout-saving hidden={!props.editorSaving} className="text-xs text-muted-foreground">{messagesFor(props.language).savingLayout}</span>
+          <span data-layout-unsaved hidden={!props.editorDirty || props.editorSaving} aria-hidden="true" title={messagesFor(props.language).layoutUnsaved} className="text-xs text-muted-foreground">●</span>
         </div>
         <p role="alert" data-layout-editor-message hidden={props.editorMessage === ''} className="shrink-0 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words border-b border-border">{props.editorMessage}</p>
+        {/* The files changed on disk under unsaved edits: an in-app choice
+            (never `window.confirm`, CLAUDE.md), permanently mounted. */}
+        <div role="alert" data-layout-conflict className={(props.editorConflict ? 'flex' : 'hidden') + ' shrink-0 flex-wrap items-center gap-2 px-3 py-2 text-xs border-b border-border bg-accent'}>
+          <span className="flex-1 min-w-0">{messagesFor(props.language).layoutConflict}</span>
+          <button type="button" data-layout-conflict-load disabled={props.editorSaving} onClick={() => props.onLoadExternal()} className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground disabled:opacity-40">
+            {messagesFor(props.language).layoutConflictLoad}
+          </button>
+          <button type="button" data-layout-conflict-keep disabled={props.editorSaving} onClick={() => props.onKeepDraft()} className="px-2 py-0.5 rounded-md hover:bg-background disabled:opacity-40">
+            {messagesFor(props.language).layoutConflictKeep}
+          </button>
+        </div>
         {/* Hidden, not disabled, while the files aren't open: an editor
             can't be typed into then. Both stay mounted (CLAUDE.md's
             BarefootJS pitfalls on branches). */}

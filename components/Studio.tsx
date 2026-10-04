@@ -42,7 +42,7 @@ import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isL
 import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
 import { type LayoutNameProblem, type StudioMode, initialLayoutListWidth, layoutFilesChanged, layoutListGeneration, layoutRows, layoutUsage, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
-import { editorDraft, editorLayoutName, type LayoutField } from '../domain/layoutEditor'
+import { LAYOUT_AUTOSAVE_DELAY_MS, editorDraft, editorLayoutName, layoutTextsOf, leaveBlocker, type LayoutField } from '../domain/layoutEditor'
 import { layoutDisplayName } from '../domain/standardLayouts'
 import type { Messages } from '../domain/messages'
 import { type ImageSlotFix, imageLayoutPin, imageSlotFixFor, parseImageSlotError, shownImageSlotFix } from '../domain/imageSlot'
@@ -58,7 +58,7 @@ import { takesCommandKeys, type VimMode } from '../domain/vimMode'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { COLUMN_WIDTH_BOUNDS, measureWidthsNextFrame, startColumnResize } from '../dom/columnResize'
 import { blurEditorFieldOnRowPress, isFocusWithin, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
-import { canReplayCodeEditorGroup, codeEditorPositionAt, codeEditorSelection, createCodeEditor, insertIntoCodeEditor, isolateCodeEditorHistory, replayCodeEditorGroup, replayFocusedCodeEditorHistory, resetCodeEditorText, restoreCodeEditor, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, snapshotCodeEditor, type CodeEditorOptions, type CodeEditorSnapshot } from '../dom/codeEditor'
+import { canReplayCodeEditorGroup, codeEditorPositionAt, codeEditorSelection, createCodeEditor, insertIntoCodeEditor, isCodeEditorComposing, isolateCodeEditorHistory, replaceCodeEditorTextUndoable, replayCodeEditorGroup, replayFocusedCodeEditorHistory, resetCodeEditorText, restoreCodeEditor, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, snapshotCodeEditor, type CodeEditorOptions, type CodeEditorSnapshot } from '../dom/codeEditor'
 import { createEditorSlideStates } from '../dom/editorSlideStates'
 import { createVimClipboardBridge, onClipboardMayHaveChanged } from '../dom/vimClipboard'
 import { readPastedImage } from '../dom/imagePaste'
@@ -444,8 +444,10 @@ export function Studio() {
   // body, vim mode included, but off the app's undo timeline — their typing
   // is undone in the editor itself (see `onMenuHistory`), since it changes
   // no slide. Uncontrolled like the body: typing reaches the layout store
-  // through `onChange`, and the app writes back only when the files shown
-  // change from outside (`syncLayoutEditors`).
+  // through `onChange` (and each pause in it saves the draft,
+  // `scheduleLayoutAutosave`), and the app writes back only when the files
+  // shown change from outside (`syncLayoutEditors`,
+  // `replaceLayoutEditorTexts`).
   function createLayoutCodeEditor(el: HTMLElement, previous: ReturnType<typeof createCodeEditor> | undefined, field: LayoutField): ReturnType<typeof createCodeEditor> {
     previous?.destroy()
     layoutEditorsShow = null
@@ -457,14 +459,15 @@ export function Studio() {
       onChange: text => {
         layouts.typeInEditor(field, text)
         scheduleDraftPreview()
+        scheduleLayoutAutosave()
       },
     })
   }
 
   // Pushes the files shown into the layout editors: another layout's start
   // fresh (no undo history from the last one); the same layout's (read
-  // again after a save, or reverted) change only where they differ,
-  // keeping the cursor and the undo history.
+  // again) change only where they differ, keeping the cursor and the undo
+  // history.
   function syncLayoutEditors(): void {
     const shown = layouts.editor()
     const name = editorLayoutName(shown)
@@ -478,10 +481,56 @@ export function Studio() {
     layoutEditorsShow = name
   }
 
-  function revertShownLayout(): void {
-    layouts.revertEditor()
-    syncLayoutEditors()
-    resetDraftPreview()
+  // Puts the layout's files, changed on disk (the agent's edit), into the
+  // editors as one step Undo takes back — undone, the text before it is
+  // typing again, saved like any other.
+  function replaceLayoutEditorTexts(): void {
+    const texts = editorDraft(layouts.editor())
+    if (layoutHtmlEditor) replaceCodeEditorTextUndoable(layoutHtmlEditor, texts.html)
+    if (layoutCssEditor) replaceCodeEditorTextUndoable(layoutCssEditor, texts.css)
+  }
+  function layoutEditorsComposing(): boolean {
+    return [layoutHtmlEditor, layoutCssEditor].some(view => view !== undefined && isCodeEditorComposing(view))
+  }
+
+  // Autosave: typing that pauses for `LAYOUT_AUTOSAVE_DELAY_MS` saves the
+  // draft (`saveShownLayout`) through the same build check as before. Saves
+  // run one after another (`layoutSaveQueue`), each deciding then whether
+  // there's anything to save (`shouldAutosave`), so an older save can't
+  // land after a newer one; typing during a save stays unsaved and is
+  // saved next. A refused draft stays in the editor, its reason shown,
+  // until the next edit tries again.
+  let layoutAutosaveTimer: ReturnType<typeof setTimeout> | undefined
+  let layoutSaveQueue: Promise<void> = Promise.resolve()
+  function scheduleLayoutAutosave(): void {
+    clearTimeout(layoutAutosaveTimer)
+    layoutAutosaveTimer = setTimeout(() => { void queueLayoutSave() }, LAYOUT_AUTOSAVE_DELAY_MS)
+  }
+  function queueLayoutSave(): Promise<void> {
+    layoutSaveQueue = layoutSaveQueue.then(saveShownLayout)
+    return layoutSaveQueue
+  }
+  // Saves a draft still waiting for its pause now, and waits for any save
+  // running. Resolves whether the editor can be left (`leaveBlocker`).
+  async function flushLayoutEditor(): Promise<boolean> {
+    clearTimeout(layoutAutosaveTimer)
+    await queueLayoutSave()
+    return leaveBlocker(layouts.editor()) === null
+  }
+  // `flushLayoutEditor` before the editor is left — another layout opened,
+  // the slides screen, a new layout. When it can't be, says why and
+  // resolves `false`: the caller stays where it is.
+  // Tells this window's close whether there's a draft to save first
+  // (`report_layout_draft`); quiet with no deck open.
+  createEffect(() => {
+    const pending = layouts.editorDirty()
+    untrack(() => { deckIpc.reportLayoutDraft(pending).catch(() => {}) })
+  })
+  async function leaveLayoutEditor(): Promise<boolean> {
+    if (await flushLayoutEditor()) return true
+    const messages = settings.messages()
+    layouts.setNotice(leaveBlocker(layouts.editor()) === 'conflict' ? messages.layoutConflictFirst : messages.layoutSaveFirst)
+    return false
   }
 
   // The live preview: typing that pauses for `DRAFT_PREVIEW_DELAY_MS`
@@ -1129,7 +1178,7 @@ export function Studio() {
   function clickLayoutRow(name: string, event: MouseEvent): void {
     const click = layoutThumbnailClickOf(event)
     if (name !== layouts.selectedLayout()) {
-      selectLayout(name)
+      void selectLayout(name)
       return
     }
     if (click !== null) openLayoutCommentBox(layoutClickTarget(name, click.slot), click.at)
@@ -2054,7 +2103,7 @@ export function Studio() {
   // A comment's row names a slide: from the layout screen, the slides
   // screen comes back to show it.
   async function selectSlideFromReview(index: number): Promise<void> {
-    if (ui.studioMode() !== 'slides') setStudioMode('slides')
+    if (ui.studioMode() !== 'slides' && !await setStudioMode('slides')) return
     await selectSlide(index)
   }
 
@@ -2065,13 +2114,15 @@ export function Studio() {
       leaveScreen('layouts')
       await enterLayoutScreen()
     }
-    if (target.kind === 'layout' && layoutNames().includes(target.name)) selectLayout(target.name)
+    if (target.kind === 'layout' && layoutNames().includes(target.name)) await selectLayout(target.name)
   }
 
-  // The layout files' fingerprint as last seen (`layout_files_stamp`). Only
-  // deck.md is watched, so a layout the Coding Agent edits is noticed when
-  // crit reports something (its edit to a file the session covers, or its
-  // reply): a changed fingerprint refreshes the layouts and the slides.
+  // The layout files' fingerprint as last seen (`layout_files_stamp`),
+  // compared whenever the files' watcher (`onLayoutFilesChanged`) or crit
+  // reports something: a changed fingerprint refreshes the layouts, the
+  // slides and the editor (`pullShownLayout`). Studio's own writes take
+  // their fingerprint as seen, so the watcher's report of them changes
+  // nothing.
   let layoutStamp: string | null = null
   async function readLayoutStamp(): Promise<string | null> {
     try {
@@ -2086,17 +2137,103 @@ export function Studio() {
     const stamp = await readLayoutStamp()
     if (stamp !== null) layoutStamp = stamp
   }
-  async function syncLayoutFiles(): Promise<void> {
+  // Resolves whether the files had changed.
+  async function syncLayoutFiles(): Promise<boolean> {
     const stamp = await readLayoutStamp()
-    if (stamp === null) return
+    if (stamp === null) return false
     const previous = layoutStamp
     layoutStamp = stamp
-    if (layoutFilesChanged(previous, stamp)) await refreshLayouts(null)
+    if (!layoutFilesChanged(previous, stamp)) return false
+    await reloadLayoutPreviews()
+    await renderPreview(liveSource())
+    const name = shownLayout(layouts.selectedLayout(), layoutNames())
+    if (name !== layouts.selectedLayout()) await openLayout(name)
+    else await pullShownLayout()
+    return true
   }
 
-  function setStudioMode(mode: StudioMode): void {
+  // The shown layout's files, read again after a change on disk, into the
+  // editor (`withExternalChange`): taken as they are when nothing was
+  // unsaved, else kept beside the typing for the user to choose. Waits out
+  // an IME composition, whose text the editor must not lose.
+  async function pullShownLayout(): Promise<void> {
+    const shown = layouts.editor()
+    if (shown.kind === 'unavailable') {
+      await openLayout(shown.name)
+      return
+    }
+    if (shown.kind !== 'ready') return
+    let disk
+    try {
+      disk = layoutTextsOf(await deckIpc.readLayout(shown.name))
+    } catch {
+      return
+    }
+    if (layoutEditorsComposing()) {
+      setTimeout(() => { void pullShownLayout() }, 300)
+      return
+    }
+    if (layouts.externalChange(shown.name, disk) !== 'replaced') return
+    replaceLayoutEditorTexts()
+    resetDraftPreview()
+  }
+
+  // The conflict's two ways out: the files as they are on disk now (read
+  // again), the typing set aside — Undo brings it back — or the typing,
+  // saved over them next.
+  async function loadExternalLayout(): Promise<void> {
+    const shown = layouts.editor()
+    if (shown.kind !== 'ready' || shown.external === null || shown.saving) return
+    let disk
+    try {
+      disk = layoutTextsOf(await deckIpc.readLayout(shown.name))
+    } catch (err) {
+      layouts.setNotice(settings.messages().layoutActionFailed(err instanceof Error ? err.message : String(err)))
+      return
+    }
+    clearTimeout(layoutAutosaveTimer)
+    layouts.loadExternal(shown.name, disk)
+    layouts.setNotice(null)
+    replaceLayoutEditorTexts()
+    resetDraftPreview()
+  }
+  function keepLayoutDraft(): void {
+    layouts.keepDraft()
+    layouts.setNotice(null)
+    scheduleLayoutAutosave()
+  }
+
+  // Fresh previews in place of the ones shown (the list keeps its rows
+  // meanwhile, unlike `refreshLayouts`); on failure the old ones stay.
+  async function reloadLayoutPreviews(): Promise<void> {
+    try {
+      const payload = await deckIpc.previewLayouts()
+      ui.setLayoutPreviewCss(payload.css)
+      ui.setLayoutPreviews(payload.previews)
+    } catch {
+      return
+    }
+    layouts.bumpPreviewGeneration()
+  }
+
+  // The window was asked to close with a layout draft not saved yet
+  // (`report_layout_draft`): saved, it closes; not, it says so, and the
+  // next close discards the draft.
+  async function closeAfterLayoutFlush(): Promise<void> {
+    if (await flushLayoutEditor()) {
+      await getCurrentWindow().close()
+      return
+    }
+    layouts.setNotice(settings.messages().layoutCloseUnsaved)
+  }
+
+  // Leaving the layout screen saves its draft first; resolves whether the
+  // switch happened.
+  async function setStudioMode(mode: StudioMode): Promise<boolean> {
+    if (ui.studioMode() === 'layouts' && mode !== 'layouts' && !await leaveLayoutEditor()) return false
     leaveScreen(mode)
     if (mode === 'layouts') void enterLayoutScreen()
+    return true
   }
 
   // What a screen switch closes: the layout menu, the PC / Phone switch's
@@ -2121,15 +2258,13 @@ export function Studio() {
     if (name !== layouts.selectedLayout() || layouts.editor().kind === 'none') await openLayout(name)
   }
 
-  // Shows layout `name` and reads its files into the editor. Unsaved edits
-  // to the one open now keep it open instead: they'd be lost otherwise.
-  function selectLayout(name: string): void {
+  // Shows layout `name` and reads its files into the editor, once the one
+  // open now is saved. Edits to it that can't be saved keep it open
+  // instead: they'd be lost otherwise.
+  async function selectLayout(name: string): Promise<void> {
     if (name === layouts.selectedLayout()) return
-    if (layouts.editorDirty()) {
-      layouts.setNotice(settings.messages().layoutSaveFirst)
-      return
-    }
-    void openLayout(name)
+    if (!await leaveLayoutEditor()) return
+    await openLayout(name)
   }
 
   async function openLayout(name: string | null): Promise<void> {
@@ -2191,14 +2326,12 @@ export function Studio() {
     return layoutNameProblemText(layouts.newLayoutNameProblem(layoutNames()), settings.messages())
   })
 
-  // The new layout opens in the editor, so unsaved edits to the one open now
-  // keep it from being created, as in `selectLayout`.
+  // The new layout opens in the editor, so the one open now is saved first,
+  // and edits to it that can't be saved keep it from being created, as in
+  // `selectLayout`.
   async function createLayout(): Promise<void> {
     if (layouts.newLayoutNameProblem(layoutNames()) !== null) return
-    if (layouts.editorDirty()) {
-      layouts.setNotice(settings.messages().layoutSaveFirst)
-      return
-    }
+    if (!await leaveLayoutEditor()) return
     let created = ''
     const ok = await runLayoutAction(async () => {
       const source = await persistedSource()
@@ -2213,10 +2346,7 @@ export function Studio() {
   // Copies layout `name` and opens the copy.
   async function duplicateLayout(name: string | null): Promise<void> {
     if (name === null) return
-    if (layouts.editorDirty()) {
-      layouts.setNotice(settings.messages().layoutSaveFirst)
-      return
-    }
+    if (!await leaveLayoutEditor()) return
     let copy = ''
     if (!await runLayoutAction(async () => { copy = await deckIpc.duplicateLayout(await persistedSource(), name) })) return
     await refreshLayouts(copy)
@@ -2307,7 +2437,7 @@ export function Studio() {
         void applyLayout(name)
         return
       case 'edit':
-        if (name !== null) selectLayout(name)
+        if (name !== null) void selectLayout(name)
         return
       case 'duplicate':
         void duplicateLayout(name)
@@ -2405,21 +2535,31 @@ export function Studio() {
     return true
   }
 
+  // One autosave of the shown layout's draft (`queueLayoutSave`), when
+  // there is one to save (`shouldAutosave`). Never rejects: a refusal is
+  // the editor's error. Once written, the files' fingerprint is taken as
+  // seen — the watcher's report of this write changes nothing — and the
+  // list and the slides are drawn again from the saved files, without
+  // reading them back into the editor, which already holds them (and
+  // keeps its cursor, focus and undo history).
   async function saveShownLayout(): Promise<void> {
+    if (!layouts.wantsAutosave()) return
     const shown = layouts.editor()
-    if (shown.kind !== 'ready' || shown.saving) return
+    if (shown.kind !== 'ready') return
     const { name } = shown
     const texts = editorDraft(shown)
     layouts.editorSaving()
+    let stamp: string
     try {
-      await deckIpc.saveLayout(await persistedSource(), name, texts.html, texts.css)
+      stamp = await deckIpc.saveLayout(await persistedSource(), name, texts.html, texts.css)
     } catch (err) {
       layouts.editorSaveFailed(name, String(err))
       return
     }
+    if (typeof stamp === 'string') layoutStamp = stamp
     layouts.editorSaved(name, texts)
-    await refreshLayouts(name)
     setStatusMessage({ kind: 'layout-saved', layout: name })
+    void reloadLayoutPreviews().then(() => renderPreview(liveSource()))
   }
 
   const deleteView = createMemo<LayoutDeleteView>(() => layouts.deleteFlow().kind)
@@ -2685,7 +2825,7 @@ export function Studio() {
       void (async () => {
         let saved = false
         try {
-          saved = await flushDeck()
+          saved = await flushDeck() && await flushLayoutEditor()
         } finally {
           await updateIpc.acknowledgeSave(token, saved).catch(() => {})
         }
@@ -2728,6 +2868,14 @@ export function Studio() {
       const devDeck = await deckIpc.devDefaultDeck()
       if (devDeck) await dispatch({ type: 'open-requested', path: devDeck })
     })()
+
+    // The deck's layout files changed on disk (the agent at work, or
+    // Studio's own save, which `syncLayoutFiles` tells apart).
+    const unlistenLayoutFiles = deckIpc.onLayoutFilesChanged(() => {
+      void syncLayoutFiles().then(changed => { if (changed) noteAgentActivity() })
+    })
+    // A close asked for the layout draft to be saved first.
+    const unlistenLayoutClose = deckIpc.onLayoutFlushBeforeClose(() => { void closeAfterLayoutFlush() })
 
     const unlistenFileChanged = deckIpc.onDeckFileChanged(() => {
       // An agent editing the deck is an agent at work.
@@ -2915,6 +3063,8 @@ export function Studio() {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('mousedown', closeSectionEditorOnOutsidePress, true)
       unlistenFileChanged()
+      unlistenLayoutFiles()
+      unlistenLayoutClose()
       unlistenMenuNew()
       unlistenMenuSettings()
       unlistenSettingsChanged()
@@ -3167,10 +3317,11 @@ export function Studio() {
           editorMessage={layoutEditorMessage()}
           editorDirty={layouts.editorDirty()}
           editorSaving={layoutEditorSaving()}
+          editorConflict={layouts.editorConflict()}
+          onLoadExternal={() => void loadExternalLayout()}
+          onKeepDraft={keepLayoutDraft}
           onHtmlEditorHost={el => { layoutHtmlEditor = createLayoutCodeEditor(el, layoutHtmlEditor, 'html') }}
           onCssEditorHost={el => { layoutCssEditor = createLayoutCodeEditor(el, layoutCssEditor, 'css') }}
-          onSave={() => void saveShownLayout()}
-          onRevert={revertShownLayout}
         />
         {/* The comments column, rightmost: a fourth column rather than a
             strip under the preview, so the threads get the window's full
