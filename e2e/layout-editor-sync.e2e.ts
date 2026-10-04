@@ -250,3 +250,24 @@ test('adversarial: Given a conflict, when the window is closed, then the notice 
   await expect(page.locator('[data-layout-notice]')).not.toContainText('could not be saved')
   expect(deck.layoutFiles?.quote.html).toBe(AGENT)
 })
+
+test('adversarial: Given a read of the old fingerprint still in flight when an autosave lands, then it does not put the old one back, and the watcher\'s report of the save changes nothing', async ({ page }) => {
+  const deck = deckOf()
+  await openQuote(page, deck)
+  deck.layoutFilesStampDelayMs = 1_800
+  // A report that reads the fingerprint from before the save.
+  await emitLayoutFilesChanged(page)
+  await fillEditor(page, MINE, 'layout-html')
+  await expect.poll(() => deck.layoutFiles?.quote.html).toBe(MINE)
+  await expect(page.locator('[data-layout-unsaved]')).toBeHidden()
+  // The slow read and its re-read have answered.
+  await page.waitForTimeout(4_000)
+  const previews = count(deck, 'preview_layouts')
+
+  deck.layoutFilesStampDelayMs = 0
+  await emitLayoutFilesChanged(page)
+  await page.waitForTimeout(500)
+
+  expect(count(deck, 'preview_layouts')).toBe(previews)
+  expect(await editorText(page, 'layout-html')).toBe(MINE)
+})

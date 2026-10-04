@@ -215,6 +215,10 @@ export interface MockDeck {
   /** Milliseconds `save_layout` waits before writing — defaults to 0. Set
    * it to type or act while an autosave is in flight. */
   saveLayoutDelayMs?: number
+  /** Milliseconds `layout_files_stamp` waits before answering what it read
+   * when called — defaults to 0. Set it to let a write land while a read
+   * of the older fingerprint is still in flight. */
+  layoutFilesStampDelayMs?: number
 }
 
 /** Stands in for the layout-files watcher (`watch_layout_dirs` in
@@ -432,7 +436,11 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         return deck.layoutVerdicts?.(args.content as string, args.slideIndex as number) ?? null
       case 'add_image_layout':
         return deck.addImageLayout?.(args.content as string, args.slideIndex as number) ?? []
-      case 'layout_files_stamp': return deck.layoutFilesStamp ?? ''
+      case 'layout_files_stamp': {
+        const stamp = deck.layoutFilesStamp ?? ''
+        if (deck.layoutFilesStampDelayMs) await sleep(deck.layoutFilesStampDelayMs)
+        return stamp
+      }
       case 'read_layout': {
         const name = args.name as string
         return layoutFileOf(deck, name) ?? { html: `<section class="peitho-slide layout-${name}"></section>`, css: null }
