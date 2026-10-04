@@ -233,7 +233,15 @@ export function previewDraftCss(drawn: { css: string | null }, savedFontFaces: s
   }
 }
 
-/** The error to show under the preview of layout `name`, `''` for none. */
+/** The layout whose list thumbnail draws its draft rather than its saved
+ * files — the one with a rendered draft — or `null` when every thumbnail
+ * draws the saved files. A later draft that fails keeps the last good one
+ * drawn, as `previewToDraw` does. */
+export function draftedLayout(state: DraftPreview): string | null {
+  return state.shown === null ? null : state.name
+}
+
+/** The error to show for the draft of layout `name`, `''` for none. */
 export function draftPreviewError(state: DraftPreview, name: string | null): string {
   return name !== null && state.name === name ? state.error ?? '' : ''
 }

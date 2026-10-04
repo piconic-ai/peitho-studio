@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: レイアウト画面の配置を「エディタ | 一覧(選択行が下書きのライブプレビュー) | コメント」に組み替え、右のプレビューを廃止し、一覧にPC/スマホ切替を付ける
 tags: [layout, ui, screen, viewport]
 ---
@@ -117,13 +117,78 @@ tags: [layout, ui, screen, viewport]
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] (Rust変更があれば) `cargo test` グリーン
-- [ ] `bun run test:e2e` グリーン
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] (Rust変更があれば) `cargo test` グリーン — Rust変更なし
+- [x] `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機での見た目/挙動確認(ユーザー自身に依頼): 配置、選択行のライブ
-  描画、PC/スマホ切替、列幅のドラッグ
-- [ ] サムネイルが小さくて細部が見づらくないか(必要なら一覧の既定幅を広げる)
+  描画、PC/スマホ切替、列幅のドラッグ。mockTauriのe2eは、下書きが実際の
+  `preview_layout_draft`(peitho-core)の出力で描かれること、実機WKWebViewで
+  再マウントされたShadow DOMキャンバスが描き直されることまでは保証しない。
+- [ ] サムネイルが小さくて細部が見づらくないか(既定幅はエディタと等分に
+  変更済み — 上記「実機確認後の追加」2)
+- [ ] 実機での追加分の確認: 見出しの削除、等分の既定幅、選択行サムネイルの
+  クリックでのコメント(スロット名の表示、実際のpeitho-core出力でのスロット特定)
+- [ ] 実機での追加分(その2)の確認: 切替の左上配置、形状メニューが窓内に
+  収まること、スマホ表示で縦長サムネイルが一覧の高さに収まること
+
+## 実装メモ
+
+- 選択行の描き直しは`Studio.tsx`の`createEffect`から行う(keyed `.map()`行の
+  `ref`はマウント時の1回だけ)。対象は「今下書きを描く行」と「前に描いていた行」
+  だけで、他の行には触れない。
+- PC/スマホ切替は行のキーに含め(`layoutListGeneration`)、切替で全行を
+  マウントし直す。`data-canvas="fixed"`のレイアウトはスマホ表示でもデッキの形。
+- 切替UIは`components/ViewportToggle.tsx`に切り出して両画面で共有。
+
+## 実機確認後の追加(2026-10-04)
+
+ユーザーが実機で試した結果の要望。PR #163に追加:
+
+1. **一覧の見出し「Layouts」を削除**。PC/スマホ切替は同じ行(エディタのタブ行と
+   同じ高さの、文字の無いツールバー)に右寄せで残す。画面名はウィンドウの
+   Slides / Layouts切替が既に示している。
+2. **一覧の既定幅=エディタの幅**。初めてレイアウト画面が表示された時、エディタと
+   一覧が共有する幅を測り、その半分を一覧の幅にする
+   (`domain/layoutScreen.ts`の`initialLayoutListWidth`、
+   `state/layoutScreenStore.ts`の`settleListWidth`)。ドラッグの範囲
+   (180〜640px、`dom/columnResize.ts`の`COLUMN_WIDTH_BOUNDS`)に収めるので、
+   非常に広い画面では一覧は640pxで止まりエディタの方が広くなる(最初のドラッグで
+   幅が飛ばないように)。ドラッグ後は、画面を行き来してもドラッグした幅のまま。
+   コメント列は自分の幅のまま。
+3. **選択中の行のサムネイルを左クリック→AIコメントボックス**(スライド画面の
+   プレビュークリックと同じ`CommentBox`)。未選択の行のクリックは従来通り選択だけ。
+   ラベルはクリックしたスロットを名指しする: `Layout title-body › slot "title"`、
+   スロット外なら`Layout title-body › whole layout`。コメントは従来通り
+   `layouts/<name>.html`へのファイル単位のコメントで、スロットはラベル
+   (`[Layout title-body › slot "title" (layouts/title-body.html, css/title-body.css)] …`)
+   にだけ載る。ドラッグ・右クリックでは開かない。ボックスはウィンドウ内に収める。
+   - スロットの特定: peitho-coreは埋まったスロットの中身を`slot-<name>`クラスの
+     要素で包む(`render_slot`、v1.34.0で実出力を確認、Rustテスト
+     `given_a_layouts_placeholder_rendered_then_each_filled_slots_content_is_wrapped_in_its_slot_class`
+     で固定)。サムネイルのキャンバスは`pointer-events: none`なので、クリック位置を
+     含む`slot-*`要素の箱のうち最小のものを選ぶ(`slotAtPoint`)。
+   - ピン/ハイライトは**未実装**: スライドのプレビューのピンは選択スライドの
+     プレビュー1枚に重ねる仕組みで、サムネイル各行への重ね描きは安くないため
+     見送った。
+
+## 実機確認後の追加(その2、2026-10-04)
+
+4. **PC/スマホ切替を一覧の左上へ**。エディタ列でHTML/CSSタブがある位置に揃え、
+   行の高さ(`h-9`)は同じ、下の罫線(`border-b`)は無し。形状メニュー(▾)は切替の
+   左端から右へ開くので、一覧が細くウィンドウの右端に寄っている(コメント列を
+   閉じた)場合は`dom/popupFit.ts`がウィンドウ内に押し戻す(`clampMenuPosition`)。
+5. **サムネイルが一覧の表示高さをはみ出さない**。スマホ表示(縦長)で一覧が広いと
+   選択行のサムネイルが下にはみ出していた。各サムネイルを、行の幅と一覧の
+   スクロール領域の高さの両方に収まる最大の箱(縦横比維持、`contain`)にし、
+   行内で水平中央に置く(`domain/geometry.ts`の`containSize`、
+   `domain/layoutScreen.ts`の`layoutThumbnailSize`/`layoutThumbnailStyle`、
+   行の余白は`LAYOUT_ROW_CHROME`)。領域の大きさはResizeObserver
+   (`dom/elementSize.ts`)で追い、ウィンドウのリサイズ・仕切りのドラッグ・
+   PC/スマホ切替に追従する。PC表示でも非常に低いウィンドウでは同じ規則で収まる
+   (高さに余裕があれば従来通り行の幅いっぱい)。
 
 ## 先送り事項
+
+- レイアウトコメントのピン/クリックしたスロットのハイライト(上記3)。

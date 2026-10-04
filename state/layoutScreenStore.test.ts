@@ -162,3 +162,35 @@ describe('the layout editor\'s live preview', () => {
     })
   })
 })
+
+describe('the layout list\'s width', () => {
+  test('spec: Given the screen not laid out yet, When it first is, Then the list takes the width worked out from it; a later layout leaves it alone', () => {
+    createRoot(() => {
+      const layouts = createLayoutScreenStore()
+      layouts.settleListWidth(480)
+      expect(layouts.listWidth()).toBe(480)
+      layouts.settleListWidth(300)
+      expect(layouts.listWidth()).toBe(480)
+    })
+  })
+
+  test('spec: Given the divider dragged before the screen was laid out, When it is, Then the dragged width stays', () => {
+    createRoot(() => {
+      const layouts = createLayoutScreenStore()
+      layouts.setListWidth(350)
+      layouts.settleListWidth(480)
+      expect(layouts.listWidth()).toBe(350)
+    })
+  })
+
+  test('adversarial: Given a layout with no width to settle on (null), Then the list keeps its fallback and the next real layout still settles it', () => {
+    createRoot(() => {
+      const layouts = createLayoutScreenStore()
+      const fallback = layouts.listWidth()
+      layouts.settleListWidth(null)
+      expect(layouts.listWidth()).toBe(fallback)
+      layouts.settleListWidth(500)
+      expect(layouts.listWidth()).toBe(500)
+    })
+  })
+})

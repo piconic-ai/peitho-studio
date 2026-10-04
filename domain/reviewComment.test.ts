@@ -7,7 +7,7 @@ import {
   agentCommentBody, annotatedSpan, commentSlideKey, explicitSlideKey, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
   awaitingAgentCount, newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, pinOfQuote, previewPinsOf, relocateTarget, reviewStatusText, sendAvailability, slideIndexOfComment, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
   utf8OffsetToIndex, type CommentTarget, type PendingComment, type PendingReply, type PinSpot,
-  layoutAgentLabel, layoutHtmlFile, layoutTargetLabel, layoutTargetOfComment, newLayoutComment, splitLayoutLabel, type PendingLayoutComment,
+  layoutAgentLabel, layoutClickTarget, layoutHtmlFile, layoutTargetLabel, layoutTargetOfComment, newLayoutComment, slotAtPoint, slotNameOfClasses, splitLayoutLabel, type PendingLayoutComment,
 } from './reviewComment'
 
 const bytes = (text: string) => new TextEncoder().encode(text).length
@@ -824,5 +824,87 @@ describe('a layout comment among the deck\'s comments', () => {
     expect(slideIndexOfComment(source, slides, onLayout)).toBeNull()
     expect(commentCountsBySlide(source, slides, [], [onLayout])).toEqual({})
     expect(slideIndexOfComment(source, slides, { ...onLayout, place: { kind: 'deck' } })).toBe(1)
+  })
+})
+
+describe('a comment from a click on a layout\'s thumbnail', () => {
+  const TITLE = { kind: 'layout' as const, name: 'title-body', part: { kind: 'slot' as const, slot: 'title' } }
+  const WHOLE = { kind: 'layout' as const, name: 'title-body', part: { kind: 'whole' as const } }
+
+  test('spec: Given a click inside a slot, Then the box and the panel name the layout and the slot', () => {
+    expect(layoutClickTarget('title-body', 'title')).toEqual(TITLE)
+    expect(layoutTargetLabel(TITLE)).toBe('Layout title-body › slot "title"')
+  })
+
+  test('spec: Given a click on nothing a slot holds, Then it is on the whole layout', () => {
+    expect(layoutClickTarget('title-body', null)).toEqual(WHOLE)
+    expect(layoutTargetLabel(WHOLE)).toBe('Layout title-body › whole layout')
+  })
+
+  test('spec: Given a comment on a slot sent, Then the agent reads the slot and the files, and the label splits back into the same target', () => {
+    const body = newLayoutComment({ id: 'p1', target: TITLE, body: ' Bigger ', createdAt: '2026-10-04T00:00:00Z' }).body
+    expect(body).toBe('[Layout title-body › slot "title" (layouts/title-body.html, css/title-body.css)] Bigger')
+    expect(splitLayoutLabel(body)).toEqual({ target: TITLE, text: 'Bigger' })
+    const whole = newLayoutComment({ id: 'p2', target: WHOLE, body: 'Calmer', createdAt: '2026-10-04T00:00:00Z' }).body
+    expect(whole).toBe('[Layout title-body › whole layout (layouts/title-body.html, css/title-body.css)] Calmer')
+    expect(splitLayoutLabel(whole)).toEqual({ target: WHOLE, text: 'Calmer' })
+  })
+
+  test('spec: Given a sent comment on a slot, Then it is still about its layout (whichever file crit put it on)', () => {
+    const body = '[Layout cover › slot "title" (layouts/cover.html, css/cover.css)] x'
+    expect(layoutTargetOfComment({ place: { kind: 'file', path: 'layouts/cover.html' }, body })).toEqual({ kind: 'layout', name: 'cover' })
+    expect(layoutTargetOfComment({ place: { kind: 'review' }, body })).toEqual({ kind: 'layout', name: 'cover', part: { kind: 'slot', slot: 'title' } })
+  })
+
+  test('adversarial: Given a malformed part in a label, Then it isn\'t read as a layout label at all', () => {
+    for (const body of ['[Layout cover › slot "Title"] x', '[Layout cover › slot ""] x', '[Layout cover › ] x', '[Layout cover › slot title] x', '[Layout cover › whole] x', '[All layouts › slot "title"] x']) {
+      expect(splitLayoutLabel(body)).toBeNull()
+    }
+  })
+})
+
+describe('slotNameOfClasses', () => {
+  test('spec: Given the wrapper peitho-core puts around a slot\'s content, Then its slot is read from the class', () => {
+    expect(slotNameOfClasses(['slot-title'])).toBe('title')
+    expect(slotNameOfClasses(['lead', 'slot-sub-title-2'])).toBe('sub-title-2')
+  })
+
+  test('adversarial: Given no slot class, a bare or malformed one, Then there is no slot; of two, the first wins', () => {
+    expect(slotNameOfClasses([])).toBeNull()
+    expect(slotNameOfClasses(['slot-'])).toBeNull()
+    expect(slotNameOfClasses(['slot-Title'])).toBeNull()
+    expect(slotNameOfClasses(['slot-a_b'])).toBeNull()
+    expect(slotNameOfClasses(['myslot-title', 'slots-title', 'Slot-title'])).toBeNull()
+    expect(slotNameOfClasses(['slot-a', 'slot-b'])).toBe('a')
+  })
+})
+
+describe('slotAtPoint', () => {
+  const box = (left: number, top: number, right: number, bottom: number) => ({ left, top, right, bottom })
+  const SLOTS = [
+    { slot: 'body', rect: box(0, 100, 400, 300) },
+    { slot: 'quote', rect: box(50, 150, 150, 200) },
+    { slot: 'title', rect: box(0, 0, 400, 80) },
+  ]
+
+  test('spec: Given a point in a slot, Then that slot; in a slot nested in another, the innermost', () => {
+    expect(slotAtPoint({ x: 10, y: 10 }, SLOTS)).toBe('title')
+    expect(slotAtPoint({ x: 300, y: 250 }, SLOTS)).toBe('body')
+    expect(slotAtPoint({ x: 100, y: 175 }, SLOTS)).toBe('quote')
+  })
+
+  test('adversarial: Given a point in no slot, no slots, or no real point, Then there is no slot', () => {
+    expect(slotAtPoint({ x: 10, y: 90 }, SLOTS)).toBeNull()
+    expect(slotAtPoint({ x: 10, y: 10 }, [])).toBeNull()
+    expect(slotAtPoint({ x: Number.NaN, y: 10 }, SLOTS)).toBeNull()
+  })
+
+  test('adversarial: Given a slot with no area (empty, or not laid out), Then a point on it doesn\'t pick it', () => {
+    expect(slotAtPoint({ x: 0, y: 0 }, [{ slot: 'empty', rect: box(0, 0, 0, 0) }])).toBeNull()
+    expect(slotAtPoint({ x: 5, y: 5 }, [{ slot: 'line', rect: box(0, 5, 10, 5) }, { slot: 'title', rect: box(0, 0, 10, 10) }])).toBe('title')
+  })
+
+  test('adversarial: Given two slots of the same size both holding the point, Then the first one listed (document order)', () => {
+    expect(slotAtPoint({ x: 5, y: 5 }, [{ slot: 'a', rect: box(0, 0, 10, 10) }, { slot: 'b', rect: box(0, 0, 10, 10) }])).toBe('a')
   })
 })

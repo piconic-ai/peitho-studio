@@ -11,12 +11,15 @@ import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
-  REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, layoutTargetLabel, layoutTargetOfComment, newLayoutComment, newReviewComment, pollsForAgent,
+  REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, layoutClickTarget, layoutTargetLabel, layoutTargetOfComment, newLayoutComment, newReviewComment, pollsForAgent,
   previewPinsOf, reviewStatusText, slideIndexOfComment, slideSpans, targetLabel,
   type LayoutCommentTarget, type PreviewPin,
 } from '../domain/reviewComment'
 import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, connectTargetOf, showsConnectGuide } from '../domain/agentConnect'
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
+import { layoutThumbnailClickOf, noteLayoutRowPress } from '../dom/layoutComments'
+import { keepShownPopupsInWindow } from '../dom/popupFit'
+import { observeInnerSize } from '../dom/elementSize'
 import { focusCommentBox, focusUnsentEdit, placePreviewPins, revealReviewThread, watchPreviewLayout, type PreviewClick } from '../dom/previewComments'
 import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
@@ -26,7 +29,7 @@ import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../do
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
 import { imageParagraphInsertion, insertionRangeAfterWait } from '../domain/editorText'
 import { fileNameOf, partitionDroppedPaths } from '../domain/images'
-import { deviceForShape, effectiveCanvas } from '../domain/viewport'
+import { viewportCanvas } from '../domain/viewport'
 import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
@@ -37,7 +40,7 @@ import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatt
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
-import { type LayoutNameProblem, type StudioMode, layoutFilesChanged, layoutRows, layoutUsage, shownLayout } from '../domain/layoutScreen'
+import { type LayoutNameProblem, type StudioMode, initialLayoutListWidth, layoutFilesChanged, layoutListGeneration, layoutRows, layoutUsage, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
 import { editorDraft, editorLayoutName, type LayoutField } from '../domain/layoutEditor'
 import { layoutDisplayName } from '../domain/standardLayouts'
@@ -53,7 +56,7 @@ import { type StatusMessage, statusText } from '../domain/statusMessage'
 import { type ScriptTrust, type ScriptTrustEvent, nextScriptTrust, scriptTrustOnOpen, trustBannerShown } from '../domain/scriptTrust'
 import { takesCommandKeys, type VimMode } from '../domain/vimMode'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
-import { startColumnResize } from '../dom/columnResize'
+import { COLUMN_WIDTH_BOUNDS, measureWidthsNextFrame, startColumnResize } from '../dom/columnResize'
 import { blurEditorFieldOnRowPress, isFocusWithin, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
 import { canReplayCodeEditorGroup, codeEditorPositionAt, codeEditorSelection, createCodeEditor, insertIntoCodeEditor, isolateCodeEditorHistory, replayCodeEditorGroup, replayFocusedCodeEditorHistory, resetCodeEditorText, restoreCodeEditor, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, snapshotCodeEditor, type CodeEditorOptions, type CodeEditorSnapshot } from '../dom/codeEditor'
 import { createEditorSlideStates } from '../dom/editorSlideStates'
@@ -62,7 +65,7 @@ import { readPastedImage } from '../dom/imagePaste'
 import { focusSectionNameInput, pressOutsideSectionHeader, sectionHeaderOfRow } from '../dom/sectionHeader'
 import { focusSettingsPanel, restoreFocusAfterSettingsPanel } from '../dom/settingsPanel'
 import { slideRowMenuAnchor } from '../dom/slideRow'
-import { createSlideStylesheet, ensureFontFaces, patchSlideCanvas, remountSlideCanvases, setDraftFontFaces, setManifestKeysSource, setScriptsBlockedListener, setSlideScriptsTrusted } from '../dom/slideCanvas'
+import { createSlideStylesheet, ensureFontFaces, mountSlideCanvas, observeCanvasScale, patchSlideCanvas, remountSlideCanvases, setDraftFontFaces, setManifestKeysSource, setScriptsBlockedListener, setSlideScriptsTrusted } from '../dom/slideCanvas'
 import { createUiStore } from '../state/uiStore'
 import { createLayoutScreenStore } from '../state/layoutScreenStore'
 import { createRenderStore } from '../state/renderStore'
@@ -104,7 +107,7 @@ import { SlideList } from './SlideList'
 import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
 import { LayoutContextMenu, type LayoutMenuEntry } from './LayoutContextMenu'
 import { focusDeleteLayoutDialog, focusNewLayoutName } from '../dom/layoutModals'
-import { absolutizedDraft, draftPreviewError, previewDraftCss, previewToDraw } from '../domain/layoutDraftPreview'
+import { absolutizedDraft, draftPreviewError, draftedLayout, previewDraftCss, previewToDraw } from '../domain/layoutDraftPreview'
 import { scopeRootToHost } from '../domain/slideCss'
 import { type LayoutMenuAction, layoutMenuItems, layoutMenuLabel, layoutMenuPosition, layoutMenuTarget, layoutMenuTitle } from '../domain/layoutMenu'
 
@@ -721,11 +724,11 @@ export function Studio() {
   // The canvas the *preview pane* lays the selected slide out on: the
   // deck's own, or (phone display, tall shape) the same width grown to a
   // phone's proportion — see `domain/viewport.ts`. Phone display with the
-  // deck-ratio shape is the deck's own canvas again. The thumbnail list and
+  // deck-ratio shape is the deck's own canvas again. The slide list and
   // layout picker keep reading `render.canvasWidth()/canvasHeight()`
   // directly.
   //
-  // Number memos, not one memo of a `Size`: `effectiveCanvas` returns a
+  // Number memos, not one memo of a `Size`: `viewportCanvas` returns a
   // fresh object every call, and `SlidePreview`'s mount effect would
   // re-mount on every notification. `selectedSlideIsFixedCanvas` reads the
   // fragment, so it re-runs on every edit of the selected slide; as its own
@@ -736,7 +739,7 @@ export function Studio() {
   })
   function previewCanvas(): Size {
     const deck = { width: render.canvasWidth(), height: render.canvasHeight() }
-    return effectiveCanvas(deck, ui.viewportMode(), deviceForShape(ui.phoneShape(), deck), selectedSlideIsFixedCanvas())
+    return viewportCanvas(deck, ui.viewportMode(), ui.phoneShape(), selectedSlideIsFixedCanvas())
   }
   const previewCanvasWidth = createMemo<number>(() => previewCanvas().width)
   const previewCanvasHeight = createMemo<number>(() => previewCanvas().height)
@@ -775,16 +778,13 @@ export function Studio() {
     layoutPreviewStylesheet.replaceSync(ui.layoutPreviewStylesheetText())
   })
 
-  // The layout screen's preview: the saved files' preview with the sheet
+  // The selected layout's drawing: the saved files' preview with the sheet
   // above, or the editor's rendered draft with that draft's own CSS.
   const layoutPreviewDraw = createMemo(() => {
     const name = layouts.selectedLayout()
     return previewToDraw(layouts.draftPreview(), name, name === null ? '' : layoutFragmentOf(name))
   })
   const layoutDraftStylesheet = createSlideStylesheet(ui.layoutPreviewStylesheetText())
-  function getLayoutDraftStylesheet(): CSSStyleSheet {
-    return layoutDraftStylesheet
-  }
   // The draft's CSS with any family the deck defines and the draft
   // redefines moved to a preview-only name, so its faces can't change how
   // the deck's slides draw (`previewDraftCss`).
@@ -798,6 +798,46 @@ export function Studio() {
   // is drawn again or the slides screen shows (and back when it returns).
   createEffect(() => {
     setDraftFontFaces(ui.studioMode() === 'layouts' ? layoutPreviewCss().fontFaces : '')
+  })
+
+  // The layout list's thumbnails: each draws its layout's saved files, and
+  // the one with a rendered draft (`draftedLayout`) draws that instead, on
+  // the PC / Phone switch's canvas. A row's `ref` hands its host over once,
+  // at mount (`mountLayoutThumbnail`); a row re-keyed by a fresh set of
+  // previews or a switch change mounts again and reads the current draw.
+  function layoutThumbnailDraw(name: string): { fragment: string; css: string | null } {
+    return previewToDraw(layouts.draftPreview(), name, layoutFragmentOf(name))
+  }
+  function layoutCanvasOf(name: string): Size {
+    const deck = { width: render.canvasWidth(), height: render.canvasHeight() }
+    return viewportCanvas(deck, ui.viewportMode(), ui.phoneShape(), hasFixedCanvas(layoutThumbnailDraw(name).fragment))
+  }
+  function mountLayoutThumbnail(el: HTMLElement, name: string): void {
+    el.dataset.layoutCanvas = name
+    const draw = untrack(() => layoutThumbnailDraw(name))
+    const canvas = untrack(() => layoutCanvasOf(name))
+    mountSlideCanvas(el, draw.css === null ? layoutPreviewStylesheet : layoutDraftStylesheet, draw.fragment, canvas, 'thumbnail')
+    observeCanvasScale(el, canvas)
+  }
+  // A keyed row's `ref` never runs again (CLAUDE.md's BarefootJS
+  // pitfalls), so a draft arriving, changing or going away redraws the
+  // rows concerned from here: the row drawing a draft now, and the one that
+  // drew it before (back to its saved files). Tracks the drawn draft object
+  // itself, which a failed later draft or a new request leaves as it is —
+  // so neither redraws anything.
+  const draftedLayoutName = createMemo(() => draftedLayout(layouts.draftPreview()))
+  const draftedLayoutShown = createMemo(() => layouts.draftPreview().shown)
+  let layoutRowDrawingDraft: string | null = null
+  createEffect(() => {
+    const drafted = draftedLayoutName()
+    draftedLayoutShown()
+    untrack(() => {
+      for (const name of new Set([layoutRowDrawingDraft, drafted])) {
+        if (name === null) continue
+        for (const host of document.querySelectorAll<HTMLElement>(`[data-layout-canvas="${CSS.escape(name)}"]`)) mountLayoutThumbnail(host, name)
+      }
+    })
+    layoutRowDrawingDraft = drafted
   })
 
   // The error bar's way out of peitho-core's "no slot accepts image" (see
@@ -1081,6 +1121,18 @@ export function Studio() {
     const at = clampMenuPosition(from, { width: 336, height: 180 }, { width: window.innerWidth, height: window.innerHeight }, 8)
     review.openLayoutBox(target, at)
     focusCommentBox()
+  }
+
+  // A click on a layout row selects it; on the selected row's thumbnail it
+  // opens a comment on the layout, naming the slot clicked — the layout
+  // screen's counterpart of a click on the slide preview.
+  function clickLayoutRow(name: string, event: MouseEvent): void {
+    const click = layoutThumbnailClickOf(event)
+    if (name !== layouts.selectedLayout()) {
+      selectLayout(name)
+      return
+    }
+    if (click !== null) openLayoutCommentBox(layoutClickTarget(name, click.slot), click.at)
   }
 
   const commentBoxLabel = createMemo(() => {
@@ -1989,14 +2041,14 @@ export function Studio() {
   // watched for changes.
   const layoutNames = createMemo<string[]>(() => (ui.layoutPreviews() ?? []).map(preview => preview.name))
   const slidesByLayout = createMemo(() => layoutUsage(slideEntries(), render.slideLayouts()))
-  const layoutRowsShown = createMemo(() => layoutRows(layoutNames(), slidesByLayout(), settings.language(), layouts.previewGeneration()))
+  const layoutRowsShown = createMemo(() => layoutRows(layoutNames(), slidesByLayout(), settings.language(), layoutListGeneration(layouts.previewGeneration(), ui.viewportMode(), ui.phoneShape())))
   function layoutFragmentOf(name: string): string {
     return (ui.layoutPreviews() ?? []).find(preview => preview.name === name)?.fragment ?? ''
   }
 
   // The comments column takes the rest of the row only on the slides screen
   // with both the editor and the preview closed; on the layout screen, the
-  // layout's preview does.
+  // layout editor does.
   const reviewFillsRow = createMemo(() => ui.studioMode() === 'slides' && !ui.previewOpen() && !ui.editorOpen())
 
   // A comment's row names a slide: from the layout screen, the slides
@@ -2010,8 +2062,7 @@ export function Studio() {
   // layout, the layout screen as it was.
   async function selectLayoutFromReview(target: LayoutCommentTarget): Promise<void> {
     if (ui.studioMode() !== 'layouts') {
-      ui.setStudioMode('layouts')
-      layouts.closeMenu()
+      leaveScreen('layouts')
       await enterLayoutScreen()
     }
     if (target.kind === 'layout' && layoutNames().includes(target.name)) selectLayout(target.name)
@@ -2044,12 +2095,27 @@ export function Studio() {
   }
 
   function setStudioMode(mode: StudioMode): void {
-    ui.setStudioMode(mode)
-    layouts.closeMenu()
+    leaveScreen(mode)
     if (mode === 'layouts') void enterLayoutScreen()
   }
 
+  // What a screen switch closes: the layout menu, the PC / Phone switch's
+  // menu (both screens show the switch; its menu belongs to the one it was
+  // opened on) and the comment box, whose target is on the screen being
+  // left.
+  function leaveScreen(mode: StudioMode): void {
+    if (ui.studioMode() !== mode) review.closeBox()
+    ui.setStudioMode(mode)
+    layouts.closeMenu()
+    ui.closePhoneShapeMenu()
+  }
+
   async function enterLayoutScreen(): Promise<void> {
+    // The list starts as wide as the editor: their shared width is known
+    // only once the screen shows, so it's measured on its first frame.
+    measureWidthsNextFrame(['[data-layout-editor]', '[data-layout-list]'], shared => {
+      layouts.settleListWidth(initialLayoutListWidth(shared, COLUMN_WIDTH_BOUNDS))
+    })
     await loadLayoutPreviews()
     const name = shownLayout(layouts.selectedLayout(), layoutNames())
     if (name !== layouts.selectedLayout() || layouts.editor().kind === 'none') await openLayout(name)
@@ -2262,6 +2328,13 @@ export function Studio() {
       }
     }
   }
+
+  // Keeps the PC / Phone switch's shape menu on-screen: it opens rightwards
+  // from the switch, which on the layout screen can sit near the window's
+  // right edge (the list narrowed, the comments column closed).
+  createEffect(() => {
+    if (ui.phoneShapeMenuOpen()) keepShownPopupsInWindow('[data-phone-shape-menu]')
+  })
 
   // Keeps the layout menu on-screen, as the slide menu's effect above does.
   let layoutMenuEl: HTMLElement | undefined
@@ -3053,19 +3126,23 @@ export function Studio() {
           hidden={ui.studioMode() !== 'layouts'}
           rows={layoutRowsShown()}
           selectedName={layouts.selectedLayout()}
-          onSelect={selectLayout}
+          onRowClick={clickLayoutRow}
+          onRowPress={noteLayoutRowPress}
           onContextMenu={openLayoutMenu}
-          fragmentOf={layoutFragmentOf}
-          layoutPreviewStylesheet={getLayoutPreviewStylesheet}
-          previewFragment={layoutPreviewDraw().fragment}
-          previewStylesheet={getLayoutDraftStylesheet}
+          onThumbnailHost={mountLayoutThumbnail}
+          canvasOf={layoutCanvasOf}
+          onRowsHost={el => observeInnerSize(el, layouts.setThumbnailRoom)}
+          thumbnailRoom={layouts.thumbnailRoom()}
           previewError={draftPreviewError(layouts.draftPreview(), layouts.selectedLayout())}
-          canvasWidth={render.canvasWidth()}
-          canvasHeight={render.canvasHeight()}
           listWidth={layouts.listWidth()}
-          editorWidth={layouts.editorWidth()}
-          onListResize={startColumnResize(layouts.listWidth, layouts.setListWidth, 1)}
-          onEditorResize={startColumnResize(layouts.editorWidth, layouts.setEditorWidth, 1)}
+          onListResize={startColumnResize(layouts.listWidth, layouts.setListWidth, -1)}
+          viewportMode={ui.viewportMode()}
+          onToggleViewportMode={ui.toggleViewportMode}
+          phoneShape={ui.phoneShape()}
+          phoneShapeMenuOpen={ui.phoneShapeMenuOpen()}
+          onTogglePhoneShapeMenu={ui.togglePhoneShapeMenu}
+          onClosePhoneShapeMenu={ui.closePhoneShapeMenu}
+          onSelectPhoneShape={ui.selectPhoneShape}
           busy={layouts.busy()}
           notice={layouts.notice()}
           newLayoutOpen={layouts.newLayoutOpen()}

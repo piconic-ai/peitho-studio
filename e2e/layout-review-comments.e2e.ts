@@ -38,6 +38,8 @@ async function openLayoutScreen(page: Page, crit: FakeCritIpc, overrides: Partia
  * space). */
 async function commentOnLayout(page: Page, name: string | null, text: string): Promise<void> {
   if (name === null) {
+    // Below the rows, which can fill the column.
+    await page.locator('[data-layout-rows]').evaluate(el => { el.scrollTop = el.scrollHeight })
     const box = (await page.locator('[data-layout-rows]').boundingBox())!
     await page.mouse.click(box.x + box.width / 2, box.y + box.height - 10, { button: 'right' })
     await page.locator('[data-layout-menu-item="comment-all-layouts"]').click()
@@ -154,4 +156,120 @@ test('Given Studio started the deck\'s session before the deck had layout folder
   // The first comment starts Studio's session.
   await commentOnLayout(page, 'cover', 'Darker title')
   await expect(page.locator('[data-agent-connect-prompt]')).toContainText(`1. Run: cd /decks/talk && '${FAKE_CRIT_PATH}' --no-open --session fake-session`)
+})
+
+// A left-click on the selected layout's thumbnail opens the comment box on
+// that layout, as a click on the slide preview does on the slide; the label
+// names the slot clicked, read from the `slot-<name>` class peitho-core
+// wraps each filled slot's content in (`render_slot`). The mocked
+// `preview_layouts` hands every layout the fragment below.
+test.describe('a click on a layout\'s thumbnail', () => {
+  const FRAGMENT = '<section class="peitho-slide"><h1><span class="slot-title">Placeholder title</span></h1>'
+    + '<div class="body" style="margin-top: 200px"><div class="slot-body"><p>Placeholder body copy.</p></div></div></section>'
+
+  async function openWithThumbnails(page: Page, crit: FakeCritIpc): Promise<MockDeck> {
+    const deck = await openLayoutScreen(page, crit, { layoutFragment: FRAGMENT })
+    // Opened on the selected slide's layout (a click on its thumbnail now
+    // would open the box).
+    await expect(page.locator('[data-layout-row="cover"]')).toHaveAttribute('aria-current', 'true')
+    return deck
+  }
+
+  function thumbnail(page: Page, name: string) {
+    return page.locator(`[data-layout-row="${name}"] [data-layout-thumbnail]`)
+  }
+
+  async function centerOf(page: Page, selector: string, name: string): Promise<{ x: number; y: number }> {
+    const box = await page.locator(`[data-layout-row="${name}"] [data-layout-canvas] ${selector}`).boundingBox()
+    if (!box) throw new Error(`${selector} has no box`)
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  }
+
+  test('Given the selected layout, When a slot in its thumbnail is clicked, Then the box names the layout and the slot, and the agent gets it on the layout\'s files', async ({ page }) => {
+    const crit = createFakeCritIpc()
+    await openWithThumbnails(page, crit)
+
+    const title = await centerOf(page, '.slot-title', 'cover')
+    await page.mouse.click(title.x, title.y)
+
+    await expect(page.locator(BOX)).toBeVisible()
+    await expect(page.locator('[data-comment-target]')).toHaveText('Layout cover › slot "title"')
+    await expect(page.locator(`${BOX} textarea`)).toBeFocused()
+    await page.locator(`${BOX} textarea`).fill('Bigger title')
+    await page.locator('[data-comment-add]').click()
+    await expect(page.locator('[data-review-row="unsent-comment"] [data-review-target]')).toHaveText('Layout cover › slot "title"')
+
+    await page.locator(SEND).click()
+    await expect.poll(() => sentLayoutComments(crit)).toEqual([
+      { layout: 'cover', body: '[Layout cover › slot "title" (layouts/cover.html, css/cover.css)] Bigger title', author: 'Peitho Studio' },
+    ])
+    await expect(page.locator('[data-review-row="comment"] [data-review-target]')).toHaveText('Layout cover › slot "title"')
+  })
+
+  test('Given the selected layout, When its thumbnail is clicked where no slot is, Then the box is on the whole layout', async ({ page }) => {
+    await openWithThumbnails(page, createFakeCritIpc())
+    const box = (await thumbnail(page, 'cover').boundingBox())!
+    await page.mouse.click(box.x + box.width - 3, box.y + box.height - 3)
+    await expect(page.locator('[data-comment-target]')).toHaveText('Layout cover › whole layout')
+  })
+
+  test('Given a layout not selected, When its thumbnail is clicked, Then it is selected and no box opens; the next click opens it', async ({ page }) => {
+    await openWithThumbnails(page, createFakeCritIpc())
+    const body = await centerOf(page, '.slot-body', 'title-body')
+
+    await page.mouse.click(body.x, body.y)
+    await expect(page.locator('[data-layout-row="title-body"]')).toHaveAttribute('aria-current', 'true')
+    await expect(page.locator(BOX)).toBeHidden()
+
+    await page.mouse.click(body.x, body.y)
+    await expect(page.locator('[data-comment-target]')).toHaveText('Layout title-body › slot "body"')
+  })
+
+  test('adversarial: Given the selected thumbnail, When the mouse is dragged across it or it is right-clicked, Then no box opens, and the right-click opens the layout menu', async ({ page }) => {
+    await openWithThumbnails(page, createFakeCritIpc())
+    const title = await centerOf(page, '.slot-title', 'cover')
+
+    await page.mouse.move(title.x - 20, title.y)
+    await page.mouse.down()
+    await page.mouse.move(title.x + 20, title.y, { steps: 5 })
+    await page.mouse.up()
+    await expect(page.locator(BOX)).toBeHidden()
+
+    await page.mouse.click(title.x, title.y, { button: 'right' })
+    await expect(page.locator('[data-layout-menu]')).toBeVisible()
+    await expect(page.locator(BOX)).toBeHidden()
+  })
+
+  test('adversarial: Given a click near the window\'s bottom-right corner, Then the box stays inside the window', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 520 })
+    await openWithThumbnails(page, createFakeCritIpc())
+    const box = (await thumbnail(page, 'cover').boundingBox())!
+    await page.mouse.click(box.x + box.width - 3, box.y + box.height - 3)
+
+    await expect(page.locator(BOX)).toBeVisible()
+    const shown = (await page.locator(BOX).boundingBox())!
+    const viewport = page.viewportSize()!
+    expect(shown.x).toBeGreaterThanOrEqual(0)
+    expect(shown.y).toBeGreaterThanOrEqual(0)
+    expect(shown.x + shown.width).toBeLessThanOrEqual(viewport.width)
+    expect(shown.y + shown.height).toBeLessThanOrEqual(viewport.height)
+  })
+})
+
+test('Given an open comment box, When the screen is switched between slides and layouts, Then the box closes and nothing is filed', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  await openLayoutScreen(page, crit)
+  await page.locator('[data-layout-row="cover"]').click({ button: 'right' })
+  await page.locator('[data-layout-menu-item="comment-layout"]').click()
+  await expect(page.locator(BOX)).toBeVisible()
+  await page.locator(`${BOX} textarea`).fill('Half-written')
+
+  await page.locator('[data-studio-mode-option="slides"]').click()
+  await expect(page.locator(BOX)).toBeHidden()
+  await expect(page.locator('[data-review-row]')).toHaveCount(0)
+
+  await page.locator('[data-preview-host] h1').first().click()
+  await expect(page.locator(BOX)).toBeVisible()
+  await page.locator('[data-studio-mode-option="layouts"]').click()
+  await expect(page.locator(BOX)).toBeHidden()
 })

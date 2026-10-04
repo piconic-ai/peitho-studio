@@ -90,3 +90,11 @@ export function deviceForShape(shape: PhoneShape, deck: Size): Size {
     }
   }
 }
+
+/** The canvas a slide (or a layout's placeholder slide) is laid out on
+ * for the PC / Phone switch's state: `effectiveCanvas` with the device the
+ * phone shape stands for. Shared by the slide preview and the layout
+ * list's thumbnails, so both draw a layout at the same size. */
+export function viewportCanvas(deck: Size, mode: ViewportMode, shape: PhoneShape, fixedCanvas: boolean): Size {
+  return effectiveCanvas(deck, mode, deviceForShape(shape, deck), fixedCanvas)
+}

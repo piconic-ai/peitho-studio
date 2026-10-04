@@ -264,9 +264,9 @@ test('Given text typed into the slide body and the phone shape menu open, when E
   await page.keyboard.type(' typed')
   await expect.poll(() => editorText(page)).toMatch(/ typed$/)
 
-  await page.locator('[data-viewport-toggle]').click()
-  await page.locator('[data-phone-shape-menu-button]').click()
-  await expect(page.locator('[data-phone-shape-menu]')).toBeVisible()
+  await page.locator('[data-panel="preview"] [data-viewport-toggle]').click()
+  await page.locator('[data-panel="preview"] [data-phone-shape-menu-button]').click()
+  await expect(page.locator('[data-panel="preview"] [data-phone-shape-menu]')).toBeVisible()
   // WebKit never moves focus onto a clicked <button>, so on the real app the
   // body keeps focus through those clicks; Chromium moves it, so put it back.
   await editorContent(page).evaluate(el => { (el as HTMLElement).focus() })

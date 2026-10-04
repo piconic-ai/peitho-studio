@@ -11,13 +11,15 @@ import {
   LAYOUT_MENU_CLOSED, openOnLayout, openOnList, withLayoutMenuFit, withLayoutMenuPosition, type LayoutMenu,
 } from '../domain/layoutMenu'
 import type { LayoutVerdict } from '../domain/layoutFit'
+import type { Size } from '../domain/geometry'
 import {
   NO_DRAFT_PREVIEW, draftPreviewFailed, draftPreviewRendered, requestDraftPreview, resetDraftPreview,
   type DraftPreview, type RenderedDraft,
 } from '../domain/layoutDraftPreview'
 
-const LIST_WIDTH = 220
-const EDITOR_WIDTH = 420
+// The list's width until the screen is first laid out
+// (`settleListWidth`): only ever seen if it can't be measured.
+const LIST_WIDTH = 280
 
 /** The layout screen's own state (Studio's "Layouts" mode): which layout is
  * shown, the New Layout form, a delete in progress, the HTML/CSS editor,
@@ -31,10 +33,30 @@ const EDITOR_WIDTH = 420
 export function createLayoutScreenStore() {
   const [selectedLayout, setSelectedLayout] = createSignal<string | null>(null)
 
-  // The list and editor columns' widths (`dom/columnResize.ts`), session-only
-  // like the slides screen's.
-  const [listWidth, setListWidth] = createSignal(LIST_WIDTH)
-  const [editorWidth, setEditorWidth] = createSignal(EDITOR_WIDTH)
+  // The list column's width (`dom/columnResize.ts`), session-only like the
+  // slides screen's; the editor, left of it, takes the rest of the row.
+  // Worked out once, the first time the screen is laid out
+  // (`initialLayoutListWidth`); a drag sets it from then on.
+  const [listWidth, setListWidthValue] = createSignal(LIST_WIDTH)
+  let listWidthSettled = false
+  /** The divider dragged to `width`. */
+  function setListWidth(width: number): void {
+    listWidthSettled = true
+    setListWidthValue(width)
+  }
+  /** The screen laid out, with `width` worked out for the list (`null`
+   * for none yet): taken only the first time, and never over a drag. */
+  function settleListWidth(width: number | null): void {
+    if (listWidthSettled || width === null) return
+    listWidthSettled = true
+    setListWidthValue(width)
+  }
+
+  // The list's scrolling area's inner size (`dom/elementSize.ts`), which
+  // every thumbnail fits inside (`layoutThumbnailSize`); `null` until
+  // measured. One value for the area, read by every row: a change resizes
+  // them all anyway.
+  const [thumbnailRoom, setThumbnailRoom] = createSignal<Size | null>(null)
 
   // Bumped whenever a fresh set of layout previews arrives, so the list's
   // rows get new keys and redraw their thumbnails (see `layoutRows`).
@@ -170,7 +192,8 @@ export function createLayoutScreenStore() {
 
   return {
     selectedLayout, setSelectedLayout,
-    listWidth, setListWidth, editorWidth, setEditorWidth,
+    listWidth, setListWidth, settleListWidth,
+    thumbnailRoom, setThumbnailRoom,
     previewGeneration, bumpPreviewGeneration,
     newLayoutOpen, newLayoutName, setNewLayoutName, newLayoutTemplate, setNewLayoutTemplate,
     openNewLayout, closeNewLayout, newLayoutNameProblem,

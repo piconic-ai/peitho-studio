@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { MAX_LAYOUT_NAME_LENGTH, layoutFilesChanged, layoutNameProblem, layoutRows, layoutUsage, shownLayout } from './layoutScreen'
+import { LAYOUT_ROW_CHROME, MAX_LAYOUT_NAME_LENGTH, initialLayoutListWidth, layoutThumbnailSize, layoutThumbnailStyle, layoutFilesChanged, layoutListGeneration, layoutNameProblem, layoutRows, layoutUsage, shownLayout } from './layoutScreen'
 import type { ManifestSlide } from './render'
 import { buildSlideList } from './slideList'
 
@@ -49,14 +49,14 @@ describe('layoutUsage', () => {
     const slideLayouts = JSON.parse('{"constructor":"constructor","toString":"toString","__proto__":"__proto__","hasOwnProperty":"toString"}') as Record<string, string>
     const usage = layoutUsage(entries, slideLayouts)
     expect(usage).toEqual(new Map([['constructor', [0]], ['toString', [1, 3]], ['__proto__', [2]]]))
-    const rows = layoutRows(['constructor', 'toString', '__proto__', 'valueOf'], usage, 'en', 0)
+    const rows = layoutRows(['constructor', 'toString', '__proto__', 'valueOf'], usage, 'en', '0')
     expect(rows.map(row => [row.name, row.usage])).toEqual([['constructor', 1], ['toString', 2], ['__proto__', 1], ['valueOf', 0]])
   })
 })
 
 describe('layoutRows', () => {
   test('spec: Given the deck\'s layouts, When the list is built, Then each row has its display name and how many slides use it, in the deck\'s order', () => {
-    const rows = layoutRows(['title-slide', 'title-body', 'quote'], layoutUsage(ENTRIES, SLIDE_LAYOUTS), 'ja', 1)
+    const rows = layoutRows(['title-slide', 'title-body', 'quote'], layoutUsage(ENTRIES, SLIDE_LAYOUTS), 'ja', '1')
     expect(rows.map(row => [row.name, row.label, row.usage])).toEqual([
       ['title-slide', 'タイトルスライド', 1],
       ['title-body', 'タイトルと本文', 2],
@@ -66,19 +66,46 @@ describe('layoutRows', () => {
   })
 
   test('spec: Given the deck\'s only layout, When the list is built, Then its row offers no Delete', () => {
-    expect(layoutRows(['title-body-code'], new Map(), 'en', 0)).toEqual([
+    expect(layoutRows(['title-body-code'], new Map(), 'en', '0')).toEqual([
       { key: '0:title-body-code', name: 'title-body-code', label: 'title-body-code', usage: 0, deletable: false },
     ])
   })
 
   test('spec: Given a fresh set of previews, When the list is rebuilt, Then every row gets a new key so its thumbnail is drawn again', () => {
-    const before = layoutRows(['a', 'b'], new Map(), 'en', 1).map(row => row.key)
-    const after = layoutRows(['a', 'b'], new Map(), 'en', 2).map(row => row.key)
+    const before = layoutRows(['a', 'b'], new Map(), 'en', '1').map(row => row.key)
+    const after = layoutRows(['a', 'b'], new Map(), 'en', '2').map(row => row.key)
     expect(after.some(key => before.includes(key))).toBe(false)
   })
 
   test('adversarial: Given no layouts, When the list is built, Then it is empty', () => {
-    expect(layoutRows([], new Map(), 'en', 0)).toEqual([])
+    expect(layoutRows([], new Map(), 'en', '0')).toEqual([])
+  })
+})
+
+describe('layoutListGeneration', () => {
+  test('spec: Given the PC / Phone switch flipped, or the phone shape changed, When the list is rebuilt, Then every row gets a new key so its thumbnail is drawn on the new canvas', () => {
+    const keysFor = (generation: string) => layoutRows(['a', 'b'], new Map(), 'en', generation).map(row => row.key)
+    const pc = keysFor(layoutListGeneration(3, 'desktop', 'portrait'))
+    const phone = keysFor(layoutListGeneration(3, 'mobile', 'portrait'))
+    const phoneDeck = keysFor(layoutListGeneration(3, 'mobile', 'deck'))
+    expect(phone.some(key => pc.includes(key))).toBe(false)
+    expect(phoneDeck.some(key => phone.includes(key))).toBe(false)
+  })
+
+  test('spec: Given nothing changed, When the list is rebuilt, Then the rows keep their keys (no redraw)', () => {
+    expect(layoutListGeneration(3, 'mobile', 'deck')).toBe(layoutListGeneration(3, 'mobile', 'deck'))
+  })
+
+  test('adversarial: Given every combination of previews, mode and shape, Then no two give the same generation', () => {
+    const generations = [0, 1, 10, 11].flatMap(previews =>
+      (['desktop', 'mobile'] as const).flatMap(mode => (['portrait', 'deck'] as const).map(shape => layoutListGeneration(previews, mode, shape))))
+    expect(new Set(generations).size).toBe(generations.length)
+  })
+
+  test('adversarial: Given a layout name containing the separators, Then rows of different generations still never share a key', () => {
+    const one = layoutRows(['x/mobile/deck:a'], new Map(), 'en', layoutListGeneration(1, 'desktop', 'portrait')).map(row => row.key)
+    const two = layoutRows(['x/mobile/deck:a'], new Map(), 'en', layoutListGeneration(1, 'mobile', 'portrait')).map(row => row.key)
+    expect(two.some(key => one.includes(key))).toBe(false)
   })
 })
 
@@ -146,5 +173,71 @@ describe('layoutFilesChanged', () => {
     expect(layoutFilesChanged('', 'layouts/a.html\t1\t1')).toBe(true)
     expect(layoutFilesChanged('layouts/a.html\t1\t1', '')).toBe(true)
     expect(layoutFilesChanged('', '')).toBe(false)
+  })
+})
+
+describe('initialLayoutListWidth', () => {
+  const BOUNDS = { min: 180, max: 640 }
+
+  test('spec: Given the width the editor and the list share, Then the list takes half of it, so both start equally wide', () => {
+    expect(initialLayoutListWidth(960, BOUNDS)).toBe(480)
+    expect(initialLayoutListWidth(1000, BOUNDS)).toBe(500)
+  })
+
+  test('spec: Given an odd shared width, Then the list takes the smaller half in whole pixels and the editor the rest', () => {
+    expect(initialLayoutListWidth(961, BOUNDS)).toBe(480)
+  })
+
+  test('adversarial: Given a share whose half falls outside the range a drag keeps a column in, Then it is clamped to that range, so the first drag does not jump', () => {
+    expect(initialLayoutListWidth(2000, BOUNDS)).toBe(640)
+    expect(initialLayoutListWidth(300, BOUNDS)).toBe(180)
+    expect(initialLayoutListWidth(360, BOUNDS)).toBe(180)
+    expect(initialLayoutListWidth(1280, BOUNDS)).toBe(640)
+  })
+
+  test('adversarial: Given no width yet (the screen hidden, or not measurable), Then there is no width to settle on', () => {
+    for (const width of [0, -10, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(initialLayoutListWidth(width, BOUNDS)).toBeNull()
+    }
+  })
+
+  test('adversarial: Given a range with no room in it (min above max), Then the minimum wins, as a drag would', () => {
+    expect(initialLayoutListWidth(1000, { min: 700, max: 600 })).toBe(700)
+  })
+})
+
+describe('layoutThumbnailSize / layoutThumbnailStyle', () => {
+  const PHONE = { width: 390, height: 844 }
+  const PC = { width: 1280, height: 720 }
+  const chrome = LAYOUT_ROW_CHROME
+
+  test('spec: Given a tall phone canvas in a wide, short list, Then the thumbnail is as tall as the list shows, less the row around it, and keeps the canvas\'s proportion', () => {
+    const room = { width: 640, height: 400 }
+    const size = layoutThumbnailSize(room, PHONE)!
+    expect(size.height).toBe(room.height - chrome.height)
+    expect(size.width).toBeLessThan(room.width - chrome.width)
+    expect(size.height / size.width).toBeCloseTo(PHONE.height / PHONE.width, 1)
+  })
+
+  test('spec: Given a PC canvas in a list with height to spare, Then the thumbnail takes the row\'s whole width, as before', () => {
+    expect(layoutThumbnailSize({ width: 400, height: 900 }, PC)).toEqual({ width: 400 - chrome.width, height: Math.floor((400 - chrome.width) * 720 / 1280) })
+  })
+
+  test('spec: Given a size, Then the style sets it; given none, the box falls back to the row\'s width at the canvas\'s proportion', () => {
+    expect(layoutThumbnailStyle(PHONE, { width: 640, height: 400 })).toBe(`width: ${String(Math.floor((400 - chrome.height) * 390 / 844))}px; height: ${String(400 - chrome.height)}px`)
+    expect(layoutThumbnailStyle(PC, null)).toBe('width: 100%; aspect-ratio: 1280 / 720')
+  })
+
+  test('adversarial: Given no list measured yet, or a list smaller than the row around a thumbnail, Then there is no size and the style falls back', () => {
+    expect(layoutThumbnailSize(null, PC)).toBeNull()
+    expect(layoutThumbnailSize({ width: chrome.width, height: 500 }, PC)).toBeNull()
+    expect(layoutThumbnailSize({ width: 500, height: chrome.height }, PC)).toBeNull()
+    expect(layoutThumbnailSize({ width: 0, height: 0 }, PC)).toBeNull()
+    expect(layoutThumbnailStyle(PC, { width: 10, height: 10 })).toBe('width: 100%; aspect-ratio: 1280 / 720')
+  })
+
+  test('adversarial: Given a broken canvas (zero, NaN), Then there is no size', () => {
+    expect(layoutThumbnailSize({ width: 600, height: 600 }, { width: 0, height: 720 })).toBeNull()
+    expect(layoutThumbnailSize({ width: 600, height: 600 }, { width: Number.NaN, height: 720 })).toBeNull()
   })
 })

@@ -23,12 +23,35 @@ export function containScale(avail: Size, canvas: Size): number {
   return Math.min(avail.width / canvas.width, avail.height / canvas.height) * 1.02
 }
 
+/** The largest box of `canvas`'s proportion that fits inside `avail`
+ * ("contain"), in whole pixels rounded down so it never crosses `avail`.
+ * `null` when either size isn't a positive, finite number, or the box
+ * would come out under a pixel on a side. */
+export function containSize(avail: Size, canvas: Size): Size | null {
+  const sizes = [avail.width, avail.height, canvas.width, canvas.height]
+  if (!sizes.every(value => Number.isFinite(value) && value > 0)) return null
+  const scale = Math.min(avail.width / canvas.width, avail.height / canvas.height)
+  // The nudge keeps a float just under a whole pixel (206.9999…) from
+  // losing that pixel; `min` keeps the result inside `avail` regardless.
+  const whole = (value: number) => Math.floor(value + 1e-6)
+  const width = Math.min(whole(canvas.width * scale), Math.floor(avail.width))
+  const height = Math.min(whole(canvas.height * scale), Math.floor(avail.height))
+  return width >= 1 && height >= 1 ? { width, height } : null
+}
+
 /** A box on screen, in the same units as the points tested against it. */
 export interface Rect { left: number; top: number; right: number; bottom: number }
 
 /** Whether `point` lies inside `rect`, edges included. */
 export function isPointInRect(point: Point, rect: Rect): boolean {
   return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom
+}
+
+/** Whether the mouse moved more than `slop` (CSS px) between a press at
+ * `from` and a release at `to`, making it a drag rather than a click. A
+ * press not seen (`null`) or not a number counts as a click. */
+export function isDrag(from: Point | null, to: Point, slop: number): boolean {
+  return from !== null && Math.hypot(to.x - from.x, to.y - from.y) > slop
 }
 
 /** A file drop's position as Tauri reports it, in CSS pixels. Tauri calls

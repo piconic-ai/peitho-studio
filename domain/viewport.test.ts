@@ -7,6 +7,7 @@ import {
   effectiveCanvas,
   reshapeCanvas,
   toggledViewportMode,
+  viewportCanvas,
   type PhoneShape,
   type ViewportMode,
 } from './viewport'
@@ -327,5 +328,46 @@ describe('deviceForShape', () => {
       expect(canvas.height).toBeGreaterThanOrEqual(deck.height)
       expect(canvas.height - deck.height).toBeLessThan(1)
     }))
+  })
+})
+
+describe('viewportCanvas', () => {
+  test('spec: Given PC display, When a slide is laid out, Then it is on the deck\'s own canvas', () => {
+    expect(viewportCanvas(widescreen, 'desktop', 'portrait', false)).toEqual(widescreen)
+  })
+
+  test('spec: Given phone display with the tall shape, When a 16:9 slide is laid out, Then the canvas keeps its width and grows to the phone\'s proportion', () => {
+    expect(viewportCanvas(widescreen, 'mobile', 'portrait', false)).toEqual({ width: 1280, height: 2770 })
+  })
+
+  test('spec: Given phone display with the deck\'s own shape, When a slide is laid out, Then it is on the deck\'s own canvas', () => {
+    expect(viewportCanvas(standard, 'mobile', 'deck', false)).toEqual(standard)
+  })
+
+  test('spec: Given a fixed-canvas slide, When phone display is on, Then it stays on the deck\'s own canvas', () => {
+    expect(viewportCanvas(widescreen, 'mobile', 'portrait', true)).toEqual(widescreen)
+  })
+
+  test('adversarial: Given a stray mode or shape past the types, Then it is PC display or the default phone, never a non-Size', () => {
+    expect(viewportCanvas(widescreen, 'tablet' as ViewportMode, 'portrait', false)).toEqual(widescreen)
+    expect(viewportCanvas(widescreen, 'mobile', 'square' as PhoneShape, false)).toEqual({ width: 1280, height: 2770 })
+  })
+
+  test('adversarial: Given a deck with no usable size, Then it comes back as it is', () => {
+    for (const deck of [{ width: 0, height: 0 }, { width: Number.NaN, height: 720 }, { width: -1280, height: -720 }]) {
+      expect(viewportCanvas(deck, 'mobile', 'deck', false)).toEqual(deck)
+    }
+  })
+
+  test('property: it is always effectiveCanvas with the shape\'s device', () => {
+    fc.assert(fc.property(
+      fc.record({ width: fc.integer({ min: 1, max: 8000 }), height: fc.integer({ min: 1, max: 8000 }) }),
+      fc.constantFrom<ViewportMode>('desktop', 'mobile'),
+      fc.constantFrom<PhoneShape>('portrait', 'deck'),
+      fc.boolean(),
+      (deck, mode, shape, fixed) => {
+        expect(viewportCanvas(deck, mode, shape, fixed)).toEqual(effectiveCanvas(deck, mode, deviceForShape(shape, deck), fixed))
+      },
+    ))
   })
 })

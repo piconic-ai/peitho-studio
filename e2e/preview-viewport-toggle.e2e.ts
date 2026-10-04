@@ -21,10 +21,12 @@ import { fillEditor } from './helpers/codeEditor'
 import { containScale } from '../domain/geometry'
 import type { PhoneShape } from '../domain/viewport'
 
-const TOGGLE = '[data-viewport-toggle]'
-const MENU_BUTTON = '[data-phone-shape-menu-button]'
-const MENU = '[data-phone-shape-menu]'
-const OPTION = (shape: PhoneShape): string => `[data-phone-shape-option="${shape}"]`
+// The slide preview's own switch: the layout list has one too.
+const PREVIEW_PANE = '[data-panel="preview"]'
+const TOGGLE = `${PREVIEW_PANE} [data-viewport-toggle]`
+const MENU_BUTTON = `${PREVIEW_PANE} [data-phone-shape-menu-button]`
+const MENU = `${PREVIEW_PANE} [data-phone-shape-menu]`
+const OPTION = (shape: PhoneShape): string => `${PREVIEW_PANE} [data-phone-shape-option="${shape}"]`
 const PREVIEW = '[data-preview-host]'
 const THUMBNAILS = '[data-slide-canvas-key]:not([data-preview-host])'
 
@@ -444,7 +446,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await press(page)
     await expect(page.locator(MENU_BUTTON)).toBeVisible()
     await expect(page.getByRole('button', { name: 'Phone canvas shape' })).toHaveCount(1)
-    await expect(pill(page).locator(MENU_BUTTON)).toHaveCount(1)
+    await expect(pill(page).locator('[data-phone-shape-menu-button]')).toHaveCount(1)
     await expect(page.locator(MENU_BUTTON)).toHaveAttribute('aria-haspopup', 'menu')
     await expect(page.locator(MENU_BUTTON)).toHaveAttribute('aria-expanded', 'false')
     // Closed until it is asked for.
@@ -647,7 +649,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect(page.locator(PREVIEW)).toHaveAttribute('data-slide-canvas-key', 'last')
     await expect(page.locator(TOGGLE)).toBeVisible()
     await expect(page.locator(MENU)).toBeHidden()
-    await expect(page.locator('[data-phone-shape-backdrop]')).toBeHidden()
+    await expect(page.locator(`${PREVIEW_PANE} [data-phone-shape-backdrop]`)).toBeHidden()
     await expect(page.locator(MENU_BUTTON)).toHaveAttribute('aria-expanded', 'false')
     // ...and the shortcuts are not held back by a menu nobody can see: ArrowUp
     // walks back onto the draft row, which hides the header again.
