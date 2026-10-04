@@ -288,6 +288,11 @@ pub fn run() {
                 tauri::WindowEvent::CloseRequested { api, .. } if updates::blocks_editing(window.app_handle()) => {
                     api.prevent_close();
                 }
+                // A layout draft not saved yet is saved first; the frontend
+                // closes the window again once it is.
+                tauri::WindowEvent::CloseRequested { api, .. } if peitho::layout_draft_close_requested(window) => {
+                    api.prevent_close();
+                }
                 tauri::WindowEvent::Destroyed => {
                     window.state::<PeithoSession>().remove(window.label());
                     peitho::forget_deck_settings(window.app_handle(), window.label());
@@ -355,6 +360,7 @@ pub fn run() {
             peitho::delete_layout,
             peitho::read_layout,
             peitho::save_layout,
+            peitho::report_layout_draft,
             peitho::present_deck,
             peitho::report_deck_settings,
             peitho::trust_open_deck,

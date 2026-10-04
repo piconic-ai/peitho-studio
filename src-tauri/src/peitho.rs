@@ -46,6 +46,21 @@ use crate::engine::serve::AssetServer;
 /// checkout`, anything other than this app's own `save_deck_source`.
 const DECK_FILE_CHANGED_EVENT: &str = "deck-file-changed";
 
+/// Event the frontend listens for (Studio.tsx's `syncLayoutFiles`) once the
+/// deck's layout files (`layouts/*.html`, `css/*.css`) changed on disk —
+/// sent to that deck's window only. Studio's own writes fire it too; the
+/// frontend tells them apart by the files' fingerprint.
+const LAYOUT_FILES_CHANGED_EVENT: &str = "layout-files-changed";
+
+/// Event asking a window to save its layout editor's pending draft before
+/// it closes (see `layout_draft_close_requested`). The frontend closes the
+/// window again once the draft is saved.
+const LAYOUT_FLUSH_BEFORE_CLOSE_EVENT: &str = "layout:flush-before-close";
+
+/// How long a burst of filesystem events must stay quiet before it is
+/// reported once.
+const WATCH_QUIET: Duration = Duration::from_millis(250);
+
 /// Event name the frontend listens for (see Studio.tsx's `handlePresent`)
 /// once the `peitho present` subprocess has actually rendered the deck and
 /// started serving it — see `watch_present_readiness` for where this fires.
@@ -151,6 +166,14 @@ struct SessionState {
     // closes and its whole session entry is removed) stops the background
     // thread below.
     _watcher: RecommendedWatcher,
+    /// The watch on the deck's layout files (`watch_layout_dirs`), held
+    /// like `_watcher`; `None` when it couldn't be set up — layout changes
+    /// are then noticed only through crit's events.
+    _layout_watcher: Option<LayoutWatcher>,
+    /// Whether the layout editor holds a draft not saved yet, as the
+    /// frontend last reported it (`report_layout_draft`), and whether a
+    /// close already asked for it to be saved.
+    layout_draft: Option<DraftCloseState>,
 }
 
 impl PeithoSession {
@@ -834,13 +857,159 @@ fn watch_deck_file(window: WebviewWindow, deck_path: &Path) -> notify::Result<Re
     watcher.watch(deck_path, RecursiveMode::NonRecursive)?;
 
     std::thread::spawn(move || {
-        while rx.recv().is_ok() {
-            while rx.recv_timeout(Duration::from_millis(250)).is_ok() {}
+        forward_bursts(rx, WATCH_QUIET, |_| {
             let _ = window.emit(DECK_FILE_CHANGED_EVENT, ());
-        }
+        });
     });
 
     Ok(watcher)
+}
+
+/// Calls `on_burst` once per burst of items from `rx` — items that keep
+/// arriving less than `quiet` apart — with the whole burst, until every
+/// sender is gone.
+fn forward_bursts<T>(rx: mpsc::Receiver<T>, quiet: Duration, mut on_burst: impl FnMut(Vec<T>)) {
+    while let Ok(first) = rx.recv() {
+        let mut burst = vec![first];
+        while let Ok(next) = rx.recv_timeout(quiet) {
+            burst.push(next);
+        }
+        on_burst(burst);
+    }
+}
+
+/// A watch on a deck's layout files (`watch_layout_dirs`). Dropping it
+/// stops the watch and its thread.
+type LayoutWatcher = Arc<Mutex<RecommendedWatcher>>;
+
+/// Watches `deck_dir`'s layout files (`layout_files::layout_watch_dirs`,
+/// each non-recursively) and calls `on_change` once per burst of changes
+/// to them (`layout_files::layout_path_change`) — anything else in the
+/// deck's folder, deck.md included, is left to its own watcher. A
+/// `layouts/` or `css/` made after the deck opened is watched from then
+/// on. The OS reports real paths, so `deck_dir` is compared canonicalized.
+fn watch_layout_dirs(deck_dir: &Path, on_change: impl Fn() + Send + 'static) -> notify::Result<LayoutWatcher> {
+    let deck_dir = std::fs::canonicalize(deck_dir).unwrap_or_else(|_| deck_dir.to_path_buf());
+    let (tx, rx) = mpsc::channel::<(PathBuf, layout_files::LayoutPathChange)>();
+    let filter_dir = deck_dir.clone();
+    let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        let Ok(event) = res else { return };
+        for path in event.paths {
+            if let Some(change) = layout_files::layout_path_change(&filter_dir, &path) {
+                let _ = tx.send((path, change));
+            }
+        }
+    })?;
+    let watcher = Arc::new(Mutex::new(watcher));
+    let mut watched = std::collections::HashSet::new();
+    {
+        let mut guard = watcher.lock().map_err(|_| notify::Error::generic("watcher lock poisoned"))?;
+        let mut dirs = layout_files::layout_watch_dirs(&deck_dir).into_iter();
+        // The deck's own folder must be watchable; a layout folder may not
+        // be there yet.
+        if let Some(own) = dirs.next() {
+            guard.watch(&own, RecursiveMode::NonRecursive)?;
+        }
+        for dir in dirs {
+            if dir.is_dir() && guard.watch(&dir, RecursiveMode::NonRecursive).is_ok() {
+                watched.insert(dir);
+            }
+        }
+    }
+    let weak = Arc::downgrade(&watcher);
+    std::thread::spawn(move || {
+        forward_bursts(rx, WATCH_QUIET, |burst| {
+            let Some(watcher) = weak.upgrade() else { return };
+            for (path, change) in burst {
+                if change != layout_files::LayoutPathChange::Dir {
+                    continue;
+                }
+                if !path.is_dir() {
+                    watched.remove(&path);
+                } else if !watched.contains(&path) {
+                    if let Ok(mut guard) = watcher.lock() {
+                        if guard.watch(&path, RecursiveMode::NonRecursive).is_ok() {
+                            watched.insert(path);
+                        }
+                    }
+                }
+            }
+            on_change();
+        });
+    });
+    Ok(watcher)
+}
+
+/// `watch_layout_dirs` for `window`'s deck, telling that window alone.
+fn watch_window_layout_files(window: WebviewWindow, deck_dir: &Path) -> Option<LayoutWatcher> {
+    let label = window.label().to_string();
+    watch_layout_dirs(deck_dir, move || {
+        let _ = window.emit_to(EventTarget::webview_window(&label), LAYOUT_FILES_CHANGED_EVENT, ());
+    })
+    .map_err(|err| log::warn!("failed to watch the layout files of {}: {err}", deck_dir.display()))
+    .ok()
+}
+
+/// Where a window's layout draft stands when the window is asked to close.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DraftCloseState {
+    /// The layout editor holds a draft not saved yet.
+    Pending,
+    /// A close asked the frontend to save it first
+    /// (`LAYOUT_FLUSH_BEFORE_CLOSE_EVENT`).
+    FlushRequested,
+}
+
+/// What a close request does given the window's layout draft: whether it
+/// goes ahead, and the draft's state after. With a draft pending, the first
+/// close waits while the frontend saves it (and closes again itself); a
+/// close after that — the frontend's own, or the user's again once the
+/// draft couldn't be saved — goes ahead, so a frontend that never answers
+/// can't keep a window open for good.
+fn close_request_decision(draft: Option<DraftCloseState>) -> (bool, Option<DraftCloseState>) {
+    match draft {
+        None => (true, None),
+        Some(DraftCloseState::Pending) => (false, Some(DraftCloseState::FlushRequested)),
+        Some(DraftCloseState::FlushRequested) => (true, None),
+    }
+}
+
+/// The layout draft's state once the frontend reports whether one is
+/// pending: a report of a draft still pending keeps an already requested
+/// save as requested (the close after it still goes ahead).
+fn reported_draft_state(current: Option<DraftCloseState>, pending: bool) -> Option<DraftCloseState> {
+    match (pending, current) {
+        (false, _) => None,
+        (true, Some(DraftCloseState::FlushRequested)) => Some(DraftCloseState::FlushRequested),
+        (true, _) => Some(DraftCloseState::Pending),
+    }
+}
+
+/// The layout editor's report of whether it holds a draft not saved yet
+/// (the frontend sends it whenever that changes), for
+/// `layout_draft_close_requested`.
+#[tauri::command]
+pub fn report_layout_draft(pending: bool, window: WebviewWindow, session: State<PeithoSession>) -> Result<(), String> {
+    let mut guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+    let state = guard.get_mut(window.label()).ok_or_else(|| "no deck is open".to_string())?;
+    state.layout_draft = reported_draft_state(state.layout_draft, pending);
+    Ok(())
+}
+
+/// Called on a window's close request (`lib.rs`): whether to keep the
+/// window open for now, asking its frontend to save the layout draft first
+/// (`close_request_decision`).
+pub fn layout_draft_close_requested(window: &tauri::Window) -> bool {
+    let session = window.state::<PeithoSession>();
+    let Ok(mut guard) = session.0.lock() else { return false };
+    let Some(state) = guard.get_mut(window.label()) else { return false };
+    let (allow, next) = close_request_decision(state.layout_draft);
+    state.layout_draft = next;
+    drop(guard);
+    if !allow {
+        let _ = window.emit_to(EventTarget::webview_window(window.label()), LAYOUT_FLUSH_BEFORE_CLOSE_EVENT, ());
+    }
+    !allow
 }
 
 // `async`: a plain command runs on the UI thread, and the first render after
@@ -871,6 +1040,7 @@ pub fn open_deck(
 
     let watcher = watch_deck_file(window.clone(), &deck_path)
         .map_err(|err| format!("failed to watch {}: {err}", deck_path.display()))?;
+    let layout_watcher = watch_window_layout_files(window.clone(), &deck_dir);
 
     let info = DeckSessionInfo {
         deck_path: deck_path.display().to_string(),
@@ -887,7 +1057,7 @@ pub fn open_deck(
         insert_first_session(
             &mut *guard,
             window.label(),
-            SessionState { deck_path, deck_dir, asset_server, present_child: None, crit_watch: None, crit_review: CritReviewState::default(), _watcher: watcher },
+            SessionState { deck_path, deck_dir, asset_server, present_child: None, crit_watch: None, crit_review: CritReviewState::default(), _watcher: watcher, _layout_watcher: layout_watcher, layout_draft: None },
         )?;
     }
 
@@ -1218,7 +1388,10 @@ pub fn read_layout(name: String, window: WebviewWindow, session: State<PeithoSes
 
 /// Overwrites layout `name`'s HTML and CSS in this window's deck — nothing
 /// is written when the HTML doesn't parse as a layout, or when the edit
-/// would stop the deck (`content`, its source now) from building.
+/// would stop the deck (`content`, its source now) from building. Returns
+/// the layout files' fingerprint once written (`layout_files_stamp`), so
+/// the frontend can tell the watcher's report of this very write
+/// (`LAYOUT_FILES_CHANGED_EVENT`) from someone else's.
 #[tauri::command(async)]
 pub fn save_layout(
     content: String,
@@ -1227,8 +1400,10 @@ pub fn save_layout(
     css: String,
     window: WebviewWindow,
     session: State<PeithoSession>,
-) -> Result<(), String> {
-    layout_files::save_layout(&session_deck_path(&session, window.label())?, &content, &name, &html, &css)
+) -> Result<String, String> {
+    let deck_path = session_deck_path(&session, window.label())?;
+    layout_files::save_layout(&deck_path, &content, &name, &html, &css)?;
+    Ok(layout_files::layout_files_stamp(&deck_dir_of(&deck_path)))
 }
 
 #[tauri::command]
@@ -1661,6 +1836,163 @@ pub(crate) fn forget_deck_settings(app: &AppHandle, label: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- forward_bursts ---
+
+    #[test]
+    fn given_items_arriving_close_together_then_they_are_reported_as_one_burst() {
+        let (tx, rx) = mpsc::channel();
+        for i in 0..5 {
+            tx.send(i).unwrap();
+        }
+        drop(tx);
+        let mut bursts = Vec::new();
+        forward_bursts(rx, Duration::from_millis(50), |burst| bursts.push(burst));
+        assert_eq!(bursts, vec![vec![0, 1, 2, 3, 4]]);
+    }
+
+    #[test]
+    fn given_two_bursts_apart_then_each_is_reported_once() {
+        let (tx, rx) = mpsc::channel();
+        let sender = std::thread::spawn(move || {
+            tx.send("a").unwrap();
+            tx.send("b").unwrap();
+            std::thread::sleep(Duration::from_millis(300));
+            tx.send("c").unwrap();
+        });
+        let mut bursts = Vec::new();
+        forward_bursts(rx, Duration::from_millis(100), |burst| bursts.push(burst));
+        sender.join().unwrap();
+        assert_eq!(bursts, vec![vec!["a", "b"], vec!["c"]]);
+    }
+
+    #[test]
+    fn adversarial_given_no_items_before_the_senders_go_then_nothing_is_reported() {
+        let (tx, rx) = mpsc::channel::<()>();
+        drop(tx);
+        let mut calls = 0;
+        forward_bursts(rx, Duration::from_millis(10), |_| calls += 1);
+        assert_eq!(calls, 0);
+    }
+
+    // --- watch_layout_dirs (the real filesystem watcher) ---
+
+    /// Counts `watch_layout_dirs`'s reports for a deck folder.
+    fn counting_watch(deck_dir: &Path) -> (LayoutWatcher, Arc<AtomicU32>) {
+        let count = Arc::new(AtomicU32::new(0));
+        let seen = count.clone();
+        let watcher = watch_layout_dirs(deck_dir, move || {
+            seen.fetch_add(1, Ordering::SeqCst);
+        })
+        .unwrap();
+        // FSEvents may still report what happened just before the stream
+        // started; let that settle before the test's own writes.
+        std::thread::sleep(Duration::from_millis(500));
+        count.store(0, Ordering::SeqCst);
+        (watcher, count)
+    }
+
+    /// Waits up to `limit` for `count` to reach at least `at_least`.
+    fn wait_for(count: &AtomicU32, at_least: u32, limit: Duration) -> u32 {
+        let start = std::time::Instant::now();
+        while count.load(Ordering::SeqCst) < at_least && start.elapsed() < limit {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        count.load(Ordering::SeqCst)
+    }
+
+    #[test]
+    fn given_an_agent_rewriting_a_layout_and_its_css_then_one_change_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("layouts")).unwrap();
+        std::fs::create_dir_all(dir.path().join("css")).unwrap();
+        std::fs::write(dir.path().join("layouts/quote.html"), "<section></section>").unwrap();
+        std::fs::write(dir.path().join("css/quote.css"), ".x {}").unwrap();
+        let (_watcher, count) = counting_watch(dir.path());
+
+        std::fs::write(dir.path().join("layouts/quote.html"), "<section><h1>agent</h1></section>").unwrap();
+        std::fs::write(dir.path().join("css/quote.css"), ".x { color: red; }").unwrap();
+
+        assert_eq!(wait_for(&count, 1, Duration::from_secs(5)), 1);
+        std::thread::sleep(Duration::from_millis(600));
+        assert_eq!(count.load(Ordering::SeqCst), 1, "one burst, one report");
+    }
+
+    #[test]
+    fn adversarial_given_deck_md_or_another_file_written_then_no_layout_change_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("layouts")).unwrap();
+        std::fs::create_dir_all(dir.path().join("img")).unwrap();
+        std::fs::write(dir.path().join("deck.md"), "# Hi").unwrap();
+        let (_watcher, count) = counting_watch(dir.path());
+
+        std::fs::write(dir.path().join("deck.md"), "# Changed").unwrap();
+        std::fs::write(dir.path().join("img/logo.png"), "png").unwrap();
+        std::fs::write(dir.path().join("layouts/notes.md"), "not a layout").unwrap();
+
+        std::thread::sleep(Duration::from_millis(1500));
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn given_a_deck_with_no_layouts_folder_yet_when_one_is_made_then_its_files_are_watched_too() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("deck.md"), "# Hi").unwrap();
+        let (_watcher, count) = counting_watch(dir.path());
+
+        std::fs::create_dir_all(dir.path().join("layouts")).unwrap();
+        assert!(wait_for(&count, 1, Duration::from_secs(5)) >= 1, "the folder appearing is a change");
+        // Past the burst the folder's creation started, so the watch on it is in place.
+        std::thread::sleep(Duration::from_millis(600));
+        let before = count.load(Ordering::SeqCst);
+
+        std::fs::write(dir.path().join("layouts/quote.html"), "<section></section>").unwrap();
+        assert!(wait_for(&count, before + 1, Duration::from_secs(5)) > before, "a file in the new folder is a change");
+    }
+
+    #[test]
+    fn given_the_watcher_dropped_then_later_writes_are_not_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("layouts")).unwrap();
+        let (watcher, count) = counting_watch(dir.path());
+        drop(watcher);
+
+        std::fs::write(dir.path().join("layouts/quote.html"), "<section></section>").unwrap();
+        std::thread::sleep(Duration::from_millis(1000));
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+    }
+
+    // --- close_request_decision / reported_draft_state ---
+
+    #[test]
+    fn given_no_layout_draft_then_a_close_goes_ahead() {
+        assert_eq!(close_request_decision(None), (true, None));
+    }
+
+    #[test]
+    fn given_a_layout_draft_pending_then_the_first_close_waits_for_it_to_be_saved_and_the_next_goes_ahead() {
+        let (allow, next) = close_request_decision(Some(DraftCloseState::Pending));
+        assert!(!allow);
+        assert_eq!(next, Some(DraftCloseState::FlushRequested));
+        assert_eq!(close_request_decision(next), (true, None));
+    }
+
+    #[test]
+    fn given_the_editor_reports_its_draft_then_the_state_follows_it() {
+        assert_eq!(reported_draft_state(None, true), Some(DraftCloseState::Pending));
+        assert_eq!(reported_draft_state(Some(DraftCloseState::Pending), false), None);
+        assert_eq!(reported_draft_state(Some(DraftCloseState::Pending), true), Some(DraftCloseState::Pending));
+    }
+
+    #[test]
+    fn adversarial_given_a_save_already_asked_for_then_a_draft_reported_again_does_not_block_the_next_close() {
+        // The draft couldn't be saved: the user's next close discards it.
+        let state = reported_draft_state(Some(DraftCloseState::FlushRequested), true);
+        assert_eq!(state, Some(DraftCloseState::FlushRequested));
+        assert!(close_request_decision(state).0);
+        // Saved meanwhile: nothing is left to ask about.
+        assert_eq!(reported_draft_state(Some(DraftCloseState::FlushRequested), false), None);
+    }
 
     // --- crit ---
 
