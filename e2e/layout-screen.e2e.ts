@@ -983,6 +983,52 @@ test.describe('the layout list\'s PC / Phone switch', () => {
     }).toBe(true)
   })
 
+  test('Given phone display in a wide list and a short window, then the selected thumbnail fits in the list\'s visible height at the canvas\'s proportion, centered, and follows a window resize', async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 560 })
+    await openLayoutScreen(page, deckOf({ layoutFragment: '<h1>saved</h1>' }))
+    // The divider dragged left as far as it goes: the list at its widest.
+    const list = (await page.locator('[data-layout-list]').boundingBox())!
+    await page.mouse.move(list.x - 2, list.y + 200)
+    await page.mouse.down()
+    await page.mouse.move(list.x - 600, list.y + 200, { steps: 5 })
+    await page.mouse.up()
+    await toggle(page).click()
+
+    const selected = page.locator('[data-layout-row][aria-current="true"]')
+    const fits = async () => {
+      const area = (await page.locator('[data-layout-rows]').boundingBox())!
+      const thumb = (await selected.locator('[data-layout-thumbnail]').boundingBox())!
+      const row = (await selected.boundingBox())!
+      const canvas = await selected.locator('[data-layout-canvas]').evaluate(el => ({
+        width: parseFloat(el.style.getPropertyValue('--peitho-canvas-width')),
+        height: parseFloat(el.style.getPropertyValue('--peitho-canvas-height')),
+      }))
+      return {
+        inside: thumb.y >= area.y && thumb.y + thumb.height <= area.y + area.height,
+        ratio: Math.abs(thumb.height / thumb.width - canvas.height / canvas.width) < 0.02,
+        tall: canvas.height > canvas.width,
+        centered: Math.abs((thumb.x + thumb.width / 2) - (row.x + row.width / 2)) <= 1,
+        height: thumb.height,
+      }
+    }
+    await expect.poll(async () => { const f = await fits(); return f.inside && f.ratio && f.tall && f.centered }).toBe(true)
+    const before = (await fits()).height
+
+    await page.setViewportSize({ width: 1400, height: 460 })
+    await expect.poll(async () => { const f = await fits(); return f.inside && f.ratio && f.height < before - 50 }).toBe(true)
+  })
+
+  test('Given PC display in a very short window, then the thumbnail fits the list\'s visible height too', async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 300 })
+    await openLayoutScreen(page, deckOf({ layoutFragment: '<h1>saved</h1>' }))
+    const selected = page.locator('[data-layout-row][aria-current="true"]')
+    await expect.poll(async () => {
+      const area = (await page.locator('[data-layout-rows]').boundingBox())!
+      const thumb = (await selected.locator('[data-layout-thumbnail]').boundingBox())!
+      return thumb.y + thumb.height <= area.y + area.height && thumb.height > 0
+    }).toBe(true)
+  })
+
   test('Given phone display, when the deck\'s own shape is picked from the list\'s menu, then the thumbnails return to the deck\'s proportion while phone display stays on', async ({ page }) => {
     await openLayoutScreen(page, deckOf())
     const pc = await ratio(page, 'quote')

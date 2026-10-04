@@ -1,6 +1,7 @@
 // The layout screen (Studio's "Layouts" mode): which screen the deck window
 // shows, the layout list's rows, and the checks on a name typed for a new
 // layout. Pure — `components/LayoutScreen.tsx` renders what this computes.
+import { containSize, type Size } from './geometry'
 import type { Language } from './language'
 import type { SlideListEntry } from './slideList'
 import { layoutDisplayName } from './standardLayouts'
@@ -115,4 +116,30 @@ export function layoutFilesChanged(previous: string | null, next: string): boole
 export function initialLayoutListWidth(shared: number, bounds: { min: number; max: number }): number | null {
   if (!Number.isFinite(shared) || shared <= 0) return null
   return Math.max(bounds.min, Math.min(bounds.max, Math.floor(shared / 2)))
+}
+
+/** What a layout row takes around its thumbnail, against the list's
+ * scrolling area's inner size (`clientWidth`/`clientHeight`), in CSS px —
+ * from `LayoutScreen.tsx`'s classes: the area's `p-2` (8 a side; at the
+ * bottom, the same 8 kept clear of the area's edge), the row's `border-2`
+ * and `p-1.5` (8 a side), and under the thumbnail its `gap-1` (4) and the
+ * name line (`text-xs`, 16 tall). */
+export const LAYOUT_ROW_CHROME: Size = { width: 8 * 2 + 8 * 2, height: 8 * 2 + 8 * 2 + 4 + 16 }
+
+/** Layout thumbnail's box in a list area of inner size `room`, for a
+ * layout drawn on `canvas`: as large as fits both the row's width and the
+ * area's height (a phone's tall canvas in a wide list would otherwise run
+ * past the bottom), keeping the canvas's proportion. `null` with no room
+ * measured yet, or too little for any box. */
+export function layoutThumbnailSize(room: Size | null, canvas: Size): Size | null {
+  if (room === null) return null
+  return containSize({ width: room.width - LAYOUT_ROW_CHROME.width, height: room.height - LAYOUT_ROW_CHROME.height }, canvas)
+}
+
+/** The thumbnail box's inline style: its size (`layoutThumbnailSize`), or
+ * without one the row's full width at the canvas's proportion. */
+export function layoutThumbnailStyle(canvas: Size, room: Size | null): string {
+  const size = layoutThumbnailSize(room, canvas)
+  if (size === null) return `width: 100%; aspect-ratio: ${String(canvas.width)} / ${String(canvas.height)}`
+  return `width: ${String(size.width)}px; height: ${String(size.height)}px`
 }

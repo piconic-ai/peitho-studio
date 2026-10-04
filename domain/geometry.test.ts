@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { clampMenuPosition, containScale, isDrag, isPointInRect, dropPointToCss, fractionInRect, pinInSlide } from './geometry'
+import { clampMenuPosition, containScale, containSize, isDrag, isPointInRect, dropPointToCss, fractionInRect, pinInSlide } from './geometry'
 
 describe('clampMenuPosition', () => {
   test('spec: a point that already fits within the viewport is left unchanged', () => {
@@ -160,5 +160,48 @@ describe('isDrag', () => {
     expect(isDrag({ x: 0, y: 0 }, { x: 4, y: 0 }, 4)).toBe(false)
     expect(isDrag(null, { x: 100, y: 100 }, 4)).toBe(false)
     expect(isDrag({ x: Number.NaN, y: 0 }, { x: 100, y: 0 }, 4)).toBe(false)
+  })
+})
+
+describe('containSize', () => {
+  test('spec: Given room wider than the canvas\'s proportion, Then the box takes the full height and the width that keeps the proportion', () => {
+    expect(containSize({ width: 600, height: 300 }, { width: 390, height: 844 })).toEqual({ width: 138, height: 300 })
+  })
+
+  test('spec: Given room taller than the canvas\'s proportion, Then the box takes the full width', () => {
+    expect(containSize({ width: 400, height: 1000 }, { width: 1280, height: 720 })).toEqual({ width: 400, height: 225 })
+  })
+
+  test('spec: Given room of exactly the canvas\'s proportion, Then the box fills it', () => {
+    expect(containSize({ width: 640, height: 360 }, { width: 1280, height: 720 })).toEqual({ width: 640, height: 360 })
+  })
+
+  test('adversarial: Given a very tall or very wide canvas, Then the box fits inside the room, never past it', () => {
+    expect(containSize({ width: 500, height: 300 }, { width: 1, height: 50 })).toEqual({ width: 6, height: 300 })
+    expect(containSize({ width: 500, height: 300 }, { width: 50, height: 1 })).toEqual({ width: 500, height: 10 })
+    // So thin it comes out under a pixel across: no box.
+    expect(containSize({ width: 500, height: 300 }, { width: 1, height: 100000 })).toBeNull()
+    expect(containSize({ width: 500, height: 300 }, { width: 100000, height: 1 })).toBeNull()
+  })
+
+  test('adversarial: Given no room or no canvas (zero, negative, NaN, Infinity), Then there is no box', () => {
+    const bad = [0, -1, Number.NaN, Number.POSITIVE_INFINITY]
+    for (const value of bad) {
+      expect(containSize({ width: value, height: 300 }, { width: 16, height: 9 })).toBeNull()
+      expect(containSize({ width: 300, height: value }, { width: 16, height: 9 })).toBeNull()
+      expect(containSize({ width: 300, height: 300 }, { width: value, height: 9 })).toBeNull()
+      expect(containSize({ width: 300, height: 300 }, { width: 16, height: value })).toBeNull()
+    }
+  })
+
+  test('adversarial: Given room under a pixel on one side, Then there is no box rather than a zero-sized one', () => {
+    expect(containSize({ width: 0.5, height: 300 }, { width: 16, height: 9 })).toBeNull()
+  })
+})
+
+describe('containSize rounding', () => {
+  test('adversarial: Given a scale whose product lands a hair under a whole pixel, Then that pixel is kept, and the box still never passes the room', () => {
+    expect(containSize({ width: 368, height: 868 }, { width: 1280, height: 720 })).toEqual({ width: 368, height: 207 })
+    expect(containSize({ width: 100.7, height: 100.7 }, { width: 1, height: 1 })).toEqual({ width: 100, height: 100 })
   })
 })

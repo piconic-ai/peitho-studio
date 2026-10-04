@@ -19,6 +19,7 @@ import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, connectTargetO
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
 import { layoutThumbnailClickOf, noteLayoutRowPress } from '../dom/layoutComments'
 import { keepShownPopupsInWindow } from '../dom/popupFit'
+import { observeInnerSize } from '../dom/elementSize'
 import { focusCommentBox, focusUnsentEdit, placePreviewPins, revealReviewThread, watchPreviewLayout, type PreviewClick } from '../dom/previewComments'
 import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
@@ -3124,6 +3125,8 @@ export function Studio() {
           onContextMenu={openLayoutMenu}
           onThumbnailHost={mountLayoutThumbnail}
           canvasOf={layoutCanvasOf}
+          onRowsHost={el => observeInnerSize(el, layouts.setThumbnailRoom)}
+          thumbnailRoom={layouts.thumbnailRoom()}
           previewError={draftPreviewError(layouts.draftPreview(), layouts.selectedLayout())}
           listWidth={layouts.listWidth()}
           onListResize={startColumnResize(layouts.listWidth, layouts.setListWidth, -1)}

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { MAX_LAYOUT_NAME_LENGTH, initialLayoutListWidth, layoutFilesChanged, layoutListGeneration, layoutNameProblem, layoutRows, layoutUsage, shownLayout } from './layoutScreen'
+import { LAYOUT_ROW_CHROME, MAX_LAYOUT_NAME_LENGTH, initialLayoutListWidth, layoutThumbnailSize, layoutThumbnailStyle, layoutFilesChanged, layoutListGeneration, layoutNameProblem, layoutRows, layoutUsage, shownLayout } from './layoutScreen'
 import type { ManifestSlide } from './render'
 import { buildSlideList } from './slideList'
 
@@ -203,5 +203,41 @@ describe('initialLayoutListWidth', () => {
 
   test('adversarial: Given a range with no room in it (min above max), Then the minimum wins, as a drag would', () => {
     expect(initialLayoutListWidth(1000, { min: 700, max: 600 })).toBe(700)
+  })
+})
+
+describe('layoutThumbnailSize / layoutThumbnailStyle', () => {
+  const PHONE = { width: 390, height: 844 }
+  const PC = { width: 1280, height: 720 }
+  const chrome = LAYOUT_ROW_CHROME
+
+  test('spec: Given a tall phone canvas in a wide, short list, Then the thumbnail is as tall as the list shows, less the row around it, and keeps the canvas\'s proportion', () => {
+    const room = { width: 640, height: 400 }
+    const size = layoutThumbnailSize(room, PHONE)!
+    expect(size.height).toBe(room.height - chrome.height)
+    expect(size.width).toBeLessThan(room.width - chrome.width)
+    expect(size.height / size.width).toBeCloseTo(PHONE.height / PHONE.width, 1)
+  })
+
+  test('spec: Given a PC canvas in a list with height to spare, Then the thumbnail takes the row\'s whole width, as before', () => {
+    expect(layoutThumbnailSize({ width: 400, height: 900 }, PC)).toEqual({ width: 400 - chrome.width, height: Math.floor((400 - chrome.width) * 720 / 1280) })
+  })
+
+  test('spec: Given a size, Then the style sets it; given none, the box falls back to the row\'s width at the canvas\'s proportion', () => {
+    expect(layoutThumbnailStyle(PHONE, { width: 640, height: 400 })).toBe(`width: ${String(Math.floor((400 - chrome.height) * 390 / 844))}px; height: ${String(400 - chrome.height)}px`)
+    expect(layoutThumbnailStyle(PC, null)).toBe('width: 100%; aspect-ratio: 1280 / 720')
+  })
+
+  test('adversarial: Given no list measured yet, or a list smaller than the row around a thumbnail, Then there is no size and the style falls back', () => {
+    expect(layoutThumbnailSize(null, PC)).toBeNull()
+    expect(layoutThumbnailSize({ width: chrome.width, height: 500 }, PC)).toBeNull()
+    expect(layoutThumbnailSize({ width: 500, height: chrome.height }, PC)).toBeNull()
+    expect(layoutThumbnailSize({ width: 0, height: 0 }, PC)).toBeNull()
+    expect(layoutThumbnailStyle(PC, { width: 10, height: 10 })).toBe('width: 100%; aspect-ratio: 1280 / 720')
+  })
+
+  test('adversarial: Given a broken canvas (zero, NaN), Then there is no size', () => {
+    expect(layoutThumbnailSize({ width: 600, height: 600 }, { width: 0, height: 720 })).toBeNull()
+    expect(layoutThumbnailSize({ width: 600, height: 600 }, { width: Number.NaN, height: 720 })).toBeNull()
   })
 })

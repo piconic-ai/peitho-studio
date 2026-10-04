@@ -4,7 +4,7 @@ import { type Language } from '../domain/language'
 import { messagesFor, type Messages } from '../domain/messages'
 import { type Size } from '../domain/geometry'
 import { type LayoutField } from '../domain/layoutEditor'
-import { type LayoutRow } from '../domain/layoutScreen'
+import { layoutThumbnailStyle, type LayoutRow } from '../domain/layoutScreen'
 import { STANDARD_LAYOUTS } from '../domain/standardLayouts'
 import type { PhoneShape, ViewportMode } from '../domain/viewport'
 import { ViewportToggle } from './ViewportToggle'
@@ -36,6 +36,14 @@ export interface LayoutScreenProps {
   /** The canvas layout `name`'s thumbnail is drawn on (the PC / Phone
    * switch's, `viewportCanvas`), for its box's proportion. */
   canvasOf: (name: string) => Size
+  /** The list's scrolling area, once mounted: `Studio.tsx` watches its
+   * size (`thumbnailRoom`). */
+  onRowsHost: (el: HTMLElement) => void
+  /** The scrolling area's inner size, `null` until measured: each
+   * thumbnail fits inside it as well as the row's width
+   * (`layoutThumbnailStyle`), so a tall phone canvas never runs past the
+   * bottom. */
+  thumbnailRoom: Size | null
   /** Why the latest draft didn't render, `''` for nothing — the thumbnail
    * keeps the last one that did. */
   previewError: string
@@ -108,10 +116,6 @@ function confirmLabel(messages: Messages, view: LayoutDeleteView): string {
 
 function tabClass(active: boolean): string {
   return (active ? 'border-primary text-foreground ' : 'border-transparent text-muted-foreground ') + 'px-3 py-1.5 text-xs font-medium border-b-2'
-}
-
-function aspectRatio(canvas: Size): string {
-  return `aspect-ratio: ${String(canvas.width)} / ${String(canvas.height)}`
 }
 
 /** The deck's layouts in one screen: the selected layout's HTML/CSS
@@ -196,6 +200,7 @@ export function LayoutScreen(props: LayoutScreenProps) {
         </div>
         <p role="alert" data-layout-notice hidden={props.notice === null} className="shrink-0 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words border-b border-border">{props.notice ?? ''}</p>
         <div
+          ref={el => props.onRowsHost(el)}
           data-layout-rows
           // `pb-16`: room below the last row to right-click for New Layout.
           className="flex-1 min-h-0 overflow-y-auto p-2 pb-16 flex flex-col gap-2"
@@ -221,8 +226,8 @@ export function LayoutScreen(props: LayoutScreenProps) {
             >
               <span
                 data-layout-thumbnail
-                className="block relative w-full rounded border border-border bg-black overflow-hidden"
-                style={aspectRatio(props.canvasOf(row.name))}
+                className="block relative self-center shrink-0 rounded border border-border bg-black overflow-hidden"
+                style={layoutThumbnailStyle(props.canvasOf(row.name), props.thumbnailRoom)}
               >
                 <span
                   ref={el => props.onThumbnailHost(el, row.name)}

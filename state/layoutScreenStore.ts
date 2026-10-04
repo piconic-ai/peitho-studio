@@ -11,6 +11,7 @@ import {
   LAYOUT_MENU_CLOSED, openOnLayout, openOnList, withLayoutMenuFit, withLayoutMenuPosition, type LayoutMenu,
 } from '../domain/layoutMenu'
 import type { LayoutVerdict } from '../domain/layoutFit'
+import type { Size } from '../domain/geometry'
 import {
   NO_DRAFT_PREVIEW, draftPreviewFailed, draftPreviewRendered, requestDraftPreview, resetDraftPreview,
   type DraftPreview, type RenderedDraft,
@@ -50,6 +51,12 @@ export function createLayoutScreenStore() {
     listWidthSettled = true
     setListWidthValue(width)
   }
+
+  // The list's scrolling area's inner size (`dom/elementSize.ts`), which
+  // every thumbnail fits inside (`layoutThumbnailSize`); `null` until
+  // measured. One value for the area, read by every row: a change resizes
+  // them all anyway.
+  const [thumbnailRoom, setThumbnailRoom] = createSignal<Size | null>(null)
 
   // Bumped whenever a fresh set of layout previews arrives, so the list's
   // rows get new keys and redraw their thumbnails (see `layoutRows`).
@@ -186,6 +193,7 @@ export function createLayoutScreenStore() {
   return {
     selectedLayout, setSelectedLayout,
     listWidth, setListWidth, settleListWidth,
+    thumbnailRoom, setThumbnailRoom,
     previewGeneration, bumpPreviewGeneration,
     newLayoutOpen, newLayoutName, setNewLayoutName, newLayoutTemplate, setNewLayoutTemplate,
     openNewLayout, closeNewLayout, newLayoutNameProblem,
