@@ -559,14 +559,52 @@ fn layout_file_states(deck_dir: &Path, dir: &str, ext: &str) -> Vec<LayoutFileSt
         .collect()
 }
 
+/// The deck folders holding its layout files, each with the extension its
+/// files end in: `layouts/*.html` and `css/*.css`, directly inside (not in
+/// a subfolder).
+pub const LAYOUT_FILE_DIRS: [(&str, &str); 2] = [("layouts", ".html"), ("css", ".css")];
+
 /// `stamp_of` the deck's layout files — `layouts/*.html` and `css/*.css`
 /// in `deck_dir` — so a change made outside Studio (the Coding Agent
 /// editing a layout) can be told from none. A folder that isn't there has
 /// no files.
 pub fn layout_files_stamp(deck_dir: &Path) -> String {
-    let mut files = layout_file_states(deck_dir, "layouts", ".html");
-    files.extend(layout_file_states(deck_dir, "css", ".css"));
+    let files: Vec<LayoutFileState> = LAYOUT_FILE_DIRS.iter().flat_map(|(dir, ext)| layout_file_states(deck_dir, dir, ext)).collect();
     stamp_of(&files)
+}
+
+/// The folders to watch for a change to `deck_dir`'s layout files, each
+/// non-recursively: the deck's own folder (where `layouts/` and `css/`
+/// appear or go), and those two. A folder not there yet can't be watched;
+/// the watcher adds it once it appears.
+pub fn layout_watch_dirs(deck_dir: &Path) -> Vec<PathBuf> {
+    std::iter::once(deck_dir.to_path_buf()).chain(LAYOUT_FILE_DIRS.iter().map(|(dir, _)| deck_dir.join(dir))).collect()
+}
+
+/// What a filesystem change at `path` is to `deck_dir`'s layout files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayoutPathChange {
+    /// A layout file: `layouts/<x>.html` or `css/<x>.css`.
+    File,
+    /// The `layouts/` or `css/` folder itself — made or removed.
+    Dir,
+}
+
+/// Whether a change at `path` concerns `deck_dir`'s layout files
+/// (`layout_files_stamp`'s), and how; `None` for anything else — deck.md,
+/// an image, a file in a subfolder of `layouts/`, a `.md` beside the
+/// layouts. Compared as written: both paths must be spelled the same way
+/// (the watcher canonicalizes `deck_dir`, as the OS reports `path`).
+pub fn layout_path_change(deck_dir: &Path, path: &Path) -> Option<LayoutPathChange> {
+    let relative = path.strip_prefix(deck_dir).ok()?;
+    let mut parts = relative.components().map(|part| part.as_os_str().to_str());
+    let (Some(Some(dir)), file, None) = (parts.next(), parts.next(), parts.next()) else { return None };
+    let (_, ext) = LAYOUT_FILE_DIRS.iter().find(|(name, _)| *name == dir)?;
+    match file {
+        None => Some(LayoutPathChange::Dir),
+        Some(Some(file)) if file.len() > ext.len() && file.ends_with(ext) => Some(LayoutPathChange::File),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -619,6 +657,53 @@ mod tests {
         // Writing a layout file changes it.
         std::fs::write(dir.path().join("css").join("a.css"), "a{color:red}").unwrap();
         assert_ne!(layout_files_stamp(dir.path()), stamp);
+    }
+
+    // --- layout_watch_dirs / layout_path_change ---
+
+    #[test]
+    fn given_a_deck_folder_then_it_and_its_two_layout_folders_are_watched() {
+        let deck = Path::new("/decks/talk");
+        assert_eq!(layout_watch_dirs(deck), vec![PathBuf::from("/decks/talk"), PathBuf::from("/decks/talk/layouts"), PathBuf::from("/decks/talk/css")]);
+    }
+
+    #[test]
+    fn given_a_layout_html_or_css_file_then_it_is_a_layout_file_change() {
+        let deck = Path::new("/decks/talk");
+        assert_eq!(layout_path_change(deck, Path::new("/decks/talk/layouts/quote.html")), Some(LayoutPathChange::File));
+        assert_eq!(layout_path_change(deck, Path::new("/decks/talk/css/quote.css")), Some(LayoutPathChange::File));
+        assert_eq!(layout_path_change(deck, Path::new("/decks/talk/css/base.css")), Some(LayoutPathChange::File));
+    }
+
+    #[test]
+    fn given_the_layouts_or_css_folder_itself_then_it_is_a_folder_change() {
+        let deck = Path::new("/decks/talk");
+        assert_eq!(layout_path_change(deck, Path::new("/decks/talk/layouts")), Some(LayoutPathChange::Dir));
+        assert_eq!(layout_path_change(deck, Path::new("/decks/talk/css")), Some(LayoutPathChange::Dir));
+    }
+
+    #[test]
+    fn adversarial_paths_that_are_not_layout_files_are_no_change() {
+        let deck = Path::new("/decks/talk");
+        for path in [
+            "/decks/talk/deck.md",
+            "/decks/talk",
+            "/decks/talk/img/logo.png",
+            "/decks/talk/layouts/notes.md",
+            "/decks/talk/layouts/quote.css",
+            "/decks/talk/css/quote.html",
+            "/decks/talk/layouts/.html",
+            "/decks/talk/layouts/nested/quote.html",
+            "/decks/talk/layouts/nested",
+            "/decks/talk/Layouts/quote.html",
+            "/decks/other/layouts/quote.html",
+            "/decks/talk-2/layouts/quote.html",
+            "/decks/layouts/quote.html",
+            "layouts/quote.html",
+            "",
+        ] {
+            assert_eq!(layout_path_change(deck, Path::new(path)), None, "{path:?}");
+        }
     }
 
     // --- validate_layout_name ---
