@@ -42,7 +42,7 @@ import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isL
 import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
 import { type LayoutNameProblem, type StudioMode, initialLayoutListWidth, layoutFilesChanged, layoutListGeneration, layoutRows, layoutThumbnailStyle, layoutUsage, selectedPreviewRoom, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
-import { FILE_AUTOSAVE_DELAY_MS, autosavePaths, canCloseFile, fileDraft, isFileChangedOnDisk, isFileDirty, leaveBlocker, shouldAutosave, tabsBlocker } from '../domain/fileEditor'
+import { FILE_AUTOSAVE_DELAY_MS, autosavePaths, canCloseFile, fileDraft, isFileChangedOnDisk, isFileDirty, leaveBlocker, shouldAutosave, tabsBlocker, type FileEditor } from '../domain/fileEditor'
 import { fileLanguage, fileName, fileTreeRows, layoutFilePaths, layoutOfFile } from '../domain/deckFiles'
 import { layoutDisplayName } from '../domain/standardLayouts'
 import type { Messages } from '../domain/messages'
@@ -2275,25 +2275,27 @@ export function Studio() {
       setTimeout(() => { void pullOpenFiles() }, 300)
       return
     }
-    for (const file of layouts.tabs().tabs) {
-      if (file.kind === 'loading') continue
-      if (file.kind === 'unavailable') {
-        layouts.fileLoading(file.path)
-        await readIntoTab(file.path)
-        continue
-      }
-      let disk: string
-      try {
-        disk = await deckIpc.readDeckFile(file.path)
-      } catch {
-        layouts.fileGone(file.path, settings.messages().fileGone)
-        if (layouts.fileOf(file.path) === undefined) layoutEditorStates.delete(file.path)
-        continue
-      }
-      if (layouts.externalChange(file.path, disk) !== 'replaced') continue
-      replaceLayoutEditorText(file.path)
-      if (layoutOfFile(file.path, layoutNames()) === layouts.selectedLayout()) resetDraftPreview()
+    // Read side by side: each tab takes its own answer as it lands.
+    await Promise.all(layouts.tabs().tabs.map(pullOpenFile))
+  }
+  async function pullOpenFile(file: FileEditor): Promise<void> {
+    if (file.kind === 'loading') return
+    if (file.kind === 'unavailable') {
+      layouts.fileLoading(file.path)
+      await readIntoTab(file.path)
+      return
     }
+    let disk: string
+    try {
+      disk = await deckIpc.readDeckFile(file.path)
+    } catch {
+      layouts.fileGone(file.path, settings.messages().fileGone)
+      if (layouts.fileOf(file.path) === undefined) layoutEditorStates.delete(file.path)
+      return
+    }
+    if (layouts.externalChange(file.path, disk) !== 'replaced') return
+    replaceLayoutEditorText(file.path)
+    if (layoutOfFile(file.path, layoutNames()) === layouts.selectedLayout()) resetDraftPreview()
   }
 
   // The conflict's two ways out: the file as it is on disk now (read
@@ -2453,7 +2455,7 @@ export function Studio() {
   async function closeLayoutTab(path: string): Promise<void> {
     const file = layouts.fileOf(path)
     if (file === undefined) return
-    if (isFileDirty(file) && !(file.kind === 'ready' && file.gone)) await flushLayoutEditor()
+    if (!canCloseFile(file)) await flushLayoutEditor()
     const current = layouts.fileOf(path) ?? file
     const blocker = canCloseFile(current) ? null : leaveBlocker(current)
     if (blocker !== null) {
