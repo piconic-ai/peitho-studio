@@ -227,6 +227,31 @@ test.describe('the editor\'s tabs', () => {
 
     await expect(page.locator('[data-layout-editor-message]')).toContainText('no longer on disk')
     expect(await editorText(page, 'layout-css')).toBe('h1 { color: blue; }')
+
+    // Leaving is held back until the draft is discarded by closing its tab.
+    await page.locator('[data-studio-mode-option="slides"]').click()
+    await expect(page.locator('[data-layout-notice]')).toContainText('could not be saved')
+    await tab(page, 'css/base.css').locator('[data-layout-tab-close]').click()
+    await expect(tab(page, 'css/base.css')).toHaveCount(0)
+    await page.locator('[data-studio-mode-option="slides"]').click()
+    await expect(page.locator('[data-layout-screen]')).toBeHidden()
+  })
+
+  test('Given a layout\'s draft that could not be saved, when another layout is picked and then it again, then the large preview draws the draft again', async ({ page }) => {
+    // The draft renders in the preview, but its save is refused.
+    await openLayoutScreen(page, deckOf({ commandError: cmd => (cmd === 'save_deck_file' ? 'held back' : null) }))
+    await page.locator('[data-layout-row="quote"]').click()
+    await expect.poll(() => editorText(page, 'layout-html')).toContain('layout-quote')
+    await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>draft</h1></section>', 'layout-html')
+    const large = page.locator('[data-layout-selected-preview] [data-layout-selected-canvas] h1')
+    await expect(large).toHaveText('draft')
+
+    await page.locator('[data-layout-row="title-body"]').click()
+    await expect(large).toHaveText('body')
+    await page.locator('[data-layout-row="quote"]').click()
+
+    await expect.poll(() => editorText(page, 'layout-html')).toBe('<section class="peitho-slide layout-quote"><h1>draft</h1></section>')
+    await expect(large).toHaveText('draft')
   })
 })
 

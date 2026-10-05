@@ -42,7 +42,7 @@ import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isL
 import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
 import { type LayoutNameProblem, type StudioMode, initialLayoutListWidth, layoutFilesChanged, layoutListGeneration, layoutRows, layoutThumbnailStyle, layoutUsage, selectedPreviewRoom, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
-import { FILE_AUTOSAVE_DELAY_MS, autosavePaths, fileDraft, isFileChangedOnDisk, isFileDirty, leaveBlocker, shouldAutosave, tabsBlocker } from '../domain/fileEditor'
+import { FILE_AUTOSAVE_DELAY_MS, autosavePaths, canCloseFile, fileDraft, isFileChangedOnDisk, isFileDirty, leaveBlocker, shouldAutosave, tabsBlocker } from '../domain/fileEditor'
 import { fileLanguage, fileName, fileTreeRows, layoutFilePaths, layoutOfFile } from '../domain/deckFiles'
 import { layoutDisplayName } from '../domain/standardLayouts'
 import type { Messages } from '../domain/messages'
@@ -2396,6 +2396,8 @@ export function Studio() {
     const active = layouts.activePath()
     const sameKind = active !== null && layoutOfFile(active, layoutNames()) !== null && fileLanguage(active) === 'css' ? paths.css : paths.html
     await openEditorFiles([paths.html, paths.css], show ?? sameKind)
+    // Tabs already open may hold a draft of this layout: draw it again.
+    scheduleDraftPreview()
   }
 
   // Opens `paths` as tabs with `show` shown, and reads those not open yet.
@@ -2445,12 +2447,15 @@ export function Studio() {
   }
 
   // A tab closed: its typing is saved first; one that can't be (refused,
-  // or changed on disk meanwhile) stays open, shown, with the reason.
+  // or changed on disk meanwhile) stays open, shown, with the reason. A
+  // file gone from disk closes, its draft discarded: there's nowhere left
+  // to save it, and its message says closing discards it.
   async function closeLayoutTab(path: string): Promise<void> {
     const file = layouts.fileOf(path)
     if (file === undefined) return
-    if (isFileDirty(file)) await flushLayoutEditor()
-    const blocker = leaveBlocker(layouts.fileOf(path) ?? file)
+    if (isFileDirty(file) && !(file.kind === 'ready' && file.gone)) await flushLayoutEditor()
+    const current = layouts.fileOf(path) ?? file
+    const blocker = canCloseFile(current) ? null : leaveBlocker(current)
     if (blocker !== null) {
       showLayoutTab(path)
       const messages = settings.messages()

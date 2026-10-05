@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   FILE_AUTOSAVE_DELAY_MS, FILE_CHANGED_ON_DISK, NO_TABS, activeTab, anyTabDirty, autosavePaths, closeTab, fileDraft, isFileChangedOnDisk, isFileDirty,
-  keptDraft, leaveBlocker, loadedFile, newlyOpened, openTabs, saveFailedFile, saveInterruptedFile, savedFile, savingFile, shouldAutosave, showTab,
+  canCloseFile, keptDraft, leaveBlocker, loadedFile, newlyOpened, openTabs, saveFailedFile, saveInterruptedFile, savedFile, savingFile, shouldAutosave, showTab,
   tabGone, tabLoaded, tabOf, tabUnavailable, tabsBlocker, updateTab, withExternalChange, withExternalLoaded, withTyped,
   type EditorTabs, type FileEditor,
 } from './fileEditor'
@@ -252,6 +252,26 @@ describe('the editor\'s tabs', () => {
     expect(fileDraft(file)).toBe('<section>mine</section>')
     expect(shouldAutosave(file as FileEditor)).toBe(false)
     expect(tabGone(kept, 'css/nowhere.css', 'deleted')).toBe(kept)
+  })
+
+  test('spec: Given a deleted file\'s tab still holding typing, Then it can be closed to discard the draft, though leaving the screen is still held back', () => {
+    const typed = updateTab(tabsWith(BASE), BASE, file => withTyped(file, '.mine {}'))
+    const gone = tabOf(tabGone(typed, BASE, 'deleted'), BASE) as FileEditor
+    expect(canCloseFile(gone)).toBe(true)
+    expect(leaveBlocker(gone)).toBe('unsaved')
+    // An ordinary refused save is not closed away.
+    expect(canCloseFile(saveFailedFile(savingFile(typedFile('bad')), 'no', 'bad'))).toBe(false)
+    expect(canCloseFile(loadedFile(BASE, TEXT))).toBe(true)
+  })
+
+  test('adversarial: Given a deleted file that comes back on disk, Then its tab is no longer gone and the typing waits beside the file as a conflict', () => {
+    const typed = updateTab(tabsWith(BASE), BASE, file => withTyped(file, '.mine {}'))
+    const gone = tabOf(tabGone(typed, BASE, 'deleted'), BASE) as FileEditor
+    const back = withExternalChange(gone, '.back {}')
+    expect(back.outcome).toBe('conflict')
+    expect(back.file.kind === 'ready' && back.file.gone).toBe(false)
+    expect(back.file.kind === 'ready' && back.file.error).toBeNull()
+    expect(withExternalChange(gone, '.mine {}').outcome).toBe('caught-up')
   })
 
   test('spec: Given typing in two tabs, Then both are saved on their own, in tab order, and leaving is held back by the conflict first', () => {

@@ -12,11 +12,13 @@
  *   save's refusal (a layout that doesn't parse, say), cleared by the next
  *   edit. `external` is what the file became on disk while the draft held
  *   unsaved typing (`withExternalChange`), until the user picks one side
- *   (`withExternalLoaded` / `keptDraft`); `null` for no such conflict. */
+ *   (`withExternalLoaded` / `keptDraft`); `null` for no such conflict.
+ *   `gone` while the file is no longer on disk and the draft held typing
+ *   (`tabGone`): the draft can't be saved, only closed to discard it. */
 export type FileEditor =
   | { kind: 'loading'; path: string }
   | { kind: 'unavailable'; path: string; message: string }
-  | { kind: 'ready'; path: string; saved: string; draft: string; saving: boolean; error: string | null; external: string | null }
+  | { kind: 'ready'; path: string; saved: string; draft: string; saving: boolean; error: string | null; external: string | null; gone: boolean }
 
 /** The open files in tab order, and the one shown (`null` with none). */
 export interface EditorTabs {
@@ -46,7 +48,7 @@ export function isFileChangedOnDisk(message: string): boolean {
 
 /** The editor once `path` is read as `text`. */
 export function loadedFile(path: string, text: string): FileEditor {
-  return { kind: 'ready', path, saved: text, draft: text, saving: false, error: null, external: null }
+  return { kind: 'ready', path, saved: text, draft: text, saving: false, error: null, external: null, gone: false }
 }
 
 /** Whether `file` holds typing not saved yet. */
@@ -113,6 +115,8 @@ export type ExternalChangeOutcome = 'ignored' | 'unchanged' | 'caught-up' | 'rep
  * did (`ExternalChangeOutcome`). Neither side is ever dropped unseen. */
 export function withExternalChange(file: FileEditor, disk: string): { file: FileEditor; outcome: ExternalChangeOutcome } {
   if (file.kind !== 'ready') return { file, outcome: 'ignored' }
+  // Read back after it was gone: it's there again, so a conflict at most.
+  if (file.gone) return withExternalChange({ ...file, gone: false, error: null, saved: '' }, disk)
   if (disk === file.saved) return { file: file.external === null ? file : { ...file, external: null }, outcome: 'unchanged' }
   if (disk === file.draft) return { file: { ...file, saved: disk, error: null, external: null }, outcome: 'caught-up' }
   if (!isFileDirty(file) && !file.saving) return { file: { ...file, saved: disk, draft: disk, error: null, external: null }, outcome: 'replaced' }
@@ -217,7 +221,14 @@ export function tabGone(tabs: EditorTabs, path: string, message: string): Editor
   const file = tabOf(tabs, path)
   if (file === undefined) return tabs
   if (!isFileDirty(file)) return closeTab(tabs, path)
-  return updateTab(tabs, path, current => (current.kind === 'ready' ? { ...current, saving: false, error: message } : current))
+  return updateTab(tabs, path, current => (current.kind === 'ready' ? { ...current, saving: false, error: message, gone: true } : current))
+}
+
+/** Whether open `file` can be closed now: it holds nothing that would be
+ * lost (`leaveBlocker`), or it's gone from disk — then closing it is how
+ * the user discards the draft that can no longer be saved. */
+export function canCloseFile(file: FileEditor): boolean {
+  return leaveBlocker(file) === null || (file.kind === 'ready' && file.gone)
 }
 
 /** Whether any open file holds typing not saved yet. */
