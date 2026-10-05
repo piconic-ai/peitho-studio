@@ -107,7 +107,7 @@ test('Given unsaved typing, when the agent rewrites the file, then the typing st
   await page.locator('[data-layout-row="title-slide"]').click()
   await expect(page.locator('[data-layout-row="title-slide"]')).toHaveAttribute('aria-current', 'true')
   await page.locator('[data-studio-mode-option="slides"]').click()
-  await expect(page.locator('[data-layout-notice]')).toContainText('load them or keep your edits')
+  await expect(page.locator('[data-layout-notice]')).toContainText('load it or keep your edits')
   await expect(page.locator('[data-layout-screen]')).toBeVisible()
   await expect(page.locator('[data-layout-tab="layouts/quote.html"]')).toHaveAttribute('aria-selected', 'true')
   await expect(page.locator('[data-layout-row="quote"]')).toHaveAttribute('aria-current', 'true')
@@ -251,7 +251,7 @@ test('adversarial: Given a conflict, when the window is closed, then the notice 
       .__mockEmitTauriEvent('layout:flush-before-close', null, 'main')
   })
 
-  await expect(page.locator('[data-layout-notice]')).toContainText('load them or keep your edits, or close the window again')
+  await expect(page.locator('[data-layout-notice]')).toContainText('load it or keep your edits, or close the window again')
   await expect(page.locator('[data-layout-notice]')).not.toContainText('could not be saved')
   expect(deck.layoutFiles?.quote.html).toBe(AGENT)
 })

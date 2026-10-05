@@ -128,16 +128,18 @@ export interface Messages {
   noFileOpen: string
   /** An open file deleted on disk while it held unsaved edits. */
   fileGone: string
-  /** Why the layout editor can't be left yet (another layout, the slides,
-   * a new layout): its edits couldn't be saved. */
+  /** Why the editor's file shown can't be left yet (its tab closed, the
+   * slides, a new layout): its edits couldn't be saved. Any file — a
+   * layout's, or one no layout owns (`css/base.css`). */
   layoutSaveFirst: string
   /** The files changed on disk while the editor held unsaved edits. */
   layoutConflict: string
   layoutConflictLoad: string
   layoutConflictKeep: string
-  /** Why the layout editor can't be left yet: that change is undecided. */
+  /** Why the editor's file shown can't be left yet: that change is
+   * undecided. */
   layoutConflictFirst: string
-  /** The window was closed, but the layout's edits couldn't be saved. */
+  /** The window was closed, but the file's edits couldn't be saved. */
   layoutCloseUnsaved: string
   layoutCloseConflict: string
   layoutActionFailed: (error: string) => string
@@ -351,13 +353,13 @@ const en: Messages = {
   closeTab: name => `Close ${name}`,
   noFileOpen: 'Open a file from the tree, or pick a layout in the list',
   fileGone: 'This file is no longer on disk, so these edits can\'t be saved. Copy them elsewhere, or close the tab to discard them',
-  layoutSaveFirst: 'The changes to this layout could not be saved. Fix them, or undo them, before leaving this layout',
+  layoutSaveFirst: 'The changes to this file could not be saved. Fix them, or undo them, first',
   layoutConflict: 'This file changed on disk while you had unsaved edits here.',
   layoutConflictLoad: 'Load from disk',
   layoutConflictKeep: 'Keep my edits',
-  layoutConflictFirst: 'This layout\'s files changed on disk: load them or keep your edits before leaving this layout',
-  layoutCloseUnsaved: 'The changes to this layout could not be saved. Fix them, or close the window again to discard them',
-  layoutCloseConflict: 'This layout\'s files changed on disk: load them or keep your edits, or close the window again to discard your edits',
+  layoutConflictFirst: 'This file changed on disk: load it or keep your edits first',
+  layoutCloseUnsaved: 'The changes to this file could not be saved. Fix them, or close the window again to discard them',
+  layoutCloseConflict: 'This file changed on disk: load it or keep your edits, or close the window again to discard your edits',
   layoutActionFailed: error => `Could not change the layouts: ${error}`,
   deckChangeFailed: 'deck.md could not be updated',
   layoutDeckUnsaved: 'the slides have changes that could not be saved to deck.md. Layouts are checked against the saved deck, so save the slides first',
@@ -558,13 +560,13 @@ const ja: Messages = {
   closeTab: name => `${name} を閉じる`,
   noFileOpen: 'ツリーからファイルを開くか、一覧でレイアウトを選んでください',
   fileGone: 'このファイルはディスク上にもうないため、編集を保存できません。別の場所に写すか、タブを閉じて破棄してください',
-  layoutSaveFirst: 'このレイアウトの変更を保存できませんでした。修正するか取り消してから、このレイアウトを離れてください',
+  layoutSaveFirst: 'このファイルの変更を保存できませんでした。先に修正するか取り消してください',
   layoutConflict: '未保存の編集がある間に、このファイルがディスク上で変更されました。',
   layoutConflictLoad: 'ディスクの内容を読み込む',
   layoutConflictKeep: '自分の編集を残す',
-  layoutConflictFirst: 'このレイアウトのファイルがディスク上で変更されました。読み込むか自分の編集を残すかを選んでから、このレイアウトを離れてください',
-  layoutCloseUnsaved: 'このレイアウトの変更を保存できませんでした。修正するか、もう一度ウィンドウを閉じて変更を破棄してください',
-  layoutCloseConflict: 'このレイアウトのファイルがディスク上で変更されました。読み込むか自分の編集を残すかを選ぶか、もう一度ウィンドウを閉じて自分の編集を破棄してください',
+  layoutConflictFirst: 'このファイルがディスク上で変更されました。先に、読み込むか自分の編集を残すかを選んでください',
+  layoutCloseUnsaved: 'このファイルの変更を保存できませんでした。修正するか、もう一度ウィンドウを閉じて変更を破棄してください',
+  layoutCloseConflict: 'このファイルがディスク上で変更されました。読み込むか自分の編集を残すかを選ぶか、もう一度ウィンドウを閉じて自分の編集を破棄してください',
   layoutActionFailed: error => `レイアウトを変更できませんでした: ${error}`,
   deckChangeFailed: 'deck.md を更新できませんでした',
   layoutDeckUnsaved: 'deck.md に保存できていないスライドの変更があります。レイアウトは保存済みのデッキに対して確認するため、先にスライドを保存してください',

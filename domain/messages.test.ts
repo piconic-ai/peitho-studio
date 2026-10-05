@@ -120,3 +120,15 @@ describe('LANGUAGE_NAMES', () => {
     expect(Object.keys(LANGUAGE_NAMES).sort()).toEqual([...LANGUAGES].sort())
   })
 })
+
+describe('the layout screen editor\'s notices', () => {
+  test('spec: Given a file that held back leaving or closing, Then the notice speaks of a file, as it may be one no layout owns (css/base.css)', () => {
+    for (const language of ['en', 'ja'] as const) {
+      const messages = messagesFor(language)
+      for (const text of [messages.layoutSaveFirst, messages.layoutConflictFirst, messages.layoutCloseUnsaved, messages.layoutCloseConflict]) {
+        expect(text).toMatch(language === 'en' ? /this file/i : /このファイル/)
+        expect(text).not.toMatch(language === 'en' ? /layout/i : /レイアウト/)
+      }
+    }
+  })
+})
