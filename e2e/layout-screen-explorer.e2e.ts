@@ -1,5 +1,5 @@
 // The layout screen as files | editor | layout list
-// (todo/layout-screen-explorer.md): a file tree of the deck's `layouts/`,
+// (todo/archive/layout-screen-explorer.md): a file tree of the deck's `layouts/`,
 // `css/`, `img/` and `fonts/`; the files opened from it (or from the list)
 // as editor tabs, `css/base.css` included; the list with the selected
 // layout drawn large and every layout's English name; and comments written

@@ -1,4 +1,4 @@
-// The layout screen (todo/layout-screen.md): the header's Slides / Layouts
+// The layout screen (todo/archive/layout-screen.md): the header's Slides / Layouts
 // switch, the deck's layouts listed with how many slides use each, Apply to
 // Slide, New Layout, Duplicate, Delete (moving a used layout's slides to
 // another first) and editing a layout's HTML/CSS.

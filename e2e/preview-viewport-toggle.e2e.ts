@@ -13,7 +13,7 @@
 // Phone display has a second choice, its shape, picked from a menu the ▾
 // beside the Phone segment opens: a device's proportion (a small phone, the
 // standard phone by default, a large phone or a tablet —
-// todo/viewport-device-presets.md) or the deck's own ("same ratio as PC"),
+// todo/archive/viewport-device-presets.md) or the deck's own ("same ratio as PC"),
 // which by design gives the same
 // canvas size as PC display. The header's controls are icons, with their
 // words in `aria-label`/`title`.

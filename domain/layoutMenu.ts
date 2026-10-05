@@ -5,7 +5,7 @@
 //
 // The items are data (`layoutMenuItems`), not one hard-wired button each,
 // so another per-layout or whole-list action — a comment on this layout,
-// or on every layout (`todo/layout-review-comments.md`) — is one more
+// or on every layout (`todo/archive/layout-review-comments.md`) — is one more
 // `LayoutMenuAction` and one more entry below, with no change to the menu
 // component or to how it opens.
 import { type LayoutFitCheck, type LayoutVerdict, availabilityOf, settledFitCheck } from './layoutFit'

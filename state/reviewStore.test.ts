@@ -279,7 +279,7 @@ describe('comment counts per slide', () => {
   })
 })
 
-describe('comments on layouts (todo/layout-review-comments.md)', () => {
+describe('comments on layouts (todo/archive/layout-review-comments.md)', () => {
   test('Given the box opened on a layout from the layout screen, When a comment is added, Then it is filed unsent for that layout and the box closes', () => {
     createRoot(() => {
       const store = createReviewStore(() => '2026-10-02T00:00:00Z')

@@ -1233,7 +1233,7 @@ export function Studio() {
   }
 
   // The layout screen's menu opens the box on a layout, or on every layout
-  // (todo/layout-review-comments.md), where the menu was.
+  // (todo/archive/layout-review-comments.md), where the menu was.
   function openLayoutCommentBox(target: LayoutCommentTarget, from: { x: number; y: number }): void {
     const at = clampMenuPosition(from, { width: 336, height: 180 }, { width: window.innerWidth, height: window.innerHeight }, 8)
     review.openLayoutBox(target, at)
@@ -3836,7 +3836,7 @@ export function Studio() {
             height. Hidden with the panel until a deck is open. Shared by
             both screens — one column, one open/closed state, the same
             threads — and outside both, so the layout screen has it too
-            (groundwork for todo/layout-review-comments.md). While the layout
+            (groundwork for todo/archive/layout-review-comments.md). While the layout
             screen shows, its own rail holds the toggle to reopen it. */}
         <div
           hidden={!render.assetBaseUrl() || !ui.reviewOpen()}

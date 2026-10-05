@@ -5,7 +5,7 @@
 // display has a shape: one of the device presets' proportions, or the deck's
 // own (`PhoneShape`, `deviceForShape`). See
 // `todo/archive/preview-viewport-toggle.md` and
-// `todo/viewport-device-presets.md` for the contract and its rationale.
+// `todo/archive/viewport-device-presets.md` for the contract and its rationale.
 import { containScale, containSize, type Size } from './geometry'
 
 export type ViewportMode = 'desktop' | 'mobile'

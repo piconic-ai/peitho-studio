@@ -724,7 +724,7 @@ describe('rewriteUnsent / unsentBody', () => {
   })
 })
 
-// --- Comments written on the layout screen (todo/layout-review-comments.md) ---
+// --- Comments written on the layout screen (todo/archive/layout-review-comments.md) ---
 
 describe('layoutHtmlFile', () => {
   test('spec: Given a layout name, Then its HTML file is under layouts/', () => {

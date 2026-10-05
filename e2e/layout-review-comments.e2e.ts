@@ -1,4 +1,4 @@
-// Comments on layouts for the Coding Agent (todo/layout-review-comments.md):
+// Comments on layouts for the Coding Agent (todo/archive/layout-review-comments.md):
 // on the layout screen, right-click a layout (or the list's empty space),
 // write a comment on that layout (or on every layout), send it to the agent
 // waiting in crit, and see the layouts refreshed once the agent changed

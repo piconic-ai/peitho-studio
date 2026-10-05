@@ -628,7 +628,7 @@ test('Given sending fails, Then the comments stay unsent and the error is shown'
   await expect(page.locator('[data-review-row="unsent-comment"]')).toHaveCount(1)
 })
 
-// Groundwork for comments on layouts (todo/layout-review-comments.md): the
+// Groundwork for comments on layouts (todo/archive/layout-review-comments.md): the
 // comments column is the same one in both screens.
 test('Given comments on the deck, When the window switches to the layout screen, Then the same comments column shows there, opened and closed together with the slides screen\'s', async ({ page }) => {
   const crit = createFakeCritIpc()
