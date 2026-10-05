@@ -171,7 +171,6 @@ export function LayoutScreen(props: LayoutScreenProps) {
   return (
     <div data-layout-screen className={(props.hidden ? 'hidden' : 'flex') + ' flex-1 min-w-0 min-h-0'}>
       <FileTree
-        language={props.language}
         rows={props.treeRows}
         collapsed={props.collapsedFolders}
         activePath={props.activePath}

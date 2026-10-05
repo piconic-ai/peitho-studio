@@ -113,8 +113,6 @@ export interface Messages {
   deleting: string
   savingLayout: string
   layoutUnsaved: string
-  /** The layout screen's file tree, as its heading. */
-  fileTree: string
   /** The close button on editor tab `name`. */
   closeTab: (name: string) => string
   /** The layout editor's button that comments on the selected lines (or
@@ -341,7 +339,6 @@ const en: Messages = {
   deleting: 'Deleting…',
   savingLayout: 'Saving…',
   layoutUnsaved: 'Unsaved changes',
-  fileTree: 'Files',
   closeTab: name => `Close ${name}`,
   commentOnLines: 'Comment',
   commentOnLinesTitle: 'Comment on the selected lines (or the cursor\'s line) for the agent',
@@ -547,7 +544,6 @@ const ja: Messages = {
   deleting: '削除中…',
   savingLayout: '保存中…',
   layoutUnsaved: '未保存の変更があります',
-  fileTree: 'ファイル',
   closeTab: name => `${name} を閉じる`,
   commentOnLines: 'コメント',
   commentOnLinesTitle: '選択した行(またはカーソルのある行)にコメントして、エージェントに依頼します',

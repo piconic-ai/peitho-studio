@@ -1,12 +1,9 @@
 'use client'
 
-import { type Language } from '../domain/language'
-import { messagesFor } from '../domain/messages'
 import { type FileTreeRow } from '../domain/deckFiles'
 
 // Props are values, not signal getters (BF044) — see `WelcomeScreen.tsx`.
 export interface FileTreeProps {
-  language: Language
   /** The rows shown (`fileTreeRows`): folders closed by the user hide what
    * is in them. */
   rows: FileTreeRow[]
@@ -36,10 +33,8 @@ function rowClass(active: boolean, open: boolean, editable: boolean, isDir: bool
 export function FileTree(props: FileTreeProps) {
   return (
     <div data-file-tree className="shrink-0 flex flex-col min-h-0 border-r border-border" style={`width: ${String(props.width)}px`}>
-      <div className="shrink-0 h-9 flex items-center px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        {messagesFor(props.language).fileTree}
-      </div>
-      <div role="tree" className="flex-1 min-h-0 overflow-y-auto px-1 pb-4">
+      {/* No heading: the folders say what this column is. */}
+      <div role="tree" className="flex-1 min-h-0 overflow-y-auto px-1 pt-1 pb-4">
         {props.rows.map(row => (
           <button
             type="button"

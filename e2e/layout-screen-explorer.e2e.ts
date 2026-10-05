@@ -92,6 +92,16 @@ test.describe('the file tree', () => {
     await expect(treeRow(page, 'img/photos/a.jpg')).toBeVisible()
   })
 
+  for (const uiLanguage of ['en', 'ja']) {
+    test(`Given the tree (${uiLanguage}), then it has no heading of its own: its first row is the first folder`, async ({ page }) => {
+      await openLayoutScreen(page, deckOf({ settings: { uiLanguage } }))
+      await expect(page.locator('[data-file-tree]')).not.toContainText(uiLanguage === 'ja' ? 'ファイル' : 'Files')
+      const tree = (await page.locator('[data-file-tree]').boundingBox())!
+      const first = (await treeRow(page, 'layouts').boundingBox())!
+      expect(first.y - tree.y).toBeLessThan(12)
+    })
+  }
+
   test('Given css/base.css in the tree, when it is clicked, then it opens in a tab of its own, the list keeps its selection, and the tree marks it', async ({ page }) => {
     await openLayoutScreen(page, deckOf())
 
