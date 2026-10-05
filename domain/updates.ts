@@ -51,7 +51,7 @@ export function startUpdateCheck(status: UpdateStatus): UpdateStatus {
 export function failUpdateCommand(status: UpdateStatus, error: unknown): UpdateStatus {
   return { ...status, phase: 'error', error: String(error) }
 }
-/** Whether a failed check can be retried from the update window. */
+/** Whether a failed check can be retried (the update window's Retry). */
 export function canRetryUpdate(status: UpdateStatus): boolean {
   return status.phase === 'error'
 }
