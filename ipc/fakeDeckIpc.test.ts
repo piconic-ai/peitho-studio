@@ -70,9 +70,9 @@ describe('createFakeDeckIpc', () => {
     expect(heard).toEqual(['files', 'flush'])
   })
 
-  test('spec: saveLayout resolves with a fingerprint and reportLayoutDraft records whether a draft is pending', async () => {
+  test('spec: saveDeckFile resolves with a fingerprint and reportLayoutDraft records whether a draft is pending', async () => {
     const ipc = createFakeDeckIpc()
-    expect(await ipc.saveLayout('src', 'quote', '<section></section>', '')).toBe('')
+    expect(await ipc.saveDeckFile('src', 'css/base.css', 'a {}')).toBe('')
     await ipc.reportLayoutDraft(true)
     expect(ipc.calls.at(-1)).toEqual({ method: 'reportLayoutDraft', args: [true] })
   })

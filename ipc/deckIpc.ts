@@ -14,6 +14,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
+import type { DeckFileEntry } from '../domain/deckFiles'
 import type { DeckSettingsState } from '../domain/deckSettings'
 import type { DeckVariant } from '../domain/deckVariants'
 import type { NewDeckSettings } from '../domain/newDeckSettings'
@@ -38,12 +39,6 @@ export interface LayoutPreview {
   fragment: string
 }
 
-/** A layout's two files, as `read_layout` reads them: its HTML, and its own
- * CSS (`css/<name>.css`), `null` when it has none. */
-export interface LayoutFiles {
-  html: string
-  css: string | null
-}
 
 export interface LayoutPreviewsPayload {
   previews: LayoutPreview[]
@@ -100,18 +95,25 @@ export interface DeckIpc {
   /** Deletes layout `name`'s files, its slides already moved off it in
    * `content`. */
   deleteLayout(content: string, name: string): Promise<void>
-  readLayout(name: string): Promise<LayoutFiles>
+  /** The layout screen's file tree: the deck's `layouts/`, `css/`, `img/`
+   * and `fonts/` (`engine::deck_files::list_deck_files`). */
+  listDeckFiles(): Promise<DeckFileEntry[]>
+  /** The text of `path` — a layout's HTML or a CSS file of the deck — for
+   * an editor tab. A layout's own CSS file not there yet reads blank. */
+  readDeckFile(path: string): Promise<string>
   /** Layout `name`'s placeholder preview rendered from unsaved `html` and
-   * `css`, writing nothing — the layout editor's live preview. */
-  previewLayoutDraft(name: string, html: string, css: string): Promise<{ fragment: string; css: string }>
-  /** Overwrites layout `name`'s HTML and CSS; refuses HTML that doesn't
-   * parse as a layout, and an edit that would stop `content` (the deck
-   * source now) from building as it does. Resolves with the layout files'
-   * fingerprint once written (`layoutFilesStamp`), so the watcher's report
-   * of this write can be told from someone else's. With `base` (what the
-   * editor last read or wrote), refuses with `LAYOUT_CHANGED_ON_DISK`
-   * (`domain/layoutEditor.ts`) when the files no longer hold it. */
-  saveLayout(content: string, name: string, html: string, css: string, base?: { html: string; css: string }): Promise<string>
+   * `css` — a side `null` as on disk (its tab isn't open) — writing
+   * nothing: the layout editor's live preview. */
+  previewLayoutDraft(name: string, html: string | null, css: string | null): Promise<{ fragment: string; css: string }>
+  /** Overwrites `path` (a layout's HTML or a CSS file) with `text`; refuses
+   * a layout that doesn't parse, and an edit that would stop `content` (the
+   * deck source now) from building as it does. Resolves with the layout
+   * files' fingerprint once written (`layoutFilesStamp`), so the watcher's
+   * report of this write can be told from someone else's. With `base`
+   * (what the editor last read or wrote), refuses with
+   * `FILE_CHANGED_ON_DISK` (`domain/fileEditor.ts`) when the file no
+   * longer holds it. */
+  saveDeckFile(content: string, path: string, text: string, base?: string): Promise<string>
   /** A fingerprint of the deck's layout files (`layouts/*.html`,
    * `css/*.css`): it changes when one is added, removed or written — by
    * the Coding Agent, say. */
@@ -203,11 +205,12 @@ export function createTauriDeckIpc(): DeckIpc {
     duplicateLayout: (content, name) => invoke('duplicate_layout', { content, name }),
     checkLayoutRemoval: (original, repinned, name) => invoke('check_layout_removal', { original, repinned, name }),
     deleteLayout: (content, name) => invoke('delete_layout', { content, name }),
-    readLayout: name => invoke('read_layout', { name }),
+    listDeckFiles: () => invoke('list_deck_files'),
+    readDeckFile: path => invoke('read_deck_file', { path }),
     layoutFilesStamp: () => invoke('layout_files_stamp'),
     reportLayoutDraft: pending => invoke('report_layout_draft', { pending }),
     previewLayoutDraft: (name, html, css) => invoke('preview_layout_draft', { name, html, css }),
-    saveLayout: (content, name, html, css, base) => invoke('save_layout', { content, name, html, css, base: base ?? null }),
+    saveDeckFile: (content, path, text, base) => invoke('save_deck_file', { content, path, text, base: base ?? null }),
     presentDeck: rehearsal => invoke('present_deck', { rehearsal }),
     reportDeckSettings: settings => invoke('report_deck_settings', { settings }),
     trustOpenDeck: () => invoke('trust_open_deck'),
