@@ -41,6 +41,11 @@ export interface LayoutRow {
   key: string
   name: string
   label: string
+  /** The layout's own name — its file name, what a slide's `"layout"` and
+   * the agent call it (`title-body`) — shown under `label` when that's a
+   * translated name; `null` when `label` is the name already (a deck's own
+   * layout). */
+  englishName: string | null
   /** How many slides are on this layout. */
   usage: number
   /** Whether the row offers Delete: never for the deck's only layout. */
@@ -62,13 +67,17 @@ export function layoutRows(
   language: Language,
   generation: string,
 ): LayoutRow[] {
-  return names.map(name => ({
-    key: `${generation}:${name}`,
-    name,
-    label: layoutDisplayName(name, language),
-    usage: usage.get(name)?.length ?? 0,
-    deletable: names.length > 1,
-  }))
+  return names.map(name => {
+    const label = layoutDisplayName(name, language)
+    return {
+      key: `${generation}:${name}`,
+      name,
+      label,
+      englishName: label === name ? null : name,
+      usage: usage.get(name)?.length ?? 0,
+      deletable: names.length > 1,
+    }
+  })
 }
 
 /** The layout the screen shows: `current` while the deck still has it,
@@ -118,18 +127,32 @@ export function initialLayoutListWidth(shared: number, bounds: { min: number; ma
   return Math.max(bounds.min, Math.min(bounds.max, Math.floor(shared / 2)))
 }
 
-/** What a layout row takes around its thumbnail, against the list's
- * scrolling area's inner size (`clientWidth`/`clientHeight`), in CSS px —
- * from `LayoutScreen.tsx`'s classes: the area's `p-2` (8 a side; at the
- * bottom, the same 8 kept clear of the area's edge), the row's `border-2`
- * and `p-1.5` (8 a side), and under the thumbnail its `gap-1` (4) and the
- * name line (`text-xs`, 16 tall). */
+/** How much of the list column's height (under its switch) the selected
+ * layout's large preview may take at most: the rest stays for the other
+ * layouts' thumbnails under it. */
+export const SELECTED_PREVIEW_SHARE = 0.6
+
+/** The room the selected layout's large preview has in a list column whose
+ * body (under its switch) measures `body`: the column's width, and
+ * `SELECTED_PREVIEW_SHARE` of its height, in whole pixels. `null` until
+ * measured. */
+export function selectedPreviewRoom(body: Size | null): Size | null {
+  if (body === null) return null
+  return { width: body.width, height: Math.floor(body.height * SELECTED_PREVIEW_SHARE) }
+}
+
+/** What the selected layout's large preview takes around its drawing,
+ * against its room (`selectedPreviewRoom`), in CSS px — from
+ * `LayoutScreen.tsx`'s classes: the section's `p-2` (8 a side), the box's
+ * `border-2` and `p-1.5` (8 a side), and under the drawing its `gap-1` (4)
+ * and the name line (`text-xs`, 16 tall). */
 export const LAYOUT_ROW_CHROME: Size = { width: 8 * 2 + 8 * 2, height: 8 * 2 + 8 * 2 + 4 + 16 }
 
-/** Layout thumbnail's box in a list area of inner size `room`, for a
- * layout drawn on `canvas`: as large as fits both the row's width and the
- * area's height (a phone's tall canvas in a wide list would otherwise run
- * past the bottom), keeping the canvas's proportion. In phone display on a
+/** The selected layout's large preview's box in `room`
+ * (`selectedPreviewRoom`), for a layout drawn on `canvas`: as large as
+ * fits both the room's width and its height (a phone's tall canvas in a
+ * wide list would otherwise push the other layouts out of sight), keeping
+ * the canvas's proportion. In phone display on a
  * device preset, `deviceWidth` (its CSS width, `previewDevice`) caps the
  * width too, so a small phone's thumbnail shows smaller than a standard
  * one's, as the slide preview does; `null` (or anything that isn't a
@@ -146,6 +169,12 @@ export function layoutThumbnailSize(room: Size | null, canvas: Size, deviceWidth
  * without one the row's full width at the canvas's proportion. */
 export function layoutThumbnailStyle(canvas: Size, room: Size | null, deviceWidth: number | null = null): string {
   const size = layoutThumbnailSize(room, canvas, deviceWidth)
-  if (size === null) return `width: 100%; aspect-ratio: ${String(canvas.width)} / ${String(canvas.height)}`
+  if (size === null) return layoutGridThumbnailStyle(canvas)
   return `width: ${String(size.width)}px; height: ${String(size.height)}px`
+}
+
+/** A small thumbnail's inline style in the two-column grid under the large
+ * preview: its cell's whole width, at the canvas's proportion. */
+export function layoutGridThumbnailStyle(canvas: Size): string {
+  return `width: 100%; aspect-ratio: ${String(canvas.width)} / ${String(canvas.height)}`
 }

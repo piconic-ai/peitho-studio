@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { LAYOUT_ROW_CHROME, MAX_LAYOUT_NAME_LENGTH, initialLayoutListWidth, layoutThumbnailSize, layoutThumbnailStyle, layoutFilesChanged, layoutListGeneration, layoutNameProblem, layoutRows, layoutUsage, shownLayout } from './layoutScreen'
+import { LAYOUT_ROW_CHROME, MAX_LAYOUT_NAME_LENGTH, SELECTED_PREVIEW_SHARE, initialLayoutListWidth, layoutGridThumbnailStyle, layoutThumbnailSize, layoutThumbnailStyle, selectedPreviewRoom, layoutFilesChanged, layoutListGeneration, layoutNameProblem, layoutRows, layoutUsage, shownLayout } from './layoutScreen'
 import type { ManifestSlide } from './render'
 import { buildSlideList } from './slideList'
 
@@ -67,7 +67,7 @@ describe('layoutRows', () => {
 
   test('spec: Given the deck\'s only layout, When the list is built, Then its row offers no Delete', () => {
     expect(layoutRows(['title-body-code'], new Map(), 'en', '0')).toEqual([
-      { key: '0:title-body-code', name: 'title-body-code', label: 'title-body-code', usage: 0, deletable: false },
+      { key: '0:title-body-code', name: 'title-body-code', label: 'title-body-code', englishName: null, usage: 0, deletable: false },
     ])
   })
 
@@ -282,5 +282,42 @@ describe('layoutThumbnailSize / layoutThumbnailStyle', () => {
 
   test('adversarial: Given a cap under a pixel, Then there is no box rather than a zero-width one', () => {
     expect(layoutThumbnailSize({ width: 800, height: 3000 }, PC, 0.5)).toBeNull()
+  })
+})
+
+describe('the layout list\'s names (display name and English name)', () => {
+  test('spec: Given standard layouts in Japanese, Then each row shows its translated name and, under it, its English (file) name', () => {
+    const rows = layoutRows(['title-body', 'two-column'], new Map(), 'ja', '0')
+    expect(rows.map(row => [row.label, row.englishName])).toEqual([['タイトルと本文', 'title-body'], ['2列(タイトルあり)', 'two-column']])
+  })
+
+  test('spec: Given standard layouts in English, Then the English name is still shown, since the display name is not the file name', () => {
+    expect(layoutRows(['title-body'], new Map(), 'en', '0')[0]).toMatchObject({ label: 'Title and body', englishName: 'title-body' })
+  })
+
+  test('adversarial: Given a deck\'s own layout (or an empty, odd or prototype-like name), Then its name is shown once, not twice', () => {
+    for (const name of ['quote', 'title-body-code', '', 'constructor', '__proto__']) {
+      expect(layoutRows([name], new Map(), 'ja', '0')[0]).toMatchObject({ label: name, englishName: null })
+    }
+  })
+})
+
+describe('the selected layout\'s large preview and the grid under it', () => {
+  test('spec: Given the list column\'s body, Then the large preview may take its width and at most its share of the height, leaving the rest to the grid', () => {
+    expect(selectedPreviewRoom({ width: 400, height: 1000 })).toEqual({ width: 400, height: Math.floor(1000 * SELECTED_PREVIEW_SHARE) })
+    expect(SELECTED_PREVIEW_SHARE).toBeGreaterThan(0.3)
+    expect(SELECTED_PREVIEW_SHARE).toBeLessThan(0.9)
+  })
+
+  test('spec: Given a grid thumbnail, Then it takes its cell\'s width at the canvas\'s proportion', () => {
+    expect(layoutGridThumbnailStyle({ width: 1280, height: 720 })).toBe('width: 100%; aspect-ratio: 1280 / 720')
+  })
+
+  test('adversarial: Given no body measured yet, or an odd height, Then there is no room, or it is whole pixels', () => {
+    expect(selectedPreviewRoom(null)).toBeNull()
+    expect(selectedPreviewRoom({ width: 0, height: 0 })).toEqual({ width: 0, height: 0 })
+    expect(Number.isInteger(selectedPreviewRoom({ width: 300, height: 333 })?.height)).toBe(true)
+    // Too little room leaves the preview without a box (`layoutThumbnailSize`), not a negative one.
+    expect(layoutThumbnailSize(selectedPreviewRoom({ width: 300, height: 50 }), { width: 1280, height: 720 })).toBeNull()
   })
 })
