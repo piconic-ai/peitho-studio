@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  FILE_AUTOSAVE_DELAY_MS, FILE_CHANGED_ON_DISK, NO_TABS, activeTab, anyTabDirty, autosavePaths, closeTab, fileDraft, isFileChangedOnDisk, isFileDirty,
+  FILE_AUTOSAVE_DELAY_MS, FILE_CHANGED_ON_DISK, NO_TABS, activeTab, allTabsOpen, anyTabDirty, autosavePaths, closeTab, fileDraft, isFileChangedOnDisk, isFileDirty,
   canCloseFile, keptDraft, leaveBlocker, loadedFile, newlyOpened, openTabs, saveFailedFile, saveInterruptedFile, savedFile, savingFile, shouldAutosave, showTab,
   tabGone, tabLoaded, tabOf, tabUnavailable, tabsBlocker, updateTab, withExternalChange, withExternalLoaded, withTyped,
   type EditorTabs, type FileEditor,
@@ -190,6 +190,20 @@ function tabsWith(...paths: string[]): EditorTabs {
 }
 
 describe('the editor\'s tabs', () => {
+  test('spec: Given a layout\'s two files open, Then they are all open; with one of them closed, they are not', () => {
+    const tabs = tabsWith(BASE, HTML, CSS)
+    expect(allTabsOpen(tabs, [HTML, CSS])).toBe(true)
+    expect(allTabsOpen(closeTab(tabs, CSS), [HTML, CSS])).toBe(false)
+    expect(allTabsOpen(closeTab(closeTab(tabs, CSS), HTML), [HTML, CSS])).toBe(false)
+  })
+
+  test('adversarial: Given no tabs or no paths, Then nothing named is missing only when nothing is named; a path twice counts once', () => {
+    expect(allTabsOpen(NO_TABS, [])).toBe(true)
+    expect(allTabsOpen(NO_TABS, [HTML])).toBe(false)
+    expect(allTabsOpen(tabsWith(HTML), [HTML, HTML])).toBe(true)
+    expect(allTabsOpen(tabsWith(HTML), [''])).toBe(false)
+  })
+
   test('spec: Given no tabs, When a layout\'s two files are opened, Then both are tabs, loading, and the HTML is shown', () => {
     const tabs = openTabs(NO_TABS, [HTML, CSS], HTML)
     expect(tabs.tabs.map(tab => [tab.path, tab.kind])).toEqual([[HTML, 'loading'], [CSS, 'loading']])

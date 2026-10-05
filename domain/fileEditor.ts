@@ -165,6 +165,11 @@ export function tabOf(tabs: EditorTabs, path: string | null): FileEditor | undef
   return path === null ? undefined : tabs.tabs.find(tab => tab.path === path)
 }
 
+/** Whether every one of `paths` is open as a tab. */
+export function allTabsOpen(tabs: EditorTabs, paths: readonly string[]): boolean {
+  return paths.every(path => tabOf(tabs, path) !== undefined)
+}
+
 /** The file shown. */
 export function activeTab(tabs: EditorTabs): FileEditor | undefined {
   return tabOf(tabs, tabs.active)

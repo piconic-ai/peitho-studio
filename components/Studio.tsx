@@ -42,7 +42,7 @@ import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isL
 import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
 import { type LayoutNameProblem, type StudioMode, initialLayoutListWidth, layoutFilesChanged, layoutListGeneration, layoutRows, layoutThumbnailStyle, layoutUsage, selectedPreviewRoom, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
-import { FILE_AUTOSAVE_DELAY_MS, autosavePaths, canCloseFile, fileDraft, isFileChangedOnDisk, isFileDirty, leaveBlocker, shouldAutosave, tabsBlocker, type FileEditor } from '../domain/fileEditor'
+import { FILE_AUTOSAVE_DELAY_MS, allTabsOpen, autosavePaths, canCloseFile, fileDraft, isFileChangedOnDisk, isFileDirty, leaveBlocker, shouldAutosave, tabsBlocker, type FileEditor } from '../domain/fileEditor'
 import { fileLanguage, fileName, fileTreeRows, layoutFilePaths, layoutOfFile } from '../domain/deckFiles'
 import { layoutDisplayName } from '../domain/standardLayouts'
 import type { Messages } from '../domain/messages'
@@ -2384,9 +2384,11 @@ export function Studio() {
 
   // Shows layout `name` and opens its files in the editor's tabs. Tabs
   // already open keep their drafts; any typing waiting for its pause is
-  // saved now rather than later.
+  // saved now rather than later. The layout shown with both files open
+  // stays as it is; with one closed, a click opens it again.
   async function selectLayout(name: string): Promise<void> {
-    if (name === layouts.selectedLayout()) return
+    const paths = layoutFilePaths(name)
+    if (name === layouts.selectedLayout() && allTabsOpen(layouts.tabs(), [paths.html, paths.css])) return
     if (layouts.editorDirty()) void flushLayoutEditor()
     await openLayout(name)
   }

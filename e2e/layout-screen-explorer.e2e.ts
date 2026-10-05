@@ -422,4 +422,15 @@ test.describe('saving and reading back around the agent\'s writes', () => {
     await page.keyboard.type('x')
     await expect.poll(() => deck.layoutFiles!['title-slide'].html).toBe(`${agent}x`)
   })
+
+  test('Given both tabs of the selected layout closed, when its row is clicked again, then its files open again', async ({ page }) => {
+    await openLayoutScreen(page, deckOf())
+    for (const path of await tabPaths(page)) await tab(page, path!).locator('[data-layout-tab-close]').click()
+    await expect(page.locator('[data-layout-tab]')).toHaveCount(0)
+
+    await page.locator('[data-layout-row="title-slide"]').click()
+
+    await expect.poll(() => tabPaths(page)).toEqual(['layouts/title-slide.html', 'css/title-slide.css'])
+    await expect(tab(page, 'layouts/title-slide.html')).toHaveAttribute('aria-selected', 'true')
+  })
 })
