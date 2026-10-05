@@ -77,6 +77,26 @@ test.describe('functional', () => {
     await expect(page.getByRole('button', { name: /^レイアウトを変更/ })).toBeVisible()
   })
 
+  test('Given phone display in English, when Japanese is chosen, then the device menu names each device in Japanese, keeping its model and size', async ({ page }) => {
+    await openDeck(page, { source: TWO_SLIDES })
+    await page.locator('[data-panel="preview"] [data-viewport-toggle]').click()
+    const option = (shape: string) => page.locator(`[data-panel="preview"] [data-phone-shape-option="${shape}"]`)
+    await page.locator('[data-panel="preview"] [data-phone-shape-menu-button]').click()
+    await expect(option('large-phone')).toContainText('Large phone')
+    await page.keyboard.press('Escape')
+
+    await chooseLanguage(page, '日本語')
+    await page.keyboard.press('Escape')
+
+    await page.locator('[data-panel="preview"] [data-phone-shape-menu-button]').click()
+    await expect(option('small-phone')).toContainText('小さめのスマホ')
+    await expect(option('phone')).toContainText('標準のスマホ')
+    await expect(option('large-phone')).toContainText('大きめのスマホ')
+    await expect(option('large-phone')).toContainText('iPhone 15 Pro Max 430×740')
+    await expect(option('tablet')).toContainText('タブレット')
+    await expect(option('deck')).toContainText('PCと同じ比率')
+  })
+
   test('Given an open deck in English, when Japanese is chosen, then the editor pane, the status bar and the notes placeholder switch too', async ({ page }) => {
     await openDeck(page, { source: TWO_SLIDES })
     await expect(page.locator('footer')).toHaveText(/^Opened /)
