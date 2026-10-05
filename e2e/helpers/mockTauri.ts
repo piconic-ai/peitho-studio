@@ -222,6 +222,10 @@ export interface MockDeck {
   /** Milliseconds `save_deck_file` waits before writing — defaults to 0. Set
    * it to type or act while an autosave is in flight. */
   saveLayoutDelayMs?: number
+  /** Milliseconds `read_deck_file` waits before answering what it read when
+   * called — defaults to 0. Set it to act (start an IME composition, say)
+   * while open files are being read back. */
+  readDeckFileDelayMs?: number
   /** Milliseconds `layout_files_stamp` waits before answering what it read
    * when called — defaults to 0. Set it to let a write land while a read
    * of the older fingerprint is still in flight. */
@@ -492,6 +496,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'list_deck_files': return deckFileEntries(deck)
       case 'read_deck_file': {
         const text = deckFileText(deck, args.path as string)
+        if (deck.readDeckFileDelayMs) await sleep(deck.readDeckFileDelayMs)
         if (text === null) throw new Error(`'${args.path as string}' is not a file of this deck`)
         return text
       }

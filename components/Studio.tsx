@@ -2268,13 +2268,8 @@ export function Studio() {
   // (`withExternalChange`): taken as it is when nothing was unsaved, else
   // kept beside the typing for the user to choose. A file gone from disk
   // closes its tab, or — holding typing — says it can't be saved. A tab
-  // that couldn't be read is tried again. Waits out an IME composition,
-  // whose text the editor must not lose.
+  // that couldn't be read is tried again.
   async function pullOpenFiles(): Promise<void> {
-    if (layoutEditorComposing()) {
-      setTimeout(() => { void pullOpenFiles() }, 300)
-      return
-    }
     // Read side by side: each tab takes its own answer as it lands.
     await Promise.all(layouts.tabs().tabs.map(pullOpenFile))
   }
@@ -2291,6 +2286,16 @@ export function Studio() {
     } catch {
       layouts.fileGone(file.path, settings.messages().fileGone)
       if (layouts.fileOf(file.path) === undefined) layoutEditorStates.delete(file.path)
+      return
+    }
+    // The file shown waits out an IME composition, whose text the editor
+    // must not lose — checked once the file is read, as one may have
+    // started meanwhile: the editor can't take the new text until it ends.
+    if (file.path === layoutEditorShows && layoutEditorComposing()) {
+      setTimeout(() => {
+        const current = layouts.fileOf(file.path)
+        if (current !== undefined) void pullOpenFile(current)
+      }, 300)
       return
     }
     if (layouts.externalChange(file.path, disk) !== 'replaced') return

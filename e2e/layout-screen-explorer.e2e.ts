@@ -392,4 +392,34 @@ test.describe('saving and reading back around the agent\'s writes', () => {
     expect(deck.layoutFiles!['title-slide'].css).toBe('.layout-title-slide { color: red; }')
     await expect(tab(page, 'layouts/title-slide.html').locator('[data-layout-tab-dirty]')).toBeHidden()
   })
+
+  test('Given the open files being read back after the agent\'s write, when an IME composition starts during the read, then the editor takes the agent\'s text once it ends, and typing then is not saved over it', async ({ page }) => {
+    const deck = deckOf()
+    await openLayoutScreen(page, deck)
+    await expect.poll(() => editorText(page, 'layout-html')).toBe(TITLE_SLIDE_HTML)
+    // The last `>` selected: a composition over it that converts to `>`
+    // again leaves the text as it was, so nothing is unsaved while it runs.
+    await editorContent(page, 'layout-html').click()
+    await page.keyboard.press('ControlOrMeta+End')
+    await page.keyboard.press('Shift+ArrowLeft')
+
+    const agent = '<section class="peitho-slide layout-title-slide"><h1>agent</h1></section>'
+    deck.layoutFiles!['title-slide'] = { html: agent, css: '.layout-title-slide {}' }
+    deck.layoutFilesStamp = 'agent-1'
+    deck.readDeckFileDelayMs = 1000
+    const readsBefore = count(deck, 'read_deck_file')
+    await emitLayoutFilesChanged(page)
+    // The composition starts once the read back is under way.
+    await expect.poll(() => count(deck, 'read_deck_file'), { intervals: [20] }).toBeGreaterThan(readsBefore)
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('Input.imeSetComposition', { text: '>', selectionStart: 1, selectionEnd: 1 })
+    await page.waitForTimeout(1500)
+    deck.readDeckFileDelayMs = 0
+    await cdp.send('Input.insertText', { text: '>' })
+
+    await expect.poll(() => editorText(page, 'layout-html')).toBe(agent)
+    await page.keyboard.press('End')
+    await page.keyboard.type('x')
+    await expect.poll(() => deck.layoutFiles!['title-slide'].html).toBe(`${agent}x`)
+  })
 })
