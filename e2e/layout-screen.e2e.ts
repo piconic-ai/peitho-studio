@@ -1187,6 +1187,45 @@ test.describe('the layout list\'s PC / Phone switch', () => {
     await expect(row(page, 'title-body').locator('[data-layout-canvas] h1')).toHaveText('saved')
   })
 
+  test('Given phone display in a wide list and a tall window, then each thumbnail is capped at the device\'s CSS width (standard phone 390, small phone 375), and PC display takes the row\'s width again', async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 3000 })
+    await openLayoutScreen(page, deckOf({ layoutFragment: '<h1>saved</h1>' }))
+    // The divider dragged left as far as it goes: the list at its widest.
+    const list = (await page.locator('[data-layout-list]').boundingBox())!
+    await page.mouse.move(list.x - 2, list.y + 200)
+    await page.mouse.down()
+    await page.mouse.move(list.x - 600, list.y + 200, { steps: 5 })
+    await page.mouse.up()
+    const width = async (name: string) => (await row(page, name).locator('[data-layout-thumbnail]').boundingBox())!.width
+    const pcWidth = await width('quote')
+    expect(pcWidth).toBeGreaterThan(430)
+
+    await toggle(page).click()
+    for (const name of ['title-slide', 'title-body', 'quote']) {
+      await expect.poll(() => width(name)).toBe(390)
+    }
+
+    await page.locator('[data-layout-list] [data-phone-shape-menu-button]').click()
+    await page.locator('[data-layout-list] [data-phone-shape-option="small-phone"]').click()
+    await expect.poll(() => width('quote')).toBe(375)
+    expect(await ratio(page, 'quote')).toBeCloseTo(1871 / 1280, 1)
+
+    await toggle(page).click()
+    await expect.poll(() => width('quote')).toBeCloseTo(pcWidth, 0)
+  })
+
+  test('Given phone display on the tablet in a list narrower than it, then the thumbnail keeps the row\'s width (the cap never widens it)', async ({ page }) => {
+    await openLayoutScreen(page, deckOf())
+    const rowWidth = (await row(page, 'quote').locator('[data-layout-thumbnail]').boundingBox())!.width
+    expect(rowWidth).toBeLessThan(820)
+    await toggle(page).click()
+    await page.locator('[data-layout-list] [data-phone-shape-menu-button]').click()
+    await page.locator('[data-layout-list] [data-phone-shape-option="tablet"]').click()
+    await expect.poll(() => ratio(page, 'quote')).toBeCloseTo(1608 / 1280, 1)
+    const box = (await row(page, 'quote').locator('[data-layout-thumbnail]').boundingBox())!
+    expect(box.width).toBeLessThanOrEqual(rowWidth + 0.5)
+  })
+
   test('Given a layout whose slide opts out with data-canvas="fixed", when Phone is switched on, then its thumbnail keeps the deck\'s shape', async ({ page }) => {
     await openLayoutScreen(page, deckOf({ layoutFragment: '<section class="peitho-slide" data-canvas="fixed"><h1>fixed</h1></section>' }))
     const pc = await ratio(page, 'quote')

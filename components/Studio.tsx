@@ -794,7 +794,8 @@ export function Studio() {
   const previewCanvasHeight = createMemo<number>(() => previewCanvas().height)
   // Phone display on a device preset draws the preview at that device's
   // real CSS width (a fixed-canvas slide too, as a 16:9 box that wide),
-  // shrinking it with a "Scaled to N%" label when the panel is too small.
+  // shrinking it with a "Scaled to N%" label when the panel is too small;
+  // the layout list caps its thumbnails at the same width.
   const previewDeviceWidth = createMemo<number | null>(() => previewDevice(ui.viewportMode(), ui.phoneShape())?.width ?? null)
   const previewScaleLabel = createMemo<string>(() => {
     const deviceWidth = previewDeviceWidth()
@@ -3340,6 +3341,7 @@ export function Studio() {
           canvasOf={layoutCanvasOf}
           onRowsHost={el => observeInnerSize(el, layouts.setThumbnailRoom)}
           thumbnailRoom={layouts.thumbnailRoom()}
+          deviceWidth={previewDeviceWidth()}
           previewError={draftPreviewError(layouts.draftPreview(), layouts.selectedLayout())}
           listWidth={layouts.listWidth()}
           onListResize={startColumnResize(layouts.listWidth, layouts.setListWidth, -1)}

@@ -129,17 +129,23 @@ export const LAYOUT_ROW_CHROME: Size = { width: 8 * 2 + 8 * 2, height: 8 * 2 + 8
 /** Layout thumbnail's box in a list area of inner size `room`, for a
  * layout drawn on `canvas`: as large as fits both the row's width and the
  * area's height (a phone's tall canvas in a wide list would otherwise run
- * past the bottom), keeping the canvas's proportion. `null` with no room
- * measured yet, or too little for any box. */
-export function layoutThumbnailSize(room: Size | null, canvas: Size): Size | null {
+ * past the bottom), keeping the canvas's proportion. In phone display on a
+ * device preset, `deviceWidth` (its CSS width, `previewDevice`) caps the
+ * width too, so a small phone's thumbnail shows smaller than a standard
+ * one's, as the slide preview does; `null` (or anything that isn't a
+ * positive, finite width) leaves it uncapped. `null` with no room measured
+ * yet, or too little for any box. */
+export function layoutThumbnailSize(room: Size | null, canvas: Size, deviceWidth: number | null = null): Size | null {
   if (room === null) return null
-  return containSize({ width: room.width - LAYOUT_ROW_CHROME.width, height: room.height - LAYOUT_ROW_CHROME.height }, canvas)
+  const rowWidth = room.width - LAYOUT_ROW_CHROME.width
+  const width = deviceWidth !== null && Number.isFinite(deviceWidth) && deviceWidth > 0 ? Math.min(rowWidth, deviceWidth) : rowWidth
+  return containSize({ width, height: room.height - LAYOUT_ROW_CHROME.height }, canvas)
 }
 
 /** The thumbnail box's inline style: its size (`layoutThumbnailSize`), or
  * without one the row's full width at the canvas's proportion. */
-export function layoutThumbnailStyle(canvas: Size, room: Size | null): string {
-  const size = layoutThumbnailSize(room, canvas)
+export function layoutThumbnailStyle(canvas: Size, room: Size | null, deviceWidth: number | null = null): string {
+  const size = layoutThumbnailSize(room, canvas, deviceWidth)
   if (size === null) return `width: 100%; aspect-ratio: ${String(canvas.width)} / ${String(canvas.height)}`
   return `width: ${String(size.width)}px; height: ${String(size.height)}px`
 }

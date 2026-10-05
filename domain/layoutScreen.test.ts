@@ -247,4 +247,40 @@ describe('layoutThumbnailSize / layoutThumbnailStyle', () => {
     expect(layoutThumbnailSize({ width: 600, height: 600 }, { width: 0, height: 720 })).toBeNull()
     expect(layoutThumbnailSize({ width: 600, height: 600 }, { width: Number.NaN, height: 720 })).toBeNull()
   })
+
+  test('spec: Given phone display on a device in a wide, tall list, Then the thumbnail is capped at the device\'s CSS width, so a small phone shows smaller than a standard one', () => {
+    const room = { width: 800, height: 3000 }
+    const small = layoutThumbnailSize(room, { width: 1280, height: 1871 }, 375)
+    const standardPhone = layoutThumbnailSize(room, { width: 1280, height: 2179 }, 390)
+    expect(small?.width).toBe(375)
+    expect(standardPhone?.width).toBe(390)
+    expect(small?.height).toBe(Math.floor(375 * 1871 / 1280))
+  })
+
+  test('spec: Given a device cap and a short list, Then the list\'s visible height still wins (contain-fit as before)', () => {
+    const room = { width: 800, height: 400 }
+    const size = layoutThumbnailSize(room, { width: 1280, height: 2179 }, 390)
+    expect(size?.height).toBe(400 - chrome.height)
+    expect(size?.width ?? Infinity).toBeLessThan(390)
+  })
+
+  test('spec: Given a device wider than the row (a tablet in a narrow list), Then the row\'s width wins', () => {
+    expect(layoutThumbnailSize({ width: 300, height: 3000 }, { width: 1280, height: 1608 }, 820)).toEqual(layoutThumbnailSize({ width: 300, height: 3000 }, { width: 1280, height: 1608 }))
+  })
+
+  test('spec: Given a device cap, Then the style carries the capped size', () => {
+    expect(layoutThumbnailStyle({ width: 1280, height: 720 }, { width: 800, height: 3000 }, 390)).toBe(`width: 390px; height: ${String(Math.floor(390 * 720 / 1280))}px`)
+  })
+
+  test('adversarial: Given a cap that is no width (null, 0, negative, NaN, Infinity), Then there is no cap', () => {
+    const room = { width: 800, height: 3000 }
+    const uncapped = layoutThumbnailSize(room, PC)
+    for (const cap of [null, 0, -390, Number.NaN, Infinity]) {
+      expect(layoutThumbnailSize(room, PC, cap)).toEqual(uncapped)
+    }
+  })
+
+  test('adversarial: Given a cap under a pixel, Then there is no box rather than a zero-width one', () => {
+    expect(layoutThumbnailSize({ width: 800, height: 3000 }, PC, 0.5)).toBeNull()
+  })
 })
