@@ -74,6 +74,42 @@ Studio(1280x2770)の差は既知として受け入れる(Safari UI込みの実�
    (推奨: 縮んでいない初期表示 — 最初に見える形に合わせる)。値は出典を
    コメントに残す。
 
+調査結果(2026-10-05):
+
+1. **peitho自身のビューアはキャンバスを縦長化しない。** Studioが使う
+   peitho-core v1.34.0(`src-tauri/Cargo.toml`)の`peitho present`
+   (`packages/peitho-present/src/shell.ts`の`installCanvasScaler`、
+   `canvas.ts`の`calculateCanvasFit`)も、`peitho build`の配布ビューア
+   (`crates/peitho-core/src/render.rs`の`resizeCanvas`)も、キャンバスは
+   manifestの`canvasWidth`x`canvasHeight`(1280x720等)固定で、
+   `min(innerWidth / W, innerHeight / H)`で縮めて上下に黒帯を付けるだけ。
+   端末幅のしきい値も下部バーもない(最新のv1.38.5でも同じ。追加されたのは
+   ビューアのUI用の`@media (orientation: landscape) and (max-height: 520px)`
+   だけ)。縦長キャンバスは**デッキ自身のレイアウトJS**が行うもの:
+   既知の唯一の例がbarefootjs `site/core/slides/overview/component/
+   narration.ts`の`fitCanvas`で、`matchMedia('(max-width: 820px)')`の間だけ
+   高さを`max(720, round(1280 * (innerHeight - 下部バー) / innerWidth))`にし、
+   `--peitho-canvas-height`に書く(820pxを含む。下部バー`#bf-bar`はデッキ
+   独自のUIで、上下padding 10px + 48pxのボタン + 1pxの境界線 +
+   `env(safe-area-inset-bottom)`、約69px〜)。
+   → Studioのスマホ表示は「縦長化するデッキ」をシミュレートするもの、という
+   従来の位置付けのまま。プリセットの高さは**ブラウザで見える領域**とし、
+   デッキ独自の下部バーは引かない(peitho自身にはバーがなく、バーの有無・
+   高さはデッキごとに違うため)。820pxのしきい値については、選んだタブレット
+   (iPad 第10世代/iPad Air 11インチ、縦向き820px幅)がちょうど`max-width:
+   820px`に入るので縦長化する側になり、「縦長化しない端末」を表す仕組みは
+   作っていない(全プリセットが820px以下であることをテストで固定)。
+2. **プリセットの値**(縦向き、Safariのツールバーが縮んでいない初期表示の
+   `innerWidth`x`innerHeight`。一般に報告されている代表値で、ここでは実測して
+   いない — 実機確認は下の人間の判断項目):
+   - 小さめのスマホ `small-phone`: iPhone SE(第2/3世代、画面375x667) → 375x548
+   - 標準のスマホ `phone`(既定): iPhone 15/16(画面390x844) → 390x664
+   - 大きめのスマホ `large-phone`: iPhone 15 Pro Max(画面430x932) → 430x740
+   - タブレット `tablet`: iPad 第10世代/iPad Air 11インチ(画面820x1180) → 820x1030
+   16:9デッキのキャンバスはそれぞれ1280x1871 / 1280x2179 / 1280x2203 /
+   1280x1608(4:3は960x1403 / 960x1634 / 960x1652 / 960x1206)。
+   既定が390x844(1280x2770)から390x664(1280x2179)に変わる。
+
 ## 方針
 
 - `DevicePreset`の一覧(`DEVICE_PRESETS`)を`domain/viewport.ts`に持ち、
