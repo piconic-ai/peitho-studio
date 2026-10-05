@@ -17,11 +17,14 @@
 // which by design gives the same
 // canvas size as PC display. The header's controls are icons, with their
 // words in `aria-label`/`title`.
+//
+// On a device preset the slide is drawn at the device's real CSS width (the
+// canvas scaled by device width / canvas width), centred; a panel too small
+// for that fits it instead and says "Scaled to N%".
 import { test, expect, type Locator, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 import { fillEditor } from './helpers/codeEditor'
-import { containScale } from '../domain/geometry'
-import type { PhoneShape } from '../domain/viewport'
+import { previewCanvasScale, type PhoneShape } from '../domain/viewport'
 
 // The slide preview's own switch: the layout list has one too.
 const PREVIEW_PANE = '[data-panel="preview"]'
@@ -87,21 +90,42 @@ function previewProbeColor(page: Page): Promise<string | null> {
   })
 }
 
-/** How far the preview's `--peitho-thumb-scale` is from what fitting its
- * canvas into the host's current box gives (`containScale`). 0 means the
- * scale follows the canvas. */
+/** How far the preview's `--peitho-thumb-scale` is from what its canvas
+ * should be drawn at in the host's current box (`previewCanvasScale`: filling
+ * the box, or a device's real width in phone display). 0 means the scale
+ * follows the canvas. */
 async function scaleMisfit(page: Page): Promise<number> {
-  const { box, canvas, scale } = await page.locator(PREVIEW).evaluate(el => {
+  const { box, canvas, scale, deviceWidth } = await page.locator(PREVIEW).evaluate(el => {
     const host = el as HTMLElement
     const read = (name: string): number => parseFloat(host.style.getPropertyValue(name))
     const { width, height } = host.getBoundingClientRect()
+    const device = host.dataset.previewDeviceWidth ?? ''
     return {
       box: { width, height },
       canvas: { width: read('--peitho-canvas-width'), height: read('--peitho-canvas-height') },
       scale: read('--peitho-thumb-scale'),
+      deviceWidth: device === '' ? null : Number(device),
     }
   })
-  return Math.abs(scale - containScale(box, canvas))
+  return Math.abs(scale - previewCanvasScale(box, canvas, deviceWidth))
+}
+
+/** The slide's box as drawn on screen (after its scale), in CSS px. */
+const previewSlideBox = (page: Page): Promise<{ width: number; height: number } | null> => page.locator(PREVIEW).evaluate(host => {
+  const slide = host.shadowRoot?.querySelector('.peitho-slide')
+  if (!slide) return null
+  const { width, height } = slide.getBoundingClientRect()
+  return { width, height }
+})
+
+/** The preview's "Scaled to N%" label, shown only while a device is drawn
+ * smaller than its real size. */
+const SCALE_LABEL = `${PREVIEW_PANE} [data-preview-scale-label]`
+
+/** A window big enough for the preview pane to hold even the large phone at
+ * real size (430 wide, 740 tall). */
+async function useRoomyWindow(page: Page): Promise<void> {
+  await page.setViewportSize({ width: 2400, height: 1400 })
 }
 
 const previewScale = (page: Page): Promise<number> => page.locator(PREVIEW).evaluate(el => parseFloat((el as HTMLElement).style.getPropertyValue('--peitho-thumb-scale')))
@@ -898,5 +922,121 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect(page.locator(MENU)).toBeHidden()
     await expect(page.locator(OPTION('phone'))).toHaveAttribute('aria-checked', 'true')
     await expect.poll(() => previewCanvasHeight(page)).toBe(PHONE_HEIGHT)
+  })
+})
+
+test.describe('Given phone display on a device preset (real size)', () => {
+  test('when the panel has room, then the slide is drawn at the device\'s CSS width (small phone 375, standard phone 390), centred, with no scale label', async ({ page }) => {
+    await useRoomyWindow(page)
+    await openDeck(page, deckWith())
+    await press(page)
+    await expect.poll(() => previewCanvasHeight(page)).toBe(PHONE_HEIGHT)
+    await expect.poll(async () => (await previewSlideBox(page))?.width).toBeCloseTo(390, 1)
+    const standardBox = await previewSlideBox(page)
+    expect(standardBox?.height).toBeCloseTo(390 * 2179 / 1280, 1)
+    await expect(page.locator(SCALE_LABEL)).toBeHidden()
+
+    // Centred in the preview area.
+    const centring = await page.locator(PREVIEW).evaluate(host => {
+      const outer = host.getBoundingClientRect()
+      const inner = host.shadowRoot?.querySelector('.peitho-slide')?.getBoundingClientRect()
+      if (!inner) return null
+      return { dx: (inner.left + inner.right) / 2 - (outer.left + outer.right) / 2, dy: (inner.top + inner.bottom) / 2 - (outer.top + outer.bottom) / 2 }
+    })
+    expect(Math.abs(centring?.dx ?? 99)).toBeLessThan(1)
+    expect(Math.abs(centring?.dy ?? 99)).toBeLessThan(1)
+
+    await chooseShape(page, 'small-phone')
+    await expect.poll(() => previewCanvasHeight(page)).toBe('1871px')
+    await expect.poll(async () => (await previewSlideBox(page))?.width).toBeCloseTo(375, 1)
+    const smallBox = await previewSlideBox(page)
+    expect(smallBox?.width ?? Infinity).toBeLessThan(standardBox?.width ?? 0)
+    await expect(page.locator(SCALE_LABEL)).toBeHidden()
+    await expect.poll(() => scaleMisfit(page)).toBeLessThan(0.001)
+  })
+
+  test('when the panel is narrower than both phones (the default window), then each is fitted to its width, and the label tells them apart by how far each was scaled down', async ({ page }) => {
+    await openDeck(page, deckWith())
+    await press(page)
+    await expect.poll(() => previewCanvasHeight(page)).toBe(PHONE_HEIGHT)
+    await expect.poll(() => scaleMisfit(page)).toBeLessThan(0.001)
+    const area = await page.locator(PREVIEW).evaluate(host => host.getBoundingClientRect().width)
+    // The premise: this pane is narrower than the small phone.
+    expect(area).toBeLessThan(375)
+    const label = page.locator(SCALE_LABEL)
+    await expect(label).toHaveText(`Scaled to ${String(Math.floor((await previewSlideBox(page))!.width / 390 * 100))}%`)
+    const standardLabel = await label.textContent()
+
+    await chooseShape(page, 'small-phone')
+    await expect.poll(() => previewCanvasHeight(page)).toBe('1871px')
+    await expect.poll(() => scaleMisfit(page)).toBeLessThan(0.001)
+    await expect(label).toHaveText(`Scaled to ${String(Math.floor((await previewSlideBox(page))!.width / 375 * 100))}%`)
+    expect(await label.textContent()).not.toBe(standardLabel)
+  })
+
+  test('when a tablet is picked in a narrow window, then it is fitted to the panel and labelled with how far it was scaled down', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await openDeck(page, deckWith())
+    await press(page)
+    await chooseShape(page, 'tablet')
+    await expect.poll(() => previewCanvasHeight(page)).toBe('1608px')
+    await expect.poll(() => scaleMisfit(page)).toBeLessThan(0.001)
+
+    const box = await previewSlideBox(page)
+    const area = await page.locator(PREVIEW).evaluate(host => {
+      const { width, height } = host.getBoundingClientRect()
+      return { width, height }
+    })
+    expect(box?.width ?? Infinity).toBeLessThan(820)
+    expect(box?.width ?? Infinity).toBeLessThanOrEqual(area.width + 0.5)
+    expect(box?.height ?? Infinity).toBeLessThanOrEqual(area.height + 0.5)
+
+    const label = page.locator(SCALE_LABEL)
+    await expect(label).toBeVisible()
+    const percent = Math.floor((box?.width ?? 0) / 820 * 100)
+    await expect(label).toHaveText(`Scaled to ${String(percent)}%`)
+
+    // Back to PC display: the panel is filled again and the label goes.
+    await press(page)
+    await expect.poll(() => previewCanvasHeight(page)).toBe(PC_HEIGHT)
+    await expect(label).toBeHidden()
+    await expect.poll(() => scaleMisfit(page)).toBeLessThan(0.001)
+  })
+
+  test('when "Same ratio as PC" is picked, then the slide fills the panel as in PC display, with no label', async ({ page }) => {
+    await useRoomyWindow(page)
+    await openDeck(page, deckWith())
+    await expect.poll(() => scaleMisfit(page)).toBeLessThan(0.001)
+    const pcWidth = (await previewSlideBox(page))?.width ?? 0
+    expect(pcWidth).toBeGreaterThan(430)
+
+    await press(page)
+    await chooseShape(page, 'deck')
+    await expect.poll(() => previewCanvasHeight(page)).toBe(PC_HEIGHT)
+    await expect.poll(() => scaleMisfit(page)).toBeLessThan(0.001)
+    expect((await previewSlideBox(page))?.width).toBeCloseTo(pcWidth, 1)
+    await expect(page.locator(SCALE_LABEL)).toBeHidden()
+  })
+
+  test('when a fixed slide is selected, then it is a 16:9 box at the device\'s width', async ({ page }) => {
+    await useRoomyWindow(page)
+    await openDeck(page, deckWith())
+    await press(page)
+    await page.locator('[data-slide-row]').nth(1).click()
+    await expect(page.locator(PREVIEW)).toHaveAttribute('data-slide-canvas-key', 'arcade')
+    expect(await previewCanvasHeight(page)).toBe(PC_HEIGHT)
+    await expect.poll(async () => (await previewSlideBox(page))?.width).toBeCloseTo(390, 1)
+    expect((await previewSlideBox(page))?.height).toBeCloseTo(390 * 720 / 1280, 1)
+
+    await chooseShape(page, 'small-phone')
+    await expect.poll(async () => (await previewSlideBox(page))?.width).toBeCloseTo(375, 1)
+  })
+
+  test('when the UI is in Japanese, then the scale label reads 縮小表示', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await openDeck(page, deckWith({ systemLocales: ['ja-JP'] }))
+    await press(page)
+    await chooseShape(page, 'tablet')
+    await expect(page.locator(SCALE_LABEL)).toHaveText(/^縮小表示 \d+%$/)
   })
 })

@@ -29,6 +29,16 @@ export interface SlidePreviewProps {
   slideStylesheet: () => CSSStyleSheet
   canvasWidth: number
   canvasHeight: number
+  /** The CSS width of the device phone display shows the slide at real
+   * size (`previewDevice`), `null` to fill the panel (PC display, the
+   * deck-ratio shape). */
+  deviceWidth: number | null
+  /** "Scaled to N%" while the device doesn't fit the panel at real size,
+   * `''` otherwise (no label at real size). */
+  scaleLabel: string
+  /** The preview host, once mounted: `Studio.tsx` measures it for
+   * `scaleLabel`. */
+  onPreviewHost: (el: HTMLElement) => void
   /** The selected slide's comment pins. */
   pins: PreviewPin[]
   /** A click on the slide meant as a comment (`dom/previewComments.ts`). */
@@ -43,7 +53,7 @@ export function SlidePreview(props: SlidePreviewProps) {
       {/* Permanently mounted like the two children below, hidden while no
           slide is selected (there is nothing to preview then). The PC /
           Phone switch is shared with the layout list (`ViewportToggle`). */}
-      <div className={(props.selectedSlideKey === null ? 'hidden ' : '') + 'shrink-0 h-9 flex items-center justify-start px-3'}>
+      <div className={(props.selectedSlideKey === null ? 'hidden ' : '') + 'shrink-0 h-9 flex items-center justify-start gap-2 px-3'}>
         <ViewportToggle
           language={props.language}
           viewportMode={props.viewportMode}
@@ -55,6 +65,15 @@ export function SlidePreview(props: SlidePreviewProps) {
           onSelectPhoneShape={props.onSelectPhoneShape}
           menuSide="left"
         />
+        {/* Only while a device is shown smaller than its real size; at real
+            size nothing is said. */}
+        <span
+          data-preview-scale-label
+          title={messagesFor(props.language).previewScaledDownDetail}
+          className={(props.scaleLabel === '' ? 'hidden ' : '') + 'ml-auto text-xs text-muted-foreground tabular-nums'}
+        >
+          {props.scaleLabel}
+        </span>
       </div>
       {/* Both children stay mounted for this component's whole life and
           only toggle `hidden`, rather than one conditional swapping them:
@@ -66,7 +85,9 @@ export function SlidePreview(props: SlidePreviewProps) {
           permanently mounted for a related reason.) */}
       <div
         data-preview-host
+        data-preview-device-width={props.deviceWidth === null ? '' : String(props.deviceWidth)}
         ref={el => {
+          props.onPreviewHost(el)
           // Tracks `selectedSlideKey` and the canvas size, but reads the
           // fragment `untrack`ed: an edit to the *already-selected* slide
           // has to patch in place through `Studio.tsx`'s
@@ -74,14 +95,16 @@ export function SlidePreview(props: SlidePreviewProps) {
           // `data-slide-canvas-key` set here — instead of re-mounting the
           // whole canvas on every keystroke. A canvas change (the PC/phone
           // toggle, or the phone shape) does re-mount, and
-          // `observeCanvasScale` re-fits it.
+          // `observeCanvasScale` re-fits it — at the device's real width in
+          // phone display (`deviceWidth`), which a fixed-canvas slide's
+          // unchanged canvas also follows.
           createEffect(() => {
             const key = props.selectedSlideKey
             if (key === null) return
             el.dataset.slideCanvasKey = key
             const canvas = { width: props.canvasWidth, height: props.canvasHeight }
             mountSlideCanvas(el, props.slideStylesheet(), untrack(() => props.canvasFragmentOf(key)), canvas, 'interactive')
-            observeCanvasScale(el, canvas)
+            observeCanvasScale(el, canvas, props.deviceWidth)
             watchCommentClicks(el, click => props.onCommentClick(click))
           })
         }}

@@ -29,6 +29,7 @@ describe('messagesFor', () => {
       const messages = messagesFor(language)
       expect(messages.openedDeck('/decks/talk/deck.md')).toContain('/decks/talk/deck.md')
       expect(messages.slideFallbackTitle(3)).toContain('3')
+      expect(messages.previewScaledDown(75)).toContain('75%')
       expect(messages.unsupportedImageFiles('diagram.svg, notes.txt')).toContain('diagram.svg, notes.txt')
       expect(messages.imageImportFailed('permission denied')).toContain('permission denied')
       expect(messages.imageLayoutAddFailed('already exists')).toContain('already exists')

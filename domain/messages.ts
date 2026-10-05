@@ -139,6 +139,11 @@ export interface Messages {
   deviceNames: Record<DevicePresetId, string>
   phoneShapeDeck: string
   phoneShapeDeckDetail: string
+  /** The preview's label when a device didn't fit the panel at real size
+   * and was shrunk to `percent` of it (`scaledDownPercent`), and its
+   * tooltip. */
+  previewScaledDown: (percent: number) => string
+  previewScaledDownDetail: string
   selectSlideToPreview: string
   openDeckToPreview: string
 
@@ -345,6 +350,8 @@ const en: Messages = {
   },
   phoneShapeDeck: 'Same ratio as PC',
   phoneShapeDeckDetail: 'Keeps the deck\'s own ratio (16:9 / 4:3)',
+  previewScaledDown: percent => `Scaled to ${String(percent)}%`,
+  previewScaledDownDetail: 'The device doesn\'t fit this panel at real size, so it is shown smaller',
   selectSlideToPreview: 'Select a slide to preview it.',
   openDeckToPreview: 'Open a deck to preview it.',
 
@@ -542,6 +549,8 @@ const ja: Messages = {
   },
   phoneShapeDeck: 'PCと同じ比率',
   phoneShapeDeckDetail: 'デッキ本来の比率(16:9 / 4:3)のまま',
+  previewScaledDown: percent => `縮小表示 ${String(percent)}%`,
+  previewScaledDownDetail: '実寸ではこのパネルに収まらないため、縮小して表示しています',
   selectSlideToPreview: 'プレビューするスライドを選んでください。',
   openDeckToPreview: 'デッキを開くとプレビューが表示されます。',
 

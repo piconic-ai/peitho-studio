@@ -6,6 +6,7 @@ import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { DEFAULT_DEVICE, type PhoneShape, type ViewportMode, toggledViewportMode } from '../domain/viewport'
 import { toggleCollapsedKey } from '../domain/sectionCollapse'
 import { type StudioMode } from '../domain/layoutScreen'
+import type { Size } from '../domain/geometry'
 
 const SLIDE_LIST_WIDTH = 176
 const EDITOR_WIDTH = 420
@@ -195,6 +196,12 @@ export function createUiStore() {
     setPhoneShapeMenuOpen(false)
   }
 
+  // The slide preview's host size (its inner box, `null` until measured):
+  // whether a device fits it at real size, for the "scaled to N%" label
+  // (`scaledDownPercent`). The canvas's own scale is fitted by
+  // `dom/slideCanvas.ts`'s observer from the same box.
+  const [previewArea, setPreviewArea] = createSignal<Size | null>(null)
+
   // Which screen the deck window shows: the slides, or the deck's layouts
   // (the header's Slides / Layouts switch). Session-only. Both screens stay
   // mounted; this only toggles which one is visible. Switching closes the
@@ -224,5 +231,6 @@ export function createUiStore() {
     collapsedSectionKeys, toggleSectionCollapsed,
     viewportMode, toggleViewportMode, phoneShape, selectPhoneShape,
     phoneShapeMenuOpen, togglePhoneShapeMenu, closePhoneShapeMenu,
+    previewArea, setPreviewArea,
   }
 }
