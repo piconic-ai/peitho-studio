@@ -8,6 +8,7 @@ import { layoutGridThumbnailStyle, type LayoutRow } from '../domain/layoutScreen
 import { STANDARD_LAYOUTS } from '../domain/standardLayouts'
 import type { PhoneShape, ViewportMode } from '../domain/viewport'
 import { FileTree } from './FileTree'
+import { PanelToggle } from './PanelToggle'
 import { ViewportToggle } from './ViewportToggle'
 
 /** Where a delete stands, as the screen shows it (`domain/layoutDelete.ts`). */
@@ -18,6 +19,18 @@ export interface LayoutScreenProps {
   language: Language
   /** The screen stays mounted; this hides it while the slides show. */
   hidden: boolean
+
+  /** Which columns are open: each folds into the rail at the screen's
+   * left (`Studio.tsx`) with the ✕ in its top-right corner, as the slides
+   * screen's panels do. `filling` names the column that takes the width
+   * left over (`layoutColumnFilling`). */
+  filesOpen: boolean
+  editorOpen: boolean
+  listOpen: boolean
+  filling: 'editor' | 'list' | 'review' | null
+  onCloseFiles: () => void
+  onCloseEditor: () => void
+  onCloseList: () => void
 
   /** The file tree (`FileTree.tsx`), leftmost. */
   treeRows: FileTreeRow[]
@@ -170,19 +183,27 @@ function tabClass(active: boolean): string {
 export function LayoutScreen(props: LayoutScreenProps) {
   return (
     <div data-layout-screen className={(props.hidden ? 'hidden' : 'flex') + ' flex-1 min-w-0 min-h-0'}>
-      <FileTree
-        rows={props.treeRows}
-        collapsed={props.collapsedFolders}
-        activePath={props.activePath}
-        openPaths={props.openPaths}
-        onRowClick={props.onTreeRowClick}
-        width={props.treeWidth}
-      />
+      <div data-panel="files" hidden={!props.filesOpen} className="studio-panel">
+        <PanelToggle panel="files" language={props.language} open={true} onToggle={() => props.onCloseFiles()} />
+        <div id="panel-files" className={props.filesOpen ? 'panel-content' : 'hidden'}>
+          <FileTree
+            rows={props.treeRows}
+            collapsed={props.collapsedFolders}
+            activePath={props.activePath}
+            openPaths={props.openPaths}
+            onRowClick={props.onTreeRowClick}
+            width={props.treeWidth}
+          />
+        </div>
+      </div>
 
-      <div className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40" onMouseDown={event => props.onTreeResize(event)} />
+      <div hidden={!props.filesOpen} className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40" onMouseDown={event => props.onTreeResize(event)} />
 
-      <div data-layout-editor className="flex-1 min-w-0 flex flex-col min-h-0 border-r border-border">
-        <div data-layout-editor-toolbar className="shrink-0 h-9 flex items-stretch gap-1 pr-2 border-b border-border">
+      <div data-panel="layout-editor" hidden={!props.editorOpen} className="studio-panel" style={props.filling === 'editor' ? 'flex: 1; min-width: 0' : ''}>
+      <PanelToggle panel="layout-editor" language={props.language} open={true} onToggle={() => props.onCloseEditor()} />
+      <div id="panel-layout-editor" data-layout-editor className={(props.editorOpen ? '' : 'hidden ') + 'flex-1 min-w-0 flex flex-col min-h-0 border-r border-border'}>
+        {/* `pr-8`: room for the column's ✕ in the top-right corner. */}
+        <div data-layout-editor-toolbar className="shrink-0 h-9 flex items-stretch gap-1 pr-8 border-b border-border">
           <div data-layout-tabs role="tablist" className="flex-1 min-w-0 flex items-stretch overflow-x-auto">
             {props.tabs.map(tab => (
               <div
@@ -253,10 +274,13 @@ export function LayoutScreen(props: LayoutScreenProps) {
             rendered meanwhile. */}
         <p role="alert" data-layout-preview-error hidden={props.previewError === ''} className="shrink-0 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words border-t border-border">{props.previewError}</p>
       </div>
+      </div>
 
-      <div className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40" onMouseDown={event => props.onListResize(event)} />
+      <div hidden={!props.editorOpen || !props.listOpen} className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40" onMouseDown={event => props.onListResize(event)} />
 
-      <div data-layout-list className="shrink-0 flex flex-col min-h-0" style={`width: ${String(props.listWidth)}px`}>
+      <div data-panel="layouts" hidden={!props.listOpen} className="studio-panel" style={props.filling === 'list' ? 'flex: 1; min-width: 0' : ''}>
+      <PanelToggle panel="layouts" language={props.language} open={true} onToggle={() => props.onCloseList()} />
+      <div id="panel-layouts" data-layout-list className={(props.listOpen ? '' : 'hidden ') + 'flex flex-col flex-1 min-h-0'} style={props.filling === 'list' ? 'width: 100%' : `width: ${String(props.listWidth)}px`}>
         {/* A toolbar for the switch alone, no heading: the window's
             Slides / Layouts switch already says what this column is. At the
             top-left, as tall as the editor's tab row; no rule under it. */}
@@ -347,6 +371,7 @@ export function LayoutScreen(props: LayoutScreenProps) {
             ))}
           </div>
         </div>
+      </div>
       </div>
       {/* New Layout, opened from the list's empty-space menu: an in-app
           modal (never `window.confirm`/`prompt`, CLAUDE.md), permanently

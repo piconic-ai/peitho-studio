@@ -181,3 +181,30 @@ export function layoutThumbnailStyle(canvas: Size, room: Size | null, deviceWidt
 export function layoutGridThumbnailStyle(canvas: Size): string {
   return `aspect-ratio: ${String(canvas.width)} / ${String(canvas.height)}; box-sizing: content-box`
 }
+
+/** Which of the layout screen's columns are open: the file tree, the
+ * editor, the layout list, and the comments column — `null` for the last
+ * when it isn't there at all (no deck open, or no crit). A closed column
+ * folds into the rail at the screen's left, as on the slides screen. */
+export interface LayoutColumns {
+  files: boolean
+  editor: boolean
+  list: boolean
+  review: boolean | null
+}
+
+/** The column that takes the row's width left over: the editor while it's
+ * open, else the layout list, else the comments column; `null` when none
+ * of them is open (the file tree keeps its own width, as the slide list
+ * does). */
+export function layoutColumnFilling(columns: LayoutColumns): 'editor' | 'list' | 'review' | null {
+  if (columns.editor) return 'editor'
+  if (columns.list) return 'list'
+  if (columns.review === true) return 'review'
+  return null
+}
+
+/** Whether the rail shows: some column that's there is closed. */
+export function layoutRailShown(columns: LayoutColumns): boolean {
+  return !columns.files || !columns.editor || !columns.list || columns.review === false
+}

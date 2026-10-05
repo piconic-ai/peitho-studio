@@ -40,7 +40,7 @@ import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatt
 import { arm, move, dropTarget, cancel } from '../domain/drag'
 import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
-import { type LayoutNameProblem, type StudioMode, initialLayoutListWidth, layoutFilesChanged, layoutListGeneration, layoutRows, layoutThumbnailStyle, layoutUsage, selectedPreviewRoom, shownLayout } from '../domain/layoutScreen'
+import { type LayoutColumns, type LayoutNameProblem, type StudioMode, initialLayoutListWidth, layoutColumnFilling, layoutRailShown, layoutFilesChanged, layoutListGeneration, layoutRows, layoutThumbnailStyle, layoutUsage, selectedPreviewRoom, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
 import { FILE_AUTOSAVE_DELAY_MS, allTabsOpen, autosavePaths, canCloseFile, fileDraft, isFileChangedOnDisk, isFileDirty, leaveBlocker, shouldAutosave, tabsBlocker, type FileEditor } from '../domain/fileEditor'
 import { fileLanguage, fileName, fileTreeRows, layoutFilePaths, layoutOfFile } from '../domain/deckFiles'
@@ -2174,10 +2174,22 @@ export function Studio() {
     return (ui.layoutPreviews() ?? []).find(preview => preview.name === name)?.fragment ?? ''
   }
 
-  // The comments column takes the rest of the row only on the slides screen
-  // with both the editor and the preview closed; on the layout screen, the
-  // layout editor does.
-  const reviewFillsRow = createMemo(() => ui.studioMode() === 'slides' && !ui.previewOpen() && !ui.editorOpen())
+  // The layout screen's columns, open or folded into its rail; the comments
+  // column is there only with a deck open.
+  const layoutColumns = createMemo<LayoutColumns>(() => ({
+    files: ui.layoutFilesOpen(),
+    editor: ui.layoutEditorOpen(),
+    list: ui.layoutListOpen(),
+    review: render.assetBaseUrl() ? ui.reviewOpen() : null,
+  }))
+  const layoutFilling = createMemo(() => layoutColumnFilling(layoutColumns()))
+
+  // The comments column takes the rest of the row on the slides screen with
+  // both the editor and the preview closed, and on the layout screen with
+  // the editor and the list closed (`layoutColumnFilling`).
+  const reviewFillsRow = createMemo(() => (ui.studioMode() === 'slides'
+    ? !ui.previewOpen() && !ui.editorOpen()
+    : layoutFilling() === 'review'))
 
   // A comment's row names a slide: from the layout screen, the slides
   // screen comes back to show it.
@@ -3511,9 +3523,24 @@ export function Studio() {
         </div>
 
         </div>
+        {/* The layout screen's rail, leftmost like the slides screen's: a
+            folded column's icon reopens it, the comments column's too. */}
+        <div data-layout-panel-rail="" className="panel-rail" hidden={ui.studioMode() !== 'layouts' || !layoutRailShown(layoutColumns())}>
+          <PanelToggle panel="files" language={settings.language()} hidden={ui.layoutFilesOpen()} open={false} onToggle={() => ui.setLayoutFilesOpen(true)} />
+          <PanelToggle panel="layout-editor" language={settings.language()} hidden={ui.layoutEditorOpen()} open={false} onToggle={() => ui.setLayoutEditorOpen(true)} />
+          <PanelToggle panel="layouts" language={settings.language()} hidden={ui.layoutListOpen()} open={false} onToggle={() => ui.setLayoutListOpen(true)} />
+          <PanelToggle panel="review" language={settings.language()} hidden={ui.reviewOpen() || !render.assetBaseUrl()} open={false} onToggle={() => ui.setReviewOpen(true)} />
+        </div>
         <LayoutScreen
           language={settings.language()}
           hidden={ui.studioMode() !== 'layouts'}
+          filesOpen={ui.layoutFilesOpen()}
+          editorOpen={ui.layoutEditorOpen()}
+          listOpen={ui.layoutListOpen()}
+          filling={layoutFilling()}
+          onCloseFiles={() => ui.setLayoutFilesOpen(false)}
+          onCloseEditor={() => ui.setLayoutEditorOpen(false)}
+          onCloseList={() => { ui.closePhoneShapeMenu(); layouts.closeMenu(); ui.setLayoutListOpen(false) }}
           treeRows={fileTreeRowsShown()}
           collapsedFolders={collapsedFolderList()}
           treeWidth={layouts.treeWidth()}
@@ -3585,9 +3612,6 @@ export function Studio() {
             threads — and outside both, so the layout screen has it too
             (groundwork for todo/layout-review-comments.md). While the layout
             screen shows, its own rail holds the toggle to reopen it. */}
-        <div data-layout-panel-rail="" className="panel-rail" hidden={ui.studioMode() !== 'layouts' || ui.reviewOpen() || !render.assetBaseUrl()}>
-          <PanelToggle panel="review" language={settings.language()} open={false} onToggle={() => ui.setReviewOpen(true)} />
-        </div>
         <div
           hidden={!render.assetBaseUrl() || !ui.reviewOpen()}
           className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"

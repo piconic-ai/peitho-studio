@@ -129,6 +129,11 @@ export function createUiStore() {
   const [editorOpen, setEditorOpen] = createSignal(true)
   const [previewOpen, setPreviewOpen] = createSignal(true)
   const [reviewOpen, setReviewOpen] = createSignal(true)
+  // The layout screen's own columns, folded the same way (the comments
+  // column, `reviewOpen`, is shared by both screens).
+  const [layoutFilesOpen, setLayoutFilesOpen] = createSignal(true)
+  const [layoutEditorOpen, setLayoutEditorOpen] = createSignal(true)
+  const [layoutListOpen, setLayoutListOpen] = createSignal(true)
 
   const [slideListWidth, setSlideListWidth] = createSignal(SLIDE_LIST_WIDTH)
   const [editorWidth, setEditorWidth] = createSignal(EDITOR_WIDTH)
@@ -226,6 +231,7 @@ export function createUiStore() {
     imageLayoutAdding, setImageLayoutAdding,
     variantMenuOpen, setVariantMenuOpen,
     slidesOpen, setSlidesOpen, editorOpen, setEditorOpen, previewOpen, setPreviewOpen, reviewOpen, setReviewOpen,
+    layoutFilesOpen, setLayoutFilesOpen, layoutEditorOpen, setLayoutEditorOpen, layoutListOpen, setLayoutListOpen,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth, reviewPanelWidth, setReviewPanelWidth,
     editingSectionIndex, setEditingSectionIndex,
     collapsedSectionKeys, toggleSectionCollapsed,

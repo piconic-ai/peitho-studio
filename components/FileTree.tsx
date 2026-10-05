@@ -32,7 +32,7 @@ function rowClass(active: boolean, open: boolean, editable: boolean, isDir: bool
  * layout and CSS files open (in the editor's tabs); the rest are listed. */
 export function FileTree(props: FileTreeProps) {
   return (
-    <div data-file-tree className="shrink-0 flex flex-col min-h-0 border-r border-border" style={`width: ${String(props.width)}px`}>
+    <div data-file-tree className="flex-1 flex flex-col min-h-0 border-r border-border" style={`width: ${String(props.width)}px`}>
       {/* No heading: the folders say what this column is. */}
       <div role="tree" className="flex-1 min-h-0 overflow-y-auto px-1 pt-1 pb-4">
         {props.rows.map(row => (

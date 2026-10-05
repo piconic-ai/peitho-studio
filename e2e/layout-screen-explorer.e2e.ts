@@ -76,6 +76,68 @@ test.describe('the arrangement', () => {
   })
 })
 
+test.describe('folding the columns, as on the slides screen', () => {
+  test('Given each column, when its ✕ is clicked, then it folds into the rail at the left, and its icon there opens it again with its contents kept', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await openLayoutScreen(page, deckOf({ saveLayoutDelayMs: 60_000 }))
+    await fillEditor(page, '<section class="peitho-slide layout-title-slide"><h1>kept</h1></section>', 'layout-html')
+    await page.locator('[data-layout-editor-host] .cm-editor').evaluate(el => { el.setAttribute('data-mount-probe', 'original') })
+    await expect(page.locator('[data-layout-panel-rail]')).toBeHidden()
+
+    for (const panel of ['files', 'layout-editor', 'layouts', 'review']) {
+      const close = page.locator(`[data-panel="${panel}"] [data-panel-toggle]`)
+      // The slides screen's ✕: in the top-right corner, shown on hover.
+      const column = (await page.locator(`[data-panel="${panel}"]`).boundingBox())!
+      const button = (await close.boundingBox())!
+      expect(column.x + column.width - (button.x + button.width)).toBeLessThan(8)
+      expect(button.y - column.y).toBeLessThan(8)
+      await page.mouse.move(0, 0)
+      await expect(close).toHaveCSS('opacity', '0')
+      await close.hover()
+      await expect(close).toHaveCSS('opacity', '1')
+      await close.click()
+      await expect(page.locator(`[data-panel="${panel}"]`)).toBeHidden()
+      await expect(page.locator(`[data-layout-panel-rail] [data-panel-toggle="${panel}"]`)).toBeVisible()
+      expect((await page.locator('[data-layout-panel-rail]').boundingBox())!.x).toBe(0)
+      await expect(page.locator('[data-layout-panel-rail]')).toHaveCSS('width', '36px')
+      if (panel === 'layout-editor') {
+        // The list takes the width the editor left.
+        const list = (await page.locator('[data-panel="layouts"]').boundingBox())!
+        const review = (await page.locator('[data-panel="review"]').boundingBox())!
+        expect(list.x).toBeLessThan(400)
+        expect(review.x - (list.x + list.width)).toBeLessThan(8)
+        await page.screenshot({ path: testInfo.outputPath('layout-columns-partial.png') })
+      }
+    }
+    // Every icon in one column, in the columns' order.
+    const icons = await page.locator('[data-layout-panel-rail] button').evaluateAll(buttons =>
+      buttons.map(el => ({ x: el.getBoundingClientRect().x, y: el.getBoundingClientRect().y, panel: el.getAttribute('data-panel-toggle') })))
+    expect(icons.map(icon => icon.panel)).toEqual(['files', 'layout-editor', 'layouts', 'review'])
+    expect(new Set(icons.map(icon => icon.x)).size).toBe(1)
+    await page.screenshot({ path: testInfo.outputPath('layout-columns-folded.png') })
+
+    for (const panel of ['files', 'layout-editor', 'layouts', 'review']) {
+      await page.locator(`[data-layout-panel-rail] [data-panel-toggle="${panel}"]`).click()
+      await expect(page.locator(`[data-panel="${panel}"]`)).toBeVisible()
+    }
+    await expect(page.locator('[data-layout-panel-rail]')).toBeHidden()
+    await expect(page.locator('[data-layout-editor-host] .cm-editor')).toHaveAttribute('data-mount-probe', 'original')
+    expect(await editorText(page, 'layout-html')).toBe('<section class="peitho-slide layout-title-slide"><h1>kept</h1></section>')
+    await page.screenshot({ path: testInfo.outputPath('layout-columns-open.png') })
+  })
+
+  test('Given the layout screen\'s columns folded, then the slides screen keeps its own panels open, and the rail goes with the screen', async ({ page }) => {
+    await openLayoutScreen(page, deckOf())
+    await page.locator('[data-panel="files"] [data-panel-toggle]').click()
+    await expect(page.locator('[data-layout-panel-rail]')).toBeVisible()
+    await page.locator('[data-studio-mode-option="slides"]').click()
+    await expect(page.locator('[data-layout-panel-rail]')).toBeHidden()
+    await expect(page.locator('[data-panel-rail]')).toBeHidden()
+    await page.locator('[data-studio-mode-option="layouts"]').click()
+    await expect(page.locator('[data-layout-panel-rail] [data-panel-toggle="files"]')).toBeVisible()
+  })
+})
+
 test.describe('the file tree', () => {
   test('Given a deck with layouts, CSS and images, then the tree lists the folders, and a closed folder hides what is in it', async ({ page }) => {
     await openLayoutScreen(page, deckOf())
