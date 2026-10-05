@@ -274,6 +274,22 @@ describe('the editor\'s tabs', () => {
     expect(withExternalChange(gone, '.mine {}').outcome).toBe('caught-up')
   })
 
+  test('adversarial: Given a deleted file coming back, When either the draft or the file is empty, Then it is still a conflict, never a silent replace, and nothing is saved until the user picks a side', () => {
+    const goneWith = (draft: string) => tabOf(tabGone(updateTab(tabsWith(BASE), BASE, file => withTyped(file, draft)), BASE, 'deleted'), BASE) as FileEditor
+    const emptyDraft = withExternalChange(goneWith(''), '.restored {}')
+    expect(emptyDraft.outcome).toBe('conflict')
+    expect(fileDraft(emptyDraft.file)).toBe('')
+    expect(shouldAutosave(emptyDraft.file)).toBe(false)
+    const emptyFile = withExternalChange(goneWith('.mine {}'), '')
+    expect(emptyFile.outcome).toBe('conflict')
+    expect(shouldAutosave(emptyFile.file)).toBe(false)
+    expect(leaveBlocker(emptyFile.file)).toBe('conflict')
+    // Kept, the draft is then saved over the restored text, which is now the saved one.
+    const kept = keptDraft(emptyFile.file)
+    expect(kept.kind === 'ready' && kept.saved).toBe('')
+    expect(shouldAutosave(kept)).toBe(true)
+  })
+
   test('spec: Given typing in two tabs, Then both are saved on their own, in tab order, and leaving is held back by the conflict first', () => {
     let tabs = tabsWith(BASE, HTML, CSS)
     expect(anyTabDirty(tabs)).toBe(false)

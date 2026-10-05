@@ -115,8 +115,15 @@ export type ExternalChangeOutcome = 'ignored' | 'unchanged' | 'caught-up' | 'rep
  * did (`ExternalChangeOutcome`). Neither side is ever dropped unseen. */
 export function withExternalChange(file: FileEditor, disk: string): { file: FileEditor; outcome: ExternalChangeOutcome } {
   if (file.kind !== 'ready') return { file, outcome: 'ignored' }
-  // Read back after it was gone: it's there again, so a conflict at most.
-  if (file.gone) return withExternalChange({ ...file, gone: false, error: null, saved: '' }, disk)
+  // Back on disk after it was gone (the draft held typing then): caught up
+  // when it holds exactly the draft, else the user picks a side — however
+  // empty either text is. No saved text is made up for it meanwhile.
+  if (file.gone) {
+    const back = { ...file, gone: false, error: null }
+    return disk === file.draft
+      ? { file: { ...back, saved: disk, external: null }, outcome: 'caught-up' }
+      : { file: { ...back, external: disk }, outcome: 'conflict' }
+  }
   if (disk === file.saved) return { file: file.external === null ? file : { ...file, external: null }, outcome: 'unchanged' }
   if (disk === file.draft) return { file: { ...file, saved: disk, error: null, external: null }, outcome: 'caught-up' }
   if (!isFileDirty(file) && !file.saving) return { file: { ...file, saved: disk, draft: disk, error: null, external: null }, outcome: 'replaced' }
