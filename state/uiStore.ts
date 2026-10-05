@@ -2,6 +2,7 @@ import { createSignal, createMemo } from '@barefootjs/client'
 import { type DragState } from '../domain/drag'
 import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withLayoutFitResult, withLayoutNotice } from '../domain/contextMenu'
 import { type LayoutNotice, type LayoutVerdict } from '../domain/layoutFit'
+import type { PreviewClick } from '../domain/reviewComment'
 import { COMMENT_MENU_CLOSED, type CommentMenu, withCommentMenuPosition } from '../domain/commentMenu'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { DEFAULT_DEVICE, type PhoneShape, type ViewportMode, toggledViewportMode } from '../domain/viewport'
@@ -71,9 +72,11 @@ export function createUiStore() {
   let lastLayoutFitRequestId = 0
   /** Opens the menu on slide `index` and returns the request id its fit
    * check's answer must be settled with. */
-  function openSlideContextMenu(index: number, x: number, y: number): number {
+  /** Opens the menu on slide `index` — from its row, or from its preview,
+   * right-clicked at `comment` (what the comment item is on). */
+  function openSlideContextMenu(index: number, x: number, y: number, comment: PreviewClick | null = null): number {
     lastLayoutFitRequestId += 1
-    setContextMenu(openOnSlide(index, x, y, lastLayoutFitRequestId))
+    setContextMenu(openOnSlide(index, x, y, lastLayoutFitRequestId, comment))
     return lastLayoutFitRequestId
   }
   function settleLayoutFit(requestId: number, verdicts: readonly LayoutVerdict[] | null): void {

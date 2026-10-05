@@ -1,25 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import {
   COMMENT_MENU_CLOSED, commentMenuItems, commentMenuLabel, commentMenuPosition, isOpenOnEditor,
-  openOnEditor, openOnSlidePreview, selectionForMenu, withCommentMenuPosition,
+  openOnEditor, selectionForMenu, withCommentMenuPosition,
   type CommentMenu, type CommentMenuAction, type MenuEditor,
 } from './commentMenu'
 import { messagesFor } from './messages'
-import type { PreviewClick } from './reviewComment'
-
-const CLICK: PreviewClick = { hit: null, pin: { x: 0.5, y: 0.5, anchor: null }, at: { x: 40, y: 50 } }
 const EDITORS: MenuEditor[] = ['body', 'note', 'layout']
-const ACTIONS: CommentMenuAction[] = ['comment', 'comment-lines', 'cut', 'copy', 'paste']
+const ACTIONS: CommentMenuAction[] = ['comment-lines', 'cut', 'copy', 'paste']
 
 function enabledOf(menu: CommentMenu): Record<string, boolean> {
   return Object.fromEntries(commentMenuItems(menu).map(item => [item.action, item.enabled]))
 }
 
 describe('commentMenuItems', () => {
-  test('spec: Given a right-click on the slide preview, Then a comment is offered, and nothing else', () => {
-    expect(commentMenuItems(openOnSlidePreview(1, 2, CLICK))).toEqual([{ action: 'comment', enabled: true, separatorBefore: false }])
-  })
-
   test('spec: Given a right-click on an editor with lines selected, Then a comment on them, then — set apart — Cut, Copy and Paste, all enabled', () => {
     const menu = openOnEditor('body', 1, 2, 3, 9)
     expect(commentMenuItems(menu).map(item => [item.action, item.separatorBefore])).toEqual([
@@ -53,7 +46,6 @@ describe('commentMenuLabel', () => {
     expect(commentMenuLabel('comment-lines', openOnEditor('note', 0, 0, 4, 4), en)).toBe('Comment on This Line…')
     expect(commentMenuLabel('comment-lines', openOnEditor('body', 0, 0, 1, 4), ja)).toBe('選択した行にコメント…')
     expect(commentMenuLabel('comment-lines', openOnEditor('body', 0, 0, 4, 4), ja)).toBe('この行にコメント…')
-    expect(commentMenuLabel('comment', openOnSlidePreview(0, 0, CLICK), ja)).toBe('コメント…')
   })
 
   test('exhaustive: Given every action and either language, Then each has a label of its own', () => {
@@ -77,7 +69,7 @@ describe('where the menu is', () => {
   test('adversarial: Given the menu closed, Then it sits nowhere and moving it changes nothing', () => {
     expect(commentMenuPosition(COMMENT_MENU_CLOSED)).toEqual({ x: 0, y: 0 })
     expect(withCommentMenuPosition(COMMENT_MENU_CLOSED, { x: 5, y: 5 })).toBe(COMMENT_MENU_CLOSED)
-    expect(isOpenOnEditor(openOnSlidePreview(0, 0, CLICK), 'body')).toBe(false)
+    expect(isOpenOnEditor(COMMENT_MENU_CLOSED, 'body')).toBe(false)
   })
 })
 

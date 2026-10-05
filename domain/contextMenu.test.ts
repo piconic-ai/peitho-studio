@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import fc from 'fast-check'
 import {
   indexOf, positionOf, isLayoutPickerOpen, menuItems, appendIndex, menuItemEnabled, menuItemChecked,
-  openOnSlide, withLayoutFitResult, layoutFitOf, layoutNoticeOf, chooseLayout, withLayoutNotice,
+  openOnSlide, commentClickOf, withLayoutFitResult, layoutFitOf, layoutNoticeOf, chooseLayout, withLayoutNotice,
   type ContextMenu, type MenuContext, type MenuItem,
 } from './contextMenu'
 import { layoutChoiceExamples, fitAnswerExamples } from './contextMenu.examples'
@@ -31,6 +31,7 @@ const onSlide = (fields: Partial<SlideMenu> & Pick<SlideMenu, 'index'>): SlideMe
   layoutPickerOpen: false,
   layoutFit: { kind: 'unavailable' },
   layoutNotice: null,
+  comment: null,
   ...fields,
 })
 
@@ -294,8 +295,23 @@ describe('Change Layout picker examples', () => {
 describe('openOnSlide', () => {
   test('spec: opens collapsed, with no notice, waiting on the given fit check', () => {
     expect(openOnSlide(2, 30, 40, 9)).toEqual({
-      kind: 'on-slide', index: 2, x: 30, y: 40, layoutPickerOpen: false, layoutFit: { kind: 'checking', requestId: 9 }, layoutNotice: null,
+      kind: 'on-slide', index: 2, x: 30, y: 40, layoutPickerOpen: false, layoutFit: { kind: 'checking', requestId: 9 }, layoutNotice: null, comment: null,
     })
+  })
+
+  test('spec: from the slide preview, it keeps where it was right-clicked for the comment; from the list, the slide as a whole', () => {
+    const click = { hit: null, pin: { x: 0.5, y: 0.5, anchor: null }, at: { x: 30, y: 40 } }
+    expect(commentClickOf(openOnSlide(2, 30, 40, 9, click))).toBe(click)
+    expect(commentClickOf(openOnSlide(2, 30, 40, 9))).toBeNull()
+    expect(commentClickOf({ kind: 'on-empty-space', x: 0, y: 0 })).toBeNull()
+    expect(commentClickOf({ kind: 'closed' })).toBeNull()
+  })
+
+  test('spec: from the slide preview, its items and their enabled states are the slide list\'s for that slide', () => {
+    const click = { hit: null, pin: null, at: { x: 0, y: 0 } }
+    for (const index of [0, 1, 2]) {
+      expect(menuItems(openOnSlide(index, 5, 5, 1, click), ctx())).toEqual(menuItems(openOnSlide(index, 9, 9, 2), ctx()))
+    }
   })
 
   test('adversarial: boundary indices and coordinates are carried as-is', () => {

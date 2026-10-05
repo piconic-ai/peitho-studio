@@ -38,7 +38,7 @@ import { type FrontmatterStep, type HistoryStep, type LayoutPinsStep, type PageN
 import { type DeckSettingsState, frontmatterValueOf, pickChangesNothing, readDeckSettings, resolveDeckSettingPick, sameDeckSettings } from '../domain/deckSettings'
 import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
-import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
+import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, commentClickOf, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
 import { type LayoutColumns, type LayoutNameProblem, type StudioMode, initialLayoutListWidth, layoutColumnFilling, layoutRailShown, layoutFilesChanged, layoutListGeneration, layoutRows, layoutThumbnailStyle, layoutUsage, selectedPreviewRoom, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
@@ -107,7 +107,7 @@ import { SlideContextMenu } from './SlideContextMenu'
 import { SlideList } from './SlideList'
 import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
 import { ContextMenu, type ContextMenuEntry } from './ContextMenu'
-import { type CommentMenu, type CommentMenuAction, type MenuEditor, commentMenuItems, commentMenuLabel, commentMenuPosition, openOnEditor, openOnSlidePreview, selectionForMenu } from '../domain/commentMenu'
+import { type CommentMenu, type CommentMenuAction, type MenuEditor, commentMenuItems, commentMenuLabel, commentMenuPosition, openOnEditor, selectionForMenu } from '../domain/commentMenu'
 import { focusDeleteLayoutDialog, focusNewLayoutName } from '../dom/layoutModals'
 import { absolutizedDraft, draftPreviewError, draftedLayout, previewDraftCss, previewToDraw } from '../domain/layoutDraftPreview'
 import { scopeRootToHost } from '../domain/slideCss'
@@ -1253,9 +1253,14 @@ export function Studio() {
   // what was right-clicked — the same box and target a left-click there
   // gives — and in an editor, the Cut / Copy / Paste the native one had.
 
+  // A right-click on the slide preview: the slide list's menu for the
+  // slide shown — the same items, enable rules and handlers — whose comment
+  // is on what a left-click there would be on.
   function openSlidePreviewMenu(click: PreviewClick): void {
-    if (selectedSlideKey() === null) return
-    ui.openCommentMenu(openOnSlidePreview(click.at.x, click.at.y, click))
+    const index = editor.selectedIndex()
+    if (index === null || selectedSlideKey() === null) return
+    void checkLayoutFit(index, ui.openSlideContextMenu(index, click.at.x, click.at.y, click))
+    void loadLayoutPreviews()
   }
 
   function editorViewOf(which: MenuEditor): ReturnType<typeof createCodeEditor> | undefined {
@@ -1355,9 +1360,6 @@ export function Studio() {
     const menu = ui.commentMenu()
     ui.closeCommentMenu()
     switch (action) {
-      case 'comment':
-        if (menu.kind === 'on-slide-preview') openCommentBox(menu.click)
-        return
       case 'comment-lines':
         if (menu.kind === 'on-editor') commentOnEditorLines(menu)
         return
@@ -1376,10 +1378,17 @@ export function Studio() {
   // The slide list menu's comment on the slide right-clicked: the whole
   // slide, as a click on no element of its preview gives, where the menu
   // was.
+  // From the slide preview, it's on what was right-clicked there, as a
+  // left-click gives.
   function commentOnSlideFromMenu(): void {
     const menu = ui.contextMenu()
     const index = contextMenuIndexOf(menu)
     ui.closeContextMenu()
+    const fromPreview = commentClickOf(menu)
+    if (fromPreview !== null) {
+      openCommentBox(fromPreview)
+      return
+    }
     const entry = index === null ? undefined : slideEntries()[index]
     if (menu.kind !== 'on-slide' || entry === undefined) return
     const at = clampMenuPosition({ x: menu.x, y: menu.y }, { width: 336, height: 180 }, { width: window.innerWidth, height: window.innerHeight }, 8)

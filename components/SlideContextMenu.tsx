@@ -40,7 +40,8 @@ export interface SlideContextMenuProps {
   onTogglePageNumber: () => void
   onMoveUp: () => void
   onMoveDown: () => void
-  /** A comment on the slide right-clicked, for the agent. */
+  /** A comment: on the slide right-clicked in the list, or on what was
+   * right-clicked on its preview. */
   onCommentSlide: () => void
 }
 
@@ -67,6 +68,8 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
       />
       <div
         ref={el => props.onMenuRef(el)}
+        role="menu"
+        data-slide-menu
         // Was `contextMenu() === null || layoutPickerOpen()` — the "Change
         // Layout" submenu (`layoutPickerOpen() ? <div>...` below) renders
         // as a CHILD of this same div, so that condition hid the whole
