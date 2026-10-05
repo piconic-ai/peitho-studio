@@ -106,7 +106,7 @@ import { SlideEditor } from './SlideEditor'
 import { SlideContextMenu } from './SlideContextMenu'
 import { SlideList } from './SlideList'
 import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
-import { LayoutContextMenu, type LayoutMenuEntry } from './LayoutContextMenu'
+import { ContextMenu, type ContextMenuEntry } from './ContextMenu'
 import { focusDeleteLayoutDialog, focusNewLayoutName } from '../dom/layoutModals'
 import { absolutizedDraft, draftPreviewError, draftedLayout, previewDraftCss, previewToDraw } from '../domain/layoutDraftPreview'
 import { scopeRootToHost } from '../domain/slideCss'
@@ -2621,7 +2621,7 @@ export function Studio() {
       .catch(() => { layouts.settleMenuFit(requestId, null) })
   }
 
-  const layoutMenuEntries = createMemo<LayoutMenuEntry[]>(() => {
+  const layoutMenuEntries = createMemo<ContextMenuEntry[]>(() => {
     const messages = settings.messages()
     const context = { hasSlide: editor.selectedIndex() !== null, layoutCount: layoutNames().length, busy: layouts.busy() }
     return layoutMenuItems(layouts.menu(), context).map(item => ({
@@ -2629,6 +2629,8 @@ export function Studio() {
       label: layoutMenuLabel(item.action, messages),
       enabled: item.enabled,
       title: layoutMenuTitle(item.reason, messages),
+      danger: item.action === 'delete',
+      separatorBefore: false,
     }))
   })
 
@@ -3693,13 +3695,14 @@ export function Studio() {
         onAdd={addComment}
       />
 
-      <LayoutContextMenu
+      <ContextMenu
+        name="layout"
         hidden={layouts.menu().kind === 'closed'}
         position={layoutMenuPosition(layouts.menu())}
         items={layoutMenuEntries()}
         onMenuRef={el => { layoutMenuEl = el }}
         onClose={layouts.closeMenu}
-        onAction={runLayoutMenuAction}
+        onAction={action => runLayoutMenuAction(action as LayoutMenuAction)}
       />
 
       <SlideContextMenu

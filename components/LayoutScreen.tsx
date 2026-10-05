@@ -95,7 +95,7 @@ export interface LayoutScreenProps {
   onRowPress: (event: MouseEvent) => void
   /** A right-click on layout `name`'s row (or the large preview), or on the
    * list's empty space (`null`) — opens the layout menu
-   * (`LayoutContextMenu.tsx`). */
+   * (`ContextMenu.tsx`). */
   onContextMenu: (name: string | null, event: MouseEvent) => void
   /** Layout `name`'s small thumbnail host, once its row mounts:
    * `Studio.tsx` draws the layout into it — the saved files' preview, or
@@ -177,7 +177,7 @@ function tabClass(active: boolean): string {
  * comment on that layout, as a click on the slide preview does on the
  * slide; the editor's Comment button opens one on the lines selected.
  * Every operation on a layout is in the list's right-click menu
- * (`LayoutContextMenu.tsx`); New Layout and Delete open the modals at the
+ * (`ContextMenu.tsx`); New Layout and Delete open the modals at the
  * end. Every part is permanently mounted and shown or hidden by class —
  * see CLAUDE.md's BarefootJS pitfalls on branches. */
 export function LayoutScreen(props: LayoutScreenProps) {

@@ -1,6 +1,6 @@
 // The layout list's right-click menu (the layout screen): what it was
 // opened on, which items it offers and whether each can run now. Pure —
-// `components/LayoutContextMenu.tsx` draws the items this computes, and
+// `components/ContextMenu.tsx` draws the items this computes, and
 // `Studio.tsx` runs the chosen action.
 //
 // The items are data (`layoutMenuItems`), not one hard-wired button each,
