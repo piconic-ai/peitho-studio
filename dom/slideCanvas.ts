@@ -3,7 +3,8 @@
 // tested (per CLAUDE.md, `dom/` is DOM-touching and untested for now);
 // verify via `run-peitho-studio`.
 
-import { containScale, type Size } from '../domain/geometry'
+import type { Size } from '../domain/geometry'
+import { previewCanvasScale } from '../domain/viewport'
 import { nextShadowMountedBacklog, SHADOW_MOUNTED_EVENT, slideIdentity, type ShadowMountedDetail } from '../domain/shadowMounted'
 import { sanitizeSlideHtml } from './slideSanitizer'
 
@@ -370,7 +371,10 @@ export function patchSlideCanvas(host: HTMLElement, fragmentHtml: string): boole
   return true
 }
 
-const canvasSizes = new WeakMap<Element, Size>()
+// What each observed host fits: its canvas, and for the slide preview in
+// phone display the device whose real CSS width it draws the canvas at
+// (`previewCanvasScale`); `null` fills the host as every thumbnail does.
+const canvasFits = new WeakMap<Element, { canvas: Size; deviceWidth: number | null }>()
 let sharedObserver: ResizeObserver | null = null
 
 function handleResize(entries: ResizeObserverEntry[], observer: ResizeObserver): void {
@@ -386,9 +390,9 @@ function handleResize(entries: ResizeObserverEntry[], observer: ResizeObserver):
       observer.unobserve(host)
       continue
     }
-    const canvas = canvasSizes.get(host)
-    if (!canvas) continue
-    host.style.setProperty('--peitho-thumb-scale', String(containScale(entry.contentRect, canvas)))
+    const fit = canvasFits.get(host)
+    if (!fit) continue
+    host.style.setProperty('--peitho-thumb-scale', String(previewCanvasScale(entry.contentRect, fit.canvas, fit.deviceWidth)))
   }
 }
 
@@ -402,9 +406,14 @@ function handleResize(entries: ResizeObserverEntry[], observer: ResizeObserver):
  * `canvas` (the preview's PC/phone toggle does), which re-fits the scale
  * without waiting for `host` to resize. `unobserve()` comes first because an
  * observer only reports a size that differs from the one it last reported,
- * and a bare repeated `observe()` does not reset that (Chrome 153). */
-export function observeCanvasScale(host: HTMLElement, canvas: Size): void {
-  canvasSizes.set(host, canvas)
+ * and a bare repeated `observe()` does not reset that (Chrome 153).
+ *
+ * `deviceWidth` (the slide preview in phone display on a device preset)
+ * draws the canvas at that device's real CSS width instead of filling
+ * `host`, shrinking it only when it doesn't fit (`devicePreviewSize`);
+ * `:host`'s flex centring keeps the smaller slide in the middle. */
+export function observeCanvasScale(host: HTMLElement, canvas: Size, deviceWidth: number | null = null): void {
+  canvasFits.set(host, { canvas, deviceWidth })
   sharedObserver ??= new ResizeObserver(handleResize)
   sharedObserver.unobserve(host)
   sharedObserver.observe(host)

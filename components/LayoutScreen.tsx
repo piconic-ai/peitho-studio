@@ -44,6 +44,10 @@ export interface LayoutScreenProps {
    * (`layoutThumbnailStyle`), so a tall phone canvas never runs past the
    * bottom. */
   thumbnailRoom: Size | null
+  /** The CSS width of the device phone display shows (`previewDevice`),
+   * capping each thumbnail's width so a smaller device shows smaller;
+   * `null` in PC display and the deck-ratio shape. */
+  deviceWidth: number | null
   /** Why the latest draft didn't render, `''` for nothing — the thumbnail
    * keeps the last one that did. */
   previewError: string
@@ -222,7 +226,7 @@ export function LayoutScreen(props: LayoutScreenProps) {
               <span
                 data-layout-thumbnail
                 className="block relative self-center shrink-0 rounded border border-border bg-black overflow-hidden group-hover:border-muted-foreground"
-                style={layoutThumbnailStyle(props.canvasOf(row.name), props.thumbnailRoom)}
+                style={layoutThumbnailStyle(props.canvasOf(row.name), props.thumbnailRoom, props.deviceWidth)}
               >
                 <span
                   ref={el => props.onThumbnailHost(el, row.name)}

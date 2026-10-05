@@ -1,10 +1,19 @@
 import { describe, expect, test } from 'bun:test'
 import fc from 'fast-check'
 import { isExhaustivelyAccountedFor } from './spec'
+import { containScale } from './geometry'
 import {
   DEFAULT_DEVICE,
+  DEVICE_PRESETS,
+  deviceDimensions,
   deviceForShape,
+  deviceIconRect,
+  devicePreset,
+  devicePreviewSize,
   effectiveCanvas,
+  previewCanvasScale,
+  previewDevice,
+  scaledDownPercent,
   reshapeCanvas,
   toggledViewportMode,
   viewportCanvas,
@@ -37,20 +46,126 @@ describe('effectiveCanvas examples', () => {
   })
 })
 
-describe('DEFAULT_DEVICE', () => {
-  test('spec: is a portrait phone, taller than it is wide', () => {
-    expect(DEFAULT_DEVICE).toEqual({ name: 'Phone (portrait)', width: 390, height: 844 })
+describe('DEVICE_PRESETS', () => {
+  test('spec: Given the phone shape menu, Then it offers a small phone, a standard phone, a large phone and a tablet, in that order, each sized as Safari\'s visible area in portrait', () => {
+    expect(DEVICE_PRESETS).toEqual([
+      { id: 'small-phone', model: 'iPhone SE', width: 375, height: 548 },
+      { id: 'phone', model: 'iPhone 15', width: 390, height: 664 },
+      { id: 'large-phone', model: 'iPhone 15 Pro Max', width: 430, height: 740 },
+      { id: 'tablet', model: 'iPad', width: 820, height: 1030 },
+    ])
+  })
+
+  test('spec: Given a fresh window, Then phone display starts on the standard phone', () => {
+    expect(DEFAULT_DEVICE).toBe(devicePreset('phone')!)
+  })
+
+  test('spec: every preset is portrait (taller than wide), whole-pixel, and has its own id', () => {
+    for (const preset of DEVICE_PRESETS) {
+      expect(preset.height).toBeGreaterThan(preset.width)
+      expect(Number.isInteger(preset.width) && Number.isInteger(preset.height)).toBe(true)
+    }
+    expect(new Set(DEVICE_PRESETS.map(preset => preset.id)).size).toBe(DEVICE_PRESETS.length)
+  })
+
+  test('spec: no preset is wider than 820px, the widest screen the known tall-canvas viewer script still grows', () => {
+    // A wider device would keep the deck's 16:9 there, so simulating a tall
+    // canvas for it would show a layout the viewer never does.
+    for (const preset of DEVICE_PRESETS) expect(preset.width).toBeLessThanOrEqual(820)
+  })
+
+  test('spec: on a 16:9 deck the phones are ordered by how tall they make the canvas, and the tablet is the least tall of all', () => {
+    const height = (id: string) => reshapeCanvas(widescreen, devicePreset(id)!).height
+    expect(height('small-phone')).toBeLessThan(height('phone'))
+    expect(height('phone')).toBeLessThan(height('large-phone'))
+    expect(height('tablet')).toBeLessThan(height('small-phone'))
+    expect(height('tablet')).toBeGreaterThan(widescreen.height)
+  })
+})
+
+describe('devicePreset', () => {
+  test('spec: each id finds its own preset', () => {
+    for (const preset of DEVICE_PRESETS) expect(devicePreset(preset.id)).toBe(preset)
+  })
+
+  test('adversarial: the deck shape, an empty string, a different case, and Object.prototype member names are not presets', () => {
+    for (const stray of ['deck', '', 'PHONE', ' phone', 'portrait', 'constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      expect(devicePreset(stray)).toBeUndefined()
+    }
+  })
+
+  test('adversarial: a non-string past the type is not a preset either', () => {
+    for (const stray of [undefined, null, 0, {}, []]) {
+      expect(devicePreset(stray as unknown as string)).toBeUndefined()
+    }
+  })
+})
+
+describe('deviceDimensions', () => {
+  test('spec: writes width × height, as the menu shows it', () => {
+    expect(deviceDimensions(devicePreset('small-phone')!)).toBe('375×548')
+    expect(deviceDimensions(devicePreset('tablet')!)).toBe('820×1030')
+  })
+
+  test('adversarial: zero, negative, fractional and non-finite sizes are written as they are, never thrown on', () => {
+    expect(deviceDimensions({ width: 0, height: 0 })).toBe('0×0')
+    expect(deviceDimensions({ width: -1, height: 2.5 })).toBe('-1×2.5')
+    expect(deviceDimensions({ width: Number.NaN, height: Infinity })).toBe('NaN×Infinity')
+  })
+})
+
+describe('deviceIconRect', () => {
+  test('spec: a portrait device is drawn 20 high, as wide as its proportion in whole pixels (rounded down), centred in the 24x24 icon', () => {
+    // 20 * 390 / 664 = 11.75
+    expect(deviceIconRect({ width: 390, height: 664 })).toEqual({ x: 6.5, y: 2, width: 11, height: 20 })
+  })
+
+  test('spec: a landscape device (the deck\'s own 16:9) is drawn 20 wide and shorter than it is wide', () => {
+    // 20 * 720 / 1280 = 11.25
+    expect(deviceIconRect({ width: 1280, height: 720 })).toEqual({ x: 2, y: 6.5, width: 20, height: 11 })
+  })
+
+  test('adversarial: a device so lopsided its short side would be under a pixel gets the whole square', () => {
+    expect(deviceIconRect({ width: 1, height: 100 })).toEqual({ x: 2, y: 2, width: 20, height: 20 })
+  })
+
+  test('spec: the tablet\'s icon is wider than every phone\'s, so the menu tells them apart at a glance', () => {
+    const width = (id: string) => deviceIconRect(devicePreset(id)!).width
+    for (const phone of ['small-phone', 'phone', 'large-phone']) expect(width('tablet')).toBeGreaterThan(width(phone))
+  })
+
+  test('adversarial: a square device fills the box', () => {
+    expect(deviceIconRect({ width: 5, height: 5 })).toEqual({ x: 2, y: 2, width: 20, height: 20 })
+  })
+
+  test('adversarial: a device with a zero, negative, NaN or infinite dimension gets the whole square, never NaN', () => {
+    for (const bad of [0, -390, Number.NaN, Infinity, -Infinity]) {
+      expect(deviceIconRect({ width: bad, height: 664 })).toEqual({ x: 2, y: 2, width: 20, height: 20 })
+      expect(deviceIconRect({ width: 390, height: bad })).toEqual({ x: 2, y: 2, width: 20, height: 20 })
+    }
+  })
+
+  test('property: the rectangle always stays inside the 24x24 icon with a positive size', () => {
+    fc.assert(fc.property(deviceArb, device => {
+      const rect = deviceIconRect(device)
+      expect(rect.width).toBeGreaterThan(0)
+      expect(rect.height).toBeGreaterThan(0)
+      expect(rect.x).toBeGreaterThanOrEqual(2)
+      expect(rect.y).toBeGreaterThanOrEqual(2)
+      expect(rect.x + rect.width).toBeLessThanOrEqual(22 + 1e-9)
+      expect(rect.y + rect.height).toBeLessThanOrEqual(22 + 1e-9)
+    }))
   })
 })
 
 describe('reshapeCanvas', () => {
   test('spec: a 16:9 deck takes the phone\'s proportion, keeping its width', () => {
-    expect(reshapeCanvas(widescreen, DEFAULT_DEVICE)).toEqual({ width: 1280, height: 2770 })
+    expect(reshapeCanvas(widescreen, DEFAULT_DEVICE)).toEqual({ width: 1280, height: 2179 })
   })
 
   test('spec: a 4:3 deck takes the phone\'s proportion, rounded to the nearest whole pixel', () => {
-    // 960 * 844 / 390 = 2077.54, so it rounds up.
-    expect(reshapeCanvas(standard, DEFAULT_DEVICE)).toEqual({ width: 960, height: 2078 })
+    // 960 * 664 / 390 = 1634.46, so it rounds down.
+    expect(reshapeCanvas(standard, DEFAULT_DEVICE)).toEqual({ width: 960, height: 1634 })
   })
 
   test('spec: a height that lands exactly halfway rounds up', () => {
@@ -109,7 +224,7 @@ describe('reshapeCanvas', () => {
   })
 
   test('adversarial: a zero-height deck still gets the device\'s proportional height', () => {
-    expect(reshapeCanvas({ width: 1280, height: 0 }, DEFAULT_DEVICE)).toEqual({ width: 1280, height: 2770 })
+    expect(reshapeCanvas({ width: 1280, height: 0 }, DEFAULT_DEVICE)).toEqual({ width: 1280, height: 2179 })
   })
 
   test('adversarial: a NaN deck stays NaN rather than throwing', () => {
@@ -229,9 +344,9 @@ describe('phone shape canvas examples', () => {
 })
 
 describe('deviceForShape', () => {
-  test('spec: the tall phone shape is the default phone, whatever the deck', () => {
-    expect(deviceForShape('portrait', widescreen)).toBe(DEFAULT_DEVICE)
-    expect(deviceForShape('portrait', standard)).toBe(DEFAULT_DEVICE)
+  test('spec: the standard phone shape is the default device, whatever the deck', () => {
+    expect(deviceForShape('phone', widescreen)).toBe(DEFAULT_DEVICE)
+    expect(deviceForShape('phone', standard)).toBe(DEFAULT_DEVICE)
   })
 
   test('spec: the deck-ratio shape is the deck\'s own size', () => {
@@ -244,8 +359,8 @@ describe('deviceForShape', () => {
     expect(reshapeCanvas(standard, deviceForShape('deck', standard))).toEqual(standard)
   })
 
-  test('spec: on a 4:3 deck the tall shape grows the canvas to 960x2078 while the deck-ratio shape leaves it at 960x720', () => {
-    expect(effectiveCanvas(standard, 'mobile', deviceForShape('portrait', standard), false)).toEqual({ width: 960, height: 2078 })
+  test('spec: on a 4:3 deck the standard phone grows the canvas to 960x1634 while the deck-ratio shape leaves it at 960x720', () => {
+    expect(effectiveCanvas(standard, 'mobile', deviceForShape('phone', standard), false)).toEqual({ width: 960, height: 1634 })
     expect(effectiveCanvas(standard, 'mobile', deviceForShape('deck', standard), false)).toEqual(standard)
   })
 
@@ -286,8 +401,17 @@ describe('deviceForShape', () => {
     expect(effectiveCanvas(huge, 'mobile', deviceForShape('deck', huge), false)).toEqual(huge)
   })
 
+  test('spec: each device shape is its own preset, whatever the deck', () => {
+    for (const preset of DEVICE_PRESETS) {
+      expect(deviceForShape(preset.id, widescreen)).toBe(preset)
+      expect(deviceForShape(preset.id, standard)).toBe(preset)
+    }
+  })
+
   test('adversarial: an unknown shape string gets the default phone (only "deck" keeps the deck\'s proportion)', () => {
-    for (const stray of ['landscape', '', 'DECK', undefined, null]) {
+    // 'portrait' was the one tall shape before the presets: a value left
+    // over from it lands on the standard phone, as it used to.
+    for (const stray of ['landscape', '', 'DECK', 'portrait', 'constructor', '__proto__', undefined, null]) {
       expect(deviceForShape(stray as unknown as PhoneShape, widescreen)).toBe(DEFAULT_DEVICE)
     }
   })
@@ -305,9 +429,9 @@ describe('deviceForShape', () => {
     }))
   })
 
-  test('property: the tall phone shape is the default phone for any deck at all, however unusable', () => {
+  test('property: the standard phone shape is the default device for any deck at all, however unusable', () => {
     fc.assert(fc.property(deviceArb, deck => {
-      expect(deviceForShape('portrait', deck)).toBe(DEFAULT_DEVICE)
+      expect(deviceForShape('phone', deck)).toBe(DEFAULT_DEVICE)
     }))
   })
 
@@ -333,11 +457,11 @@ describe('deviceForShape', () => {
 
 describe('viewportCanvas', () => {
   test('spec: Given PC display, When a slide is laid out, Then it is on the deck\'s own canvas', () => {
-    expect(viewportCanvas(widescreen, 'desktop', 'portrait', false)).toEqual(widescreen)
+    expect(viewportCanvas(widescreen, 'desktop', 'phone', false)).toEqual(widescreen)
   })
 
-  test('spec: Given phone display with the tall shape, When a 16:9 slide is laid out, Then the canvas keeps its width and grows to the phone\'s proportion', () => {
-    expect(viewportCanvas(widescreen, 'mobile', 'portrait', false)).toEqual({ width: 1280, height: 2770 })
+  test('spec: Given phone display with the standard phone, When a 16:9 slide is laid out, Then the canvas keeps its width and grows to the phone\'s proportion', () => {
+    expect(viewportCanvas(widescreen, 'mobile', 'phone', false)).toEqual({ width: 1280, height: 2179 })
   })
 
   test('spec: Given phone display with the deck\'s own shape, When a slide is laid out, Then it is on the deck\'s own canvas', () => {
@@ -345,12 +469,12 @@ describe('viewportCanvas', () => {
   })
 
   test('spec: Given a fixed-canvas slide, When phone display is on, Then it stays on the deck\'s own canvas', () => {
-    expect(viewportCanvas(widescreen, 'mobile', 'portrait', true)).toEqual(widescreen)
+    expect(viewportCanvas(widescreen, 'mobile', 'phone', true)).toEqual(widescreen)
   })
 
   test('adversarial: Given a stray mode or shape past the types, Then it is PC display or the default phone, never a non-Size', () => {
-    expect(viewportCanvas(widescreen, 'tablet' as ViewportMode, 'portrait', false)).toEqual(widescreen)
-    expect(viewportCanvas(widescreen, 'mobile', 'square' as PhoneShape, false)).toEqual({ width: 1280, height: 2770 })
+    expect(viewportCanvas(widescreen, 'tablet' as ViewportMode, 'phone', false)).toEqual(widescreen)
+    expect(viewportCanvas(widescreen, 'mobile', 'square' as PhoneShape, false)).toEqual({ width: 1280, height: 2179 })
   })
 
   test('adversarial: Given a deck with no usable size, Then it comes back as it is', () => {
@@ -363,11 +487,162 @@ describe('viewportCanvas', () => {
     fc.assert(fc.property(
       fc.record({ width: fc.integer({ min: 1, max: 8000 }), height: fc.integer({ min: 1, max: 8000 }) }),
       fc.constantFrom<ViewportMode>('desktop', 'mobile'),
-      fc.constantFrom<PhoneShape>('portrait', 'deck'),
+      fc.constantFrom<PhoneShape>('small-phone', 'phone', 'large-phone', 'tablet', 'deck'),
       fc.boolean(),
       (deck, mode, shape, fixed) => {
         expect(viewportCanvas(deck, mode, shape, fixed)).toEqual(effectiveCanvas(deck, mode, deviceForShape(shape, deck), fixed))
       },
     ))
+  })
+})
+
+describe('previewDevice', () => {
+  test('spec: Given phone display on a device preset, Then that preset is the device the preview shows at real size', () => {
+    for (const preset of DEVICE_PRESETS) expect(previewDevice('mobile', preset.id)).toEqual(preset)
+  })
+
+  test('spec: Given PC display, or phone display with the deck\'s own shape, Then there is no device and the preview fills the panel', () => {
+    expect(previewDevice('desktop', 'phone')).toBeNull()
+    expect(previewDevice('desktop', 'tablet')).toBeNull()
+    expect(previewDevice('mobile', 'deck')).toBeNull()
+  })
+
+  test('adversarial: Given a stray mode or shape past the types, Then a stray mode has no device and a stray shape gets the default phone', () => {
+    expect(previewDevice('tablet' as ViewportMode, 'phone')).toBeNull()
+    expect(previewDevice('mobile', 'square' as PhoneShape)).toEqual(DEFAULT_DEVICE)
+    expect(previewDevice('mobile', 'constructor' as PhoneShape)).toEqual(DEFAULT_DEVICE)
+  })
+})
+
+describe('devicePreviewSize', () => {
+  const smallPhoneCanvas = { width: 1280, height: 1871 }
+  const phoneCanvas = { width: 1280, height: 2179 }
+  const tabletCanvas = { width: 1280, height: 1608 }
+  const roomy = { width: 1000, height: 2000 }
+
+  test('spec: Given room for it, When the small phone is shown, Then it is drawn 375 wide at the canvas\'s proportion, not fitted', () => {
+    const size = devicePreviewSize(roomy, smallPhoneCanvas, 375)
+    expect(size).not.toBeNull()
+    expect(size?.width).toBe(375)
+    expect(size?.height).toBeCloseTo(1871 * 375 / 1280, 9)
+    expect(size?.scale).toBe(375 / 1280)
+    expect(size?.fitted).toBe(false)
+  })
+
+  test('spec: Given room for both, Then the small phone is narrower than the standard phone (390), and each is its own device width', () => {
+    const small = devicePreviewSize(roomy, smallPhoneCanvas, 375)
+    const standardPhone = devicePreviewSize(roomy, phoneCanvas, 390)
+    expect(small?.width).toBe(375)
+    expect(standardPhone?.width).toBe(390)
+    expect(small?.width ?? 0).toBeLessThan(standardPhone?.width ?? 0)
+  })
+
+  test('spec: Given a tablet in a narrow panel, Then it is fitted to the panel\'s width (contain), below real size', () => {
+    const size = devicePreviewSize({ width: 400, height: 2000 }, tabletCanvas, 820)
+    expect(size?.fitted).toBe(true)
+    expect(size?.width).toBeCloseTo(400, 9)
+    expect(size?.scale).toBeCloseTo(400 / 1280, 12)
+    expect(size?.scale ?? 1).toBeLessThan(820 / 1280)
+  })
+
+  test('spec: Given a panel shorter than the device, Then it is fitted to the height rather than scrolled', () => {
+    const size = devicePreviewSize({ width: 1000, height: 500 }, phoneCanvas, 390)
+    expect(size?.fitted).toBe(true)
+    expect(size?.height).toBeCloseTo(500, 9)
+    expect(size?.width).toBeCloseTo(1280 * 500 / 2179, 9)
+  })
+
+  test('spec: Given a panel exactly the device\'s size, Then it is shown at real size (the edge counts as fitting)', () => {
+    const size = devicePreviewSize({ width: 375, height: 1871 * 375 / 1280 }, smallPhoneCanvas, 375)
+    expect(size?.fitted).toBe(false)
+    expect(size?.scale).toBe(375 / 1280)
+  })
+
+  test('spec: Given a fixed (16:9) slide on a phone, Then it is a 16:9 box at the device\'s width', () => {
+    const size = devicePreviewSize(roomy, { width: 1280, height: 720 }, 390)
+    expect(size?.width).toBe(390)
+    expect(size?.height).toBeCloseTo(390 * 720 / 1280, 9)
+    expect(size?.fitted).toBe(false)
+  })
+
+  test('spec: Given a canvas narrower than the device (the deck\'s own shape is not shown this way, but a tiny deck can be), Then it is scaled up to the device width', () => {
+    const size = devicePreviewSize(roomy, { width: 320, height: 480 }, 375)
+    expect(size?.width).toBe(375)
+    expect(size?.scale).toBeGreaterThan(1)
+  })
+
+  test('adversarial: Given a zero, negative, NaN or infinite area, canvas or device width, Then there is no size', () => {
+    const bad = [0, -1, -0, Number.NaN, Infinity, -Infinity]
+    for (const value of bad) {
+      expect(devicePreviewSize({ width: value, height: 600 }, phoneCanvas, 390)).toBeNull()
+      expect(devicePreviewSize({ width: 600, height: value }, phoneCanvas, 390)).toBeNull()
+      expect(devicePreviewSize(roomy, { width: value, height: 2179 }, 390)).toBeNull()
+      expect(devicePreviewSize(roomy, { width: 1280, height: value }, 390)).toBeNull()
+      expect(devicePreviewSize(roomy, phoneCanvas, value)).toBeNull()
+    }
+  })
+
+  test('property: the box always keeps the canvas\'s proportion, never exceeds the device width nor the area, and is at real size exactly when that fits', () => {
+    const dim = fc.double({ min: 1, max: 5000, noNaN: true })
+    fc.assert(fc.property(
+      fc.record({ width: dim, height: dim }),
+      fc.record({ width: dim, height: dim }),
+      dim,
+      (area, canvas, deviceWidth) => {
+        const size = devicePreviewSize(area, canvas, deviceWidth)
+        expect(size).not.toBeNull()
+        if (size === null) return
+        const tolerance = 1e-6 * Math.max(1, size.width, size.height)
+        expect(size.width).toBeCloseTo(canvas.width * size.scale, 6)
+        expect(Math.abs(size.height - canvas.height * size.scale)).toBeLessThan(tolerance)
+        expect(size.width).toBeLessThanOrEqual(area.width + tolerance)
+        expect(size.height).toBeLessThanOrEqual(area.height + tolerance)
+        expect(size.width).toBeLessThanOrEqual(deviceWidth + tolerance)
+        const realFits = deviceWidth <= area.width && canvas.height * deviceWidth / canvas.width <= area.height
+        expect(size.fitted).toBe(!realFits)
+        if (!size.fitted) expect(size.width).toBe(deviceWidth)
+      },
+    ))
+  })
+})
+
+describe('previewCanvasScale', () => {
+  const area = { width: 800, height: 600 }
+
+  test('spec: Given no device (PC display or the deck\'s own shape), Then the slide fills the panel as before (containScale)', () => {
+    expect(previewCanvasScale(area, { width: 1280, height: 720 }, null)).toBe(containScale(area, { width: 1280, height: 720 }))
+  })
+
+  test('spec: Given a device that fits, Then the scale is the device width over the canvas width, with no overscan', () => {
+    expect(previewCanvasScale({ width: 800, height: 2000 }, { width: 1280, height: 2179 }, 390)).toBe(390 / 1280)
+  })
+
+  test('spec: Given a device that does not fit, Then the scale is the plain contain scale', () => {
+    expect(previewCanvasScale(area, { width: 1280, height: 2179 }, 390)).toBeCloseTo(600 / 2179, 12)
+  })
+
+  test('adversarial: Given a device but an unmeasured (0x0) area, Then it falls back to containScale rather than throwing', () => {
+    const zero = { width: 0, height: 0 }
+    expect(previewCanvasScale(zero, { width: 1280, height: 720 }, 390)).toBe(containScale(zero, { width: 1280, height: 720 }))
+  })
+})
+
+describe('scaledDownPercent', () => {
+  test('spec: Given real size fits, Then there is no percentage to show', () => {
+    expect(scaledDownPercent({ width: 1000, height: 2000 }, { width: 1280, height: 1871 }, 375)).toBeNull()
+  })
+
+  test('spec: Given a tablet fitted to a 615-wide panel, Then it reads 75%', () => {
+    expect(scaledDownPercent({ width: 615, height: 2000 }, { width: 1280, height: 1608 }, 820)).toBe(75)
+  })
+
+  test('spec: Given a fit just under real size, Then it rounds down to 99%, never claiming 100%', () => {
+    expect(scaledDownPercent({ width: 389.9, height: 2000 }, { width: 1280, height: 2179 }, 390)).toBe(99)
+  })
+
+  test('adversarial: Given an absurdly small panel, Then it reads at least 1%, and invalid input gives none', () => {
+    expect(scaledDownPercent({ width: 1, height: 1 }, { width: 1280, height: 2179 }, 820)).toBe(1)
+    expect(scaledDownPercent({ width: 0, height: 0 }, { width: 1280, height: 2179 }, 390)).toBeNull()
+    expect(scaledDownPercent({ width: 400, height: 400 }, { width: 1280, height: 2179 }, Number.NaN)).toBeNull()
   })
 })

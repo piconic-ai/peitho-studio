@@ -85,11 +85,18 @@ describe('layoutRows', () => {
 describe('layoutListGeneration', () => {
   test('spec: Given the PC / Phone switch flipped, or the phone shape changed, When the list is rebuilt, Then every row gets a new key so its thumbnail is drawn on the new canvas', () => {
     const keysFor = (generation: string) => layoutRows(['a', 'b'], new Map(), 'en', generation).map(row => row.key)
-    const pc = keysFor(layoutListGeneration(3, 'desktop', 'portrait'))
-    const phone = keysFor(layoutListGeneration(3, 'mobile', 'portrait'))
+    const pc = keysFor(layoutListGeneration(3, 'desktop', 'phone'))
+    const phone = keysFor(layoutListGeneration(3, 'mobile', 'phone'))
     const phoneDeck = keysFor(layoutListGeneration(3, 'mobile', 'deck'))
     expect(phone.some(key => pc.includes(key))).toBe(false)
     expect(phoneDeck.some(key => phone.includes(key))).toBe(false)
+  })
+
+  test('spec: Given phone display, When another device is picked, Then every row gets a new key so its thumbnail is drawn at that device\'s proportion', () => {
+    const keysFor = (generation: string) => layoutRows(['a', 'b'], new Map(), 'en', generation).map(row => row.key)
+    const phone = keysFor(layoutListGeneration(3, 'mobile', 'phone'))
+    const tablet = keysFor(layoutListGeneration(3, 'mobile', 'tablet'))
+    expect(tablet.some(key => phone.includes(key))).toBe(false)
   })
 
   test('spec: Given nothing changed, When the list is rebuilt, Then the rows keep their keys (no redraw)', () => {
@@ -98,13 +105,13 @@ describe('layoutListGeneration', () => {
 
   test('adversarial: Given every combination of previews, mode and shape, Then no two give the same generation', () => {
     const generations = [0, 1, 10, 11].flatMap(previews =>
-      (['desktop', 'mobile'] as const).flatMap(mode => (['portrait', 'deck'] as const).map(shape => layoutListGeneration(previews, mode, shape))))
+      (['desktop', 'mobile'] as const).flatMap(mode => (['small-phone', 'phone', 'large-phone', 'tablet', 'deck'] as const).map(shape => layoutListGeneration(previews, mode, shape))))
     expect(new Set(generations).size).toBe(generations.length)
   })
 
   test('adversarial: Given a layout name containing the separators, Then rows of different generations still never share a key', () => {
-    const one = layoutRows(['x/mobile/deck:a'], new Map(), 'en', layoutListGeneration(1, 'desktop', 'portrait')).map(row => row.key)
-    const two = layoutRows(['x/mobile/deck:a'], new Map(), 'en', layoutListGeneration(1, 'mobile', 'portrait')).map(row => row.key)
+    const one = layoutRows(['x/mobile/deck:a'], new Map(), 'en', layoutListGeneration(1, 'desktop', 'phone')).map(row => row.key)
+    const two = layoutRows(['x/mobile/deck:a'], new Map(), 'en', layoutListGeneration(1, 'mobile', 'phone')).map(row => row.key)
     expect(two.some(key => one.includes(key))).toBe(false)
   })
 })
@@ -239,5 +246,41 @@ describe('layoutThumbnailSize / layoutThumbnailStyle', () => {
   test('adversarial: Given a broken canvas (zero, NaN), Then there is no size', () => {
     expect(layoutThumbnailSize({ width: 600, height: 600 }, { width: 0, height: 720 })).toBeNull()
     expect(layoutThumbnailSize({ width: 600, height: 600 }, { width: Number.NaN, height: 720 })).toBeNull()
+  })
+
+  test('spec: Given phone display on a device in a wide, tall list, Then the thumbnail is capped at the device\'s CSS width, so a small phone shows smaller than a standard one', () => {
+    const room = { width: 800, height: 3000 }
+    const small = layoutThumbnailSize(room, { width: 1280, height: 1871 }, 375)
+    const standardPhone = layoutThumbnailSize(room, { width: 1280, height: 2179 }, 390)
+    expect(small?.width).toBe(375)
+    expect(standardPhone?.width).toBe(390)
+    expect(small?.height).toBe(Math.floor(375 * 1871 / 1280))
+  })
+
+  test('spec: Given a device cap and a short list, Then the list\'s visible height still wins (contain-fit as before)', () => {
+    const room = { width: 800, height: 400 }
+    const size = layoutThumbnailSize(room, { width: 1280, height: 2179 }, 390)
+    expect(size?.height).toBe(400 - chrome.height)
+    expect(size?.width ?? Infinity).toBeLessThan(390)
+  })
+
+  test('spec: Given a device wider than the row (a tablet in a narrow list), Then the row\'s width wins', () => {
+    expect(layoutThumbnailSize({ width: 300, height: 3000 }, { width: 1280, height: 1608 }, 820)).toEqual(layoutThumbnailSize({ width: 300, height: 3000 }, { width: 1280, height: 1608 }))
+  })
+
+  test('spec: Given a device cap, Then the style carries the capped size', () => {
+    expect(layoutThumbnailStyle({ width: 1280, height: 720 }, { width: 800, height: 3000 }, 390)).toBe(`width: 390px; height: ${String(Math.floor(390 * 720 / 1280))}px`)
+  })
+
+  test('adversarial: Given a cap that is no width (null, 0, negative, NaN, Infinity), Then there is no cap', () => {
+    const room = { width: 800, height: 3000 }
+    const uncapped = layoutThumbnailSize(room, PC)
+    for (const cap of [null, 0, -390, Number.NaN, Infinity]) {
+      expect(layoutThumbnailSize(room, PC, cap)).toEqual(uncapped)
+    }
+  })
+
+  test('adversarial: Given a cap under a pixel, Then there is no box rather than a zero-width one', () => {
+    expect(layoutThumbnailSize({ width: 800, height: 3000 }, PC, 0.5)).toBeNull()
   })
 })

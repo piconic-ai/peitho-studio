@@ -3,6 +3,7 @@ import { createEffect, createRoot } from '@barefootjs/client'
 import { createUiStore } from './uiStore'
 import { chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import type { LayoutVerdict } from '../domain/layoutFit'
+import { DEVICE_PRESETS } from '../domain/viewport'
 
 const VERDICTS: LayoutVerdict[] = [
   { layout: 'cover', fit: { kind: 'mismatch', reason: "unassigned content remains for missing 'body' slot" } },
@@ -166,19 +167,30 @@ describe('preview viewport mode', () => {
 })
 
 describe('preview phone shape', () => {
-  test('spec: Given a fresh session, when nothing was chosen, then phone display would be the tall phone shape', () => {
+  test('spec: Given a fresh session, when nothing was chosen, then phone display would be the standard phone', () => {
     createRoot(() => {
-      expect(createUiStore().phoneShape()).toBe('portrait')
+      expect(createUiStore().phoneShape()).toBe('phone')
     })
   })
 
-  test('spec: Given the tall shape, when the deck-ratio shape is selected by name, then the shape is that one, and selecting the tall one returns to it', () => {
+  test('spec: Given the standard phone, when the deck-ratio shape is selected by name, then the shape is that one, and selecting the standard phone returns to it', () => {
     createRoot(() => {
       const store = createUiStore()
       store.selectPhoneShape('deck')
       expect(store.phoneShape()).toBe('deck')
-      store.selectPhoneShape('portrait')
-      expect(store.phoneShape()).toBe('portrait')
+      store.selectPhoneShape('phone')
+      expect(store.phoneShape()).toBe('phone')
+    })
+  })
+
+  test('spec: Given phone display, when each device preset is selected in turn, then the shape is that device', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.toggleViewportMode()
+      for (const preset of DEVICE_PRESETS) {
+        store.selectPhoneShape(preset.id)
+        expect(store.phoneShape()).toBe(preset.id)
+      }
     })
   })
 
@@ -199,8 +211,8 @@ describe('preview phone shape', () => {
   test('adversarial: selecting the shape that is already chosen leaves it chosen (a select is not a toggle)', () => {
     createRoot(() => {
       const store = createUiStore()
-      store.selectPhoneShape('portrait')
-      expect(store.phoneShape()).toBe('portrait')
+      store.selectPhoneShape('phone')
+      expect(store.phoneShape()).toBe('phone')
       store.selectPhoneShape('deck')
       store.selectPhoneShape('deck')
       expect(store.phoneShape()).toBe('deck')
@@ -210,7 +222,7 @@ describe('preview phone shape', () => {
   test('adversarial: a run of selections ends on the last one (however many, in whatever order)', () => {
     createRoot(() => {
       const store = createUiStore()
-      const run = ['deck', 'portrait', 'portrait', 'deck', 'portrait', 'deck', 'deck'] as const
+      const run = ['deck', 'phone', 'phone', 'deck', 'phone', 'deck', 'deck'] as const
       for (const shape of run) {
         store.selectPhoneShape(shape)
         expect(store.phoneShape()).toBe(shape)
@@ -234,7 +246,7 @@ describe('preview phone shape', () => {
       const second = createUiStore()
       first.selectPhoneShape('deck')
       expect(first.phoneShape()).toBe('deck')
-      expect(second.phoneShape()).toBe('portrait')
+      expect(second.phoneShape()).toBe('phone')
     })
   })
 
@@ -321,8 +333,8 @@ describe('preview phone shape menu', () => {
       const store = createUiStore()
       store.toggleViewportMode()
       store.togglePhoneShapeMenu()
-      store.selectPhoneShape('portrait')
-      expect(store.phoneShape()).toBe('portrait')
+      store.selectPhoneShape('phone')
+      expect(store.phoneShape()).toBe('phone')
       expect(store.phoneShapeMenuOpen()).toBe(false)
     })
   })

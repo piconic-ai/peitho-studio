@@ -3,9 +3,10 @@ import { type DragState } from '../domain/drag'
 import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withLayoutFitResult, withLayoutNotice } from '../domain/contextMenu'
 import { type LayoutNotice, type LayoutVerdict } from '../domain/layoutFit'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
-import { type PhoneShape, type ViewportMode, toggledViewportMode } from '../domain/viewport'
+import { DEFAULT_DEVICE, type PhoneShape, type ViewportMode, toggledViewportMode } from '../domain/viewport'
 import { toggleCollapsedKey } from '../domain/sectionCollapse'
 import { type StudioMode } from '../domain/layoutScreen'
+import type { Size } from '../domain/geometry'
 
 const SLIDE_LIST_WIDTH = 176
 const EDITOR_WIDTH = 420
@@ -181,17 +182,25 @@ export function createUiStore() {
     setPhoneShapeMenuOpen(false)
   }
 
-  // Which canvas phone display gives: the phone's tall proportion, or the
-  // deck's own (the same size as PC display). Independent of `viewportMode`,
-  // so the choice survives a trip back to PC display. Session-only, and the
-  // setter stays private for the same reason.
-  const [phoneShape, setPhoneShape] = createSignal<PhoneShape>('portrait')
+  // Which canvas phone display gives: a device preset's proportion (the
+  // standard phone, `DEFAULT_DEVICE`, to begin with), or the deck's own (the
+  // same size as PC display). Independent of `viewportMode`, so the choice
+  // survives a trip back to PC display, and shared by the slide preview and
+  // the layout list. Session-only, and the setter stays private for the same
+  // reason.
+  const [phoneShape, setPhoneShape] = createSignal<PhoneShape>(DEFAULT_DEVICE.id)
   /** A pick from the shape menu: the items each name the shape they choose,
    * and choosing one closes the menu. */
   function selectPhoneShape(shape: PhoneShape): void {
     setPhoneShape(shape)
     setPhoneShapeMenuOpen(false)
   }
+
+  // The slide preview's host size (its inner box, `null` until measured):
+  // whether a device fits it at real size, for the "scaled to N%" label
+  // (`scaledDownPercent`). The canvas's own scale is fitted by
+  // `dom/slideCanvas.ts`'s observer from the same box.
+  const [previewArea, setPreviewArea] = createSignal<Size | null>(null)
 
   // Which screen the deck window shows: the slides, or the deck's layouts
   // (the header's Slides / Layouts switch). Session-only. Both screens stay
@@ -222,5 +231,6 @@ export function createUiStore() {
     collapsedSectionKeys, toggleSectionCollapsed,
     viewportMode, toggleViewportMode, phoneShape, selectPhoneShape,
     phoneShapeMenuOpen, togglePhoneShapeMenu, closePhoneShapeMenu,
+    previewArea, setPreviewArea,
   }
 }

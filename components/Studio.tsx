@@ -29,7 +29,7 @@ import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../do
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
 import { imageParagraphInsertion, insertionRangeAfterWait } from '../domain/editorText'
 import { fileNameOf, partitionDroppedPaths } from '../domain/images'
-import { viewportCanvas } from '../domain/viewport'
+import { previewDevice, scaledDownPercent, viewportCanvas } from '../domain/viewport'
 import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
@@ -792,6 +792,18 @@ export function Studio() {
   }
   const previewCanvasWidth = createMemo<number>(() => previewCanvas().width)
   const previewCanvasHeight = createMemo<number>(() => previewCanvas().height)
+  // Phone display on a device preset draws the preview at that device's
+  // real CSS width (a fixed-canvas slide too, as a 16:9 box that wide),
+  // shrinking it with a "Scaled to N%" label when the panel is too small;
+  // the layout list caps its thumbnails at the same width.
+  const previewDeviceWidth = createMemo<number | null>(() => previewDevice(ui.viewportMode(), ui.phoneShape())?.width ?? null)
+  const previewScaleLabel = createMemo<string>(() => {
+    const deviceWidth = previewDeviceWidth()
+    const area = ui.previewArea()
+    if (deviceWidth === null || area === null) return ''
+    const percent = scaledDownPercent(area, { width: previewCanvasWidth(), height: previewCanvasHeight() }, deviceWidth)
+    return percent === null ? '' : settings.messages().previewScaledDown(percent)
+  })
 
   // One `CSSStyleSheet` shared by every Shadow DOM thumbnail canvas, so a
   // theme change costs a single `replaceSync` here instead of a re-parse
@@ -3306,6 +3318,9 @@ export function Studio() {
               onSelectPhoneShape={ui.selectPhoneShape}
               canvasWidth={previewCanvasWidth()}
               canvasHeight={previewCanvasHeight()}
+              deviceWidth={previewDeviceWidth()}
+              scaleLabel={previewScaleLabel()}
+              onPreviewHost={el => observeInnerSize(el, ui.setPreviewArea)}
               pins={placedPins()}
               onCommentClick={openCommentBox}
               onPinClick={showPinnedThread}
@@ -3326,6 +3341,7 @@ export function Studio() {
           canvasOf={layoutCanvasOf}
           onRowsHost={el => observeInnerSize(el, layouts.setThumbnailRoom)}
           thumbnailRoom={layouts.thumbnailRoom()}
+          deviceWidth={previewDeviceWidth()}
           previewError={draftPreviewError(layouts.draftPreview(), layouts.selectedLayout())}
           listWidth={layouts.listWidth()}
           onListResize={startColumnResize(layouts.listWidth, layouts.setListWidth, -1)}
