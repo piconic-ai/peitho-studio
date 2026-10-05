@@ -7,7 +7,7 @@ import {
   agentCommentBody, annotatedSpan, commentSlideKey, explicitSlideKey, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
   awaitingAgentCount, newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, pinOfQuote, previewPinsOf, relocateTarget, reviewStatusText, sendAvailability, slideIndexOfComment, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
   utf8OffsetToIndex, type CommentTarget, type PendingComment, type PendingReply, type PinSpot,
-  layoutAgentLabel, layoutClickTarget, layoutHtmlFile, layoutTargetLabel, layoutTargetOfComment, newLayoutComment, slotAtPoint, slotNameOfClasses, splitLayoutLabel, type PendingLayoutComment,
+  fileLinesLabel, layoutAgentLabel, layoutClickTarget, layoutHtmlFile, layoutTargetLabel, layoutTargetOfComment, lineSelectionOf, newLayoutComment, slotAtPoint, slotNameOfClasses, splitLayoutLabel, type LayoutCommentTarget, type PendingLayoutComment,
 } from './reviewComment'
 
 const bytes = (text: string) => new TextEncoder().encode(text).length
@@ -786,6 +786,82 @@ describe('splitLayoutLabel', () => {
     for (const body of ['[Slide 2] x', 'plain text', '', '[Layout ] x', '[Layout ../x] y', '[All layouts]x', '[Layout cover (unclosed x', '[layout cover] x']) {
       expect(splitLayoutLabel(body)).toBeNull()
     }
+  })
+})
+
+describe('a comment from the layout screen\'s editor, on lines of a file', () => {
+  const onLines = (path: string, start: number, end: number, quote: string): LayoutCommentTarget => ({ kind: 'file', path, lines: { start, end }, quote })
+
+  test('spec: Given lines picked in the editor, Then the label names the file, the lines and the start of their text', () => {
+    expect(layoutTargetLabel(onLines('layouts/title-body.html', 3, 5, '<h1>\n  <slot name="title"></slot>\n</h1>'))).toBe('layouts/title-body.html L3-L5 "<h1> <slot name="title"></slo…"')
+    expect(layoutTargetLabel(onLines('css/base.css', 4, 4, 'h1 { color: red; }'))).toBe('css/base.css L4 "h1 { color: red; }"')
+    expect(fileLinesLabel('css/base.css', { start: 2, end: 2 }, '')).toBe('css/base.css L2')
+    expect(fileLinesLabel('css/base.css', { start: 2, end: 2 }, '   \n  ')).toBe('css/base.css L2')
+  })
+
+  test('spec: Given an unsent comment on lines, Then crit gets the file, the lines and their whole text, under the same label', () => {
+    const target = onLines('css/base.css', 4, 5, 'h1 {\n  color: red; }')
+    expect(newLayoutComment({ id: 'p1', target, body: ' Calmer red ', createdAt: '2026-10-05T00:00:00Z' })).toEqual({
+      layout: null,
+      lines: { path: 'css/base.css', startLine: 4, endLine: 5, quote: 'h1 {\n  color: red; }' },
+      body: '[css/base.css L4-L5 "h1 { color: red; }"] Calmer red',
+      author: REVIEW_AUTHOR,
+    })
+    expect(layoutAgentLabel(target)).toBe(layoutTargetLabel(target))
+  })
+
+  test('spec: Given a comment on lines Studio sent, Then its label comes apart into the file, the lines and the text', () => {
+    expect(splitLayoutLabel('[css/base.css L4-L5 "h1 { color: red; }"] Calmer\nred')).toEqual({
+      target: onLines('css/base.css', 4, 5, 'h1 { color: red; }'), text: 'Calmer\nred',
+    })
+    expect(splitLayoutLabel('[layouts/cover.html L2] x')).toEqual({ target: onLines('layouts/cover.html', 2, 2, ''), text: 'x' })
+    // A quote holding `"]` is read up to its first close.
+    expect(splitLayoutLabel('[css/base.css L1 "a"] b"] c')?.text).toBe('b"] c')
+  })
+
+  test('spec: Given a sent comment on lines of a layout or CSS file, Then it is about those lines', () => {
+    const comment = { place: { kind: 'file' as const, path: 'css/base.css' }, body: '[css/base.css L4] x', lines: { start: 4, end: 4 }, quote: 'h1 {}' }
+    expect(layoutTargetOfComment(comment)).toEqual(onLines('css/base.css', 4, 4, 'h1 {}'))
+    expect(layoutTargetOfComment({ ...comment, quote: null })).toEqual(onLines('css/base.css', 4, 4, ''))
+    // Without lines it is still a comment on the file's layout (or none, for base.css).
+    expect(layoutTargetOfComment({ ...comment, place: { kind: 'file', path: 'css/cover.css' }, lines: null })).toEqual({ kind: 'layout', name: 'cover' })
+  })
+
+  test('adversarial: Given a malformed lines label, a path outside the layouts, or a deck comment with lines, Then no file target comes back', () => {
+    for (const body of ['[css/base.css L] x', '[css/base.css Lx] x', '[deck.md L1] x', '[../css/base.css L1] x', '[css/sub/a.css L1] x', '[css/base.css L1-] x', '[css/base.css L1 "unclosed] x']) {
+      expect(splitLayoutLabel(body)?.target.kind === 'file').toBe(false)
+    }
+    expect(layoutTargetOfComment({ place: { kind: 'deck' }, body: '[css/base.css L1] x', lines: { start: 1, end: 1 }, quote: '' })).toBeNull()
+    expect(layoutTargetOfComment({ place: { kind: 'file', path: 'img/a.png' }, body: 'x', lines: { start: 1, end: 1 }, quote: '' })).toBeNull()
+  })
+})
+
+describe('lineSelectionOf (the lines a comment from the editor is on)', () => {
+  const DOC = 'body {\n  margin: 0;\n}\nh1 { color: red; }\n'
+
+  test('spec: Given a caret, Then the comment is on its line', () => {
+    expect(lineSelectionOf(DOC, 9, 9)).toEqual({ lines: { start: 2, end: 2 }, quote: '  margin: 0;' })
+    expect(lineSelectionOf(DOC, 0, 0)).toEqual({ lines: { start: 1, end: 1 }, quote: 'body {' })
+  })
+
+  test('spec: Given a selection over several lines, either way round, Then the comment is on all of them with their whole text', () => {
+    const expected = { lines: { start: 1, end: 3 }, quote: 'body {\n  margin: 0;\n}' }
+    expect(lineSelectionOf(DOC, 2, 21)).toEqual(expected)
+    expect(lineSelectionOf(DOC, 21, 2)).toEqual(expected)
+  })
+
+  test('spec: Given whole lines picked up to the next line\'s start, Then that next line is not taken in', () => {
+    // Lines 2-3 selected through the line break after `}` (offset 22 is the start of line 4).
+    expect(lineSelectionOf(DOC, 7, 22)).toEqual({ lines: { start: 2, end: 3 }, quote: '  margin: 0;\n}' })
+  })
+
+  test('adversarial: an empty file, an empty last line, and offsets out of range or not numbers', () => {
+    expect(lineSelectionOf('', 0, 0)).toEqual({ lines: { start: 1, end: 1 }, quote: '' })
+    expect(lineSelectionOf(DOC, DOC.length, DOC.length)).toEqual({ lines: { start: 5, end: 5 }, quote: '' })
+    expect(lineSelectionOf(DOC, -5, 1e9).lines).toEqual({ start: 1, end: 4 })
+    expect(lineSelectionOf(DOC, Number.NaN, Number.NaN).lines).toEqual({ start: 1, end: 1 })
+    // A selection of just a line break stays on its own line.
+    expect(lineSelectionOf('a\nb', 1, 2)).toEqual({ lines: { start: 1, end: 1 }, quote: 'a' })
   })
 })
 

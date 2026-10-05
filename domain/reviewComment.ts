@@ -83,8 +83,13 @@ export type CommentBox =
  * layout (the deck's look as a whole). A comment from a click on a
  * layout's thumbnail also says where it was clicked (`part`); one from the
  * layout menu doesn't. The comment still goes on the layout's files as a
- * whole: the part is in its label, for the agent to read. */
-export type LayoutCommentTarget = { kind: 'layout'; name: string; part?: LayoutPart } | { kind: 'all-layouts' }
+ * whole: the part is in its label, for the agent to read. One written in
+ * the screen's editor is on lines of a file (`file`): `quote` is their
+ * text. */
+export type LayoutCommentTarget =
+  | { kind: 'layout'; name: string; part?: LayoutPart }
+  | { kind: 'all-layouts' }
+  | { kind: 'file'; path: string; lines: LineRange; quote: string }
 
 /** Where on a layout's thumbnail a click landed: inside a slot's content,
  * or on nothing a slot holds (the whole layout). */
@@ -147,10 +152,12 @@ export function layoutHtmlFile(name: string): string | null {
   return LAYOUT_NAME.test(name) ? `layouts/${name}.html` : null
 }
 
-/** `Layout cover` or `All layouts` — what the comment box and the panel
- * say a layout comment is on. */
+/** `Layout cover`, `All layouts`, or for lines of a file
+ * `css/base.css L3-L5 "h1 { color: red; }"` — what the comment box and
+ * the panel say a layout comment is on. */
 export function layoutTargetLabel(target: LayoutCommentTarget): string {
   if (target.kind === 'all-layouts') return 'All layouts'
+  if (target.kind === 'file') return fileLinesLabel(target.path, target.lines, target.quote)
   return `Layout ${target.name}${target.part === undefined ? '' : ` › ${layoutPartLabel(target.part)}`}`
 }
 
@@ -158,32 +165,77 @@ function layoutPartLabel(part: LayoutPart): string {
   return part.kind === 'slot' ? `slot "${part.slot}"` : 'whole layout'
 }
 
+/** `L3` for one line, `L3-L5` for several. */
+function linesLabel(lines: LineRange): string {
+  return lines.end === lines.start ? `L${String(lines.start)}` : `L${String(lines.start)}-L${String(lines.end)}`
+}
+
+/** `layouts/title-body.html L3-L5 "<h1>…"`: the file, its lines, and the
+ * start of their text (`excerpt`) — left out when they're blank. English
+ * on purpose, like `targetLabel`: it also heads the comment the agent
+ * reads. */
+export function fileLinesLabel(path: string, lines: LineRange, quote: string): string {
+  const text = excerpt(quote)
+  return `${path} ${linesLabel(lines)}${text === '' ? '' : ` "${text}"`}`
+}
+
 /** The label heading a layout comment as the agent reads it: what it's
  * on, and the files that means — a layout is its HTML and the CSS file of
- * the same name; every layout is both folders. A name no layout can have
- * is named without files. English on purpose, like `targetLabel`. */
+ * the same name; every layout is both folders; lines of a file name it
+ * already. A name no layout can have is named without files. English on
+ * purpose, like `targetLabel`. */
 export function layoutAgentLabel(target: LayoutCommentTarget): string {
   if (target.kind === 'all-layouts') return 'All layouts (layouts/, css/)'
+  if (target.kind === 'file') return layoutTargetLabel(target)
   const html = layoutHtmlFile(target.name)
   return html === null ? layoutTargetLabel(target) : `${layoutTargetLabel(target)} (${html}, css/${target.name}.css)`
 }
 
 /** `pending` as crit takes it: the layout it's on (`null` for every
- * layout), headed by `layoutAgentLabel`. */
+ * layout, or for lines of a file, which carry their own place), headed by
+ * `layoutAgentLabel`. */
 export function newLayoutComment(pending: PendingLayoutComment): NewLayoutComment {
-  return {
-    layout: pending.target.kind === 'layout' ? pending.target.name : null,
-    body: agentCommentBody(layoutAgentLabel(pending.target), pending.body),
+  const { target } = pending
+  const comment: NewLayoutComment = {
+    layout: target.kind === 'layout' ? target.name : null,
+    body: agentCommentBody(layoutAgentLabel(target), pending.body),
     author: REVIEW_AUTHOR,
   }
+  if (target.kind === 'file') comment.lines = { path: target.path, startLine: target.lines.start, endLine: target.lines.end, quote: target.quote }
+  return comment
+}
+
+/** The lines a selection from `from` to `to` (offsets into `doc`, either
+ * way round; a caret when equal) covers, 1-based and inclusive, and their
+ * whole text — what a comment from the editor is on. A selection ending at
+ * the very start of a line (a whole line picked with the mouse or `V` up to
+ * its line break) doesn't take that next line in. Offsets out of range are
+ * clamped to the text. */
+export function lineSelectionOf(doc: string, from: number, to: number): { lines: LineRange; quote: string } {
+  const clamp = (at: number) => Math.max(0, Math.min(doc.length, Number.isFinite(at) ? Math.floor(at) : 0))
+  const start = Math.min(clamp(from), clamp(to))
+  let end = Math.max(clamp(from), clamp(to))
+  if (end > start && doc[end - 1] === '\n') end -= 1
+  const lineAt = (offset: number) => doc.slice(0, offset).split('\n').length
+  const lines = { start: lineAt(start), end: lineAt(end) }
+  const quote = doc.split('\n').slice(lines.start - 1, lines.end).join('\n')
+  return { lines, quote }
 }
 
 const LAYOUT_LABEL = new RegExp(`^\\[(?:Layout (${NAME})(?: › (?:slot "(${SLOT})"|(whole layout)))?|(All layouts))(?: \\([^\\]\\n]*\\))?\\] ([\\s\\S]*)$`)
+const FILE_LINES_LABEL = new RegExp(`^\\[((?:layouts/${NAME}\\.html|css/${NAME}\\.css)) L(\\d+)(?:-L(\\d+))?(?: "([^\\n]*?)")?\\] ([\\s\\S]*)$`)
 
 /** A sent comment's text split back into the layout target its label
  * names (`layoutAgentLabel`) and the text itself — `null` for a comment
- * with no such label. */
+ * with no such label. A file's lines come back with the label's excerpt as
+ * their quote. */
 export function splitLayoutLabel(body: string): { target: LayoutCommentTarget; text: string } | null {
+  const lines = FILE_LINES_LABEL.exec(body)
+  if (lines !== null) {
+    const [, path, start, end, quote, text] = lines
+    const range = { start: Number(start), end: Number(end ?? start) }
+    return { target: { kind: 'file', path, lines: range, quote: quote ?? '' }, text }
+  }
   const match = LAYOUT_LABEL.exec(body)
   if (match === null) return null
   const [, name, slot, whole, , text] = match
@@ -194,13 +246,18 @@ export function splitLayoutLabel(body: string): { target: LayoutCommentTarget; t
 
 const LAYOUT_FILE = new RegExp(`^(?:layouts/(${NAME})\\.html|css/(${NAME})\\.css)$`)
 
-/** Which layout a sent comment is about: the layout whose file it's on,
- * else — for one on the review as a whole — the layout its label names.
- * `null` for a comment on the deck, or one no layout label heads. */
-export function layoutTargetOfComment(comment: Pick<ReviewComment, 'place' | 'body'>): LayoutCommentTarget | null {
+/** Which layout a sent comment is about: for one on lines of a layout or
+ * CSS file (written in the editor), those lines; else the layout whose
+ * file it's on, else — for one on the review as a whole — the layout its
+ * label names. `null` for a comment on the deck, or one no layout label
+ * heads. */
+export function layoutTargetOfComment(comment: Pick<ReviewComment, 'place' | 'body'> & Partial<Pick<ReviewComment, 'lines' | 'quote'>>): LayoutCommentTarget | null {
   switch (comment.place.kind) {
     case 'deck': return null
     case 'file': {
+      if (comment.lines && LAYOUT_FILE.test(comment.place.path)) {
+        return { kind: 'file', path: comment.place.path, lines: comment.lines, quote: comment.quote ?? '' }
+      }
       const match = LAYOUT_FILE.exec(comment.place.path)
       const name = match?.[1] ?? match?.[2]
       return name === undefined ? splitLayoutLabel(comment.body)?.target ?? null : { kind: 'layout', name }
