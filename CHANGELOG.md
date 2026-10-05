@@ -1,5 +1,20 @@
 # Changelog
 
+## [v0.1.3](https://github.com/piconic-ai/peitho-studio/compare/v0.1.2...v0.1.3) - 2026-10-05
+
+- Build new decks with eleven standard layouts and name a layout on every new slide by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/155
+- Fix the flaky review-edit e2e tests: don't collapse a selection the user already made by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/156
+- Veil the demo poster's red accent until the video plays by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/158
+- Show the app icon at the top of the README by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/159
+- Enable per-version preview URLs by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/160
+- Add a layout screen: list, apply, create, duplicate, delete and edit layouts by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/157
+- Comment on layouts from the layout screen and let the agent change them by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/162
+- Rearrange the layout screen: editor left, live list, PC / Phone switch by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/163
+- Autosave the layout editor and reflect agent edits to layout files by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/164
+- Pick a device preset for phone display: small phone, phone, large phone, tablet by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/165
+- Layout screen: files | editor | layout list, English names, and comments from the editor by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/166
+- Suppress the native context menu where the app has none by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/167
+
 ## [v0.1.2](https://github.com/piconic-ai/peitho-studio/compare/v0.1.1...v0.1.2) - 2026-10-02
 
 - fix: 更新確認時のTLS初期化不足による停止を修正 by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/152
