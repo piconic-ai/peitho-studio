@@ -11,7 +11,7 @@ import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
-  REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, layoutClickTarget, layoutTargetLabel, layoutTargetOfComment, lineSelectionOf, newLayoutComment, newReviewComment, pollsForAgent,
+  REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentKeyOf, commentTargetOf, layoutClickTarget, layoutTargetLabel, layoutTargetOfComment, lineSelectionOf, newLayoutComment, newReviewComment, pollsForAgent,
   previewPinsOf, reviewStatusText, slideIndexOfComment, slideSpans, targetLabel, editorLinesTarget, targetLines,
   type CommentTarget, type LayoutCommentTarget, type PreviewPin,
 } from '../domain/reviewComment'
@@ -1371,6 +1371,20 @@ export function Studio() {
         return _exhaustive
       }
     }
+  }
+
+  // The slide list menu's comment on the slide right-clicked: the whole
+  // slide, as a click on no element of its preview gives, where the menu
+  // was.
+  function commentOnSlideFromMenu(): void {
+    const menu = ui.contextMenu()
+    const index = contextMenuIndexOf(menu)
+    ui.closeContextMenu()
+    const entry = index === null ? undefined : slideEntries()[index]
+    if (menu.kind !== 'on-slide' || entry === undefined) return
+    const at = clampMenuPosition({ x: menu.x, y: menu.y }, { width: 336, height: 180 }, { width: window.innerWidth, height: window.innerHeight }, 8)
+    review.openBox(commentKeyOf(entry), { kind: 'slide', text: '', quote: '', offsetInSlide: 0 }, null, at)
+    focusCommentBox()
   }
 
   // Keeps the menu on-screen, as the layout menu's effect does.
@@ -3923,6 +3937,7 @@ export function Studio() {
         onTogglePageNumber={() => { void toggleSlidePageNumber(contextMenuIndexOf(ui.contextMenu())!); ui.closeContextMenu() }}
         onMoveUp={() => { void moveSlide(contextMenuIndexOf(ui.contextMenu())!, -1); ui.closeContextMenu() }}
         onMoveDown={() => { void moveSlide(contextMenuIndexOf(ui.contextMenu())!, 1); ui.closeContextMenu() }}
+        onCommentSlide={commentOnSlideFromMenu}
       />
         </>
       )}

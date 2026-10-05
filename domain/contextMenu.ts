@@ -25,6 +25,7 @@ export type ContextMenu =
 export type MenuAction =
   | 'new-slide' | 'cut' | 'copy' | 'paste' | 'delete' | 'change-layout'
   | 'toggle-draft' | 'toggle-skip' | 'toggle-section' | 'toggle-page-number' | 'move-up' | 'move-down'
+  | 'comment-slide'
 
 export interface MenuItem {
   action: MenuAction
@@ -95,6 +96,9 @@ export function menuItems(menu: ContextMenu, ctx: MenuContext): MenuItem[] {
     { action: 'toggle-page-number', enabled: hasSlide && (hidesPageNumber || (!isDraft && ctx.pageNumbersShown)), checked: hidesPageNumber },
     { action: 'move-up', enabled: hasSlide && index > 0 },
     { action: 'move-down', enabled: hasSlide && index < ctx.slideCount - 1 },
+    // A comment on the slide as a whole, as a click on no element of its
+    // preview gives — for the agent.
+    { action: 'comment-slide', enabled: hasSlide },
   ]
 }
 

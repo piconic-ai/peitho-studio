@@ -40,6 +40,8 @@ export interface SlideContextMenuProps {
   onTogglePageNumber: () => void
   onMoveUp: () => void
   onMoveDown: () => void
+  /** A comment on the slide right-clicked, for the agent. */
+  onCommentSlide: () => void
 }
 
 export function SlideContextMenu(props: SlideContextMenuProps) {
@@ -228,6 +230,16 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).moveSlideDown}</span><span className="text-xs text-muted-foreground">⌘⇧↓</span>
+        </button>
+        <div className="my-1 border-t border-border" />
+        <button
+          type="button"
+          data-slide-menu-item="comment-slide"
+          disabled={!menuItemEnabled(props.menuItems, 'comment-slide')}
+          onClick={() => props.onCommentSlide()}
+          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <span>{messagesFor(props.language).commentOnSlide}</span>
         </button>
       </div>
     </>

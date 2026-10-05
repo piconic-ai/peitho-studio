@@ -217,3 +217,29 @@ test.describe('vim mode', () => {
     await expect(page.locator('[data-comment-target]')).toHaveText('Slide 1 › lines L8-L10 "Some text more text"')
   })
 })
+
+test.describe('the slide list\'s row menu', () => {
+  test('Given a slide row right-clicked, When Comment on This Slide… is chosen, Then the box opens on that slide as a whole, and the agent gets it on its lines', async ({ page }) => {
+    const deck = await openDeck(page, { crit: createFakeCritIpc() })
+    await page.locator('[data-slide-row="1"]').click({ button: 'right' })
+    const item = page.locator('[data-slide-menu-item="comment-slide"]')
+    await expect(item).toHaveText('Comment on This Slide…')
+    await item.click()
+
+    await expect(page.locator('[data-comment-target]')).toHaveText('Slide 2')
+    await expect(page.locator(`${BOX} textarea`)).toBeFocused()
+    await page.locator(`${BOX} textarea`).fill('Cut this one')
+    await page.locator('[data-comment-add]').click()
+    await page.locator('[data-review-send]').click()
+    await expect.poll(() => sentComments(deck.crit!)).toEqual([{
+      startLine: 19, endLine: 21, quote: '', author: 'Peitho Studio', body: '[Slide 2] Cut this one',
+    }])
+  })
+
+  test('Given empty list space right-clicked, Then the comment on a slide is off', async ({ page }) => {
+    await openDeck(page)
+    const list = (await page.locator('[data-panel="slides"]').boundingBox())!
+    await page.mouse.click(list.x + 40, list.y + list.height - 20, { button: 'right' })
+    await expect(page.locator('[data-slide-menu-item="comment-slide"]')).toBeDisabled()
+  })
+})
