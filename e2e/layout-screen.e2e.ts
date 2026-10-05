@@ -1132,6 +1132,32 @@ test.describe('the layout list\'s PC / Phone switch', () => {
     await expect(toggle(page)).toHaveAttribute('aria-checked', 'true')
   })
 
+  test('Given phone display, when the tablet is picked in the layout list, then the thumbnails take the tablet\'s proportion, the slide preview shows the tablet too, and a small phone picked there comes back to the list', async ({ page }) => {
+    await openLayoutScreen(page, deckOf())
+    await toggle(page).click()
+    // The standard phone, 1280x2179.
+    await expect.poll(() => ratio(page, 'quote')).toBeCloseTo(2179 / 1280, 1)
+
+    await page.locator('[data-layout-list] [data-phone-shape-menu-button]').click()
+    await page.locator('[data-layout-list] [data-phone-shape-option="tablet"]').click()
+    for (const name of ['title-slide', 'title-body', 'quote']) {
+      await expect.poll(() => ratio(page, name)).toBeCloseTo(1608 / 1280, 1)
+    }
+
+    await page.locator('[data-studio-mode-option="slides"]').click()
+    const preview = page.locator('[data-preview-host]')
+    await expect.poll(() => preview.evaluate(el => (el as HTMLElement).style.getPropertyValue('--peitho-canvas-height'))).toBe('1608px')
+    await page.locator('[data-panel="preview"] [data-phone-shape-menu-button]').click()
+    await expect(page.locator('[data-panel="preview"] [data-phone-shape-option="tablet"]')).toHaveAttribute('aria-checked', 'true')
+    await page.locator('[data-panel="preview"] [data-phone-shape-option="small-phone"]').click()
+    await expect.poll(() => preview.evaluate(el => (el as HTMLElement).style.getPropertyValue('--peitho-canvas-height'))).toBe('1871px')
+
+    await page.locator('[data-studio-mode-option="layouts"]').click()
+    await expect.poll(() => ratio(page, 'quote')).toBeCloseTo(1871 / 1280, 1)
+    await page.locator('[data-layout-list] [data-phone-shape-menu-button]').click()
+    await expect(page.locator('[data-layout-list] [data-phone-shape-option="small-phone"]')).toHaveAttribute('aria-checked', 'true')
+  })
+
   test('Given Phone switched on in the layout list, when the window goes to Slides, then the preview is in phone display too; switched off there, the layout list is back in PC display', async ({ page }) => {
     await openLayoutScreen(page, deckOf())
     const pc = await ratio(page, 'quote')

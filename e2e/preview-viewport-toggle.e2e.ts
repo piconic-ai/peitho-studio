@@ -11,8 +11,10 @@
 // human checklist in the todo.
 //
 // Phone display has a second choice, its shape, picked from a menu the ▾
-// beside the Phone segment opens: the phone's tall proportion (the default)
-// or the deck's own ("same ratio as PC"), which by design gives the same
+// beside the Phone segment opens: a device's proportion (a small phone, the
+// standard phone by default, a large phone or a tablet —
+// todo/viewport-device-presets.md) or the deck's own ("same ratio as PC"),
+// which by design gives the same
 // canvas size as PC display. The header's controls are icons, with their
 // words in `aria-label`/`title`.
 import { test, expect, type Locator, type Page } from '@playwright/test'
@@ -31,9 +33,9 @@ const PREVIEW = '[data-preview-host]'
 const THUMBNAILS = '[data-slide-canvas-key]:not([data-preview-host])'
 
 // The canvas height a 1280-wide deck gets in PC display and in phone display
-// (390x844), and the probe colours below.
+// (the standard phone, 390x664), and the probe colours below.
 const PC_HEIGHT = '720px'
-const PHONE_HEIGHT = '2770px'
+const PHONE_HEIGHT = '2179px'
 const BLUE = 'rgb(0, 0, 255)'
 const RED = 'rgb(255, 0, 0)'
 
@@ -130,6 +132,14 @@ async function countPreviewMounts(page: Page): Promise<() => Promise<number>> {
   return () => page.evaluate(() => (window as unknown as { __previewObserveCalls: number }).__previewObserveCalls)
 }
 
+/** A window short enough that the preview pane fits the standard phone's
+ * 1280x2179 canvas by its height. In the default 1280x720 window the narrow
+ * pane fits both that canvas and the deck's by their width, so the scale
+ * would not move between them. */
+async function useShortWindow(page: Page): Promise<void> {
+  await page.setViewportSize({ width: 1280, height: 560 })
+}
+
 async function press(page: Page, times = 1): Promise<void> {
   for (let i = 0; i < times; i += 1) await page.locator(TOGGLE).click()
 }
@@ -166,7 +176,7 @@ function computed(locator: Locator, names: readonly string[]): Promise<Record<st
 }
 
 test.describe('Given a 16:9 deck (1280x720) with a normal slide selected', () => {
-  test('when the user presses the phone toggle, then the preview canvas becomes 1280x2770, and pressing again restores 1280x720', async ({ page }) => {
+  test('when the user presses the phone toggle, then the preview canvas becomes 1280x2179, and pressing again restores 1280x720', async ({ page }) => {
     await openDeck(page, deckWith())
     await expect(page.locator(TOGGLE)).toHaveAttribute('aria-checked', 'false')
     expect(await previewCanvasWidth(page)).toBe('1280px')
@@ -184,6 +194,7 @@ test.describe('Given a 16:9 deck (1280x720) with a normal slide selected', () =>
   })
 
   test('when the user presses the phone toggle, then the slide shrinks to fit the tall canvas, and PC display brings the old size back', async ({ page }) => {
+    await useShortWindow(page)
     await openDeck(page, deckWith())
     await expect.poll(() => scaleMisfit(page)).toBeLessThan(0.001)
     const pcScale = await previewScale(page)
@@ -272,12 +283,12 @@ test.describe('Given a slide marked data-canvas="fixed"', () => {
 })
 
 test.describe('Given a 4:3 deck (960x720)', () => {
-  test('when the user presses the phone toggle, then the preview canvas becomes 960x2078 (the phone\'s proportion, rounded to a whole pixel)', async ({ page }) => {
+  test('when the user presses the phone toggle, then the preview canvas becomes 960x1634 (the phone\'s proportion, rounded to a whole pixel)', async ({ page }) => {
     await openDeck(page, deckWith({ canvas: { width: 960, height: 720 } }))
     expect(await previewCanvasHeight(page)).toBe(PC_HEIGHT)
 
     await press(page)
-    await expect.poll(() => previewCanvasHeight(page)).toBe('2078px')
+    await expect.poll(() => previewCanvasHeight(page)).toBe('1634px')
     expect(await previewCanvasWidth(page)).toBe('960px')
   })
 })
@@ -302,7 +313,7 @@ test.describe('Given the phone toggle (non-functional behavior)', () => {
     expect(await previewSlideCount(page)).toBe(1)
   })
 
-  test('when the user edits the selected slide in phone display, then the preview follows the text without re-mounting, and the canvas stays 1280x2770', async ({ page }) => {
+  test('when the user edits the selected slide in phone display, then the preview follows the text without re-mounting, and the canvas stays 1280x2179', async ({ page }) => {
     const observeCalls = await countPreviewMounts(page)
     await openDeck(page, deckWith())
     await press(page)
@@ -377,16 +388,25 @@ test.describe('Given the preview header', () => {
       { title: 'PC', tags: ['rect', 'path', 'path'] },
       { title: 'Phone', tags: ['rect', 'path'] },
     ])
-    // ...and the menu's own: a tall rectangle for Tall, a wide one for Same ratio.
+    // ...and the menu's own: each device a tall rectangle at its own
+    // proportion (the tablet's the widest of them), a wide one for Same ratio.
     const options = await page.locator(`${MENU} [data-phone-shape-option]`).evaluateAll(items => items.map(item => {
       const drawn = (item.querySelector('svg > rect') as SVGGraphicsElement).getBBox()
-      return { shape: item.getAttribute('data-phone-shape-option'), tall: drawn.height > drawn.width }
+      return { shape: item.getAttribute('data-phone-shape-option'), tall: drawn.height > drawn.width, ratio: drawn.width / drawn.height }
     }))
-    expect(options).toEqual([{ shape: 'portrait', tall: true }, { shape: 'deck', tall: false }])
+    expect(options.map(({ shape, tall }) => ({ shape, tall }))).toEqual([
+      { shape: 'small-phone', tall: true },
+      { shape: 'phone', tall: true },
+      { shape: 'large-phone', tall: true },
+      { shape: 'tablet', tall: true },
+      { shape: 'deck', tall: false },
+    ])
+    expect(options[1].ratio).toBeCloseTo(390 / 664, 2)
+    for (const phone of options.slice(0, 3)) expect(options[3].ratio).toBeGreaterThan(phone.ratio)
 
     const switchIcons = await describeIcons(`${TOGGLE} svg`)
     const menuIcons = await describeIcons(`${MENU} svg`)
-    expect(menuIcons.map(icon => icon.tags)).toEqual([['rect'], ['rect']])
+    expect(menuIcons.map(icon => icon.tags)).toEqual([['rect'], ['rect'], ['rect'], ['rect'], ['rect']])
 
     for (const icon of [...switchIcons, ...menuIcons]) {
       expect(icon.namespace).toBe('http://www.w3.org/2000/svg')
@@ -441,11 +461,11 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await openDeck(page, deckWith())
     await expect(page.locator(MENU_BUTTON)).toBeHidden()
     await expect(page.locator(MENU)).toBeHidden()
-    await expect(page.getByRole('button', { name: 'Phone canvas shape' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Device to preview as' })).toHaveCount(0)
 
     await press(page)
     await expect(page.locator(MENU_BUTTON)).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Phone canvas shape' })).toHaveCount(1)
+    await expect(page.getByRole('button', { name: 'Device to preview as' })).toHaveCount(1)
     await expect(pill(page).locator('[data-phone-shape-menu-button]')).toHaveCount(1)
     await expect(page.locator(MENU_BUTTON)).toHaveAttribute('aria-haspopup', 'menu')
     await expect(page.locator(MENU_BUTTON)).toHaveAttribute('aria-expanded', 'false')
@@ -457,7 +477,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect(page.locator(MENU_BUTTON)).toBeHidden()
   })
 
-  test('when the ▾ is pressed, then the menu opens with its two options (Tall checked), and opening it changes neither the mode nor the canvas', async ({ page }) => {
+  test('when the ▾ is pressed, then the menu opens with the four devices and "Same ratio as PC" (Phone checked), each device named with its model and size, and opening it changes neither the mode nor the canvas', async ({ page }) => {
     await openDeck(page, deckWith())
     await press(page)
     await expect.poll(() => previewCanvasHeight(page)).toBe(PHONE_HEIGHT)
@@ -466,16 +486,24 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect(page.locator(MENU_BUTTON)).toHaveAttribute('aria-expanded', 'true')
     await expect(page.locator(MENU)).toBeVisible()
     await expect(page.locator(MENU)).toHaveAttribute('role', 'menu')
-    await expect(page.getByRole('menuitemradio')).toHaveCount(2)
-    await expect(page.locator(OPTION('portrait'))).toContainText('Tall')
-    await expect(page.locator(OPTION('portrait'))).toContainText('A tall canvas shaped like a portrait phone')
+    await expect(page.getByRole('menuitemradio')).toHaveCount(5)
+    await expect(page.locator(OPTION('small-phone'))).toContainText('Small phone')
+    await expect(page.locator(OPTION('small-phone'))).toContainText('iPhone SE 375×548')
+    await expect(page.locator(OPTION('phone'))).toContainText('Phone')
+    await expect(page.locator(OPTION('phone'))).toContainText('iPhone 15 390×664')
+    await expect(page.locator(OPTION('large-phone'))).toContainText('Large phone')
+    await expect(page.locator(OPTION('large-phone'))).toContainText('iPhone 15 Pro Max 430×740')
+    await expect(page.locator(OPTION('tablet'))).toContainText('Tablet')
+    await expect(page.locator(OPTION('tablet'))).toContainText('iPad 820×1030')
     await expect(page.locator(OPTION('deck'))).toContainText('Same ratio as PC')
     await expect(page.locator(OPTION('deck'))).toContainText('Keeps the deck\'s own ratio (16:9 / 4:3)')
-    await expect(page.locator(OPTION('portrait'))).toHaveAttribute('aria-checked', 'true')
+    await expect(page.locator(`${MENU} [aria-checked="true"]`)).toHaveCount(1)
+    await expect(page.locator(OPTION('phone'))).toHaveAttribute('aria-checked', 'true')
     await expect(page.locator(OPTION('deck'))).toHaveAttribute('aria-checked', 'false')
     // Only the chosen option carries the check mark.
-    await expect(page.locator(OPTION('portrait'))).toContainText('✓')
+    await expect(page.locator(OPTION('phone'))).toContainText('✓')
     await expect(page.locator(OPTION('deck'))).not.toContainText('✓')
+    await expect(page.locator(OPTION('tablet'))).not.toContainText('✓')
 
     await twoFrames(page)
     await expect(page.locator(TOGGLE)).toHaveAttribute('aria-checked', 'true')
@@ -519,7 +547,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect(page.locator(MENU)).toBeHidden()
   })
 
-  test('when the user picks "Same ratio as PC", then the canvas becomes 1280x720 (the same size as PC display) and the menu closes; picking "Tall" restores 1280x2770', async ({ page }) => {
+  test('when the user picks "Same ratio as PC", then the canvas becomes 1280x720 (the same size as PC display) and the menu closes; picking "Phone" restores 1280x2179', async ({ page }) => {
     await openDeck(page, deckWith())
     await press(page)
     await expect.poll(() => previewCanvasHeight(page)).toBe(PHONE_HEIGHT)
@@ -528,10 +556,10 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect(page.locator(MENU)).toBeHidden()
     await expect(page.locator(MENU_BUTTON)).toHaveAttribute('aria-expanded', 'false')
     await expect(page.locator(OPTION('deck'))).toHaveAttribute('aria-checked', 'true')
-    await expect(page.locator(OPTION('portrait'))).toHaveAttribute('aria-checked', 'false')
+    await expect(page.locator(OPTION('phone'))).toHaveAttribute('aria-checked', 'false')
     // The check mark follows the choice.
     await expect(page.locator(OPTION('deck'))).toContainText('✓')
-    await expect(page.locator(OPTION('portrait'))).not.toContainText('✓')
+    await expect(page.locator(OPTION('phone'))).not.toContainText('✓')
     await expect.poll(() => previewCanvasHeight(page)).toBe(PC_HEIGHT)
     expect(await previewCanvasWidth(page)).toBe('1280px')
     // The deck's own `@container` branch follows the canvas's shape too.
@@ -540,14 +568,32 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect(page.locator(TOGGLE)).toHaveAttribute('aria-checked', 'true')
     await expect(page.locator(MENU_BUTTON)).toBeVisible()
 
-    await chooseShape(page, 'portrait')
+    await chooseShape(page, 'phone')
     await expect(page.locator(MENU)).toBeHidden()
-    await expect(page.locator(OPTION('portrait'))).toHaveAttribute('aria-checked', 'true')
-    await expect(page.locator(OPTION('portrait'))).toContainText('✓')
+    await expect(page.locator(OPTION('phone'))).toHaveAttribute('aria-checked', 'true')
+    await expect(page.locator(OPTION('phone'))).toContainText('✓')
     await expect(page.locator(OPTION('deck'))).not.toContainText('✓')
     await expect.poll(() => previewCanvasHeight(page)).toBe(PHONE_HEIGHT)
     expect(await previewCanvasWidth(page)).toBe('1280px')
     await expect.poll(() => previewProbeColor(page)).toBe(RED)
+  })
+
+  test('when each device is picked in turn, then the canvas keeps its 1280 width and takes that device\'s proportion (small 1871, phone 2179, large 2203, tablet 1608), the tall-canvas branch firing for every one, and only the picked device is checked', async ({ page }) => {
+    await openDeck(page, deckWith())
+    await press(page)
+    for (const [shape, height] of [['small-phone', '1871px'], ['large-phone', '2203px'], ['tablet', '1608px'], ['phone', '2179px']] as const) {
+      await chooseShape(page, shape)
+      await expect(page.locator(MENU)).toBeHidden()
+      await expect.poll(() => previewCanvasHeight(page)).toBe(height)
+      expect(await previewCanvasWidth(page)).toBe('1280px')
+      await expect.poll(() => previewProbeColor(page)).toBe(RED)
+      await expect.poll(() => scaleMisfit(page)).toBeLessThan(0.001)
+      await page.locator(MENU_BUTTON).click()
+      await expect(page.locator(`${MENU} [aria-checked="true"]`)).toHaveCount(1)
+      await expect(page.locator(OPTION(shape))).toHaveAttribute('aria-checked', 'true')
+      await page.keyboard.press('Escape')
+      await expect(page.locator(MENU)).toBeHidden()
+    }
   })
 
   test('when the already chosen option is picked again, then nothing changes but the menu closes', async ({ page }) => {
@@ -555,11 +601,11 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await press(page)
     await expect.poll(() => previewCanvasHeight(page)).toBe(PHONE_HEIGHT)
 
-    await chooseShape(page, 'portrait')
+    await chooseShape(page, 'phone')
     await expect(page.locator(MENU)).toBeHidden()
     await twoFrames(page)
     expect(await previewCanvasHeight(page)).toBe(PHONE_HEIGHT)
-    await expect(page.locator(OPTION('portrait'))).toHaveAttribute('aria-checked', 'true')
+    await expect(page.locator(OPTION('phone'))).toHaveAttribute('aria-checked', 'true')
   })
 
   test('when Escape is pressed with the menu open, then it closes and nothing else changes', async ({ page }) => {
@@ -571,7 +617,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect(page.locator(MENU_BUTTON)).toHaveAttribute('aria-expanded', 'false')
     await twoFrames(page)
     await expect(page.locator(TOGGLE)).toHaveAttribute('aria-checked', 'true')
-    await expect(page.locator(OPTION('portrait'))).toHaveAttribute('aria-checked', 'true')
+    await expect(page.locator(OPTION('phone'))).toHaveAttribute('aria-checked', 'true')
     expect(await previewCanvasHeight(page)).toBe(PHONE_HEIGHT)
   })
 
@@ -685,12 +731,13 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await press(page)
     await expect(page.locator(TOGGLE)).toHaveAttribute('aria-checked', 'true')
     await expect(page.locator(OPTION('deck'))).toHaveAttribute('aria-checked', 'true')
-    await expect(page.locator(OPTION('portrait'))).toHaveAttribute('aria-checked', 'false')
+    await expect(page.locator(OPTION('phone'))).toHaveAttribute('aria-checked', 'false')
     await twoFrames(page)
     expect(await previewCanvasHeight(page)).toBe(PC_HEIGHT)
   })
 
   test('when the shape changes, then the slide is re-fitted to the new canvas (and "Same ratio as PC" fits exactly as PC display does)', async ({ page }) => {
+    await useShortWindow(page)
     await openDeck(page, deckWith())
     await expect.poll(() => scaleMisfit(page)).toBeLessThan(0.001)
     const pcScale = await previewScale(page)
@@ -708,7 +755,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect.poll(() => scaleMisfit(page)).toBeLessThan(0.001)
     expect(await previewScale(page)).toBeCloseTo(pcScale, 3)
 
-    await chooseShape(page, 'portrait')
+    await chooseShape(page, 'phone')
     await expect.poll(() => previewCanvasHeight(page)).toBe(PHONE_HEIGHT)
     await expect.poll(() => scaleMisfit(page)).toBeLessThan(0.001)
     expect(await previewScale(page)).toBeCloseTo(tallScale, 3)
@@ -726,7 +773,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
         click(button)
         click(pick)
       }
-    }, { button: MENU_BUTTON, picks: [OPTION('deck'), OPTION('portrait'), OPTION('deck'), OPTION('portrait'), OPTION('deck'), OPTION('portrait'), OPTION(finalShape)] })
+    }, { button: MENU_BUTTON, picks: [OPTION('deck'), OPTION('phone'), OPTION('deck'), OPTION('phone'), OPTION('deck'), OPTION('phone'), OPTION(finalShape)] })
 
     await chooseManyTimes('deck')
     await expect(page.locator(OPTION('deck'))).toHaveAttribute('aria-checked', 'true')
@@ -735,21 +782,21 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect.poll(() => scaleMisfit(page)).toBeLessThan(0.001)
     expect(await previewSlideCount(page)).toBe(1)
 
-    await chooseManyTimes('portrait')
-    await expect(page.locator(OPTION('portrait'))).toHaveAttribute('aria-checked', 'true')
+    await chooseManyTimes('phone')
+    await expect(page.locator(OPTION('phone'))).toHaveAttribute('aria-checked', 'true')
     await expect.poll(() => previewCanvasHeight(page)).toBe(PHONE_HEIGHT)
     await expect.poll(() => scaleMisfit(page)).toBeLessThan(0.001)
     await expect.poll(() => previewProbeColor(page)).toBe(RED)
     expect(await previewSlideCount(page)).toBe(1)
   })
 
-  test('when a 4:3 deck (960x720) is shown, then Tall is 960x2078 and "Same ratio as PC" is the deck\'s own 960x720', async ({ page }) => {
+  test('when a 4:3 deck (960x720) is shown, then the standard phone is 960x1634 and "Same ratio as PC" is the deck\'s own 960x720', async ({ page }) => {
     await openDeck(page, deckWith({ canvas: { width: 960, height: 720 } }))
     expect(await previewCanvasWidth(page)).toBe('960px')
     expect(await previewCanvasHeight(page)).toBe(PC_HEIGHT)
 
     await press(page)
-    await expect.poll(() => previewCanvasHeight(page)).toBe('2078px')
+    await expect.poll(() => previewCanvasHeight(page)).toBe('1634px')
     expect(await previewCanvasWidth(page)).toBe('960px')
 
     await chooseShape(page, 'deck')
@@ -757,7 +804,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     expect(await previewCanvasWidth(page)).toBe('960px')
   })
 
-  test('when a fixed slide is selected, then its canvas is 1280x720 in the tall shape as well as the same-ratio one (the menu still works, the canvas just does not follow)', async ({ page }) => {
+  test('when a fixed slide is selected, then its canvas is 1280x720 on the standard phone as well as the same-ratio one (the menu still works, the canvas just does not follow)', async ({ page }) => {
     await openDeck(page, deckWith())
     await page.locator('[data-slide-row="1"]').click()
     await expect(page.locator(PREVIEW)).toHaveAttribute('data-slide-canvas-key', 'arcade')
@@ -776,7 +823,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     expect(await previewCanvasHeight(page)).toBe(PC_HEIGHT)
     expect(await previewProbeColor(page)).toBe(BLUE)
 
-    await chooseShape(page, 'portrait')
+    await chooseShape(page, 'phone')
     await twoFrames(page)
     expect(await previewCanvasHeight(page)).toBe(PC_HEIGHT)
     expect(await previewProbeColor(page)).toBe(BLUE)
@@ -790,7 +837,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     // In the same-ratio shape both kinds of slide are 720 high, so only the
     // tall shape can tell a fixed slide from an ordinary one; the second pass
     // pins that neither kind is disturbed by the shape.
-    for (const [shape, ordinaryHeight] of [['portrait', PHONE_HEIGHT], ['deck', PC_HEIGHT]] as const) {
+    for (const [shape, ordinaryHeight] of [['phone', PHONE_HEIGHT], ['deck', PC_HEIGHT]] as const) {
       await chooseShape(page, shape)
       await page.locator('[data-slide-row="1"]').click()
       await expect(page.locator(PREVIEW)).toHaveAttribute('data-slide-canvas-key', 'arcade')
@@ -837,7 +884,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     expect(await previewCanvasHeight(page)).toBe(PC_HEIGHT)
   })
 
-  test('when the page is reloaded, then the shape starts as Tall again and the menu is closed (the choice is not persisted)', async ({ page }) => {
+  test('when the page is reloaded, then the shape starts as the standard phone again and the menu is closed (the choice is not persisted)', async ({ page }) => {
     await openDeck(page, deckWith())
     await press(page)
     await chooseShape(page, 'deck')
@@ -848,7 +895,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
     await expect(page.locator(MENU_BUTTON)).toBeHidden()
     await press(page)
     await expect(page.locator(MENU)).toBeHidden()
-    await expect(page.locator(OPTION('portrait'))).toHaveAttribute('aria-checked', 'true')
+    await expect(page.locator(OPTION('phone'))).toHaveAttribute('aria-checked', 'true')
     await expect.poll(() => previewCanvasHeight(page)).toBe(PHONE_HEIGHT)
   })
 })
