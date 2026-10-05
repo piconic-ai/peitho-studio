@@ -4,11 +4,13 @@
 // each can run now. Pure — `components/ContextMenu.tsx` draws the items
 // this computes, and `Studio.tsx` runs the chosen action.
 //
-// Its items are data, like the layout menu's (`domain/layoutMenu.ts`): a
-// comment on what was right-clicked, and on an editor the Cut / Copy /
-// Paste the native menu offered, since this menu replaces it. (The slide
-// preview's menu is the slide list's, `domain/contextMenu.ts`.)
+// Its items are data, like the layout menu's (`domain/layoutMenu.ts`): the
+// comment every menu opens with (`domain/menuComment.ts`), on the lines
+// right-clicked, then the Cut / Copy / Paste the native menu offered, since
+// this menu replaces it. (The slide preview's menu is the slide list's,
+// `domain/contextMenu.ts`.)
 import type { Messages } from './messages'
+import { COMMENT_ACTION, commentItemLabel, setApartFromComment, type CommentAction } from './menuComment'
 
 /** The editors the menu opens on: the slide's body and notes, and the
  * layout screen's file editor. */
@@ -23,7 +25,7 @@ export type CommentMenu =
 
 export const COMMENT_MENU_CLOSED: CommentMenu = { kind: 'closed' }
 
-export type CommentMenuAction = 'comment-lines' | 'cut' | 'copy' | 'paste'
+export type CommentMenuAction = CommentAction | 'cut' | 'copy' | 'paste'
 
 export interface CommentMenuItem {
   action: CommentMenuAction
@@ -43,21 +45,23 @@ export function isOpenOnEditor(menu: CommentMenu, editor: MenuEditor): boolean {
   return menu.kind === 'on-editor' && menu.editor === editor
 }
 
-/** The menu's items, in order, each with whether it can run now: a
- * comment on the editor's lines, then — set apart — Cut and Copy (with
- * text selected) and Paste. */
+/** The menu's items, in order, each with whether it can run now: the
+ * comment on the lines picked, then — set apart — Cut and Copy (with text
+ * selected) and Paste. */
 export function commentMenuItems(menu: CommentMenu): CommentMenuItem[] {
   switch (menu.kind) {
     case 'closed':
       return []
     case 'on-editor': {
       const selected = menu.from !== menu.to
-      return [
-        { action: 'comment-lines', enabled: true, separatorBefore: false },
-        { action: 'cut', enabled: selected, separatorBefore: true },
-        { action: 'copy', enabled: selected, separatorBefore: false },
-        { action: 'paste', enabled: true, separatorBefore: false },
+      const items: Omit<CommentMenuItem, 'separatorBefore'>[] = [
+        { action: COMMENT_ACTION, enabled: true },
+        { action: 'cut', enabled: selected },
+        { action: 'copy', enabled: selected },
+        { action: 'paste', enabled: true },
       ]
+      const actions = items.map(item => item.action)
+      return items.map((item, index) => ({ ...item, separatorBefore: setApartFromComment(actions, index) }))
     }
     default: {
       const _exhaustive: never = menu
@@ -66,12 +70,12 @@ export function commentMenuItems(menu: CommentMenu): CommentMenuItem[] {
   }
 }
 
-/** `action`'s label in `menu`: a comment on lines says whether it's on the
- * line the cursor is on or on the lines selected. */
-export function commentMenuLabel(action: CommentMenuAction, menu: CommentMenu, messages: Messages): string {
+/** `action`'s label: the comment's is every menu's (`commentItemLabel`) —
+ * the comment box's header says which lines. `menu` is kept for labels
+ * that may depend on it. */
+export function commentMenuLabel(action: CommentMenuAction, _menu: CommentMenu, messages: Messages): string {
   switch (action) {
-    case 'comment-lines':
-      return menu.kind === 'on-editor' && menu.from !== menu.to ? messages.commentOnSelectedLines : messages.commentOnThisLine
+    case COMMENT_ACTION: return commentItemLabel(messages)
     case 'cut': return messages.cut
     case 'copy': return messages.copy
     case 'paste': return messages.paste

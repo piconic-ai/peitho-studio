@@ -107,7 +107,7 @@ test('Given a layout row, when it is right-clicked, then a menu offers Apply, Ed
 
   await row(page, 'quote').click({ button: 'right' })
   await expect(layoutMenu(page)).toBeVisible()
-  await expect(layoutMenu(page).locator('[data-menu-item]')).toHaveText(['Apply to Slide', 'Edit Layout', 'Duplicate Layout', 'Delete Layout', 'Comment on This Layout…'])
+  await expect(layoutMenu(page).locator('[data-menu-item]')).toHaveText(['Comment…', 'Apply to Slide', 'Edit Layout', 'Duplicate Layout', 'Delete Layout'])
   await expect(layoutMenuItem(page, 'apply')).toBeEnabled()
 
   await page.keyboard.press('Escape')
@@ -173,7 +173,7 @@ test('Given empty space in the layout list, when it is right-clicked, then the m
 
   await rightClickListSpace(page)
 
-  await expect(layoutMenu(page).locator('[data-menu-item]')).toHaveText(['New Layout', 'Comment on All Layouts…'])
+  await expect(layoutMenu(page).locator('[data-menu-item]')).toHaveText(['Comment…', 'New Layout'])
   await layoutMenuItem(page, 'new-layout').click()
   await expect(page.locator('[data-new-layout-form]')).toBeVisible()
   await expect(layoutMenu(page)).toBeHidden()

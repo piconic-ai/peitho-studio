@@ -6,7 +6,7 @@ import {
 } from './commentMenu'
 import { messagesFor } from './messages'
 const EDITORS: MenuEditor[] = ['body', 'note', 'layout']
-const ACTIONS: CommentMenuAction[] = ['comment-lines', 'cut', 'copy', 'paste']
+const ACTIONS: CommentMenuAction[] = ['comment', 'cut', 'copy', 'paste']
 
 function enabledOf(menu: CommentMenu): Record<string, boolean> {
   return Object.fromEntries(commentMenuItems(menu).map(item => [item.action, item.enabled]))
@@ -16,13 +16,13 @@ describe('commentMenuItems', () => {
   test('spec: Given a right-click on an editor with lines selected, Then a comment on them, then — set apart — Cut, Copy and Paste, all enabled', () => {
     const menu = openOnEditor('body', 1, 2, 3, 9)
     expect(commentMenuItems(menu).map(item => [item.action, item.separatorBefore])).toEqual([
-      ['comment-lines', false], ['cut', true], ['copy', false], ['paste', false],
+      ['comment', false], ['cut', true], ['copy', false], ['paste', false],
     ])
-    expect(enabledOf(menu)).toEqual({ 'comment-lines': true, cut: true, copy: true, paste: true })
+    expect(enabledOf(menu)).toEqual({ comment: true, cut: true, copy: true, paste: true })
   })
 
   test('spec: Given a right-click on an editor with only a caret, Then Cut and Copy are off, the comment and Paste on', () => {
-    expect(enabledOf(openOnEditor('layout', 1, 2, 5, 5))).toEqual({ 'comment-lines': true, cut: false, copy: false, paste: true })
+    expect(enabledOf(openOnEditor('layout', 1, 2, 5, 5))).toEqual({ comment: true, cut: false, copy: false, paste: true })
   })
 
   test('adversarial: Given the menu closed, Then there is nothing to offer', () => {
@@ -32,20 +32,19 @@ describe('commentMenuItems', () => {
   test('exhaustive: Given every editor and selection, Then the items are the same four in the same order, and never throw', () => {
     for (const editor of EDITORS) {
       for (const [from, to] of [[0, 0], [0, 1], [7, 2], [Number.NaN, 3]]) {
-        expect(commentMenuItems(openOnEditor(editor, 0, 0, from, to)).map(item => item.action)).toEqual(['comment-lines', 'cut', 'copy', 'paste'])
+        expect(commentMenuItems(openOnEditor(editor, 0, 0, from, to)).map(item => item.action)).toEqual(['comment', 'cut', 'copy', 'paste'])
       }
     }
   })
 })
 
 describe('commentMenuLabel', () => {
-  test('spec: Given lines selected, Then the comment is on the selected lines; with a caret, on this line — in both languages', () => {
-    const en = messagesFor('en')
-    const ja = messagesFor('ja')
-    expect(commentMenuLabel('comment-lines', openOnEditor('note', 0, 0, 1, 4), en)).toBe('Comment on Selected Lines…')
-    expect(commentMenuLabel('comment-lines', openOnEditor('note', 0, 0, 4, 4), en)).toBe('Comment on This Line…')
-    expect(commentMenuLabel('comment-lines', openOnEditor('body', 0, 0, 1, 4), ja)).toBe('選択した行にコメント…')
-    expect(commentMenuLabel('comment-lines', openOnEditor('body', 0, 0, 4, 4), ja)).toBe('この行にコメント…')
+  test('spec: Given lines selected or only a caret, Then the comment reads the same plain Comment… either way — the box\'s header says which lines', () => {
+    for (const [language, label] of [['en', 'Comment…'], ['ja', 'コメント…']] as const) {
+      for (const menu of [openOnEditor('note', 0, 0, 1, 4), openOnEditor('body', 0, 0, 4, 4)]) {
+        expect(commentMenuLabel('comment', menu, messagesFor(language))).toBe(label)
+      }
+    }
   })
 
   test('exhaustive: Given every action and either language, Then each has a label of its own', () => {

@@ -3,6 +3,7 @@
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
 import { menuItemEnabled, menuItemChecked, type MenuItem } from '../domain/contextMenu'
+import { COMMENT_ACTION, commentItemLabel } from '../domain/menuComment'
 import { entryTitle, isSelectable, layoutNoticeText, type LayoutFitCheck, type LayoutNotice } from '../domain/layoutFit'
 import { layoutDisplayName } from '../domain/standardLayouts'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
@@ -40,7 +41,7 @@ export interface SlideContextMenuProps {
   onTogglePageNumber: () => void
   onMoveUp: () => void
   onMoveDown: () => void
-  /** A comment: on the slide right-clicked in the list, or on what was
+  /** The comment: on the slide right-clicked in the list, or on what was
    * right-clicked on its preview. */
   onCommentSlide: () => void
 }
@@ -79,10 +80,26 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
         className={(props.hidden ? 'hidden ' : '') + 'fixed w-56 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg py-1 z-40 text-sm'}
         style={`left: ${String(props.position.x)}px; top: ${String(props.position.y)}px`}
       >
+        {/* The comment every right-click menu opens with
+            (`domain/menuComment.ts`), its speech bubble in the gutter the
+            other items keep (`pl-9`), as in `ContextMenu.tsx`. */}
+        <button
+          type="button"
+          data-slide-menu-item={COMMENT_ACTION}
+          disabled={!menuItemEnabled(props.menuItems, COMMENT_ACTION)}
+          onClick={() => props.onCommentSlide()}
+          className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <svg aria-hidden="true" data-menu-icon="comment" className="block w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 4h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-4.2 3.4a.5.5 0 0 1-.8-.4V5a1 1 0 0 1 1-1z" />
+          </svg>
+          <span>{commentItemLabel(messagesFor(props.language))}</span>
+        </button>
+        <div className="my-1 border-t border-border" />
         <button
           type="button"
           onClick={() => props.onNewSlide()}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent"
+          className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent"
         >
           <span>{messagesFor(props.language).newSlide}</span><span className="text-xs text-muted-foreground">⌘⏎</span>
         </button>
@@ -91,7 +108,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           type="button"
           disabled={!menuItemEnabled(props.menuItems, 'cut')}
           onClick={() => props.onCut()}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+          className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).cut}</span><span className="text-xs text-muted-foreground">⌘X</span>
         </button>
@@ -99,7 +116,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           type="button"
           disabled={!menuItemEnabled(props.menuItems, 'copy')}
           onClick={() => props.onCopy()}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+          className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).copy}</span><span className="text-xs text-muted-foreground">⌘C</span>
         </button>
@@ -107,7 +124,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           type="button"
           disabled={!menuItemEnabled(props.menuItems, 'paste')}
           onClick={() => props.onPaste()}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+          className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).paste}</span><span className="text-xs text-muted-foreground">⌘V</span>
         </button>
@@ -116,7 +133,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           type="button"
           disabled={!menuItemEnabled(props.menuItems, 'delete')}
           onClick={() => props.onDelete()}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent text-destructive"
+          className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent text-destructive"
         >
           <span>{messagesFor(props.language).delete}</span><span className="text-xs text-muted-foreground">⌦</span>
         </button>
@@ -125,7 +142,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           type="button"
           disabled={!menuItemEnabled(props.menuItems, 'change-layout')}
           onClick={() => props.onToggleLayoutPicker()}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+          className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).changeLayout}</span><span aria-hidden="true">{props.layoutPickerOpen ? '▾' : '▸'}</span>
         </button>
@@ -185,7 +202,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           type="button"
           disabled={!menuItemEnabled(props.menuItems, 'toggle-draft')}
           onClick={() => props.onToggleDraft()}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+          className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).markAsDraft}</span>
           {menuItemChecked(props.menuItems, 'toggle-draft') ? <span aria-hidden="true">✓</span> : null}
@@ -194,7 +211,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           type="button"
           disabled={!menuItemEnabled(props.menuItems, 'toggle-skip')}
           onClick={() => props.onToggleSkip()}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+          className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).skipInPresent}</span>
           {menuItemChecked(props.menuItems, 'toggle-skip') ? <span aria-hidden="true">✓</span> : null}
@@ -203,7 +220,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           type="button"
           disabled={!menuItemEnabled(props.menuItems, 'toggle-section')}
           onClick={() => props.onToggleSection()}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+          className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).sectionStart}</span>
           {menuItemChecked(props.menuItems, 'toggle-section') ? <span aria-hidden="true">✓</span> : null}
@@ -212,7 +229,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           type="button"
           disabled={!menuItemEnabled(props.menuItems, 'toggle-page-number')}
           onClick={() => props.onTogglePageNumber()}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+          className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).hidePageNumber}</span>
           {menuItemChecked(props.menuItems, 'toggle-page-number') ? <span aria-hidden="true">✓</span> : null}
@@ -222,7 +239,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           type="button"
           disabled={!menuItemEnabled(props.menuItems, 'move-up')}
           onClick={() => props.onMoveUp()}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+          className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).moveSlideUp}</span><span className="text-xs text-muted-foreground">⌘⇧↑</span>
         </button>
@@ -230,19 +247,9 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           type="button"
           disabled={!menuItemEnabled(props.menuItems, 'move-down')}
           onClick={() => props.onMoveDown()}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
+          className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).moveSlideDown}</span><span className="text-xs text-muted-foreground">⌘⇧↓</span>
-        </button>
-        <div className="my-1 border-t border-border" />
-        <button
-          type="button"
-          data-slide-menu-item="comment-slide"
-          disabled={!menuItemEnabled(props.menuItems, 'comment-slide')}
-          onClick={() => props.onCommentSlide()}
-          className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          <span>{messagesFor(props.language).commentOnSlide}</span>
         </button>
       </div>
     </>

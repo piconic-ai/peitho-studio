@@ -80,7 +80,7 @@ describe('menuItems', () => {
     expect(byAction['change-layout'].enabled).toBe(true)
     expect(byAction['move-up'].enabled).toBe(true)
     expect(byAction['move-down'].enabled).toBe(true)
-    expect(byAction['comment-slide'].enabled).toBe(true)
+    expect(byAction['comment'].enabled).toBe(true)
   })
 
   test('spec: closed/on-empty-space disable every per-slide action but keep new-slide enabled', () => {
@@ -96,7 +96,7 @@ describe('menuItems', () => {
       expect(byAction['toggle-draft'].enabled).toBe(false)
       expect(byAction['move-up'].enabled).toBe(false)
       expect(byAction['move-down'].enabled).toBe(false)
-      expect(byAction['comment-slide'].enabled).toBe(false)
+      expect(byAction['comment'].enabled).toBe(false)
     }
   })
 

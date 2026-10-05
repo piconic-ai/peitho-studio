@@ -408,7 +408,7 @@ test.describe('a comment from the editor', () => {
    * comment on lines. */
   async function commentFromEditor(page: Page, which: 'layout-html' | 'layout-css', lineText: string): Promise<void> {
     await editorContent(page, which).locator('.cm-line', { hasText: lineText }).first().click({ button: 'right', position: { x: 4, y: 4 } })
-    await page.locator('[data-menu="comment"] [data-menu-item="comment-lines"]').click()
+    await page.locator('[data-menu="comment"] [data-menu-item="comment"]').click()
   }
 
   function sentLayoutComments(crit: FakeCritIpc): NewLayoutComment[] {
@@ -472,7 +472,7 @@ test.describe('a comment from the editor', () => {
     const last = editorContent(page, 'layout-css').locator('.cm-line', { hasText: 'h1 { color: red; }' })
     const box = (await last.boundingBox())!
     await page.mouse.click(box.x + box.width - 2, box.y + box.height / 2, { button: 'right' })
-    await expect(page.locator('[data-menu="comment"] [data-menu-item]')).toHaveText(['Comment on This Line…', 'Cut', 'Copy', 'Paste'])
+    await expect(page.locator('[data-menu="comment"] [data-menu-item]')).toHaveText(['Comment…', 'Cut', 'Copy', 'Paste'])
     await page.locator('[data-menu="comment"] [data-menu-item="paste"]').click()
 
     await expect.poll(() => deck.otherFiles?.['css/base.css']).toBe('body {\n  margin: 0;\n}\nh1 { color: red; }h2 { color: blue; }\n')

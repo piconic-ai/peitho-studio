@@ -1,4 +1,5 @@
 import { type PageConfig } from './pageConfig'
+import { COMMENT_ACTION, type CommentAction } from './menuComment'
 import type { PreviewClick } from './reviewComment'
 import { type LayoutFitCheck, type LayoutNotice, type LayoutVerdict, availabilityOf, settledFitCheck } from './layoutFit'
 
@@ -28,9 +29,9 @@ export type ContextMenu =
   }
 
 export type MenuAction =
+  | CommentAction
   | 'new-slide' | 'cut' | 'copy' | 'paste' | 'delete' | 'change-layout'
   | 'toggle-draft' | 'toggle-skip' | 'toggle-section' | 'toggle-page-number' | 'move-up' | 'move-down'
-  | 'comment-slide'
 
 export interface MenuItem {
   action: MenuAction
@@ -89,6 +90,9 @@ export function menuItems(menu: ContextMenu, ctx: MenuContext): MenuItem[] {
   // refused combination, should a hand edit have produced one.
   const hidesPageNumber = config?.page_number === false
   return [
+    // First, as in every right-click menu (`domain/menuComment.ts`): on the
+    // slide right-clicked, or on what was right-clicked on its preview.
+    { action: COMMENT_ACTION, enabled: hasSlide },
     { action: 'new-slide', enabled: true },
     { action: 'cut', enabled: hasSlide },
     { action: 'copy', enabled: hasSlide },
@@ -101,9 +105,6 @@ export function menuItems(menu: ContextMenu, ctx: MenuContext): MenuItem[] {
     { action: 'toggle-page-number', enabled: hasSlide && (hidesPageNumber || (!isDraft && ctx.pageNumbersShown)), checked: hidesPageNumber },
     { action: 'move-up', enabled: hasSlide && index > 0 },
     { action: 'move-down', enabled: hasSlide && index < ctx.slideCount - 1 },
-    // A comment on the slide as a whole, as a click on no element of its
-    // preview gives — for the agent.
-    { action: 'comment-slide', enabled: hasSlide },
   ]
 }
 

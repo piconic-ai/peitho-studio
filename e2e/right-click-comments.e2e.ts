@@ -53,7 +53,7 @@ test.describe('the slide preview', () => {
     await expect(page.locator(SLIDE_MENU)).toBeVisible()
     await expect(page.locator(BOX)).toBeHidden()
 
-    await page.locator('[data-slide-menu-item="comment-slide"]').click()
+    await page.locator('[data-slide-menu-item="comment"]').click()
 
     await expect(page.locator(SLIDE_MENU)).toBeHidden()
     await expect(page.locator('[data-comment-target]')).toHaveText('Slide 1 › heading "Hello"')
@@ -138,11 +138,11 @@ test.describe('the slide body and notes editors', () => {
     const deck = await openDeck(page, { crit: createFakeCritIpc() })
     await rightClick(line(page, 'Some text'), { x: 4, y: 4 })
 
-    await expect(menuItems(page)).toHaveText(['Comment on This Line…', 'Cut', 'Copy', 'Paste'])
+    await expect(menuItems(page)).toHaveText(['Comment…', 'Cut', 'Copy', 'Paste'])
     await expect(menuItem(page, 'cut')).toBeDisabled()
     await expect(menuItem(page, 'copy')).toBeDisabled()
     await expect(menuItem(page, 'paste')).toBeEnabled()
-    await menuItem(page, 'comment-lines').click()
+    await menuItem(page, 'comment').click()
 
     await expect(page.locator('[data-comment-target]')).toHaveText('Slide 1 › lines L8 "Some text"')
     await expect(page.locator(`${BOX} textarea`)).toBeFocused()
@@ -161,9 +161,9 @@ test.describe('the slide body and notes editors', () => {
     await page.keyboard.press('Shift+End')
     await rightClick(line(page, 'Some text'), { x: 20, y: 4 })
 
-    await expect(menuItem(page, 'comment-lines')).toHaveText('Comment on Selected Lines…')
+    await expect(menuItem(page, 'comment')).toHaveText('Comment…')
     await expect(menuItem(page, 'copy')).toBeEnabled()
-    await menuItem(page, 'comment-lines').click()
+    await menuItem(page, 'comment').click()
 
     await expect(page.locator('[data-comment-target]')).toHaveText('Slide 1 › lines L8-L10 "Some text more text"')
     expect((await sendAndRead(page, deck, 'Merge'))[0]).toMatchObject({ startLine: 8, endLine: 10, quote: 'Some text\n\nmore text' })
@@ -172,7 +172,7 @@ test.describe('the slide body and notes editors', () => {
   test('Given a notes line right-clicked, then the comment is on that line of the notes in deck.md', async ({ page }) => {
     const deck = await openDeck(page, { crit: createFakeCritIpc() })
     await rightClick(line(page, 'then go', 'note'), { x: 4, y: 4 })
-    await menuItem(page, 'comment-lines').click()
+    await menuItem(page, 'comment').click()
     await expect(page.locator('[data-comment-target]')).toHaveText('Slide 1 › lines L14 "then go"')
     expect((await sendAndRead(page, deck, 'Say more'))[0]).toMatchObject({ startLine: 14, endLine: 14, quote: 'then go' })
   })
@@ -257,19 +257,19 @@ test.describe('vim mode', () => {
     await expect(vimStatus(page)).toContainText('VISUAL LINE')
 
     await rightClick(editorContent(page).locator('.cm-line', { hasText: 'Some text' }), { x: 4, y: 4 })
-    await expect(menuItem(page, 'comment-lines')).toHaveText('Comment on Selected Lines…')
+    await expect(menuItem(page, 'comment')).toHaveText('Comment…')
     await expect(vimStatus(page)).toContainText('VISUAL LINE')
-    await menuItem(page, 'comment-lines').click()
+    await menuItem(page, 'comment').click()
     await expect(page.locator('[data-comment-target]')).toHaveText('Slide 1 › lines L8-L10 "Some text more text"')
   })
 })
 
 test.describe('the slide list\'s row menu', () => {
-  test('Given a slide row right-clicked, When Comment on This Slide… is chosen, Then the box opens on that slide as a whole, and the agent gets it on its lines', async ({ page }) => {
+  test('Given a slide row right-clicked, When Comment… is chosen, Then the box opens on that slide as a whole, and the agent gets it on its lines', async ({ page }) => {
     const deck = await openDeck(page, { crit: createFakeCritIpc() })
     await page.locator('[data-slide-row="1"]').click({ button: 'right' })
-    const item = page.locator('[data-slide-menu-item="comment-slide"]')
-    await expect(item).toHaveText('Comment on This Slide…')
+    const item = page.locator('[data-slide-menu-item="comment"]')
+    await expect(item).toHaveText('Comment…')
     await item.click()
 
     await expect(page.locator('[data-comment-target]')).toHaveText('Slide 2')
@@ -286,6 +286,80 @@ test.describe('the slide list\'s row menu', () => {
     await openDeck(page)
     const list = (await page.locator('[data-panel="slides"]').boundingBox())!
     await page.mouse.click(list.x + 40, list.y + list.height - 20, { button: 'right' })
-    await expect(page.locator('[data-slide-menu-item="comment-slide"]')).toBeDisabled()
+    await expect(page.locator('[data-slide-menu-item="comment"]')).toBeDisabled()
+  })
+})
+
+test.describe('the comment item, the same in every right-click menu', () => {
+  /** The menu's first item is the comment: `Comment…` (or its Japanese),
+   * the speech bubble at its left, and set apart from the next item, whose
+   * label lines up with its own. */
+  async function expectCommentFirst(menu: Locator, label = 'Comment…'): Promise<void> {
+    await expect(menu).toBeVisible()
+    const items = menu.locator(':scope > button')
+    const first = items.first()
+    await expect(first).toHaveText(label)
+    await expect(first.locator('svg[data-menu-icon="comment"]')).toBeVisible()
+    const labelX = async (item: Locator) => (await item.locator('span').first().boundingBox())!.x
+    expect(Math.abs(await labelX(first) - await labelX(items.nth(1)))).toBeLessThan(1.5)
+    // Nothing else in the menu has the bubble.
+    await expect(menu.locator('svg[data-menu-icon="comment"]')).toHaveCount(1)
+  }
+
+  test('Given the slides screen, then the slide list row, the slide preview and both editors open their menu with it', async ({ page }) => {
+    await openDeck(page)
+    await page.locator('[data-slide-row="1"]').click({ button: 'right' })
+    await expectCommentFirst(page.locator(SLIDE_MENU))
+    await page.keyboard.press('Escape')
+
+    await rightClick(page.locator(`${PREVIEW} h1`))
+    await expectCommentFirst(page.locator(SLIDE_MENU))
+    await page.keyboard.press('Escape')
+
+    for (const which of ['body', 'note'] as const) {
+      await rightClick(editorContent(page, which).locator('.cm-line').first(), { x: 4, y: 4 })
+      await expectCommentFirst(page.locator(MENU))
+      await page.keyboard.press('Escape')
+    }
+  })
+
+  test('Given the layout screen, then the file editor, the large preview, a layout row and the list\'s empty space open their menu with it; the empty space\'s comment is on every layout', async ({ page }) => {
+    await openDeck(page, { layouts: ['cover', 'statement'] })
+    await page.locator('[data-studio-mode-option="layouts"]').click()
+    await expect(page.locator('[data-layout-row="cover"]')).toBeVisible()
+    const layoutMenu = page.locator('[data-menu="layout"]')
+
+    await expect.poll(() => editorText(page, 'layout-html')).toContain('<section')
+    await rightClick(editorContent(page, 'layout-html').locator('.cm-line').first(), { x: 4, y: 4 })
+    await expectCommentFirst(page.locator(MENU))
+    await page.keyboard.press('Escape')
+
+    const large = (await page.locator('[data-layout-selected-preview] [data-layout-thumbnail]').boundingBox())!
+    await page.mouse.click(large.x + 10, large.y + 10, { button: 'right' })
+    await expectCommentFirst(layoutMenu)
+    await page.keyboard.press('Escape')
+
+    await page.locator('[data-layout-row="statement"]').click({ button: 'right' })
+    await expectCommentFirst(layoutMenu)
+    await page.keyboard.press('Escape')
+
+    const rows = (await page.locator('[data-layout-rows]').boundingBox())!
+    await page.mouse.click(rows.x + 10, rows.y + rows.height - 10, { button: 'right' })
+    await expectCommentFirst(layoutMenu)
+    await layoutMenu.locator('[data-menu-item="comment"]').click()
+    await expect(page.locator('[data-comment-target]')).toHaveText('All layouts')
+  })
+
+  test('Given Japanese, then the comment item reads コメント… in every kind of menu', async ({ page }) => {
+    await openDeck(page, { settings: { uiLanguage: 'ja' }, layouts: ['cover', 'statement'] })
+    await page.locator('[data-slide-row="1"]').click({ button: 'right' })
+    await expectCommentFirst(page.locator(SLIDE_MENU), 'コメント…')
+    await page.keyboard.press('Escape')
+    await rightClick(editorContent(page).locator('.cm-line').first(), { x: 4, y: 4 })
+    await expectCommentFirst(page.locator(MENU), 'コメント…')
+    await page.keyboard.press('Escape')
+    await page.locator('[data-studio-mode-option="layouts"]').click()
+    await page.locator('[data-layout-row="statement"]').click({ button: 'right' })
+    await expectCommentFirst(page.locator('[data-menu="layout"]'), 'コメント…')
   })
 })

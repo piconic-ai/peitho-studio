@@ -10,6 +10,7 @@
 // component or to how it opens.
 import { type LayoutFitCheck, type LayoutVerdict, availabilityOf, settledFitCheck } from './layoutFit'
 import type { Messages } from './messages'
+import { COMMENT_ACTION, commentItemLabel, type CommentAction } from './menuComment'
 
 /** What the menu is open on. `on-layout` (a row) and `on-preview` (the
  * selected layout's large preview) name a layout, and only they carry the
@@ -25,7 +26,9 @@ export type LayoutMenu =
 
 export const LAYOUT_MENU_CLOSED: LayoutMenu = { kind: 'closed' }
 
-export type LayoutMenuAction = 'new-layout' | 'apply' | 'edit' | 'duplicate' | 'delete' | 'comment-layout' | 'comment-all-layouts' | 'comment-here'
+/** `comment` is on what the menu is open on: the layout (a row), the slot
+ * right-clicked (the large preview), or every layout (empty space). */
+export type LayoutMenuAction = CommentAction | 'new-layout' | 'apply' | 'edit' | 'duplicate' | 'delete'
 
 export interface LayoutMenuItem {
   action: LayoutMenuAction
@@ -90,12 +93,6 @@ export function layoutMenuSlot(menu: LayoutMenu): string | null {
   return menu.kind === 'on-preview' ? menu.slot : null
 }
 
-/** Whether `action` is set apart from the items before it by a rule: on
- * the large preview, the layout's own actions under its comment. */
-export function layoutMenuSeparatorBefore(menu: LayoutMenu, action: LayoutMenuAction): boolean {
-  return menu.kind === 'on-preview' && action === 'apply'
-}
-
 /** Where the menu is drawn — `{0, 0}` while closed (nothing reads it). */
 export function layoutMenuPosition(menu: LayoutMenu): { x: number; y: number } {
   return menu.kind === 'closed' ? { x: 0, y: 0 } : { x: menu.x, y: menu.y }
@@ -124,32 +121,30 @@ function applyReason(menu: Extract<LayoutMenu, { kind: 'on-layout' | 'on-preview
   }
 }
 
-/** The menu's items, in order, each with whether it can run now. Empty
- * space offers New Layout and a comment on every layout; a layout offers
- * Apply to Slide (only with a slide open that fits it), Edit, Duplicate,
- * Delete (not the deck's last layout) and a comment on it. The large
- * preview offers first a comment on what was right-clicked (the slot, as a
- * left-click there), then the layout's Apply, Duplicate and Delete — no
- * Edit: it's the layout being edited. Everything but Edit and the comments
- * waits while another operation runs — a comment touches no file until
- * it's sent. */
+/** The menu's items, in order, each with whether it can run now. Each
+ * opens with the comment (`domain/menuComment.ts`), on what the menu is
+ * open on. Then empty space offers New Layout; a layout offers Apply to
+ * Slide (only with a slide open that fits it), Edit, Duplicate and Delete
+ * (not the deck's last layout); the large preview the same but Edit — it's
+ * the layout being edited. Everything but Edit and the comment waits while
+ * another operation runs — a comment touches no file until it's sent. */
 export function layoutMenuItems(menu: LayoutMenu, ctx: LayoutMenuContext): LayoutMenuItem[] {
   switch (menu.kind) {
     case 'closed':
       return []
     case 'on-list':
-      return [item('new-layout', null, ctx.busy), item('comment-all-layouts', null, false)]
+      return [item(COMMENT_ACTION, null, false), item('new-layout', null, ctx.busy)]
     case 'on-layout':
       return [
+        item(COMMENT_ACTION, null, false),
         item('apply', applyReason(menu, ctx), ctx.busy),
         item('edit', null, false),
         item('duplicate', null, ctx.busy),
         item('delete', ctx.layoutCount > 1 ? null : { kind: 'only-layout' }, ctx.busy),
-        item('comment-layout', null, false),
       ]
     case 'on-preview':
       return [
-        item('comment-here', null, false),
+        item(COMMENT_ACTION, null, false),
         item('apply', applyReason(menu, ctx), ctx.busy),
         item('duplicate', null, ctx.busy),
         item('delete', ctx.layoutCount > 1 ? null : { kind: 'only-layout' }, ctx.busy),
@@ -169,9 +164,7 @@ export function layoutMenuLabel(action: LayoutMenuAction, messages: Messages): s
     case 'edit': return messages.editLayout
     case 'duplicate': return messages.duplicateLayout
     case 'delete': return messages.deleteLayout
-    case 'comment-layout': return messages.commentOnLayout
-    case 'comment-all-layouts': return messages.commentOnAllLayouts
-    case 'comment-here': return messages.commentHere
+    case COMMENT_ACTION: return commentItemLabel(messages)
     default: {
       const _exhaustive: never = action
       return _exhaustive

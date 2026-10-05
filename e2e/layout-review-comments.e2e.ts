@@ -42,10 +42,10 @@ async function commentOnLayout(page: Page, name: string | null, text: string): P
     await page.locator('[data-layout-rows]').evaluate(el => { el.scrollTop = el.scrollHeight })
     const box = (await page.locator('[data-layout-rows]').boundingBox())!
     await page.mouse.click(box.x + box.width / 2, box.y + box.height - 10, { button: 'right' })
-    await page.locator('[data-menu="layout"] [data-menu-item="comment-all-layouts"]').click()
+    await page.locator('[data-menu="layout"] [data-menu-item="comment"]').click()
   } else {
     await page.locator(`[data-layout-row="${name}"]`).click({ button: 'right' })
-    await page.locator('[data-menu="layout"] [data-menu-item="comment-layout"]').click()
+    await page.locator('[data-menu="layout"] [data-menu-item="comment"]').click()
   }
   await expect(page.locator(BOX)).toBeVisible()
   await expect(page.locator(`${BOX} textarea`)).toBeFocused()
@@ -65,7 +65,7 @@ function count(deck: MockDeck, cmd: string): number {
 test('Given the layout screen, When a layout is commented on from its menu, Then the box names the layout and the comment waits unsent in the comments column', async ({ page }) => {
   await openLayoutScreen(page, createFakeCritIpc())
   await page.locator('[data-layout-row="cover"]').click({ button: 'right' })
-  await page.locator('[data-menu="layout"] [data-menu-item="comment-layout"]').click()
+  await page.locator('[data-menu="layout"] [data-menu-item="comment"]').click()
   await expect(page.locator('[data-comment-target]')).toHaveText('Layout cover')
   await page.locator(`${BOX} textarea`).fill('Darker title')
   await page.locator('[data-comment-add]').click()
@@ -249,7 +249,7 @@ test.describe('a click on the selected layout\'s large preview', () => {
     const menu = page.locator('[data-menu="layout"]')
     await expect(menu.locator('[data-menu-item]')).toHaveText(['Comment…', 'Apply to Slide', 'Duplicate Layout', 'Delete Layout'])
     await expect(page.locator(BOX)).toBeHidden()
-    await menu.locator('[data-menu-item="comment-here"]').click()
+    await menu.locator('[data-menu-item="comment"]').click()
 
     await expect(menu).toBeHidden()
     await expect(page.locator('[data-comment-target]')).toHaveText('Layout cover › slot "body"')
@@ -294,7 +294,7 @@ test('Given an open comment box, When the screen is switched between slides and 
   const crit = createFakeCritIpc()
   await openLayoutScreen(page, crit)
   await page.locator('[data-layout-row="cover"]').click({ button: 'right' })
-  await page.locator('[data-menu="layout"] [data-menu-item="comment-layout"]').click()
+  await page.locator('[data-menu="layout"] [data-menu-item="comment"]').click()
   await expect(page.locator(BOX)).toBeVisible()
   await page.locator(`${BOX} textarea`).fill('Half-written')
 

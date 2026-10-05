@@ -1,5 +1,7 @@
 'use client'
 
+import { type MenuIcon } from '../domain/menuComment'
+
 /** One item as a right-click menu draws it — what `domain/layoutMenu.ts`
  * and `domain/commentMenu.ts` decide, worded. */
 export interface ContextMenuEntry {
@@ -10,6 +12,10 @@ export interface ContextMenuEntry {
   title: string
   /** Drawn in the destructive color (Delete). */
   danger: boolean
+  /** The icon at the left of the label (`domain/menuComment.ts`): the
+   * comment's speech bubble, or `null` — its gutter stays, so every label
+   * lines up. */
+  icon: MenuIcon
   /** A rule above it, setting it apart from the items before. */
   separatorBefore: boolean
 }
@@ -59,9 +65,25 @@ export function ContextMenu(props: ContextMenuProps) {
             disabled={!item.enabled}
             title={item.title}
             onClick={() => props.onAction(item.action)}
-            className={(item.danger ? 'text-destructive ' : '') + (item.separatorBefore ? 'mt-1 border-t border-border ' : '') + 'w-full flex items-center px-3 py-1.5 text-left hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent'}
+            className={(item.danger ? 'text-destructive ' : '') + (item.separatorBefore ? 'mt-1 border-t border-border ' : '') + 'w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent'}
           >
-            {item.label}
+            {/* Every item keeps the icon's gutter; only the comment fills
+                it. Toggled by class, not a branch (CLAUDE.md's BarefootJS
+                pitfalls on conditionals in a `.map()` row). */}
+            <svg
+              aria-hidden="true"
+              data-menu-icon={item.icon ?? ''}
+              className={(item.icon === 'comment' ? '' : 'invisible ') + 'block w-4 h-4 shrink-0'}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M5 4h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-4.2 3.4a.5.5 0 0 1-.8-.4V5a1 1 0 0 1 1-1z" />
+            </svg>
+            <span>{item.label}</span>
           </button>
         ))}
       </div>

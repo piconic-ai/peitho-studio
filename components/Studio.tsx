@@ -108,10 +108,11 @@ import { SlideList } from './SlideList'
 import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
 import { ContextMenu, type ContextMenuEntry } from './ContextMenu'
 import { type CommentMenu, type CommentMenuAction, type MenuEditor, commentMenuItems, commentMenuLabel, commentMenuPosition, openOnEditor, selectionForMenu } from '../domain/commentMenu'
+import { menuItemIcon, setApartFromComment } from '../domain/menuComment'
 import { focusDeleteLayoutDialog, focusNewLayoutName } from '../dom/layoutModals'
 import { absolutizedDraft, draftPreviewError, draftedLayout, previewDraftCss, previewToDraw } from '../domain/layoutDraftPreview'
 import { scopeRootToHost } from '../domain/slideCss'
-import { type LayoutMenuAction, layoutMenuItems, layoutMenuLabel, layoutMenuPosition, layoutMenuSeparatorBefore, layoutMenuSlot, layoutMenuTarget, layoutMenuTitle } from '../domain/layoutMenu'
+import { type LayoutMenuAction, layoutMenuItems, layoutMenuLabel, layoutMenuPosition, layoutMenuSlot, layoutMenuTarget, layoutMenuTitle } from '../domain/layoutMenu'
 
 // Just the heading — `addSlide` attaches an explicit, collision-free
 // PageComment `key` around this (see its own comment for why).
@@ -1352,6 +1353,7 @@ export function Studio() {
       enabled: item.enabled,
       title: '',
       danger: false,
+      icon: menuItemIcon(item.action),
       separatorBefore: item.separatorBefore,
     }))
   })
@@ -1360,7 +1362,7 @@ export function Studio() {
     const menu = ui.commentMenu()
     ui.closeCommentMenu()
     switch (action) {
-      case 'comment-lines':
+      case 'comment':
         if (menu.kind === 'on-editor') commentOnEditorLines(menu)
         return
       case 'cut':
@@ -2808,20 +2810,24 @@ export function Studio() {
   const layoutMenuEntries = createMemo<ContextMenuEntry[]>(() => {
     const messages = settings.messages()
     const context = { hasSlide: editor.selectedIndex() !== null, layoutCount: layoutNames().length, busy: layouts.busy() }
-    return layoutMenuItems(layouts.menu(), context).map(item => ({
+    const items = layoutMenuItems(layouts.menu(), context)
+    const actions = items.map(item => item.action)
+    return items.map((item, index) => ({
       action: item.action,
       label: layoutMenuLabel(item.action, messages),
       enabled: item.enabled,
       title: layoutMenuTitle(item.reason, messages),
       danger: item.action === 'delete',
-      separatorBefore: layoutMenuSeparatorBefore(layouts.menu(), item.action),
+      icon: menuItemIcon(item.action),
+      separatorBefore: setApartFromComment(actions, index),
     }))
   })
 
   function runLayoutMenuAction(action: LayoutMenuAction): void {
-    const name = layoutMenuTarget(layouts.menu())
-    const slot = layoutMenuSlot(layouts.menu())
-    const at = layoutMenuPosition(layouts.menu())
+    const menu = layouts.menu()
+    const name = layoutMenuTarget(menu)
+    const slot = layoutMenuSlot(menu)
+    const at = layoutMenuPosition(menu)
     layouts.closeMenu()
     switch (action) {
       case 'new-layout':
@@ -2841,14 +2847,12 @@ export function Studio() {
         startLayoutDelete(name)
         focusDeleteLayoutDialog()
         return
-      case 'comment-layout':
-        if (name !== null) openLayoutCommentBox({ kind: 'layout', name }, at)
-        return
-      case 'comment-all-layouts':
-        openLayoutCommentBox({ kind: 'all-layouts' }, at)
-        return
-      case 'comment-here':
-        if (name !== null) openLayoutCommentBox(layoutClickTarget(name, slot), at)
+      // On what the menu was open on: every layout (empty space), the
+      // layout (a row), or the slot right-clicked (the large preview).
+      case 'comment':
+        if (menu.kind === 'on-list') openLayoutCommentBox({ kind: 'all-layouts' }, at)
+        else if (menu.kind === 'on-layout') openLayoutCommentBox({ kind: 'layout', name: menu.name }, at)
+        else if (menu.kind === 'on-preview') openLayoutCommentBox(layoutClickTarget(menu.name, slot), at)
         return
       default: {
         const _exhaustive: never = action
