@@ -1,7 +1,6 @@
 'use client'
 
 import { UpdateControls } from './UpdateControls'
-import type { UpdateStatus } from '../domain/updates'
 import { LANGUAGES, type Language } from '../domain/language'
 import { LANGUAGE_NAMES, messagesFor } from '../domain/messages'
 
@@ -23,13 +22,9 @@ export interface SettingsPanelProps {
    * nothing is chosen — which the language picker marks as chosen. */
   language: Language
   vimMode: boolean
-  updateStatus: UpdateStatus
   autoCheckUpdates: boolean
   autoUpdate: boolean
   onUpdateSettingChange: (field: 'autoCheckUpdates' | 'autoUpdate', on: boolean) => Promise<boolean>
-  onCheckUpdates: () => void
-  onPrepareUpdate: () => void
-  onOpenReleases: () => void
   onClose: () => void
   /** A language picked in the language picker, to be saved. */
   onChangeLanguage: (language: Language) => void
@@ -111,8 +106,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
             </span>
           </label>
         </div>
-        <UpdateControls language={props.language} status={props.updateStatus} autoCheck={props.autoCheckUpdates} autoUpdate={props.autoUpdate}
-          onSettingChange={props.onUpdateSettingChange} onCheck={props.onCheckUpdates} onPrepare={props.onPrepareUpdate} onOpenReleases={props.onOpenReleases} />
+        <UpdateControls language={props.language} autoCheck={props.autoCheckUpdates} autoUpdate={props.autoUpdate}
+          onSettingChange={props.onUpdateSettingChange} />
       </div>
       </div>
     </>

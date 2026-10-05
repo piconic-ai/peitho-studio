@@ -68,7 +68,7 @@ export function showsReleasesLink(status: UpdateStatus): boolean {
 
 const COPY = {
   en: {
-    title: 'Updates', check: 'Check for updates', prepare: 'Update', later: 'Later', releases: 'Release notes',
+    title: 'Updates', prepare: 'Update', later: 'Later', releases: 'Release notes',
     autoCheck: 'Automatically check for updates', autoCheckOff: 'Security update notifications are also off.',
     autoUpdate: 'Automatic updates', autoUpdateDescription: 'Updates when you quit the app.',
     idle: 'Check for a newer version of Peitho Studio.', unconfigured: 'In-app updates are not configured for this build. Download a newer version from Releases.',
@@ -80,7 +80,7 @@ const COPY = {
     retry: 'Retry', openReleases: 'Open Releases', notes: 'What’s new',
   },
   ja: {
-    title: 'アップデート', check: '更新を確認', prepare: '更新する', later: '後で', releases: 'リリースノート',
+    title: 'アップデート', prepare: '更新する', later: '後で', releases: 'リリースノート',
     autoCheck: '更新を自動確認', autoCheckOff: 'セキュリティ更新の通知も停止します。',
     autoUpdate: '自動更新', autoUpdateDescription: 'アプリ終了時に更新します。',
     idle: 'Peitho Studio の新しいバージョンを確認できます。', unconfigured: 'このビルドではアプリ内更新が未設定です。Releases から新しいバージョンをダウンロードできます。',

@@ -13,23 +13,22 @@ async function setup(page: Page, deck: MockDeck) {
   await page.goto('/')
   await expect(page.locator('[data-slide-row]')).toHaveCount(1)
 }
-test('manual checks from the settings panel show current and failure; update settings remain coherent', async ({ page }) => {
-  const deck: MockDeck = { source: SOURCE }
+test('the settings panel holds only the update settings, which stay coherent; checking lives in its own window', async ({ page }) => {
+  const deck: MockDeck = { source: SOURCE, updateStatus: { ...initialUpdateStatus(), phase: 'available', version: '1.1.0' } }
   await setup(page, deck)
   await emit(page, 'menu:settings', null)
   const panel = page.getByRole('dialog', { name: 'Settings' })
-  await panel.getByRole('button', { name: 'Check for updates' }).click()
-  await expect(panel.locator('[data-update-status]')).toContainText('up to date')
+  await expect(panel.locator('[data-setting=auto-check-updates]')).toBeVisible()
+  await expect(panel.getByRole('button', { name: 'Check for updates' })).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'Update', exact: true })).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'Release notes' })).toHaveCount(0)
+  await expect(panel.locator('[data-update-status]')).toHaveCount(0)
   await panel.locator('[data-setting=auto-check-updates]').uncheck()
   await expect(panel.getByText('Security update notifications are also off.')).toBeVisible()
   await panel.locator('[data-setting=auto-update]').check()
   await expect(panel.locator('[data-setting=auto-check-updates]')).toBeChecked()
   await panel.locator('[data-setting=auto-check-updates]').uncheck()
   await expect(panel.locator('[data-setting=auto-update]')).not.toBeChecked()
-  deck.commandError = cmd => cmd === 'check_for_updates' ? 'Offline' : null
-  await panel.getByRole('button', { name: 'Check for updates' }).click()
-  await expect(panel.getByRole('alert')).toContainText('Offline')
-  await expect(panel.locator('[data-update-status]')).not.toContainText('up to date')
 })
 test('normal updates can be dismissed, while security updates keep their notice and allow editing', async ({ page }) => {
   const deck: MockDeck = { source: SOURCE, updateStatus: { ...initialUpdateStatus(), phase: 'available', version: '1.1.0' } }

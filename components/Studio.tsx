@@ -262,7 +262,7 @@ export function Studio() {
   const [updateStatus, setUpdateStatus] = createSignal<UpdateStatus>(initialUpdateStatus())
   let heardUpdate = false
   const applyUpdateStatus = (status: UpdateStatus) => { heardUpdate = true; setUpdateStatus(status) }
-  async function runUpdateAction(action: 'check' | 'prepare' | 'dismiss'): Promise<void> {
+  async function runUpdateAction(action: 'prepare' | 'dismiss'): Promise<void> {
     try { applyUpdateStatus(await updateIpc[action]()) }
     catch (error) { setUpdateStatus({ ...updateStatus(), phase: 'error', error: String(error) }) }
   }
@@ -4004,13 +4004,9 @@ export function Studio() {
         isOpen={settings.panelOpen()}
         language={settings.language()}
         vimMode={settings.settings().vimMode}
-        updateStatus={updateStatus()}
         autoCheckUpdates={settings.settings().autoCheckUpdates}
         autoUpdate={settings.settings().autoUpdate}
         onUpdateSettingChange={changeUpdateSetting}
-        onCheckUpdates={() => void runUpdateAction('check')}
-        onPrepareUpdate={() => void runUpdateAction('prepare')}
-        onOpenReleases={() => void updateIpc.openReleases().catch(error => setErrorMessage(String(error)))}
         onClose={closeSettings}
         onChangeLanguage={language => void changeLanguage(language)}
         onVimModeChange={changeVimMode}

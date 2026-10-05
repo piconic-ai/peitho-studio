@@ -15,6 +15,9 @@ tags: [updater, menu, ui]
   macOS以外では今のままヘルプメニューに置く。
 - メニューから確認した結果は、設定パネルではなく、Aboutウィンドウと同じ形の
   専用の小ウィンドウに出す。
+- 設定パネルの更新欄は、設定である自動確認・自動更新のトグルだけを残し、
+  状態表示・「更新を確認」・「更新する」・リリースノートを削除する
+  (PR #169のレビュー時に追加。kfly8、2026-10-05)。
 `todo/app-updater.md`(`wip`)の方針表にある「メニュー / 設定の「更新を確認」」
 のうち、メニュー側の導線を作り直す。更新処理そのものは`app-updater.md`の範囲。
 
@@ -24,8 +27,7 @@ tags: [updater, menu, ui]
   確認中 → 結果(最新版 / 新版あり / 失敗 / 未設定ビルド)と、
   そこからの更新操作を出す。
 - **やらないこと**:
-  - 設定パネルの`UpdateControls`(自動確認・自動更新のトグルと「更新を確認」
-    ボタン)を外すこと。設定パネルの導線はそのまま残す。
+  - 設定パネルの自動確認・自動更新のトグルを外すこと。
   - 更新の確認・ダウンロード・適用・署名検証の処理(`src-tauri/src/updates.rs`
     の中身)を変えること。新しいウィンドウは既存のコマンドとイベントを使う。
   - 自動確認で新版が見つかったときのアプリ内案内(`showUpdateNotice`)の変更。
@@ -55,7 +57,7 @@ tags: [updater, menu, ui]
   受け取った`Studio.tsx`は`openSettings()`してから`runUpdateAction('check')`
   する。新しいウィンドウにすれば、この経路(`pending_check_windows`、
   `take_update_check`、`menu:check-updates`、`onMenuCheck`/`takeMenuCheck`)
-  は不要になる。設定パネルの「更新を確認」ボタンは別経路なので残る。
+  は不要になる。
 - 更新状態はアプリ全体で一つ(`AppUpdates`)。`updates:changed`を全ウィンドウに
   emitし、`get_update_status`/`check_for_updates`/`prepare_update`/
   `dismiss_update`/`open_update_releases`で操作できる
