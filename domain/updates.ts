@@ -40,6 +40,32 @@ export function canPrepareUpdate(status: UpdateStatus): boolean {
   return status.version !== null && !updateBusy(status) && (status.phase !== 'ready' || !status.installOnExit)
 }
 
+/** What the "Check for Updates…" window shows while its check is running:
+ * `checking`, unless a download or quit-to-install is already under way or
+ * an update is ready — a check then leaves that state as it is. */
+export function startUpdateCheck(status: UpdateStatus): UpdateStatus {
+  if (updateBusy(status) || status.phase === 'ready') return status
+  return { ...status, phase: 'checking', error: null }
+}
+/** `status` after a check or update command itself failed (IPC error) with `error`. */
+export function failUpdateCommand(status: UpdateStatus, error: unknown): UpdateStatus {
+  return { ...status, phase: 'error', error: String(error) }
+}
+/** Whether a failed check can be retried from the update window. */
+export function canRetryUpdate(status: UpdateStatus): boolean {
+  return status.phase === 'error'
+}
+/** The new version's change notes to show, or `null` when there's no new
+ * version or its notes are blank. */
+export function updateNotes(status: UpdateStatus): string | null {
+  return status.version !== null && status.notes !== null && status.notes.trim() !== '' ? status.notes.trim() : null
+}
+/** Whether the update window links to the GitHub releases: a new version's
+ * release notes, or the Releases page for a build without in-app updates. */
+export function showsReleasesLink(status: UpdateStatus): boolean {
+  return status.version !== null || status.phase === 'unconfigured'
+}
+
 const COPY = {
   en: {
     title: 'Updates', check: 'Check for updates', prepare: 'Update', later: 'Later', releases: 'Release notes',
@@ -51,6 +77,7 @@ const COPY = {
     downloaded: 'Update downloaded. Choose “Update” to apply it.',
     saving: 'Saving all open decks before updating…', installing: 'Installing update…', error: 'Could not complete the update. Please retry.',
     security: 'Security update recommended', saveFailed: 'Could not save update settings',
+    retry: 'Retry', openReleases: 'Open Releases', notes: 'What’s new',
   },
   ja: {
     title: 'アップデート', check: '更新を確認', prepare: '更新する', later: '後で', releases: 'リリースノート',
@@ -62,6 +89,7 @@ const COPY = {
     downloaded: '更新をダウンロード済みです。「更新する」で適用できます。',
     saving: '更新前に開いているデッキをすべて保存しています…', installing: '更新を適用しています…', error: '更新を完了できませんでした。再試行してください。',
     security: 'セキュリティ更新を推奨します', saveFailed: '更新設定を保存できませんでした',
+    retry: '再試行', openReleases: 'Releasesを開く', notes: '変更点',
   },
 } as const
 export function updateMessages(language: Language) { return COPY[language] }
