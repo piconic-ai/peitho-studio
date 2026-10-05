@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: 「更新を確認…」をmacOSのアプリメニューへ移し、設定パネルではなく専用の小ウィンドウで確認結果を出す
 tags: [updater, menu, ui]
 ---
@@ -15,6 +15,9 @@ tags: [updater, menu, ui]
   macOS以外では今のままヘルプメニューに置く。
 - メニューから確認した結果は、設定パネルではなく、Aboutウィンドウと同じ形の
   専用の小ウィンドウに出す。
+- 設定パネルの更新欄は、設定である自動確認・自動更新のトグルだけを残し、
+  状態表示・「更新を確認」・「更新する」・リリースノートを削除する
+  (PR #169のレビュー時に追加。kfly8、2026-10-05)。
 `todo/app-updater.md`(`wip`)の方針表にある「メニュー / 設定の「更新を確認」」
 のうち、メニュー側の導線を作り直す。更新処理そのものは`app-updater.md`の範囲。
 
@@ -24,8 +27,7 @@ tags: [updater, menu, ui]
   確認中 → 結果(最新版 / 新版あり / 失敗 / 未設定ビルド)と、
   そこからの更新操作を出す。
 - **やらないこと**:
-  - 設定パネルの`UpdateControls`(自動確認・自動更新のトグルと「更新を確認」
-    ボタン)を外すこと。設定パネルの導線はそのまま残す。
+  - 設定パネルの自動確認・自動更新のトグルを外すこと。
   - 更新の確認・ダウンロード・適用・署名検証の処理(`src-tauri/src/updates.rs`
     の中身)を変えること。新しいウィンドウは既存のコマンドとイベントを使う。
   - 自動確認で新版が見つかったときのアプリ内案内(`showUpdateNotice`)の変更。
@@ -55,7 +57,7 @@ tags: [updater, menu, ui]
   受け取った`Studio.tsx`は`openSettings()`してから`runUpdateAction('check')`
   する。新しいウィンドウにすれば、この経路(`pending_check_windows`、
   `take_update_check`、`menu:check-updates`、`onMenuCheck`/`takeMenuCheck`)
-  は不要になる。設定パネルの「更新を確認」ボタンは別経路なので残る。
+  は不要になる。
 - 更新状態はアプリ全体で一つ(`AppUpdates`)。`updates:changed`を全ウィンドウに
   emitし、`get_update_status`/`check_for_updates`/`prepare_update`/
   `dismiss_update`/`open_update_releases`で操作できる
@@ -79,6 +81,15 @@ tags: [updater, menu, ui]
 - 終了時の更新適用(`saving`/`installing`)の最中に新しいウィンドウを
   開いてよいか。`ensure_can_open_deck`と同じく抑止するか、表示だけなら
   許すかを決める(表示のみなので許す案が有力)。
+
+調べた結果:
+- `"about"`の特別扱いは`updates.rs`の3か所だけだった。`peitho.rs`のデッキ
+  メニュー反映や`lib.rs`のウィンドウイベントは、Studio以外のウィンドウでも
+  空振りするだけ(Aboutと同じ)。`updates::is_studio_window`にまとめ、
+  `exit_acks`/`has_unasked_studio_window`を純粋関数に切り出した。
+- 終了時の更新適用中(`saving`/`installing`)は、`lib.rs`の`on_menu_event`が
+  冒頭の`updates::blocks_editing`で全メニューを無視するので、新しいウィンドウは
+  そもそも開かない。開いていた場合も`exit_acks`から外れるので待たれない。
 
 ## 方針
 
@@ -119,11 +130,11 @@ tags: [updater, menu, ui]
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `cargo test` グリーン
-- [ ] `grep -rn '"about"' src-tauri/src/updates.rs`が0件
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `cargo test` グリーン
+- [x] `grep -rn '"about"' src-tauri/src/updates.rs`が0件
   (Studio以外の判定が関数にまとまっている)
-- [ ] `lib.rs`に「更新を確認…」の直書きラベルがない
+- [x] `lib.rs`に「更新を確認…」の直書きラベルがない
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機での確認(ユーザー自身に依頼する): アプリメニューの並び、

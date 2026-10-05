@@ -20,7 +20,7 @@ use crate::{i18n, settings};
 pub(crate) const MENU_ID: &str = "about";
 
 /// The About window's label. There's only ever one.
-const WINDOW_LABEL: &str = "about";
+pub(crate) const WINDOW_LABEL: &str = "about";
 
 const WINDOW_WIDTH: f64 = 360.0;
 const WINDOW_HEIGHT: f64 = 480.0;

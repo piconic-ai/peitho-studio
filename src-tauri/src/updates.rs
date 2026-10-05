@@ -1,6 +1,6 @@
 //! One updater per app. Downloads are verified before they enter memory;
 //! installation only happens on normal app exit, never during editing.
-use std::{sync::Mutex, collections::{HashMap, HashSet}, time::{Duration, SystemTime, UNIX_EPOCH}};
+use std::{sync::Mutex, collections::HashMap, time::{Duration, SystemTime, UNIX_EPOCH}};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use minisign_verify::{PublicKey, Signature};
 use semver::Version;
@@ -56,7 +56,6 @@ struct Inner {
     exit_acks: HashMap<String, Option<bool>>,
     exiting: bool,
     manifest: Option<SignedManifest>,
-    pending_check_windows: HashSet<String>,
 }
 
 #[derive(Default)]
@@ -97,6 +96,24 @@ fn save_outcome(acks: &HashMap<String, Option<bool>>) -> SaveOutcome {
     if acks.values().any(|saved| *saved == Some(false)) { SaveOutcome::Failed }
     else if acks.values().all(|saved| *saved == Some(true)) { SaveOutcome::Saved }
     else { SaveOutcome::Waiting }
+}
+
+/// Whether `label` is a Studio window (`main`, `deck-N`), one that may hold
+/// an unsaved deck. The About and update windows hold none, so quitting to
+/// install never waits for them to save.
+fn is_studio_window(label: &str) -> bool {
+    label != crate::about::WINDOW_LABEL && label != crate::update_window::WINDOW_LABEL
+}
+
+/// A fresh, unanswered save request for each Studio window among `labels`.
+fn exit_acks<'a>(labels: impl IntoIterator<Item = &'a str>) -> HashMap<String, Option<bool>> {
+    labels.into_iter().filter(|label| is_studio_window(label)).map(|label| (label.to_string(), None)).collect()
+}
+
+/// Whether a Studio window among `labels` was never asked to save — one
+/// opened while quitting waited for the others.
+fn has_unasked_studio_window<'a>(labels: impl IntoIterator<Item = &'a str>, acks: &HashMap<String, Option<bool>>) -> bool {
+    labels.into_iter().any(|label| is_studio_window(label) && !acks.contains_key(label))
 }
 
 fn security_reason(manifest: &serde_json::Value, current: &Version, latest: &Version) -> Result<Option<String>, String> {
@@ -370,31 +387,6 @@ pub fn open_update_releases(app: AppHandle) -> Result<(), String> {
     app.opener().open_url(url, None::<&str>).map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-pub fn take_update_check(app: AppHandle, window: tauri::WebviewWindow) -> bool {
-    app.state::<AppUpdates>().inner.lock().unwrap().pending_check_windows.remove(window.label())
-}
-
-pub fn show_check_window(app: &AppHandle) -> tauri::Result<()> {
-    let windows = app.webview_windows();
-    let studio = windows.values().filter(|window| window.label() != "about")
-        .find(|window| window.is_focused().unwrap_or(false))
-        .or_else(|| windows.values().find(|window| window.label() != "about"));
-    if let Some(window) = studio {
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-        let _ = app.emit_to(window.label(), "menu:check-updates", ());
-    } else {
-        app.state::<AppUpdates>().inner.lock().unwrap().pending_check_windows.insert("main".into());
-        if let Err(error) = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
-            .title("Peitho Studio").inner_size(1440.0, 900.0).build() {
-            app.state::<AppUpdates>().inner.lock().unwrap().pending_check_windows.remove("main");
-            return Err(error);
-        }
-    }
-    Ok(())
-}
-
 pub fn blocks_editing(app: &AppHandle) -> bool {
     let state = app.state::<AppUpdates>();
     let inner = state.inner.lock().unwrap();
@@ -439,7 +431,7 @@ pub fn intercept_exit(app: &AppHandle, api: &tauri::ExitRequestApi) {
         if !inner.install_on_exit || inner.bytes.is_none() { return; }
         api.prevent_exit();
         inner.exit_token += 1;
-        inner.exit_acks = app.webview_windows().keys().filter(|label| label.as_str() != "about").map(|label| (label.clone(), None)).collect();
+        inner.exit_acks = exit_acks(app.webview_windows().keys().map(String::as_str));
         inner.status.phase = UpdatePhase::Saving;
         inner.status.error = None;
         inner.exit_token
@@ -470,7 +462,7 @@ pub fn intercept_exit(app: &AppHandle, api: &tauri::ExitRequestApi) {
         // A window opened while we waited has not consented or saved.
         let changed = {
             let inner = state.inner.lock().unwrap();
-            app.webview_windows().keys().any(|label| label != "about" && !inner.exit_acks.contains_key(label))
+            has_unasked_studio_window(app.webview_windows().keys().map(String::as_str), &inner.exit_acks)
         };
         if changed {
             fail(&app, "A new window opened. Please try quitting again.".into());
@@ -541,6 +533,8 @@ pub fn initialize(app: &AppHandle) {
 mod tests {
     use super::*;
     use serde_json::json;
+    const ABOUT: &str = crate::about::WINDOW_LABEL;
+    const UPDATES: &str = crate::update_window::WINDOW_LABEL;
     #[test]
     fn manifest_client_can_be_built_before_the_updater_runs() {
         // No updater initialization or network access: a fresh app checks the
@@ -561,6 +555,47 @@ mod tests {
         acks.insert("main".into(), None);
         assert_eq!(save_outcome(&acks), SaveOutcome::Failed);
         assert_eq!(save_outcome(&HashMap::new()), SaveOutcome::Saved);
+    }
+    #[test]
+    fn given_studio_window_labels_when_checked_then_each_is_a_studio_window() {
+        for label in ["main", "deck-1", "deck-42"] {
+            assert!(is_studio_window(label), "{label:?}");
+        }
+    }
+    #[test]
+    fn given_the_about_or_update_window_when_checked_then_neither_is_a_studio_window() {
+        assert!(!is_studio_window(ABOUT));
+        assert!(!is_studio_window(UPDATES));
+    }
+    #[test]
+    fn given_odd_labels_when_checked_then_only_the_exact_non_studio_labels_are_excluded() {
+        // Anything that is not exactly one of those labels may hold a deck.
+        for label in ["", " ", "About", "about ", "updates-2", "update"] {
+            assert!(is_studio_window(label), "{label:?}");
+        }
+    }
+    #[test]
+    fn given_open_windows_when_quitting_to_install_then_only_studio_windows_are_asked_to_save() {
+        let acks = exit_acks(["main", ABOUT, UPDATES, "deck-2"]);
+        assert_eq!(acks, HashMap::from([("main".into(), None), ("deck-2".into(), None)]));
+    }
+    #[test]
+    fn given_only_the_update_and_about_windows_when_quitting_to_install_then_nothing_waits_for_a_save() {
+        let acks = exit_acks([UPDATES, ABOUT]);
+        assert!(acks.is_empty());
+        assert_eq!(save_outcome(&acks), SaveOutcome::Saved);
+        assert!(exit_acks([]).is_empty());
+    }
+    #[test]
+    fn given_the_update_window_opened_while_waiting_when_checked_then_quitting_is_not_interrupted() {
+        let acks = exit_acks(["main"]);
+        assert!(!has_unasked_studio_window(["main", UPDATES, ABOUT], &acks));
+    }
+    #[test]
+    fn given_a_studio_window_opened_while_waiting_when_checked_then_quitting_is_interrupted() {
+        let acks = exit_acks(["main", UPDATES]);
+        assert!(has_unasked_studio_window(["main", UPDATES, "deck-3"], &acks));
+        assert!(!has_unasked_studio_window([], &acks));
     }
     #[test]
     fn security_targets_only_affected_versions() {

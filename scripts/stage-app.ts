@@ -10,6 +10,7 @@
 //
 //   dist/pages/index.html -> dist/app/index.html
 //   dist/pages/about.html -> dist/app/about.html (the About window)
+//   dist/pages/update.html -> dist/app/update.html (the update window)
 //   dist/assets/*         -> dist/app/static/assets/*
 //   public/*              -> dist/app/static/*
 //

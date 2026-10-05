@@ -82,6 +82,10 @@ pub struct MenuLabels {
     pub help_report_issue: &'static str,
     pub help_releases: &'static str,
     pub show_log_file: &'static str,
+    /// The menu item that opens `update_window`'s window.
+    pub check_updates: &'static str,
+    /// That window's title.
+    pub updates_window_title: &'static str,
     pub page_numbers: &'static str,
     pub page_numbers_off: &'static str,
     pub aspect_ratio: &'static str,
@@ -141,6 +145,8 @@ const EN: MenuLabels = MenuLabels {
     help_report_issue: "Report an Issue",
     help_releases: "Releases",
     show_log_file: "Show Log File in Finder",
+    check_updates: "Check for Updates…",
+    updates_window_title: "Software Update",
     page_numbers: "Page Numbers",
     page_numbers_off: "Off",
     aspect_ratio: "Aspect Ratio",
@@ -181,6 +187,8 @@ const JA: MenuLabels = MenuLabels {
     help_report_issue: "問題を報告",
     help_releases: "リリース一覧",
     show_log_file: "ログファイルをFinderで表示",
+    check_updates: "更新を確認…",
+    updates_window_title: "ソフトウェア・アップデート",
     page_numbers: "ページ番号",
     page_numbers_off: "なし",
     aspect_ratio: "縦横比",
@@ -234,6 +242,8 @@ mod tests {
             ("help_report_issue", labels.help_report_issue),
             ("help_releases", labels.help_releases),
             ("show_log_file", labels.show_log_file),
+            ("check_updates", labels.check_updates),
+            ("updates_window_title", labels.updates_window_title),
             ("page_numbers", labels.page_numbers),
             ("page_numbers_off", labels.page_numbers_off),
             ("aspect_ratio", labels.aspect_ratio),
@@ -300,6 +310,14 @@ mod tests {
         assert_eq!(menu_labels(Language::Ja).file, "ファイル");
         assert_eq!(menu_labels(Language::En).settings, "Settings…");
         assert_eq!(menu_labels(Language::Ja).settings, "設定…");
+    }
+
+    #[test]
+    fn given_each_language_when_check_for_updates_is_labelled_then_it_reads_in_that_language() {
+        assert_eq!(menu_labels(Language::En).check_updates, "Check for Updates…");
+        assert_eq!(menu_labels(Language::Ja).check_updates, "更新を確認…");
+        assert_eq!(menu_labels(Language::En).updates_window_title, "Software Update");
+        assert_eq!(menu_labels(Language::Ja).updates_window_title, "ソフトウェア・アップデート");
     }
 
     #[test]
