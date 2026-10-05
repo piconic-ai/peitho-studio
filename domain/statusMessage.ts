@@ -22,6 +22,7 @@ export type StatusMessage =
   // pinned a slide back to the deleted layout (`historyPinsLayout`).
   | { kind: 'layout-deleted-history-cleared'; layout: string }
   | { kind: 'layout-saved'; layout: string }
+  | { kind: 'file-saved'; path: string }
   | { kind: 'layout-applied'; layout: string }
 
 /** `status` worded with `messages` — empty for `none`. */
@@ -43,6 +44,7 @@ export function statusText(messages: Messages, status: StatusMessage): string {
     case 'layout-deleted': return messages.layoutDeleted(status.layout)
     case 'layout-deleted-history-cleared': return messages.layoutDeletedHistoryCleared(status.layout)
     case 'layout-saved': return messages.layoutSaved(status.layout)
+    case 'file-saved': return messages.fileSaved(status.path)
     case 'layout-applied': return messages.layoutApplied(status.layout)
     default: {
       const _exhaustive: never = status

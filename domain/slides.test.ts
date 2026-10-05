@@ -15,6 +15,7 @@ import {
   injectNote,
   extractPageComment,
   buildSlideText,
+  slideFieldStarts,
   updatePageComment,
   slugifyTitle,
   uniqueSlideKey,
@@ -164,6 +165,34 @@ describe('buildSlideText', () => {
     expect(config).toEqual({ key: 'a', time: '30s' })
     expect(note).toBe('Remember to smile')
     expect(rest).toBe('# Title\n\nBody.')
+  })
+})
+
+describe('slideFieldStarts', () => {
+  test('spec: Given a config, a body and a note, Then the body starts after the PageComment line and the note inside its comment', () => {
+    const text = buildSlideText({ key: 'intro' }, 'intro', 'say intro')
+    const at = slideFieldStarts({ key: 'intro' }, 'intro', 'say intro')
+    expect(text.slice(at.body, at.body + 5)).toBe('intro')
+    expect(at.body).toBe('<!-- {"key":"intro"} -->\n'.length)
+    expect(text.slice(at.note!, at.note! + 9)).toBe('say intro')
+  })
+
+  test('adversarial: Given no config, no note, or blank fields, Then the body is at the start and there is no note', () => {
+    expect(slideFieldStarts({}, '  body  ', '')).toEqual({ body: 0, note: null })
+    expect(slideFieldStarts({}, '', '   \n ')).toEqual({ body: 0, note: null })
+    const text = buildSlideText({ key: 'k' }, '', 'n')
+    expect(text.slice(slideFieldStarts({ key: 'k' }, '', 'n').note!)).toBe('n\n-->\n')
+  })
+
+  test('property: Given any body and note, Then their trimmed text is exactly where it says in buildSlideText', () => {
+    fc.assert(fc.property(fc.string(), fc.string(), fc.boolean(), (body, note, keyed) => {
+      const config = keyed ? { key: 'intro' } : {}
+      const text = buildSlideText(config, body, note)
+      const at = slideFieldStarts(config, body, note)
+      expect(text.slice(at.body, at.body + body.trim().length)).toBe(body.trim())
+      if (at.note !== null) expect(text.slice(at.note, at.note + note.trim().length)).toBe(note.trim())
+      else expect(note.trim()).toBe('')
+    }))
   })
 })
 

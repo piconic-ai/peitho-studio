@@ -135,8 +135,24 @@ export function extractPageComment(raw: string): { rest: string; config: PageCon
 /** Inverse of `extractPageComment` + `extractNote` combined: reassembles a
  * slide's full raw text from its config, body, and note. */
 export function buildSlideText(config: PageConfig, body: string, note: string): string {
-  const configComment = Object.keys(config).length > 0 ? `<!-- ${serializePageConfig(config)} -->\n` : ''
-  return injectNote(`${configComment}${body.trim()}`, note)
+  return injectNote(`${configComment(config)}${body.trim()}`, note)
+}
+
+/** The PageComment line `buildSlideText` starts a slide with — none for
+ * an empty config. */
+function configComment(config: PageConfig): string {
+  return Object.keys(config).length > 0 ? `<!-- ${serializePageConfig(config)} -->\n` : ''
+}
+
+/** Where `buildSlideText(config, body, note)` puts the body's text
+ * (`body.trim()`) and the note's (`note.trim()`; `null` with no note):
+ * offsets worked out from how it's written, never found by searching it —
+ * the same text may also be in the PageComment (a key named like the
+ * body). */
+export function slideFieldStarts(config: PageConfig, body: string, note: string): { body: number; note: number | null } {
+  const head = configComment(config)
+  const rest = `${head}${body.trim()}`.trim()
+  return { body: head.length, note: note.trim() === '' ? null : rest.length + '\n\n<!--\n'.length }
 }
 
 /** Merges `updates` into a slide's PageComment JSON (the first HTML comment

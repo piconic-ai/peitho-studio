@@ -63,11 +63,24 @@ export interface NewReviewComment {
 
 /** A comment written on the layout screen: on layout `layout`, or on every
  * layout (`null`). The Rust side puts it on that layout's HTML file when
- * the deck has one, else on the review as a whole. */
+ * the deck has one, else on the review as a whole. One written in the
+ * layout screen's editor is on `lines` of a file instead, and goes on that
+ * file's lines. */
 export interface NewLayoutComment {
   layout: string | null
+  lines?: FileLines
   body: string
   author: string
+}
+
+/** Lines of a layout or CSS file a comment is on (`path` relative to the
+ * deck's folder), 1-based and inclusive, and their text as the editor held
+ * it, so the agent can find them after lines move. */
+export interface FileLines {
+  path: string
+  startLine: number
+  endLine: number
+  quote: string
 }
 
 /** A reply to add under comment `commentId` in the session. */

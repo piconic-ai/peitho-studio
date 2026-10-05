@@ -18,7 +18,8 @@ import type { Messages } from './messages'
 import { isPointInRect, type Point, type Rect } from './geometry'
 import type { ManifestSlide } from './render'
 import { buildSlideList, type SlideListEntry } from './slideList'
-import { splitSlides } from './slides'
+import { slideFieldStarts, splitSlides } from './slides'
+import type { PageConfig } from './pageConfig'
 
 /** A half-open `[start, end)` range of UTF-16 indices into a string. */
 export interface CharSpan {
@@ -27,8 +28,10 @@ export interface CharSpan {
 }
 
 /** What a click on the preview landed on. `slide` is anything without an
- * annotation (an image, a code block, what a layout draws itself). */
-export type TargetKind = 'heading' | 'paragraph' | 'listItem' | 'tableCell' | 'slide'
+ * annotation (an image, a code block, what a layout draws itself). `lines`
+ * is never clicked: it's lines picked in the slide's body or notes editor
+ * (`editorLinesTarget`). */
+export type TargetKind = 'heading' | 'paragraph' | 'listItem' | 'tableCell' | 'slide' | 'lines'
 
 export interface CommentTarget {
   kind: TargetKind
@@ -83,8 +86,13 @@ export type CommentBox =
  * layout (the deck's look as a whole). A comment from a click on a
  * layout's thumbnail also says where it was clicked (`part`); one from the
  * layout menu doesn't. The comment still goes on the layout's files as a
- * whole: the part is in its label, for the agent to read. */
-export type LayoutCommentTarget = { kind: 'layout'; name: string; part?: LayoutPart } | { kind: 'all-layouts' }
+ * whole: the part is in its label, for the agent to read. One written in
+ * the screen's editor is on lines of a file (`file`): `quote` is their
+ * text. */
+export type LayoutCommentTarget =
+  | { kind: 'layout'; name: string; part?: LayoutPart }
+  | { kind: 'all-layouts' }
+  | { kind: 'file'; path: string; lines: LineRange; quote: string }
 
 /** Where on a layout's thumbnail a click landed: inside a slot's content,
  * or on nothing a slot holds (the whole layout). */
@@ -147,10 +155,12 @@ export function layoutHtmlFile(name: string): string | null {
   return LAYOUT_NAME.test(name) ? `layouts/${name}.html` : null
 }
 
-/** `Layout cover` or `All layouts` — what the comment box and the panel
- * say a layout comment is on. */
+/** `Layout cover`, `All layouts`, or for lines of a file
+ * `css/base.css L3-L5 "h1 { color: red; }"` — what the comment box and
+ * the panel say a layout comment is on. */
 export function layoutTargetLabel(target: LayoutCommentTarget): string {
   if (target.kind === 'all-layouts') return 'All layouts'
+  if (target.kind === 'file') return fileLinesLabel(target.path, target.lines, target.quote)
   return `Layout ${target.name}${target.part === undefined ? '' : ` › ${layoutPartLabel(target.part)}`}`
 }
 
@@ -158,32 +168,77 @@ function layoutPartLabel(part: LayoutPart): string {
   return part.kind === 'slot' ? `slot "${part.slot}"` : 'whole layout'
 }
 
+/** `L3` for one line, `L3-L5` for several. */
+function linesLabel(lines: LineRange): string {
+  return lines.end === lines.start ? `L${String(lines.start)}` : `L${String(lines.start)}-L${String(lines.end)}`
+}
+
+/** `layouts/title-body.html L3-L5 "<h1>…"`: the file, its lines, and the
+ * start of their text (`excerpt`) — left out when they're blank. English
+ * on purpose, like `targetLabel`: it also heads the comment the agent
+ * reads. */
+export function fileLinesLabel(path: string, lines: LineRange, quote: string): string {
+  const text = excerpt(quote)
+  return `${path} ${linesLabel(lines)}${text === '' ? '' : ` "${text}"`}`
+}
+
 /** The label heading a layout comment as the agent reads it: what it's
  * on, and the files that means — a layout is its HTML and the CSS file of
- * the same name; every layout is both folders. A name no layout can have
- * is named without files. English on purpose, like `targetLabel`. */
+ * the same name; every layout is both folders; lines of a file name it
+ * already. A name no layout can have is named without files. English on
+ * purpose, like `targetLabel`. */
 export function layoutAgentLabel(target: LayoutCommentTarget): string {
   if (target.kind === 'all-layouts') return 'All layouts (layouts/, css/)'
+  if (target.kind === 'file') return layoutTargetLabel(target)
   const html = layoutHtmlFile(target.name)
   return html === null ? layoutTargetLabel(target) : `${layoutTargetLabel(target)} (${html}, css/${target.name}.css)`
 }
 
 /** `pending` as crit takes it: the layout it's on (`null` for every
- * layout), headed by `layoutAgentLabel`. */
+ * layout, or for lines of a file, which carry their own place), headed by
+ * `layoutAgentLabel`. */
 export function newLayoutComment(pending: PendingLayoutComment): NewLayoutComment {
-  return {
-    layout: pending.target.kind === 'layout' ? pending.target.name : null,
-    body: agentCommentBody(layoutAgentLabel(pending.target), pending.body),
+  const { target } = pending
+  const comment: NewLayoutComment = {
+    layout: target.kind === 'layout' ? target.name : null,
+    body: agentCommentBody(layoutAgentLabel(target), pending.body),
     author: REVIEW_AUTHOR,
   }
+  if (target.kind === 'file') comment.lines = { path: target.path, startLine: target.lines.start, endLine: target.lines.end, quote: target.quote }
+  return comment
+}
+
+/** The lines a selection from `from` to `to` (offsets into `doc`, either
+ * way round; a caret when equal) covers, 1-based and inclusive, and their
+ * whole text — what a comment from the editor is on. A selection ending at
+ * the very start of a line (a whole line picked with the mouse or `V` up to
+ * its line break) doesn't take that next line in. Offsets out of range are
+ * clamped to the text. */
+export function lineSelectionOf(doc: string, from: number, to: number): { lines: LineRange; quote: string } {
+  const clamp = (at: number) => Math.max(0, Math.min(doc.length, Number.isFinite(at) ? Math.floor(at) : 0))
+  const start = Math.min(clamp(from), clamp(to))
+  let end = Math.max(clamp(from), clamp(to))
+  if (end > start && doc[end - 1] === '\n') end -= 1
+  const lineAt = (offset: number) => doc.slice(0, offset).split('\n').length
+  const lines = { start: lineAt(start), end: lineAt(end) }
+  const quote = doc.split('\n').slice(lines.start - 1, lines.end).join('\n')
+  return { lines, quote }
 }
 
 const LAYOUT_LABEL = new RegExp(`^\\[(?:Layout (${NAME})(?: › (?:slot "(${SLOT})"|(whole layout)))?|(All layouts))(?: \\([^\\]\\n]*\\))?\\] ([\\s\\S]*)$`)
+const FILE_LINES_LABEL = new RegExp(`^\\[((?:layouts/${NAME}\\.html|css/${NAME}\\.css)) L(\\d+)(?:-L(\\d+))?(?: "([^\\n]*?)")?\\] ([\\s\\S]*)$`)
 
 /** A sent comment's text split back into the layout target its label
  * names (`layoutAgentLabel`) and the text itself — `null` for a comment
- * with no such label. */
+ * with no such label. A file's lines come back with the label's excerpt as
+ * their quote. */
 export function splitLayoutLabel(body: string): { target: LayoutCommentTarget; text: string } | null {
+  const lines = FILE_LINES_LABEL.exec(body)
+  if (lines !== null) {
+    const [, path, start, end, quote, text] = lines
+    const range = { start: Number(start), end: Number(end ?? start) }
+    return { target: { kind: 'file', path, lines: range, quote: quote ?? '' }, text }
+  }
   const match = LAYOUT_LABEL.exec(body)
   if (match === null) return null
   const [, name, slot, whole, , text] = match
@@ -194,13 +249,18 @@ export function splitLayoutLabel(body: string): { target: LayoutCommentTarget; t
 
 const LAYOUT_FILE = new RegExp(`^(?:layouts/(${NAME})\\.html|css/(${NAME})\\.css)$`)
 
-/** Which layout a sent comment is about: the layout whose file it's on,
- * else — for one on the review as a whole — the layout its label names.
- * `null` for a comment on the deck, or one no layout label heads. */
-export function layoutTargetOfComment(comment: Pick<ReviewComment, 'place' | 'body'>): LayoutCommentTarget | null {
+/** Which layout a sent comment is about: for one on lines of a layout or
+ * CSS file (written in the editor), those lines; else the layout whose
+ * file it's on, else — for one on the review as a whole — the layout its
+ * label names. `null` for a comment on the deck, or one no layout label
+ * heads. */
+export function layoutTargetOfComment(comment: Pick<ReviewComment, 'place' | 'body'> & Partial<Pick<ReviewComment, 'lines' | 'quote'>>): LayoutCommentTarget | null {
   switch (comment.place.kind) {
     case 'deck': return null
     case 'file': {
+      if (comment.lines && LAYOUT_FILE.test(comment.place.path)) {
+        return { kind: 'file', path: comment.place.path, lines: comment.lines, quote: comment.quote ?? '' }
+      }
       const match = LAYOUT_FILE.exec(comment.place.path)
       const name = match?.[1] ?? match?.[2]
       return name === undefined ? splitLayoutLabel(comment.body)?.target ?? null : { kind: 'layout', name }
@@ -366,7 +426,7 @@ export function excerpt(text: string, max = 30): string {
   return flat.length <= max ? flat.join('') : `${flat.slice(0, Math.max(max - 1, 0)).join('')}…`
 }
 
-const KIND_WORDS: Record<Exclude<TargetKind, 'slide'>, string> = {
+const KIND_WORDS: Record<Exclude<TargetKind, 'slide' | 'lines'>, string> = {
   heading: 'heading',
   paragraph: 'paragraph',
   listItem: 'list item',
@@ -374,12 +434,68 @@ const KIND_WORDS: Record<Exclude<TargetKind, 'slide'>, string> = {
 }
 
 /** `Slide 2 › heading "Markdown is the source"`, or `Slide 2` for the
- * whole slide; with `slideKey`, `Slide 2 (key: intro) › …`. English on
- * purpose: it also heads the comment the agent reads. */
-export function targetLabel(slideNumber: number, target: Pick<CommentTarget, 'kind' | 'text'>, slideKey: string | null = null): string {
+ * whole slide; with `slideKey`, `Slide 2 (key: intro) › …`. Lines picked
+ * in the editor read `Slide 2 › lines L5-L7 "…"`, with deck.md's line
+ * numbers when they're known (`lines`; left out otherwise), and their text
+ * left out when it's blank. English on purpose: it also heads the comment
+ * the agent reads. */
+export function targetLabel(slideNumber: number, target: Pick<CommentTarget, 'kind' | 'text'>, slideKey: string | null = null, lines: LineRange | null = null): string {
   const slide = `Slide ${String(slideNumber)}${slideKey === null ? '' : ` (key: ${slideKey})`}`
   if (target.kind === 'slide') return slide
+  if (target.kind === 'lines') {
+    const text = excerpt(target.text)
+    return `${slide} › lines${lines === null ? '' : ` ${linesLabel(lines)}`}${text === '' ? '' : ` "${text}"`}`
+  }
   return `${slide} › ${KIND_WORDS[target.kind]} "${excerpt(target.text)}"`
+}
+
+/** The comment target for lines `from`–`to` (offsets either way round; a
+ * caret when equal) of field `field` of a slide whose config, body and
+ * notes are `fields` (the editor's drafts) — on the slide as it's saved
+ * (`buildSlideText`). Like a click on an element, it's found again by its
+ * text (`quote`, the lines whole) nearest where it sits in the slide
+ * (`offsetInSlide`, from where the serialization puts the field,
+ * `slideFieldStarts` — never by searching it, as the same text may be in
+ * the PageComment), so a comment written before the draft is saved still
+ * lands on deck.md's lines. Blank lines quote nothing: the comment is then
+ * on the slide's lines as a whole, as a click on no element is. */
+export function editorLinesTarget(fields: { config: PageConfig; body: string; note: string }, field: 'body' | 'note', from: number, to: number): CommentTarget {
+  const fieldText = fields[field]
+  const starts = slideFieldStarts(fields.config, fields.body, fields.note)
+  const fieldAt = field === 'body' ? starts.body : starts.note
+  const saved = savedPartOfLines(fieldText, from, to)
+  const blank = saved === null || saved.text.trim() === ''
+  const offsetInSlide = fieldAt === null || saved === null ? 0 : fieldAt + saved.start
+  return { kind: 'lines', text: blank ? '' : saved.text, quote: blank ? '' : saved.text, offsetInSlide }
+}
+
+/** The part of lines `from`–`to` of `fieldText` that saving keeps — the
+ * field is saved trimmed (`buildSlideText`), so an indented first line or
+ * a last line's trailing spaces lose that whitespace — as the text saved
+ * and where it starts in the saved (trimmed) field; `null` when saving
+ * keeps none of it (only the blank lines around the field). */
+function savedPartOfLines(fieldText: string, from: number, to: number): { text: string; start: number } | null {
+  const { lines } = lineSelectionOf(fieldText, from, to)
+  const lineStarts = [0]
+  for (let at = fieldText.indexOf('\n'); at !== -1; at = fieldText.indexOf('\n', at + 1)) lineStarts.push(at + 1)
+  const rangeStart = lineStarts[lines.start - 1] ?? fieldText.length
+  const next = lineStarts[lines.end]
+  const rangeEnd = next === undefined ? fieldText.length : next - 1
+  const leading = fieldText.length - fieldText.trimStart().length
+  const trimmed = fieldText.trim()
+  const start = Math.max(rangeStart, leading)
+  const end = Math.min(rangeEnd, leading + trimmed.length)
+  if (end <= start) return null
+  return { text: fieldText.slice(start, end), start: start - leading }
+}
+
+/** deck.md's lines `target` is on now in `source` (its quote nearest
+ * where it was in its slide, `slideSpan`), or `null` when it isn't found
+ * (edited away, not saved yet) or is on the whole slide. */
+export function targetLines(source: string, slideSpan: CharSpan | null, target: CommentTarget): LineRange | null {
+  if (target.kind === 'slide') return null
+  const found = relocateTarget(source, slideSpan, target)
+  return found === null ? null : lineRangeOf(source, found)
 }
 
 /** The comment as the agent reads it: the target, then what was written. */
@@ -430,7 +546,7 @@ export function newReviewComment(pending: PendingComment, source: string, slideS
   return {
     startLine: lines.start,
     endLine: lines.end,
-    body: agentCommentBody(targetLabel(slideNumber, pending.target, explicitSlideKey(source, slideSpan, pending.slideKey)), pending.body),
+    body: agentCommentBody(targetLabel(slideNumber, pending.target, explicitSlideKey(source, slideSpan, pending.slideKey), found === null ? null : lines), pending.body),
     quote: found === null ? '' : pending.target.quote,
     author: REVIEW_AUTHOR,
   }
@@ -464,6 +580,18 @@ export interface PreviewHit {
   text: string
   byteSpan: CharSpan | null
   quote: string
+}
+
+/** A click on the preview meant as a comment, as `dom/previewComments.ts`
+ * reads it. */
+export interface PreviewClick {
+  /** The annotated element clicked, or `null` for the slide as a whole. */
+  hit: PreviewHit | null
+  /** Where on the slide (`PinSpot`: anchored to the element clicked, if
+   * any). */
+  pin: PinSpot | null
+  /** Where on screen, for placing the comment box. */
+  at: Point
 }
 
 /** The comment target for `hit` on the slide at `slideSpan` of

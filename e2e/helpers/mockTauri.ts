@@ -136,16 +136,23 @@ export interface MockDeck {
    * fix the size whatever the source says. peitho-core only produces those
    * two sizes. */
   canvas?: Size
-  /** The layout screen's files, by layout name — what `read_layout`
-   * answers and `save_layout` / `create_layout` / `duplicate_layout` /
+  /** The layout screen's files, by layout name — what `read_deck_file`
+   * answers for `layouts/<name>.html` and `css/<name>.css`, and
+   * `save_deck_file` / `create_layout` / `duplicate_layout` /
    * `delete_layout` change (with `layouts`, which they keep in step).
    * Defaults to none: a layout read without an entry gets a bare
-   * `<section>` and no CSS. Stands in for `engine::layout_files`, modeling
-   * only what the frontend relies on: a name taken is refused, a copy is
-   * `<name>-copy`, `check_layout_removal` refuses while a slide of
-   * `repinned` still names the layout, and `save_layout` refuses HTML with
-   * no `<section`. */
+   * `<section>` and no CSS (its CSS reads blank). Stands in for
+   * `engine::layout_files` / `engine::deck_files`, modeling only what the
+   * frontend relies on: a name taken is refused, a copy is `<name>-copy`,
+   * `check_layout_removal` refuses while a slide of `repinned` still names
+   * the layout, and saving a layout's HTML refuses one with no
+   * `<section`. */
   layoutFiles?: Record<string, { html: string; css: string | null }>
+  /** The deck's other files under `layouts/`, `css/`, `img/` and `fonts/`,
+   * by path — `css/base.css`, `img/logo.png` — listed by
+   * `list_deck_files` and, for a `.css`, read and saved like a layout's.
+   * Defaults to none. */
+  otherFiles?: Record<string, string>
   /** Milliseconds `preview_layout_draft` waits for the given draft HTML —
    * defaults to 0. Make an earlier draft slower than a later one to
    * deliver the answers out of order. */
@@ -177,6 +184,10 @@ export interface MockDeck {
   /** The OS clipboard's text that `plugin:clipboard-manager|read_text`
    * answers and `write_text` replaces — defaults to none (`null`). */
   clipboardText?: string | null
+  /** Milliseconds `plugin:clipboard-manager|read_text`/`write_text` wait
+   * before answering — defaults to 0. Set it to act (switch slides or
+   * tabs) while a menu's Cut or Paste is still talking to the clipboard. */
+  clipboardDelayMs?: number
   /** Whether `open_deck` reports the deck's folder as trusted to run
    * scripts — defaults to `false`, like a deck somebody else wrote.
    * `trust_open_deck` sets it to `true` (so a reload opens it trusted, as a
@@ -209,12 +220,16 @@ export interface MockDeck {
   /** What `layout_files_stamp` answers — defaults to `''`. Change it to
    * stand for a layout file written outside Studio (the agent's edit), and
    * `emitLayoutFilesChanged` for the watcher's report of it. A
-   * `save_layout` moves it on (`saved-1`, `saved-2`, …) and answers it, as
+   * `save_deck_file` moves it on (`saved-1`, `saved-2`, …) and answers it, as
    * the real one answers the files' fingerprint once written. */
   layoutFilesStamp?: string
-  /** Milliseconds `save_layout` waits before writing — defaults to 0. Set
+  /** Milliseconds `save_deck_file` waits before writing — defaults to 0. Set
    * it to type or act while an autosave is in flight. */
   saveLayoutDelayMs?: number
+  /** Milliseconds `read_deck_file` waits before answering what it read when
+   * called — defaults to 0. Set it to act (start an IME composition, say)
+   * while open files are being read back. */
+  readDeckFileDelayMs?: number
   /** Milliseconds `layout_files_stamp` waits before answering what it read
    * when called — defaults to 0. Set it to let a write land while a read
    * of the older fingerprint is still in flight. */
@@ -366,6 +381,45 @@ function layoutFileOf(deck: MockDeck, name: string): { html: string; css: string
   return deck.layoutFiles && Object.hasOwn(deck.layoutFiles, name) ? deck.layoutFiles[name] : undefined
 }
 
+const LAYOUT_FILE_PATH = /^(?:layouts\/([^/]+)\.html|css\/([^/]+)\.css)$/
+
+/** The layout `path` is a file of (`layouts/<name>.html` → html,
+ * `css/<name>.css` → css) when `name` is one of `deck.layouts`. */
+function layoutFileAt(deck: MockDeck, path: string): { name: string; side: 'html' | 'css' } | null {
+  const match = LAYOUT_FILE_PATH.exec(path)
+  const name = match?.[1] ?? match?.[2]
+  if (name === undefined || !(deck.layouts ?? []).includes(name)) return null
+  return { name, side: match?.[1] !== undefined ? 'html' : 'css' }
+}
+
+/** What `read_deck_file` answers for `path`, `null` for no such file. */
+function deckFileText(deck: MockDeck, path: string): string | null {
+  const layout = layoutFileAt(deck, path)
+  if (layout !== null) {
+    const files = layoutFileOf(deck, layout.name)
+    return layout.side === 'html' ? files?.html ?? `<section class="peitho-slide layout-${layout.name}"></section>` : files?.css ?? ''
+  }
+  return deck.otherFiles && Object.hasOwn(deck.otherFiles, path) ? deck.otherFiles[path] : null
+}
+
+/** `list_deck_files`' answer: the four folders' entries, depth-first. */
+function deckFileEntries(deck: MockDeck): { path: string; kind: 'dir' | 'file'; editable: boolean }[] {
+  const files = new Set<string>()
+  for (const name of deck.layouts ?? []) {
+    files.add(`layouts/${name}.html`)
+    if (layoutFileOf(deck, name)?.css != null) files.add(`css/${name}.css`)
+  }
+  for (const path of Object.keys(deck.otherFiles ?? {})) files.add(path)
+  const entries: { path: string; kind: 'dir' | 'file'; editable: boolean }[] = []
+  for (const dir of ['layouts', 'css', 'img', 'fonts']) {
+    const inside = [...files].filter(path => path.startsWith(`${dir}/`)).sort()
+    if (inside.length === 0) continue
+    entries.push({ path: dir, kind: 'dir', editable: false })
+    for (const path of inside) entries.push({ path, kind: 'file', editable: /^(?:layouts\/[^/]+\.html|css\/[^/]+\.css)$/.test(path) })
+  }
+  return entries
+}
+
 /** Wires `page` up to open `deck.source` as a fake deck on load, and keeps
  * `deck.source` in sync with every `save_deck_source` call — so a test can
  * read it back afterward to assert on the persisted content. Call before
@@ -390,8 +444,8 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
     if (cmd === 'check_slide_layouts' && deck.checkSlideLayoutsDelayMs) await sleep(deck.checkSlideLayoutsDelayMs)
     if (cmd === 'render_draft' && deck.renderDraftDelayMs) await sleep(deck.renderDraftDelayMs)
     if (cmd === 'delete_layout' && deck.deleteLayoutDelayMs) await sleep(deck.deleteLayoutDelayMs)
-    if (cmd === 'save_layout' && deck.saveLayoutDelayMs) await sleep(deck.saveLayoutDelayMs)
-    if (cmd === 'preview_layout_draft' && deck.layoutDraftPreviewDelayMs) await sleep(deck.layoutDraftPreviewDelayMs(args.html as string))
+    if (cmd === 'save_deck_file' && deck.saveLayoutDelayMs) await sleep(deck.saveLayoutDelayMs)
+    if (cmd === 'preview_layout_draft' && deck.layoutDraftPreviewDelayMs) await sleep(deck.layoutDraftPreviewDelayMs((args.html as string | null) ?? deckFileText(deck, `layouts/${args.name as string}.html`) ?? ''))
     if (cmd.startsWith('import_deck_image_') && deck.importImageDelayMs) await sleep(deck.importImageDelayMs)
     deck.onInvoke?.(cmd, args)
     if (error !== null && error !== undefined) throw new Error(error)
@@ -422,11 +476,13 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         return null
       // Stands in for `engine::layout_files::preview_layout_draft`: the draft
       // HTML itself is the preview's fragment, and its CSS the CSS; HTML with
-      // no `<section` is refused, as `save_layout` is here.
+      // no `<section` is refused, as a layout's HTML is by `save_deck_file` here.
       case 'preview_layout_draft': {
-        const html = args.html as string
+        // A side with no tab open comes as `null`: as on disk.
+        const name = args.name as string
+        const html = (args.html as string | null) ?? deckFileText(deck, `layouts/${name}.html`) ?? ''
         if (!html.includes('<section')) throw new Error('a layout needs a <section> element')
-        return { fragment: html, css: args.css as string }
+        return { fragment: html, css: (args.css as string | null) ?? deckFileText(deck, `css/${name}.css`) ?? '' }
       }
       // A layout with files draws them (its HTML as the fragment), as the
       // real preview renders the saved files; any other `layoutFragment`.
@@ -441,9 +497,12 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         if (deck.layoutFilesStampDelayMs) await sleep(deck.layoutFilesStampDelayMs)
         return stamp
       }
-      case 'read_layout': {
-        const name = args.name as string
-        return layoutFileOf(deck, name) ?? { html: `<section class="peitho-slide layout-${name}"></section>`, css: null }
+      case 'list_deck_files': return deckFileEntries(deck)
+      case 'read_deck_file': {
+        const text = deckFileText(deck, args.path as string)
+        if (deck.readDeckFileDelayMs) await sleep(deck.readDeckFileDelayMs)
+        if (text === null) throw new Error(`'${args.path as string}' is not a file of this deck`)
+        return text
       }
       case 'create_layout': {
         const name = (args.name as string).trim()
@@ -477,17 +536,23 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         if (deck.layoutFiles) delete deck.layoutFiles[name]
         return null
       }
-      case 'save_layout': {
-        const html = args.html as string
-        if (!html.includes('<section')) throw new Error('a layout needs a <section> element')
-        // Like `engine::layout_files::save_layout`, refuses files that no
-        // longer hold what the editor last read or wrote.
-        const base = args.base as { html: string; css: string } | null
-        const current = layoutFileOf(deck, args.name as string)
-        if (base && current && (current.html !== base.html || (current.css ?? '') !== base.css)) {
-          throw new Error('the layout\'s files changed on disk since they were read')
+      case 'save_deck_file': {
+        const path = args.path as string
+        const text = args.text as string
+        const layout = layoutFileAt(deck, path)
+        if (layout?.side === 'html' && !text.includes('<section')) throw new Error('a layout needs a <section> element')
+        // Like `engine::deck_files::save_deck_file`, refuses a file that no
+        // longer holds what the editor last read or wrote.
+        const current = deckFileText(deck, path)
+        if (current === null) throw new Error(`'${path}' is not a file of this deck`)
+        const base = args.base as string | null
+        if (base !== null && current !== base) throw new Error('the layout\'s files changed on disk since they were read')
+        if (layout !== null) {
+          const files = layoutFileOf(deck, layout.name) ?? { html: deckFileText(deck, `layouts/${layout.name}.html`) ?? '', css: null }
+          ;(deck.layoutFiles ??= {})[layout.name] = layout.side === 'html' ? { ...files, html: text } : { ...files, css: text }
+        } else {
+          (deck.otherFiles ??= {})[path] = text
         }
-        ;(deck.layoutFiles ??= {})[args.name as string] = { html, css: args.css as string }
         savedLayouts++
         deck.layoutFilesStamp = `saved-${String(savedLayouts)}`
         return deck.layoutFilesStamp
@@ -543,8 +608,11 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         }, payload)
         return payload
       }
-      case 'plugin:clipboard-manager|read_text': return deck.clipboardText ?? null
+      case 'plugin:clipboard-manager|read_text':
+        if (deck.clipboardDelayMs) await sleep(deck.clipboardDelayMs)
+        return deck.clipboardText ?? null
       case 'plugin:clipboard-manager|write_text':
+        if (deck.clipboardDelayMs) await sleep(deck.clipboardDelayMs)
         deck.clipboardText = args.text as string
         return null
       case 'get_about_info': return deck.aboutInfo ?? DEFAULT_ABOUT_INFO

@@ -102,8 +102,10 @@ export interface Messages {
   editLayout: string
   duplicateLayout: string
   deleteLayout: string
-  commentOnLayout: string
-  commentOnAllLayouts: string
+  /** The comment item every right-click menu opens with
+   * (`domain/menuComment.ts`): the same label whatever it's on — the
+   * comment box's header says what. */
+  comment: string
   layoutUsage: (count: number) => string
   /** Why Delete is off for the deck's only layout. */
   onlyLayoutCannotBeDeleted: string
@@ -113,16 +115,24 @@ export interface Messages {
   deleting: string
   savingLayout: string
   layoutUnsaved: string
-  /** Why the layout editor can't be left yet (another layout, the slides,
-   * a new layout): its edits couldn't be saved. */
+  /** The close button on editor tab `name`. */
+  closeTab: (name: string) => string
+  /** No file open in the layout editor. */
+  noFileOpen: string
+  /** An open file deleted on disk while it held unsaved edits. */
+  fileGone: string
+  /** Why the editor's file shown can't be left yet (its tab closed, the
+   * slides, a new layout): its edits couldn't be saved. Any file — a
+   * layout's, or one no layout owns (`css/base.css`). */
   layoutSaveFirst: string
   /** The files changed on disk while the editor held unsaved edits. */
   layoutConflict: string
   layoutConflictLoad: string
   layoutConflictKeep: string
-  /** Why the layout editor can't be left yet: that change is undecided. */
+  /** Why the editor's file shown can't be left yet: that change is
+   * undecided. */
   layoutConflictFirst: string
-  /** The window was closed, but the layout's edits couldn't be saved. */
+  /** The window was closed, but the file's edits couldn't be saved. */
   layoutCloseUnsaved: string
   layoutCloseConflict: string
   layoutActionFailed: (error: string) => string
@@ -222,6 +232,8 @@ export interface Messages {
   layoutDeleted: (layout: string) => string
   layoutDeletedHistoryCleared: (layout: string) => string
   layoutSaved: (layout: string) => string
+  /** A file no single layout owns (`css/base.css`) saved. */
+  fileSaved: (path: string) => string
   layoutApplied: (layout: string) => string
   layoutAlreadyApplied: (layout: string) => string
   imageLayoutAddFailed: (error: string) => string
@@ -317,8 +329,7 @@ const en: Messages = {
   editLayout: 'Edit Layout',
   duplicateLayout: 'Duplicate Layout',
   deleteLayout: 'Delete Layout',
-  commentOnLayout: 'Comment on This Layout…',
-  commentOnAllLayouts: 'Comment on All Layouts…',
+  comment: 'Comment…',
   layoutUsage: count => (count === 0 ? 'Unused' : count === 1 ? '1 slide' : `${String(count)} slides`),
   onlyLayoutCannotBeDeleted: "The deck's only layout can't be deleted",
   deleteLayoutConfirm: layout => `Delete "${layout}"? Its files are removed from layouts/ and css/.`,
@@ -327,13 +338,16 @@ const en: Messages = {
   deleting: 'Deleting…',
   savingLayout: 'Saving…',
   layoutUnsaved: 'Unsaved changes',
-  layoutSaveFirst: 'The changes to this layout could not be saved. Fix them, or undo them, before leaving this layout',
-  layoutConflict: 'This layout\'s files changed on disk while you had unsaved edits here.',
+  closeTab: name => `Close ${name}`,
+  noFileOpen: 'Open a file from the tree, or pick a layout in the list',
+  fileGone: 'This file is no longer on disk, so these edits can\'t be saved. Copy them elsewhere, or close the tab to discard them',
+  layoutSaveFirst: 'The changes to this file could not be saved. Fix them, or undo them, first',
+  layoutConflict: 'This file changed on disk while you had unsaved edits here.',
   layoutConflictLoad: 'Load from disk',
   layoutConflictKeep: 'Keep my edits',
-  layoutConflictFirst: 'This layout\'s files changed on disk: load them or keep your edits before leaving this layout',
-  layoutCloseUnsaved: 'The changes to this layout could not be saved. Fix them, or close the window again to discard them',
-  layoutCloseConflict: 'This layout\'s files changed on disk: load them or keep your edits, or close the window again to discard your edits',
+  layoutConflictFirst: 'This file changed on disk: load it or keep your edits first',
+  layoutCloseUnsaved: 'The changes to this file could not be saved. Fix them, or close the window again to discard them',
+  layoutCloseConflict: 'This file changed on disk: load it or keep your edits, or close the window again to discard your edits',
   layoutActionFailed: error => `Could not change the layouts: ${error}`,
   deckChangeFailed: 'deck.md could not be updated',
   layoutDeckUnsaved: 'the slides have changes that could not be saved to deck.md. Layouts are checked against the saved deck, so save the slides first',
@@ -421,6 +435,7 @@ const en: Messages = {
   layoutDeleted: layout => `Deleted the ${layout} layout`,
   layoutDeletedHistoryCleared: layout => `Deleted the ${layout} layout — undo history cleared, since it pointed slides at it`,
   layoutSaved: layout => `Saved the ${layout} layout`,
+  fileSaved: path => `Saved ${path}`,
   layoutApplied: layout => `Applied the ${layout} layout to the slide`,
   layoutAlreadyApplied: layout => `The slide already uses the ${layout} layout`,
   imageLayoutAddFailed: error => `Could not add the image layout: ${error}`,
@@ -516,8 +531,7 @@ const ja: Messages = {
   editLayout: 'レイアウトを編集',
   duplicateLayout: 'レイアウトを複製',
   deleteLayout: 'レイアウトを削除',
-  commentOnLayout: 'このレイアウトにコメント…',
-  commentOnAllLayouts: 'レイアウト全体にコメント…',
+  comment: 'コメント…',
   layoutUsage: count => (count === 0 ? '未使用' : `${String(count)}枚で使用中`),
   onlyLayoutCannotBeDeleted: 'デッキに1つしかないレイアウトは削除できません',
   deleteLayoutConfirm: layout => `「${layout}」を削除しますか? layouts/ と css/ からファイルが削除されます。`,
@@ -526,13 +540,16 @@ const ja: Messages = {
   deleting: '削除中…',
   savingLayout: '保存中…',
   layoutUnsaved: '未保存の変更があります',
-  layoutSaveFirst: 'このレイアウトの変更を保存できませんでした。修正するか取り消してから、このレイアウトを離れてください',
-  layoutConflict: '未保存の編集がある間に、このレイアウトのファイルがディスク上で変更されました。',
+  closeTab: name => `${name} を閉じる`,
+  noFileOpen: 'ツリーからファイルを開くか、一覧でレイアウトを選んでください',
+  fileGone: 'このファイルはディスク上にもうないため、編集を保存できません。別の場所に写すか、タブを閉じて破棄してください',
+  layoutSaveFirst: 'このファイルの変更を保存できませんでした。先に修正するか取り消してください',
+  layoutConflict: '未保存の編集がある間に、このファイルがディスク上で変更されました。',
   layoutConflictLoad: 'ディスクの内容を読み込む',
   layoutConflictKeep: '自分の編集を残す',
-  layoutConflictFirst: 'このレイアウトのファイルがディスク上で変更されました。読み込むか自分の編集を残すかを選んでから、このレイアウトを離れてください',
-  layoutCloseUnsaved: 'このレイアウトの変更を保存できませんでした。修正するか、もう一度ウィンドウを閉じて変更を破棄してください',
-  layoutCloseConflict: 'このレイアウトのファイルがディスク上で変更されました。読み込むか自分の編集を残すかを選ぶか、もう一度ウィンドウを閉じて自分の編集を破棄してください',
+  layoutConflictFirst: 'このファイルがディスク上で変更されました。先に、読み込むか自分の編集を残すかを選んでください',
+  layoutCloseUnsaved: 'このファイルの変更を保存できませんでした。修正するか、もう一度ウィンドウを閉じて変更を破棄してください',
+  layoutCloseConflict: 'このファイルがディスク上で変更されました。読み込むか自分の編集を残すかを選ぶか、もう一度ウィンドウを閉じて自分の編集を破棄してください',
   layoutActionFailed: error => `レイアウトを変更できませんでした: ${error}`,
   deckChangeFailed: 'deck.md を更新できませんでした',
   layoutDeckUnsaved: 'deck.md に保存できていないスライドの変更があります。レイアウトは保存済みのデッキに対して確認するため、先にスライドを保存してください',
@@ -620,6 +637,7 @@ const ja: Messages = {
   layoutDeleted: layout => `レイアウト ${layout} を削除しました`,
   layoutDeletedHistoryCleared: layout => `レイアウト ${layout} を削除しました。このレイアウトを指していた取り消し履歴は消去しました`,
   layoutSaved: layout => `レイアウト ${layout} を保存しました`,
+  fileSaved: path => `${path} を保存しました`,
   layoutApplied: layout => `スライドにレイアウト ${layout} を適用しました`,
   layoutAlreadyApplied: layout => `スライドはすでにレイアウト ${layout} を使っています`,
   imageLayoutAddFailed: error => `画像用レイアウトを追加できませんでした: ${error}`,

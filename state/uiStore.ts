@@ -2,6 +2,8 @@ import { createSignal, createMemo } from '@barefootjs/client'
 import { type DragState } from '../domain/drag'
 import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withLayoutFitResult, withLayoutNotice } from '../domain/contextMenu'
 import { type LayoutNotice, type LayoutVerdict } from '../domain/layoutFit'
+import type { PreviewClick } from '../domain/reviewComment'
+import { COMMENT_MENU_CLOSED, type CommentMenu, withCommentMenuPosition } from '../domain/commentMenu'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { DEFAULT_DEVICE, type PhoneShape, type ViewportMode, toggledViewportMode } from '../domain/viewport'
 import { toggleCollapsedKey } from '../domain/sectionCollapse'
@@ -70,9 +72,11 @@ export function createUiStore() {
   let lastLayoutFitRequestId = 0
   /** Opens the menu on slide `index` and returns the request id its fit
    * check's answer must be settled with. */
-  function openSlideContextMenu(index: number, x: number, y: number): number {
+  /** Opens the menu on slide `index` — from its row, or from its preview,
+   * right-clicked at `comment` (what the comment item is on). */
+  function openSlideContextMenu(index: number, x: number, y: number, comment: PreviewClick | null = null): number {
     lastLayoutFitRequestId += 1
-    setContextMenu(openOnSlide(index, x, y, lastLayoutFitRequestId))
+    setContextMenu(openOnSlide(index, x, y, lastLayoutFitRequestId, comment))
     return lastLayoutFitRequestId
   }
   function settleLayoutFit(requestId: number, verdicts: readonly LayoutVerdict[] | null): void {
@@ -124,11 +128,30 @@ export function createUiStore() {
   // and says so, like `presentPending` above.
   const [imageLayoutAdding, setImageLayoutAdding] = createSignal(false)
 
+  // The right-click menu on the previews and the editors
+  // (`domain/commentMenu.ts`): one at a time, its backdrop closing it.
+  const [commentMenu, setCommentMenu] = createSignal<CommentMenu>(COMMENT_MENU_CLOSED)
+  function openCommentMenu(menu: CommentMenu): void {
+    setCommentMenu(menu)
+  }
+  function closeCommentMenu(): void {
+    setCommentMenu(COMMENT_MENU_CLOSED)
+  }
+  /** Moves the open menu to `at` (kept on-screen). */
+  function moveCommentMenu(at: { x: number; y: number }): void {
+    setCommentMenu(menu => withCommentMenuPosition(menu, at))
+  }
+
   // Panel contents stay mounted; folding only changes their visibility.
   const [slidesOpen, setSlidesOpen] = createSignal(true)
   const [editorOpen, setEditorOpen] = createSignal(true)
   const [previewOpen, setPreviewOpen] = createSignal(true)
   const [reviewOpen, setReviewOpen] = createSignal(true)
+  // The layout screen's own columns, folded the same way (the comments
+  // column, `reviewOpen`, is shared by both screens).
+  const [layoutFilesOpen, setLayoutFilesOpen] = createSignal(true)
+  const [layoutEditorOpen, setLayoutEditorOpen] = createSignal(true)
+  const [layoutListOpen, setLayoutListOpen] = createSignal(true)
 
   const [slideListWidth, setSlideListWidth] = createSignal(SLIDE_LIST_WIDTH)
   const [editorWidth, setEditorWidth] = createSignal(EDITOR_WIDTH)
@@ -220,12 +243,14 @@ export function createUiStore() {
     dragState, setDragState, draggedIndex, dragOverGap, dragDeltaY,
     contextMenu, setContextMenu, closeContextMenu, toggleLayoutPicker, contextMenuAppendIndex,
     openSlideContextMenu, settleLayoutFit, showLayoutNotice,
+    commentMenu, openCommentMenu, closeCommentMenu, moveCommentMenu,
     layoutPreviews, setLayoutPreviews, layoutPreviewStylesheetText, setLayoutPreviewCss,
     clipboardSlideText, setClipboardSlideText,
     presentMenuOpen, setPresentMenuOpen, presentPending, setPresentPending,
     imageLayoutAdding, setImageLayoutAdding,
     variantMenuOpen, setVariantMenuOpen,
     slidesOpen, setSlidesOpen, editorOpen, setEditorOpen, previewOpen, setPreviewOpen, reviewOpen, setReviewOpen,
+    layoutFilesOpen, setLayoutFilesOpen, layoutEditorOpen, setLayoutEditorOpen, layoutListOpen, setLayoutListOpen,
     slideListWidth, setSlideListWidth, editorWidth, setEditorWidth, reviewPanelWidth, setReviewPanelWidth,
     editingSectionIndex, setEditingSectionIndex,
     collapsedSectionKeys, toggleSectionCollapsed,

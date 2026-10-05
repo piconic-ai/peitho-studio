@@ -427,11 +427,21 @@ pub fn save_layout(deck_path: &Path, content: &str, name: &str, html: &str, css:
         let mut written = Written::default();
         write_new_file(&deck_dir.join("css/base.css"), &builtin::scaffolded_base_css(), &mut written)?;
     }
-    std::fs::write(&html_path, html).map_err(|err| format!("failed to write {}: {err}", html_path.display()))?;
+    write_if_changed(&html_path, html)?;
     if css_exists || !css.trim().is_empty() {
-        std::fs::write(&css_path, css).map_err(|err| format!("failed to write {}: {err}", css_path.display()))?;
+        write_if_changed(&css_path, css)?;
     }
     Ok(())
+}
+
+/// Writes `text` to `path` unless the file already holds it: a save of one
+/// file of a layout's pair (`deck_files::save_deck_file`) leaves the other
+/// untouched, so the watcher reports no change to it.
+fn write_if_changed(path: &Path, text: &str) -> Result<(), String> {
+    if std::fs::read_to_string(path).is_ok_and(|current| current == text) {
+        return Ok(());
+    }
+    std::fs::write(path, text).map_err(|err| format!("failed to write {}: {err}", path.display()))
 }
 
 /// A layout's placeholder preview (`layout_preview::placeholder_source`)

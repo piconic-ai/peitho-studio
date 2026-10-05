@@ -40,13 +40,25 @@ export function layoutThumbnailClickOf(event: MouseEvent): LayoutThumbnailClick 
   const from = pressedAt
   pressedAt = null
   if (event.button !== 0) return null
+  const at = { x: event.clientX, y: event.clientY }
+  if (isDrag(from, at, CLICK_SLOP)) return null
+  if (!(document.getSelection()?.isCollapsed ?? true)) return null
+  return slotClickOf(event)
+}
+
+/** What a right-click on a layout's thumbnail would comment on, as a
+ * left-click there does — `null` off the thumbnail. No drag or selection
+ * to tell apart. */
+export function layoutThumbnailContextClickOf(event: MouseEvent): LayoutThumbnailClick | null {
+  return slotClickOf(event)
+}
+
+function slotClickOf(event: MouseEvent): LayoutThumbnailClick | null {
   const target = event.target instanceof Element ? event.target : null
   const thumbnail = target?.closest('[data-layout-thumbnail]') ?? null
   if (thumbnail === null) return null
   const at = { x: event.clientX, y: event.clientY }
-  if (isDrag(from, at, CLICK_SLOP)) return null
-  if (!(document.getSelection()?.isCollapsed ?? true)) return null
-  const root = thumbnail.querySelector('[data-layout-canvas]')?.shadowRoot ?? null
+  const root = thumbnail.querySelector('[data-layout-canvas],[data-layout-selected-canvas]')?.shadowRoot ?? null
   const slots = root === null ? [] : Array.from(root.querySelectorAll('[class*="slot-"]')).flatMap(element => {
     const slot = slotNameOfClasses(Array.from(element.classList))
     return slot === null ? [] : [{ slot, rect: element.getBoundingClientRect() }]

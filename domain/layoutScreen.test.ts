@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { LAYOUT_ROW_CHROME, MAX_LAYOUT_NAME_LENGTH, initialLayoutListWidth, layoutThumbnailSize, layoutThumbnailStyle, layoutFilesChanged, layoutListGeneration, layoutNameProblem, layoutRows, layoutUsage, shownLayout } from './layoutScreen'
+import { LAYOUT_ROW_CHROME, layoutColumnFilling, layoutRailShown, type LayoutColumns, MAX_LAYOUT_NAME_LENGTH, SELECTED_PREVIEW_SHARE, initialLayoutListWidth, layoutGridThumbnailStyle, layoutThumbnailSize, layoutThumbnailStyle, selectedPreviewRoom, layoutFilesChanged, layoutListGeneration, layoutNameProblem, layoutRows, layoutUsage, shownLayout } from './layoutScreen'
 import type { ManifestSlide } from './render'
 import { buildSlideList } from './slideList'
 
@@ -67,7 +67,7 @@ describe('layoutRows', () => {
 
   test('spec: Given the deck\'s only layout, When the list is built, Then its row offers no Delete', () => {
     expect(layoutRows(['title-body-code'], new Map(), 'en', '0')).toEqual([
-      { key: '0:title-body-code', name: 'title-body-code', label: 'title-body-code', usage: 0, deletable: false },
+      { key: '0:title-body-code', name: 'title-body-code', label: 'title-body-code', englishName: null, usage: 0, deletable: false },
     ])
   })
 
@@ -282,5 +282,81 @@ describe('layoutThumbnailSize / layoutThumbnailStyle', () => {
 
   test('adversarial: Given a cap under a pixel, Then there is no box rather than a zero-width one', () => {
     expect(layoutThumbnailSize({ width: 800, height: 3000 }, PC, 0.5)).toBeNull()
+  })
+})
+
+describe('the layout list\'s names (display name and English name)', () => {
+  test('spec: Given standard layouts in Japanese, Then each row shows its translated name and, under it, its English (file) name', () => {
+    const rows = layoutRows(['title-body', 'two-column'], new Map(), 'ja', '0')
+    expect(rows.map(row => [row.label, row.englishName])).toEqual([['タイトルと本文', 'title-body'], ['2列(タイトルあり)', 'two-column']])
+  })
+
+  test('spec: Given standard layouts in English, Then the English name is still shown, since the display name is not the file name', () => {
+    expect(layoutRows(['title-body'], new Map(), 'en', '0')[0]).toMatchObject({ label: 'Title and body', englishName: 'title-body' })
+  })
+
+  test('adversarial: Given a deck\'s own layout (or an empty, odd or prototype-like name), Then its name is shown once, not twice', () => {
+    for (const name of ['quote', 'title-body-code', '', 'constructor', '__proto__']) {
+      expect(layoutRows([name], new Map(), 'ja', '0')[0]).toMatchObject({ label: name, englishName: null })
+    }
+  })
+})
+
+describe('the selected layout\'s large preview and the grid under it', () => {
+  test('spec: Given the list column\'s body, Then the large preview may take its width and at most its share of the height, leaving the rest to the grid', () => {
+    expect(selectedPreviewRoom({ width: 400, height: 1000 })).toEqual({ width: 400, height: Math.floor(1000 * SELECTED_PREVIEW_SHARE) })
+    expect(SELECTED_PREVIEW_SHARE).toBeGreaterThan(0.3)
+    expect(SELECTED_PREVIEW_SHARE).toBeLessThan(0.9)
+  })
+
+  test('spec: Given a grid thumbnail, Then its drawing keeps the canvas\'s proportion inside its border, as a slide list thumbnail does', () => {
+    expect(layoutGridThumbnailStyle({ width: 1280, height: 720 })).toBe('aspect-ratio: 1280 / 720; box-sizing: content-box')
+  })
+
+  test('spec: Given the large preview, Then nothing frames it: around its drawing is only the section\'s padding and the name line under it', () => {
+    expect(LAYOUT_ROW_CHROME).toEqual({ width: 8 * 2, height: 8 * 2 + 4 + 16 })
+  })
+
+  test('adversarial: Given no body measured yet, or an odd height, Then there is no room, or it is whole pixels', () => {
+    expect(selectedPreviewRoom(null)).toBeNull()
+    expect(selectedPreviewRoom({ width: 0, height: 0 })).toEqual({ width: 0, height: 0 })
+    expect(Number.isInteger(selectedPreviewRoom({ width: 300, height: 333 })?.height)).toBe(true)
+    // Too little room leaves the preview without a box (`layoutThumbnailSize`), not a negative one.
+    expect(layoutThumbnailSize(selectedPreviewRoom({ width: 300, height: 50 }), { width: 1280, height: 720 })).toBeNull()
+  })
+})
+
+describe('folding the layout screen\'s columns', () => {
+  const ALL_OPEN: LayoutColumns = { files: true, editor: true, list: true, review: true }
+
+  test('spec: Given every column open, Then the editor takes the width left over and there is no rail', () => {
+    expect(layoutColumnFilling(ALL_OPEN)).toBe('editor')
+    expect(layoutRailShown(ALL_OPEN)).toBe(false)
+  })
+
+  test('spec: Given the editor closed, Then the list takes the width; with the list closed too, the comments column; with all three, none', () => {
+    expect(layoutColumnFilling({ ...ALL_OPEN, editor: false })).toBe('list')
+    expect(layoutColumnFilling({ ...ALL_OPEN, editor: false, list: false })).toBe('review')
+    expect(layoutColumnFilling({ ...ALL_OPEN, editor: false, list: false, review: false })).toBeNull()
+  })
+
+  test('spec: Given any one column closed, Then the rail shows', () => {
+    for (const closed of ['files', 'editor', 'list', 'review'] as const) {
+      expect(layoutRailShown({ ...ALL_OPEN, [closed]: false })).toBe(true)
+    }
+  })
+
+  test('adversarial: Given no comments column at all, Then it neither shows the rail nor takes the width', () => {
+    expect(layoutRailShown({ ...ALL_OPEN, review: null })).toBe(false)
+    expect(layoutColumnFilling({ files: true, editor: false, list: false, review: null })).toBeNull()
+  })
+
+  test('exhaustive: Given every combination, Then the column filling is one that is open, and the rail shows exactly when one that is there is closed', () => {
+    for (const files of [true, false]) for (const editor of [true, false]) for (const list of [true, false]) for (const review of [true, false, null]) {
+      const columns = { files, editor, list, review }
+      const filling = layoutColumnFilling(columns)
+      if (filling !== null) expect(columns[filling]).toBe(true)
+      expect(layoutRailShown(columns)).toBe([files, editor, list].includes(false) || review === false)
+    }
   })
 })

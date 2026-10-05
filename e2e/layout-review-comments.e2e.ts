@@ -42,10 +42,10 @@ async function commentOnLayout(page: Page, name: string | null, text: string): P
     await page.locator('[data-layout-rows]').evaluate(el => { el.scrollTop = el.scrollHeight })
     const box = (await page.locator('[data-layout-rows]').boundingBox())!
     await page.mouse.click(box.x + box.width / 2, box.y + box.height - 10, { button: 'right' })
-    await page.locator('[data-layout-menu-item="comment-all-layouts"]').click()
+    await page.locator('[data-menu="layout"] [data-menu-item="comment"]').click()
   } else {
     await page.locator(`[data-layout-row="${name}"]`).click({ button: 'right' })
-    await page.locator('[data-layout-menu-item="comment-layout"]').click()
+    await page.locator('[data-menu="layout"] [data-menu-item="comment"]').click()
   }
   await expect(page.locator(BOX)).toBeVisible()
   await expect(page.locator(`${BOX} textarea`)).toBeFocused()
@@ -65,7 +65,7 @@ function count(deck: MockDeck, cmd: string): number {
 test('Given the layout screen, When a layout is commented on from its menu, Then the box names the layout and the comment waits unsent in the comments column', async ({ page }) => {
   await openLayoutScreen(page, createFakeCritIpc())
   await page.locator('[data-layout-row="cover"]').click({ button: 'right' })
-  await page.locator('[data-layout-menu-item="comment-layout"]').click()
+  await page.locator('[data-menu="layout"] [data-menu-item="comment"]').click()
   await expect(page.locator('[data-comment-target]')).toHaveText('Layout cover')
   await page.locator(`${BOX} textarea`).fill('Darker title')
   await page.locator('[data-comment-add]').click()
@@ -106,7 +106,7 @@ test('Given a sent layout comment, When the agent rewrites the layout files and 
   await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
   const previewsBefore = count(deck, 'preview_layouts')
   const rendersBefore = count(deck, 'render_draft')
-  const readsBefore = count(deck, 'read_layout')
+  const readsBefore = count(deck, 'read_deck_file')
 
   deck.layoutFilesStamp = 'v2'
   crit.reply('c_1', 'Made the title darker')
@@ -114,7 +114,7 @@ test('Given a sent layout comment, When the agent rewrites the layout files and 
   await expect.poll(() => count(deck, 'preview_layouts')).toBeGreaterThan(previewsBefore)
   await expect.poll(() => count(deck, 'render_draft')).toBeGreaterThan(rendersBefore)
   // The layout shown is read again, so its editor holds the agent's version.
-  await expect.poll(() => count(deck, 'read_layout')).toBeGreaterThan(readsBefore)
+  await expect.poll(() => count(deck, 'read_deck_file')).toBeGreaterThan(readsBefore)
 })
 
 test('adversarial: Given the agent only replies and no layout file changed, Then the layouts are not rendered again', async ({ page }) => {
@@ -158,12 +158,12 @@ test('Given Studio started the deck\'s session before the deck had layout folder
   await expect(page.locator('[data-agent-connect-prompt]')).toContainText(`1. Run: cd /decks/talk && '${FAKE_CRIT_PATH}' --no-open --session fake-session`)
 })
 
-// A left-click on the selected layout's thumbnail opens the comment box on
-// that layout, as a click on the slide preview does on the slide; the label
+// A left-click on the selected layout's large preview opens the comment box
+// on that layout, as a click on the slide preview does on the slide; the label
 // names the slot clicked, read from the `slot-<name>` class peitho-core
 // wraps each filled slot's content in (`render_slot`). The mocked
 // `preview_layouts` hands every layout the fragment below.
-test.describe('a click on a layout\'s thumbnail', () => {
+test.describe('a click on the selected layout\'s large preview', () => {
   const FRAGMENT = '<section class="peitho-slide"><h1><span class="slot-title">Placeholder title</span></h1>'
     + '<div class="body" style="margin-top: 200px"><div class="slot-body"><p>Placeholder body copy.</p></div></div></section>'
 
@@ -175,12 +175,13 @@ test.describe('a click on a layout\'s thumbnail', () => {
     return deck
   }
 
+  /** The large preview, drawing layout `name` once it's selected. */
   function thumbnail(page: Page, name: string) {
-    return page.locator(`[data-layout-row="${name}"] [data-layout-thumbnail]`)
+    return page.locator(`[data-layout-selected-preview="${name}"] [data-layout-thumbnail]`)
   }
 
   async function centerOf(page: Page, selector: string, name: string): Promise<{ x: number; y: number }> {
-    const box = await page.locator(`[data-layout-row="${name}"] [data-layout-canvas] ${selector}`).boundingBox()
+    const box = await page.locator(`[data-layout-selected-preview="${name}"] [data-layout-selected-canvas="${name}"] ${selector}`).boundingBox()
     if (!box) throw new Error(`${selector} has no box`)
     return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
   }
@@ -213,14 +214,14 @@ test.describe('a click on a layout\'s thumbnail', () => {
     await expect(page.locator('[data-comment-target]')).toHaveText('Layout cover › whole layout')
   })
 
-  test('Given a layout not selected, When its thumbnail is clicked, Then it is selected and no box opens; the next click opens it', async ({ page }) => {
+  test('Given a layout not selected, When its small thumbnail is clicked, Then it is selected and drawn large, and no box opens; a click on the large preview opens it', async ({ page }) => {
     await openWithThumbnails(page, createFakeCritIpc())
-    const body = await centerOf(page, '.slot-body', 'title-body')
 
-    await page.mouse.click(body.x, body.y)
+    await page.locator('[data-layout-row="title-body"]').click()
     await expect(page.locator('[data-layout-row="title-body"]')).toHaveAttribute('aria-current', 'true')
     await expect(page.locator(BOX)).toBeHidden()
 
+    const body = await centerOf(page, '.slot-body', 'title-body')
     await page.mouse.click(body.x, body.y)
     await expect(page.locator('[data-comment-target]')).toHaveText('Layout title-body › slot "body"')
   })
@@ -236,7 +237,40 @@ test.describe('a click on a layout\'s thumbnail', () => {
     await expect(page.locator(BOX)).toBeHidden()
 
     await page.mouse.click(title.x, title.y, { button: 'right' })
-    await expect(page.locator('[data-layout-menu]')).toBeVisible()
+    await expect(page.locator('[data-menu="layout"]')).toBeVisible()
+    await expect(page.locator(BOX)).toBeHidden()
+  })
+
+  test('Given the large preview right-clicked in a slot, When Comment… is chosen, Then the box names the slot, as a left-click there does', async ({ page }) => {
+    await openWithThumbnails(page, createFakeCritIpc())
+    const body = await centerOf(page, '.slot-body', 'cover')
+    await page.mouse.click(body.x, body.y, { button: 'right' })
+
+    const menu = page.locator('[data-menu="layout"]')
+    await expect(menu.locator('[data-menu-item]')).toHaveText(['Comment…', 'Apply to Slide', 'Duplicate Layout', 'Delete Layout'])
+    await expect(page.locator(BOX)).toBeHidden()
+    await menu.locator('[data-menu-item="comment"]').click()
+
+    await expect(menu).toBeHidden()
+    await expect(page.locator('[data-comment-target]')).toHaveText('Layout cover › slot "body"')
+    await expect(page.locator(`${BOX} textarea`)).toBeFocused()
+  })
+
+  test('Given the large preview right-clicked, When Duplicate Layout is chosen, Then the layout is copied as from its row', async ({ page }) => {
+    const deck = await openWithThumbnails(page, createFakeCritIpc())
+    const box = (await thumbnail(page, 'cover').boundingBox())!
+    await page.mouse.click(box.x + 10, box.y + 10, { button: 'right' })
+    await page.locator('[data-menu="layout"] [data-menu-item="duplicate"]').click()
+    await expect.poll(() => deck.layouts).toContain('cover-copy')
+  })
+
+  test('Given the large preview\'s menu open, When Escape is pressed, Then it closes and no box opens', async ({ page }) => {
+    await openWithThumbnails(page, createFakeCritIpc())
+    const box = (await thumbnail(page, 'cover').boundingBox())!
+    await page.mouse.click(box.x + 10, box.y + 10, { button: 'right' })
+    await expect(page.locator('[data-menu="layout"]')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-menu="layout"]')).toBeHidden()
     await expect(page.locator(BOX)).toBeHidden()
   })
 
@@ -260,7 +294,7 @@ test('Given an open comment box, When the screen is switched between slides and 
   const crit = createFakeCritIpc()
   await openLayoutScreen(page, crit)
   await page.locator('[data-layout-row="cover"]').click({ button: 'right' })
-  await page.locator('[data-layout-menu-item="comment-layout"]').click()
+  await page.locator('[data-menu="layout"] [data-menu-item="comment"]').click()
   await expect(page.locator(BOX)).toBeVisible()
   await page.locator(`${BOX} textarea`).fill('Half-written')
 

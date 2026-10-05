@@ -54,6 +54,23 @@ export interface TextInsertion extends TextChange {
   cursor: number
 }
 
+/** `doc`'s text from `from` to `to` (either way round, clamped to it) —
+ * what Cut and Copy take. */
+export function textBetween(doc: string, from: number, to: number): string {
+  const clamp = (at: number) => Math.max(0, Math.min(doc.length, Number.isFinite(at) ? Math.floor(at) : 0))
+  return doc.slice(Math.min(clamp(from), clamp(to)), Math.max(clamp(from), clamp(to)))
+}
+
+/** `text` put in place of `doc`'s `from`–`to` (either way round, clamped
+ * to it; a caret when equal), line breaks normalized, the cursor after it
+ * — a Paste, or with `''` a Cut. */
+export function replacementInsertion(doc: string, from: number, to: number, text: string): TextInsertion {
+  const clamp = (at: number) => Math.max(0, Math.min(doc.length, Number.isFinite(at) ? Math.floor(at) : 0))
+  const start = Math.min(clamp(from), clamp(to))
+  const insert = normalizeLineBreaks(text)
+  return { from: start, to: Math.max(clamp(from), clamp(to)), insert, cursor: start + insert.length }
+}
+
 /** The Markdown for an image at `relativePath` (deck-relative, as
  * `import_deck_image_*` returns it). No alt text. */
 export function imageMarkdown(relativePath: string): string {

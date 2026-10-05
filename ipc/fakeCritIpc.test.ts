@@ -110,9 +110,18 @@ describe('createFakeCritIpc', () => {
     expect(await createFakeCritIpc({ sessionDirs: ['layouts', 'css'] }).sessionDirs()).toEqual(['layouts', 'css'])
   })
 
+  test('Given an agent waiting, When Studio adds a comment from the layout editor, Then it sits on those lines of its file, with their text', async () => {
+    const ipc = createFakeCritIpc()
+    const comments = await ipc.addLayoutComments([
+      { layout: null, lines: { path: 'css/base.css', startLine: 2, endLine: 3, quote: 'h1 {}' }, body: '[css/base.css L2-L3 "h1 {}"] Calmer', author: 'Peitho Studio' },
+    ])
+    expect(comments.map(c => [c.place, c.lines, c.quote])).toEqual([[{ kind: 'file', path: 'css/base.css' }, { start: 2, end: 3 }, 'h1 {}']])
+  })
+
   test('Given a malformed layout comment, When added, Then none of the batch is', async () => {
     const ipc = createFakeCritIpc()
-    for (const bad of [{ layout: '../x', body: 'b', author: 'a' }, { layout: null, body: ' ', author: 'a' }, { layout: 'x', body: 'b', author: '' }]) {
+    const badLines = { layout: null, lines: { path: 'css/base.css', startLine: 3, endLine: 2, quote: '' }, body: 'b', author: 'a' }
+    for (const bad of [{ layout: '../x', body: 'b', author: 'a' }, { layout: null, body: ' ', author: 'a' }, { layout: 'x', body: 'b', author: '' }, badLines]) {
       expect(ipc.addLayoutComments([{ layout: 'ok', body: 'b', author: 'a' }, bad])).rejects.toThrow()
     }
     expect(await ipc.listComments()).toEqual([])

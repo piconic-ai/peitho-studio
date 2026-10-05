@@ -82,7 +82,16 @@ export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
 
   // As `engine::crit::layout_comment_place` puts it for a deck whose
   // layouts all have their own file: on that file, or on the review.
+  // Like `engine::crit::layout_comment_place`: lines go on their file, a
+  // layout's comment on its HTML, one on every layout on the review.
   function toLayoutComment(comment: NewLayoutComment): ReviewComment {
+    const lines = comment.lines
+    if (lines !== undefined) {
+      return {
+        createdAt: now(), id: `c_${String(nextId++)}`, place: { kind: 'file', path: lines.path }, lines: { start: lines.startLine, end: lines.endLine },
+        body: comment.body, quote: lines.quote === '' ? null : lines.quote, author: comment.author, resolved: false, replies: [],
+      }
+    }
     const place: CommentPlace = comment.layout === null ? { kind: 'review' } : { kind: 'file', path: `layouts/${comment.layout}.html` }
     return { createdAt: now(), id: `${place.kind === 'review' ? 'r' : 'c'}_${String(nextId++)}`, place, lines: null, body: comment.body, quote: null, author: comment.author, resolved: false, replies: [] }
   }
@@ -131,7 +140,7 @@ export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
     },
     addLayoutComments: async added => {
       record('addLayoutComments', added)
-      if (added.some(comment => comment.body.trim() === '' || comment.author.trim() === '' || (comment.layout !== null && layoutHtmlFile(comment.layout) === null))) {
+      if (added.some(comment => comment.body.trim() === '' || comment.author.trim() === '' || (comment.layout !== null && layoutHtmlFile(comment.layout) === null) || (comment.lines !== undefined && (comment.lines.startLine < 1 || comment.lines.endLine < comment.lines.startLine)))) {
         throw new Error('a layout comment is malformed')
       }
       found()

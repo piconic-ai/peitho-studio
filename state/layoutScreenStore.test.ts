@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { createRoot } from '@barefootjs/client'
 import { createLayoutScreenStore } from './layoutScreenStore'
 import { createUiStore } from './uiStore'
-import { editorDraft } from '../domain/layoutEditor'
+import { autosavePaths, fileDraft } from '../domain/fileEditor'
 
 const NAMES = ['title-slide', 'title-body', 'quote']
 
@@ -72,61 +72,82 @@ describe('the layout screen\'s state', () => {
     })
   })
 
-  test('spec: Given a layout\'s files arriving, Then the editor shows them; typing marks it unsaved and a landed save clears that', () => {
+  test('spec: Given a layout\'s two files opened, When they arrive, Then each is a tab; typing in one marks the editor unsaved and a landed save clears that', () => {
     createRoot(() => {
       const store = createLayoutScreenStore()
-      store.editorLoading('quote')
-      store.editorLoaded('quote', { html: '<section></section>', css: null })
-      expect(editorDraft(store.editor())).toEqual({ html: '<section></section>', css: '' })
-      store.typeInEditor('css', '.x {}')
+      expect(store.openFiles(['layouts/quote.html', 'css/quote.css'], 'layouts/quote.html')).toEqual(['layouts/quote.html', 'css/quote.css'])
+      store.fileLoaded('layouts/quote.html', '<section></section>')
+      store.fileLoaded('css/quote.css', '')
+      expect(store.activePath()).toBe('layouts/quote.html')
+      expect(fileDraft(store.activeFile())).toBe('<section></section>')
+      store.showFile('css/quote.css')
+      store.typeInFile('css/quote.css', '.x {}')
       expect(store.editorDirty()).toBe(true)
-      store.editorSaving()
-      store.editorSaved('quote', editorDraft(store.editor()))
+      store.fileSaving('css/quote.css')
+      store.fileSaved('css/quote.css', '.x {}')
       expect(store.editorDirty()).toBe(false)
+      // Opening an open file again reads nothing.
+      expect(store.openFiles(['css/quote.css'], 'css/quote.css')).toEqual([])
     })
   })
 
-  test('spec: Given typing, When it is autosaved and the agent then rewrites the files, Then the editor takes them; with typing pending instead, it waits for the user to pick a side', () => {
+  test('spec: Given typing, When it is autosaved and the agent then rewrites the file, Then the editor takes it; with typing pending instead, it waits for the user to pick a side', () => {
     createRoot(() => {
       const store = createLayoutScreenStore()
-      store.editorLoading('quote')
-      store.editorLoaded('quote', { html: '<section></section>', css: null })
-      store.typeInEditor('html', '<section>mine</section>')
-      expect(store.wantsAutosave()).toBe(true)
-      store.editorSaving()
-      expect(store.wantsAutosave()).toBe(false)
-      store.editorSaved('quote', editorDraft(store.editor()))
-      expect(store.wantsAutosave()).toBe(false)
+      const path = 'css/base.css'
+      store.openFiles([path], path)
+      store.fileLoaded(path, 'a {}')
+      store.typeInFile(path, 'a { color: red; }')
+      expect(autosavePaths(store.tabs())).toEqual([path])
+      store.fileSaving(path)
+      expect(autosavePaths(store.tabs())).toEqual([])
+      store.fileSaved(path, 'a { color: red; }')
 
       // Studio's own write coming back changes nothing.
-      expect(store.externalChange('quote', { html: '<section>mine</section>', css: '' })).toBe('unchanged')
-      expect(store.externalChange('quote', { html: '<section>agent</section>', css: '' })).toBe('replaced')
-      expect(editorDraft(store.editor()).html).toBe('<section>agent</section>')
+      expect(store.externalChange(path, 'a { color: red; }')).toBe('unchanged')
+      expect(store.externalChange(path, 'a { color: blue; }')).toBe('replaced')
+      expect(fileDraft(store.activeFile())).toBe('a { color: blue; }')
 
-      store.typeInEditor('html', '<section>mine again</section>')
-      expect(store.externalChange('quote', { html: '<section>agent 2</section>', css: '' })).toBe('conflict')
+      store.typeInFile(path, 'mine')
+      expect(store.externalChange(path, 'agent 2')).toBe('conflict')
       expect(store.editorConflict()).toBe(true)
-      expect(store.wantsAutosave()).toBe(false)
-      store.keepDraft()
+      store.keepDraft(path)
       expect(store.editorConflict()).toBe(false)
-      expect(store.wantsAutosave()).toBe(true)
+      expect(autosavePaths(store.tabs())).toEqual([path])
 
-      expect(store.externalChange('quote', { html: '<section>agent 3</section>', css: '' })).toBe('conflict')
-      store.loadExternal('quote', { html: '<section>agent 3</section>', css: '' })
+      expect(store.externalChange(path, 'agent 3')).toBe('conflict')
+      store.loadExternal(path, 'agent 3')
       expect(store.editorConflict()).toBe(false)
       expect(store.editorDirty()).toBe(false)
-      expect(editorDraft(store.editor()).html).toBe('<section>agent 3</section>')
+      expect(fileDraft(store.activeFile())).toBe('agent 3')
+      // A file that isn't open is left alone.
+      expect(store.externalChange('css/other.css', 'x')).toBe('ignored')
     })
   })
 
-  test('adversarial: Given another layout selected while the first one\'s files were read, When they arrive late, Then they are dropped', () => {
+  test('adversarial: Given a tab closed while its file was read, When it arrives late, Then it is dropped; a file gone from disk closes its clean tab', () => {
     createRoot(() => {
       const store = createLayoutScreenStore()
-      store.editorLoading('first')
-      store.editorLoading('second')
-      store.editorLoaded('first', { html: 'first', css: null })
-      store.editorUnavailable('first', 'gone')
-      expect(store.editor()).toEqual({ kind: 'loading', name: 'second' })
+      store.openFiles(['css/a.css', 'css/b.css'], 'css/a.css')
+      store.closeFile('css/a.css')
+      store.fileLoaded('css/a.css', 'late')
+      store.fileUnavailable('css/a.css', 'gone')
+      expect(store.fileOf('css/a.css')).toBeUndefined()
+      expect(store.activePath()).toBe('css/b.css')
+      store.fileLoaded('css/b.css', 'b')
+      store.fileGone('css/b.css', 'deleted')
+      expect(store.tabs().tabs).toEqual([])
+      expect(store.activePath()).toBeNull()
+    })
+  })
+
+  test('spec: Given the tree, When a folder is toggled twice, Then it is closed and then open again', () => {
+    createRoot(() => {
+      const store = createLayoutScreenStore()
+      store.toggleFolder('img')
+      expect([...store.collapsedFolders()]).toEqual(['img'])
+      store.toggleFolder('img')
+      expect([...store.collapsedFolders()]).toEqual([])
     })
   })
 
@@ -174,6 +195,18 @@ describe('the layout list\'s right-click menu', () => {
       expect(layouts.menu()).toMatchObject({ name: 'quote', x: 3, y: 4 })
       layouts.openMenuOnList(5, 6)
       expect(layouts.menu()).toEqual({ kind: 'on-list', x: 5, y: 6 })
+    })
+  })
+
+  test('spec: Given a right-click on the large preview in a slot, When a row is right-clicked before its check answers, Then the preview\'s answer is dropped', () => {
+    createRoot(() => {
+      const layouts = createLayoutScreenStore()
+      const onPreview = layouts.openMenuOnPreview('quote', 'body', 7, 8, true)!
+      expect(layouts.menu()).toMatchObject({ kind: 'on-preview', name: 'quote', slot: 'body', fit: { kind: 'checking' } })
+      const onRow = layouts.openMenuOnLayout('quote', 0, 0, true)!
+      expect(onRow).not.toBe(onPreview)
+      layouts.settleMenuFit(onPreview, [])
+      expect(layouts.menu()).toMatchObject({ kind: 'on-layout', fit: { kind: 'checking' } })
     })
   })
 })

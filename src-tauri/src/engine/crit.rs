@@ -497,23 +497,52 @@ pub fn add_endpoint_at(place: &CommentPlace, deck_file: &str) -> String {
     }
 }
 
-/// A comment on one of the deck's layouts (`layout`: its name), or on all
-/// of them (`None`) — written on the layout screen. No lines: the preview
-/// of a layout points at nothing in its HTML.
+/// A comment written on the layout screen: on one of the deck's layouts
+/// (`layout`: its name), or on all of them (`None`) — no lines, as the
+/// preview of a layout points at nothing in its HTML — or, from the
+/// layout screen's editor, on lines of one of its files (`lines`), which
+/// then decides where it goes and `layout` is ignored.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewLayoutComment {
     pub layout: Option<String>,
+    #[serde(default)]
+    pub lines: Option<FileLines>,
     pub body: String,
     pub author: String,
 }
 
-/// Where `comment` goes: on layout `name`'s HTML file as a whole when the
-/// deck has that file (`has_file`, given its path relative to the deck's
-/// folder), else on the review — a comment on every layout, or on a
-/// layout with no file of its own yet (the built-in one) — its label
-/// saying what it is about. A name that can't be a layout's is refused.
+/// Lines of a layout file a comment is on: `path` relative to the deck's
+/// folder (`layouts/<name>.html` or `css/<name>.css`), 1-based and
+/// inclusive, and their text as the editor held it (`quote`), which lets
+/// the agent find them after lines have moved.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileLines {
+    pub path: String,
+    pub start_line: u32,
+    pub end_line: u32,
+    pub quote: String,
+}
+
+/// Where `comment` goes: with `lines`, on that file — which must be one of
+/// the deck's layout files (`is_layout_file`) and be there (`has_file`,
+/// given its path relative to the deck's folder), as lines of a file that
+/// isn't mean nothing. Otherwise on layout `name`'s HTML file as a whole
+/// when the deck has that file, else on the review — a comment on every
+/// layout, or on a layout with no file of its own yet (the built-in one) —
+/// its label saying what it is about. A name that can't be a layout's is
+/// refused.
 pub fn layout_comment_place(comment: &NewLayoutComment, has_file: impl Fn(&str) -> bool) -> Result<CommentPlace, String> {
+    if let Some(lines) = &comment.lines {
+        if !is_layout_file(&lines.path) {
+            return Err(format!("'{}' is not a layout or CSS file of the deck", lines.path));
+        }
+        if !has_file(&lines.path) {
+            return Err(format!("'{}' is not a file of this deck yet; save it before commenting on its lines", lines.path));
+        }
+        return Ok(CommentPlace::File { path: lines.path.clone() });
+    }
     let Some(name) = &comment.layout else { return Ok(CommentPlace::Review) };
     let path = layout_html_path(name)?;
     Ok(if has_file(&path) { CommentPlace::File { path } } else { CommentPlace::Review })
@@ -528,15 +557,29 @@ struct NewWholeCommentJson<'a> {
 }
 
 /// The JSON body that posts `comment` at `place` (`layout_comment_place`):
-/// a comment on a whole file (crit's `scope: "file"`), or a review-level
-/// one. Refused without a body or an author, or for the deck file —
-/// comments there are on lines (`new_comment_body`).
+/// a comment on lines of a file (as `new_comment_body` posts one on the
+/// deck's), on a whole file (crit's `scope: "file"`), or a review-level
+/// one. Refused without a body or an author, for lines anywhere but a file,
+/// or for the deck file — comments there are on lines
+/// (`new_comment_body`).
 pub fn new_layout_comment_body(comment: &NewLayoutComment, place: &CommentPlace) -> Result<String, String> {
     if comment.body.trim().is_empty() {
         return Err("a comment needs a body".to_string());
     }
     if comment.author.trim().is_empty() {
         return Err("a comment needs an author".to_string());
+    }
+    if let Some(lines) = &comment.lines {
+        if !matches!(place, CommentPlace::File { .. }) {
+            return Err("a comment on lines goes on their file".to_string());
+        }
+        return new_comment_body(&NewReviewComment {
+            start_line: lines.start_line,
+            end_line: lines.end_line,
+            body: comment.body.clone(),
+            quote: lines.quote.clone(),
+            author: comment.author.clone(),
+        });
     }
     let scope = match place {
         CommentPlace::File { .. } => Some("file"),
@@ -1345,7 +1388,7 @@ mod tests {
     }
 
     fn layout_comment(layout: Option<&str>) -> NewLayoutComment {
-        NewLayoutComment { layout: layout.map(str::to_string), body: "[Layout cover] Bigger".into(), author: STUDIO_AUTHOR.into() }
+        NewLayoutComment { layout: layout.map(str::to_string), lines: None, body: "[Layout cover] Bigger".into(), author: STUDIO_AUTHOR.into() }
     }
 
     #[test]
@@ -1392,7 +1435,54 @@ mod tests {
     #[test]
     fn a_layout_comment_arrives_from_the_frontend_in_camel_case() {
         let parsed: NewLayoutComment = serde_json::from_str(r#"{"layout":null,"body":"b","author":"a"}"#).unwrap();
-        assert_eq!(parsed, NewLayoutComment { layout: None, body: "b".into(), author: "a".into() });
+        assert_eq!(parsed, NewLayoutComment { layout: None, lines: None, body: "b".into(), author: "a".into() });
+        let parsed: NewLayoutComment =
+            serde_json::from_str(r#"{"layout":null,"lines":{"path":"css/base.css","startLine":2,"endLine":3,"quote":"a {}"},"body":"b","author":"a"}"#).unwrap();
+        assert_eq!(parsed.lines, Some(FileLines { path: "css/base.css".into(), start_line: 2, end_line: 3, quote: "a {}".into() }));
+    }
+
+    // --- comments on lines of a layout file (the layout screen's editor) ---
+
+    fn line_comment(path: &str, start_line: u32, end_line: u32) -> NewLayoutComment {
+        NewLayoutComment {
+            layout: None,
+            lines: Some(FileLines { path: path.into(), start_line, end_line, quote: "h1 { color: red; }".into() }),
+            body: "[css/base.css L3 \"h1 { color: red; }\"] Calmer".into(),
+            author: STUDIO_AUTHOR.into(),
+        }
+    }
+
+    #[test]
+    fn given_lines_of_a_layout_or_css_file_when_commented_on_then_the_comment_goes_on_that_file() {
+        for path in ["css/base.css", "layouts/title-body.html", "css/title-body.css"] {
+            assert_eq!(layout_comment_place(&line_comment(path, 3, 3), |_| true).unwrap(), CommentPlace::File { path: path.into() });
+        }
+        // The layout name, if any, doesn't move it.
+        let named = NewLayoutComment { layout: Some("cover".into()), ..line_comment("css/base.css", 1, 1) };
+        assert_eq!(layout_comment_place(&named, |_| true).unwrap(), CommentPlace::File { path: "css/base.css".into() });
+    }
+
+    #[test]
+    fn a_comment_on_lines_is_sent_with_its_lines_and_quote() {
+        let place = CommentPlace::File { path: "css/base.css".into() };
+        let body: serde_json::Value = serde_json::from_str(&new_layout_comment_body(&line_comment("css/base.css", 3, 5), &place).unwrap()).unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({"start_line":3,"end_line":5,"body":"[css/base.css L3 \"h1 { color: red; }\"] Calmer","quote":"h1 { color: red; }","author":"Peitho Studio"})
+        );
+    }
+
+    #[test]
+    fn adversarial_lines_of_a_file_outside_the_layouts_or_missing_or_out_of_order_are_refused() {
+        for path in ["deck.md", "../deck.md", "img/logo.png", "layouts/sub/x.html", "/css/base.css", ""] {
+            assert!(layout_comment_place(&line_comment(path, 1, 1), |_| true).is_err(), "{path:?}");
+        }
+        assert!(layout_comment_place(&line_comment("css/base.css", 1, 1), |_| false).is_err());
+        let place = CommentPlace::File { path: "css/base.css".into() };
+        assert!(new_layout_comment_body(&line_comment("css/base.css", 0, 1), &place).is_err());
+        assert!(new_layout_comment_body(&line_comment("css/base.css", 5, 4), &place).is_err());
+        assert!(new_layout_comment_body(&line_comment("css/base.css", 1, 1), &CommentPlace::Review).is_err());
+        assert!(new_layout_comment_body(&line_comment("css/base.css", 1, 1), &CommentPlace::Deck).is_err());
     }
 
     // --- endpoints by place ---

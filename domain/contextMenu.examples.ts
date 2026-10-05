@@ -6,7 +6,7 @@ import type { ContextMenu, LayoutChoice } from './contextMenu'
 import type { LayoutFitCheck, LayoutVerdict } from './layoutFit'
 
 function slideMenu(layoutFit: LayoutFitCheck, index = 1): ContextMenu {
-  return { kind: 'on-slide', index, x: 10, y: 20, layoutPickerOpen: true, layoutFit, layoutNotice: null }
+  return { kind: 'on-slide', index, x: 10, y: 20, layoutPickerOpen: true, layoutFit, layoutNotice: null, comment: null }
 }
 
 const MISSING_BODY = "unassigned content remains for missing 'body' slot"

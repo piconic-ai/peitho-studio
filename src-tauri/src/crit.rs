@@ -768,11 +768,11 @@ mod tests {
             // When Studio comments on the deck, on the cover layout and on every layout,
             let deck_comment = NewReviewComment { start_line: 5, end_line: 5, body: "[Slide 1] Bigger".into(), quote: String::new(), author: STUDIO_AUTHOR.into() };
             add_comment(port, &file, &deck_comment).unwrap();
-            let on_cover = NewLayoutComment { layout: Some("cover".into()), body: "[Layout cover] Darker title".into(), author: STUDIO_AUTHOR.into() };
+            let on_cover = NewLayoutComment { layout: Some("cover".into()), lines: None, body: "[Layout cover] Darker title".into(), author: STUDIO_AUTHOR.into() };
             let cover_place = shapes::layout_comment_place(&on_cover, |path| sandbox.deck_dir.join(path).is_file()).unwrap();
             assert_eq!(cover_place, CommentPlace::File { path: "layouts/cover.html".into() });
             add_layout_comment(port, &file, &on_cover, &cover_place).unwrap();
-            let on_all = NewLayoutComment { layout: None, body: "[All layouts] Calmer colors".into(), author: STUDIO_AUTHOR.into() };
+            let on_all = NewLayoutComment { layout: None, lines: None, body: "[All layouts] Calmer colors".into(), author: STUDIO_AUTHOR.into() };
             add_layout_comment(port, &file, &on_all, &CommentPlace::Review).unwrap();
             // Then each is listed at its place,
             let comments = list_all_comments(port, &file).unwrap();
@@ -812,6 +812,50 @@ mod tests {
         }
 
         #[test]
+        fn line_comments_on_layout_and_css_files_reach_the_agent_with_their_lines_and_quote() {
+            // Given a deck with a layout, its CSS and a shared base.css, and an agent waiting in Studio's session,
+            let mut sandbox = Sandbox::new();
+            with_layout_files(&sandbox);
+            std::fs::write(sandbox.deck_dir.join("css").join("base.css"), "body {\n  margin: 0;\n}\nh1 { color: red; }\n").unwrap();
+            let (session, finished) = start_deck_session(&sandbox.cli, &sandbox.deck()).unwrap();
+            let DeckSession::Found { port, file, .. } = session else { panic!("{session:?}") };
+            let agent = sandbox.agent(&["--no-open", "deck.md", "layouts", "css"]);
+            wait_until_agent_waits(&sandbox, &finished);
+
+            // When Studio comments on lines of the shared CSS and of the layout's HTML (from the editor),
+            let on_lines = |path: &str, start_line: u32, end_line: u32, quote: &str, body: &str| NewLayoutComment {
+                layout: None,
+                lines: Some(shapes::FileLines { path: path.into(), start_line, end_line, quote: quote.into() }),
+                body: body.into(),
+                author: STUDIO_AUTHOR.into(),
+            };
+            let on_base = on_lines("css/base.css", 4, 4, "h1 { color: red; }", "[css/base.css L4 \"h1 { color: red; }\"] Calmer red");
+            let on_cover = on_lines("layouts/cover.html", 1, 2, "<section class=\"layout-cover\">\n  <h1>{{title}}</h1>", "[layouts/cover.html L1-L2 \"<section…\"] Add a subtitle");
+            for comment in [&on_base, &on_cover] {
+                let place = shapes::layout_comment_place(comment, |path| sandbox.deck_dir.join(path).is_file()).unwrap();
+                add_layout_comment(port, &file, comment, &place).unwrap();
+            }
+
+            // Then each is listed on its file with its lines and quote,
+            let comments = list_all_comments(port, &file).unwrap();
+            let base = comments.iter().find(|comment| comment.body.contains("Calmer red")).unwrap();
+            assert_eq!(base.place, CommentPlace::File { path: "css/base.css".into() });
+            assert_eq!(base.lines, Some(shapes::LineRange { start: 4, end: 4 }));
+            assert_eq!(base.quote.as_deref(), Some("h1 { color: red; }"));
+            let cover = comments.iter().find(|comment| comment.body.contains("Add a subtitle")).unwrap();
+            assert_eq!(cover.place, CommentPlace::File { path: "layouts/cover.html".into() });
+            assert_eq!(cover.lines, Some(shapes::LineRange { start: 1, end: 2 }));
+
+            // and once the round is finished the agent gets both, each naming its file and lines.
+            finish(port).unwrap();
+            let handed_over = sandbox.agent_output(agent);
+            for expected in ["Calmer red", "\"path\":\"css/base.css\"", "Add a subtitle", "\"path\":\"layouts/cover.html\""] {
+                assert!(handed_over.contains(expected), "{expected} missing from {handed_over}");
+            }
+            assert!(handed_over.contains("\"start_line\":4") || handed_over.contains("\"line\":4") || handed_over.contains("L4"), "{handed_over}");
+        }
+
+        #[test]
         fn given_layout_folders_created_after_the_session_started_an_agent_joining_by_id_lands_in_it() {
             // Given Studio's session on a deck with no layout folders yet,
             let mut sandbox = Sandbox::new();
@@ -825,7 +869,7 @@ mod tests {
             wait_until_agent_waits(&sandbox, &finished);
             assert_eq!(sandbox.cli.status(&sandbox.deck_dir).unwrap().len(), 1);
             // and a comment on the new layout reaches it.
-            let on_cover = NewLayoutComment { layout: Some("cover".into()), body: "[Layout cover] Darker".into(), author: STUDIO_AUTHOR.into() };
+            let on_cover = NewLayoutComment { layout: Some("cover".into()), lines: None, body: "[Layout cover] Darker".into(), author: STUDIO_AUTHOR.into() };
             let place = shapes::layout_comment_place(&on_cover, |path| sandbox.deck_dir.join(path).is_file()).unwrap();
             add_layout_comment(port, &file, &on_cover, &place).unwrap();
             finish(port).unwrap();

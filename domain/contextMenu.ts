@@ -1,4 +1,6 @@
 import { type PageConfig } from './pageConfig'
+import { COMMENT_ACTION, type CommentAction } from './menuComment'
+import type { PreviewClick } from './reviewComment'
 import { type LayoutFitCheck, type LayoutNotice, type LayoutVerdict, availabilityOf, settledFitCheck } from './layoutFit'
 
 /** The thumbnail context menu's own state. `layoutPickerOpen` only exists
@@ -20,9 +22,14 @@ export type ContextMenu =
     layoutPickerOpen: boolean
     layoutFit: LayoutFitCheck
     layoutNotice: LayoutNotice | null
+    /** What the comment item is on: where the slide preview was
+     * right-clicked (the target a left-click there gives), or `null` from
+     * the slide list — the slide as a whole. */
+    comment: PreviewClick | null
   }
 
 export type MenuAction =
+  | CommentAction
   | 'new-slide' | 'cut' | 'copy' | 'paste' | 'delete' | 'change-layout'
   | 'toggle-draft' | 'toggle-skip' | 'toggle-section' | 'toggle-page-number' | 'move-up' | 'move-down'
 
@@ -83,6 +90,9 @@ export function menuItems(menu: ContextMenu, ctx: MenuContext): MenuItem[] {
   // refused combination, should a hand edit have produced one.
   const hidesPageNumber = config?.page_number === false
   return [
+    // First, as in every right-click menu (`domain/menuComment.ts`): on the
+    // slide right-clicked, or on what was right-clicked on its preview.
+    { action: COMMENT_ACTION, enabled: hasSlide },
     { action: 'new-slide', enabled: true },
     { action: 'cut', enabled: hasSlide },
     { action: 'copy', enabled: hasSlide },
@@ -105,11 +115,18 @@ export function appendIndex(menu: ContextMenu, slideCount: number): number {
   return indexOf(menu) ?? slideCount - 1
 }
 
-/** A menu freshly opened by right-clicking slide `index`: picker collapsed,
- * no notice, and its fit check waiting on the `check_slide_layouts` call
- * identified by `requestId`. */
-export function openOnSlide(index: number, x: number, y: number, requestId: number): ContextMenu {
-  return { kind: 'on-slide', index, x, y, layoutPickerOpen: false, layoutFit: { kind: 'checking', requestId }, layoutNotice: null }
+/** A menu freshly opened by right-clicking slide `index` — its row, or
+ * its preview at `comment` (what a comment from there is on): picker
+ * collapsed, no notice, and its fit check waiting on the
+ * `check_slide_layouts` call identified by `requestId`. */
+export function openOnSlide(index: number, x: number, y: number, requestId: number, comment: PreviewClick | null = null): ContextMenu {
+  return { kind: 'on-slide', index, x, y, layoutPickerOpen: false, layoutFit: { kind: 'checking', requestId }, layoutNotice: null, comment }
+}
+
+/** Where the slide preview was right-clicked, for the comment item —
+ * `null` from the slide list (the slide as a whole) or with no slide. */
+export function commentClickOf(menu: ContextMenu): PreviewClick | null {
+  return menu.kind === 'on-slide' ? menu.comment : null
 }
 
 /** Settles the menu's fit check with the answer to `requestId` (`null` when

@@ -3,13 +3,14 @@ import {
   DELETE_IDLE, cancelDelete, confirmDelete, pickReplacement, startDelete, type DeleteFlow,
 } from '../domain/layoutDelete'
 import {
-  NO_LAYOUT_EDITOR, editorLayoutName, isEditorDirty, keptDraft, loadedEditor, saveFailedEditor, saveInterruptedEditor, savedEditor, savingEditor, shouldAutosave,
-  withExternalChange, withExternalLoaded, withTyped,
-  type ExternalChangeOutcome, type LayoutEditor, type LayoutField, type LayoutTexts,
-} from '../domain/layoutEditor'
+  NO_TABS, activeTab, anyTabDirty, closeTab, keptDraft, newlyOpened, openTabs, saveFailedFile, saveInterruptedFile, savedFile, savingFile, showTab,
+  tabGone, tabLoaded, tabOf, tabUnavailable, updateTab, withExternalChange, withExternalLoaded, withTyped,
+  type EditorTabs, type ExternalChangeOutcome,
+} from '../domain/fileEditor'
+import { toggledFolder, type DeckFileEntry } from '../domain/deckFiles'
 import { type LayoutNameProblem, layoutNameProblem } from '../domain/layoutScreen'
 import {
-  LAYOUT_MENU_CLOSED, openOnLayout, openOnList, withLayoutMenuFit, withLayoutMenuPosition, type LayoutMenu,
+  LAYOUT_MENU_CLOSED, openOnLayout, openOnPreview, openOnList, withLayoutMenuFit, withLayoutMenuPosition, type LayoutMenu,
 } from '../domain/layoutMenu'
 import type { LayoutVerdict } from '../domain/layoutFit'
 import type { Size } from '../domain/geometry'
@@ -22,9 +23,12 @@ import {
 // (`settleListWidth`): only ever seen if it can't be measured.
 const LIST_WIDTH = 280
 
+// The file tree's width until dragged: room for a layout's file name.
+const TREE_WIDTH = 200
+
 /** The layout screen's own state (Studio's "Layouts" mode): which layout is
- * shown, the New Layout form, a delete in progress, the HTML/CSS editor,
- * and a notice for the last refused operation. Which *mode* the window is
+ * shown, the file tree, the editor's tabs, the New Layout form, a delete in
+ * progress, and a notice for the last refused operation. Which *mode* the window is
  * in lives in `uiStore` with the rest of the window's chrome.
  *
  * State only, like `uiStore`: the IPC calls these transitions follow
@@ -53,10 +57,20 @@ export function createLayoutScreenStore() {
     setListWidthValue(width)
   }
 
-  // The list's scrolling area's inner size (`dom/elementSize.ts`), which
-  // every thumbnail fits inside (`layoutThumbnailSize`); `null` until
-  // measured. One value for the area, read by every row: a change resizes
-  // them all anyway.
+  // The file tree column's width (`dom/columnResize.ts`), session-only.
+  const [treeWidth, setTreeWidth] = createSignal(TREE_WIDTH)
+
+  // The deck's files as last listed (`list_deck_files`), and the tree's
+  // folders the user closed (every folder starts open).
+  const [files, setFiles] = createSignal<DeckFileEntry[]>([])
+  const [collapsedFolders, setCollapsedFolders] = createSignal<ReadonlySet<string>>(new Set())
+  function toggleFolder(path: string): void {
+    setCollapsedFolders(collapsed => toggledFolder(collapsed, path))
+  }
+
+  // The list column's body's size under its switch (`dom/elementSize.ts`),
+  // which the selected layout's large preview fits inside
+  // (`selectedPreviewRoom`); `null` until measured.
   const [thumbnailRoom, setThumbnailRoom] = createSignal<Size | null>(null)
 
   // Bumped whenever a fresh set of layout previews arrives, so the list's
@@ -107,62 +121,81 @@ export function createLayoutScreenStore() {
     setDeleteFlow(DELETE_IDLE)
   }
 
-  const [editor, setEditor] = createSignal<LayoutEditor>(NO_LAYOUT_EDITOR)
-  const editorDirty = createMemo(() => isEditorDirty(editor()))
-  /** Whether the layout's files changed on disk under unsaved typing, until
-   * the user picks a side (`loadExternal` / `keepDraft`). */
+  // The editor's tabs (`domain/fileEditor.ts`): every open file, each with
+  // its own draft, save and conflict, and the one shown.
+  const [tabs, setTabs] = createSignal<EditorTabs>(NO_TABS)
+  const editorDirty = createMemo(() => anyTabDirty(tabs()))
+  const activeFile = createMemo(() => activeTab(tabs()))
+  const activePath = createMemo(() => tabs().active)
+  /** Whether the shown file changed on disk under unsaved typing, until the
+   * user picks a side (`loadExternal` / `keepDraft`). */
   const editorConflict = createMemo(() => {
-    const current = editor()
-    return current.kind === 'ready' && current.external !== null
+    const file = activeFile()
+    return file?.kind === 'ready' && file.external !== null
   })
-  const [editorTab, setEditorTab] = createSignal<LayoutField>('html')
-  function editorLoading(name: string): void {
-    setEditor({ kind: 'loading', name })
+  /** Opens `paths` as tabs (one already open stays as it is) and shows
+   * `show`; returns the paths that joined, to be read (`fileLoaded`). */
+  function openFiles(paths: readonly string[], show: string): string[] {
+    const before = tabs()
+    const next = openTabs(before, paths, show)
+    setTabs(next)
+    return newlyOpened(before, next)
   }
-  function isLoading(name: string): boolean {
-    return editor().kind === 'loading' && editorLayoutName(editor()) === name
+  function showFile(path: string): void {
+    setTabs(current => showTab(current, path))
   }
-  /** The files read for `name` — dropped when the editor moved on to
-   * another layout while they were read. */
-  function editorLoaded(name: string, files: { html: string; css: string | null }): void {
-    if (isLoading(name)) setEditor(loadedEditor(name, files))
+  function closeFile(path: string): void {
+    setTabs(current => closeTab(current, path))
   }
-  function editorUnavailable(name: string, message: string): void {
-    if (isLoading(name)) setEditor({ kind: 'unavailable', name, message })
+  function fileOf(path: string) {
+    return tabOf(tabs(), path)
   }
-  function typeInEditor(field: LayoutField, text: string): void {
-    setEditor(current => withTyped(current, field, text))
+  /** `path` read as `text` — dropped when its tab was closed meanwhile. */
+  function fileLoaded(path: string, text: string): void {
+    setTabs(current => tabLoaded(current, path, text))
   }
-  /** Whether the draft should be saved now (`shouldAutosave`). */
-  function wantsAutosave(): boolean {
-    return shouldAutosave(editor())
+  /** A tab that couldn't be read, about to be read again. */
+  function fileLoading(path: string): void {
+    setTabs(current => updateTab(current, path, file => (file.kind === 'unavailable' ? { kind: 'loading', path } : file)))
   }
-  /** Layout `name`'s files as read after a change on disk; returns what
-   * that did to the editor (`withExternalChange`). */
-  function externalChange(name: string, disk: LayoutTexts): ExternalChangeOutcome {
-    const next = withExternalChange(editor(), name, disk)
-    setEditor(next.editor)
+  function fileUnavailable(path: string, message: string): void {
+    setTabs(current => tabUnavailable(current, path, message))
+  }
+  /** `path` found gone from disk (`tabGone`). */
+  function fileGone(path: string, message: string): void {
+    setTabs(current => tabGone(current, path, message))
+  }
+  function typeInFile(path: string, text: string): void {
+    setTabs(current => updateTab(current, path, file => withTyped(file, text)))
+  }
+  /** `path` read as `disk` after a change on disk; returns what that did
+   * to its tab (`withExternalChange`). */
+  function externalChange(path: string, disk: string): ExternalChangeOutcome {
+    const file = tabOf(tabs(), path)
+    if (file === undefined) return 'ignored'
+    const next = withExternalChange(file, disk)
+    setTabs(current => updateTab(current, path, () => next.file))
     return next.outcome
   }
-  /** A conflict settled for the files on disk, as read again (`disk`). */
-  function loadExternal(name: string, disk: LayoutTexts): void {
-    setEditor(current => withExternalLoaded(current, name, disk))
+  /** A conflict settled for the file on disk, as read again (`disk`). */
+  function loadExternal(path: string, disk: string): void {
+    setTabs(current => updateTab(current, path, file => withExternalLoaded(file, disk)))
   }
   /** A conflict settled for the unsaved typing. */
-  function keepDraft(): void {
-    setEditor(keptDraft)
+  function keepDraft(path: string): void {
+    setTabs(current => updateTab(current, path, keptDraft))
   }
-  function editorSaving(): void {
-    setEditor(savingEditor)
+  function fileSaving(path: string): void {
+    setTabs(current => updateTab(current, path, savingFile))
   }
-  function editorSaved(name: string, texts: LayoutTexts): void {
-    setEditor(current => savedEditor(current, name, texts))
+  function fileSaved(path: string, text: string): void {
+    setTabs(current => updateTab(current, path, file => savedFile(file, text)))
   }
-  function editorSaveFailed(name: string, message: string, sent: LayoutTexts): void {
-    setEditor(current => saveFailedEditor(current, name, message, sent))
+  function fileSaveFailed(path: string, message: string, sent: string): void {
+    setTabs(current => updateTab(current, path, file => saveFailedFile(file, message, sent)))
   }
-  function editorSaveInterrupted(name: string): void {
-    setEditor(current => saveInterruptedEditor(current, name))
+  function fileSaveInterrupted(path: string): void {
+    setTabs(current => updateTab(current, path, saveInterruptedFile))
   }
 
   // The layout list's right-click menu (`domain/layoutMenu.ts`). Each open
@@ -175,6 +208,13 @@ export function createLayoutScreenStore() {
   function openMenuOnLayout(name: string, x: number, y: number, checkFit: boolean): number | null {
     const requestId = checkFit ? ++lastMenuFitRequest : null
     setMenu(openOnLayout(name, x, y, requestId))
+    return requestId
+  }
+  /** Opens the menu on layout `name`'s large preview, right-clicked in
+   * `slot` (`null` for none); the fit check as `openMenuOnLayout`'s. */
+  function openMenuOnPreview(name: string, slot: string | null, x: number, y: number, checkFit: boolean): number | null {
+    const requestId = checkFit ? ++lastMenuFitRequest : null
+    setMenu(openOnPreview(name, slot, x, y, requestId))
     return requestId
   }
   function openMenuOnList(x: number, y: number): void {
@@ -219,16 +259,17 @@ export function createLayoutScreenStore() {
   return {
     selectedLayout, setSelectedLayout,
     listWidth, setListWidth, settleListWidth,
+    treeWidth, setTreeWidth, files, setFiles, collapsedFolders, toggleFolder,
     thumbnailRoom, setThumbnailRoom,
     previewGeneration, bumpPreviewGeneration,
     newLayoutOpen, newLayoutName, setNewLayoutName, newLayoutTemplate, setNewLayoutTemplate,
     openNewLayout, closeNewLayout, newLayoutNameProblem,
     deleteFlow, beginDelete, chooseReplacement, confirmDeleteFlow, cancelDeleteFlow, finishDelete,
-    editor, editorDirty, editorConflict, editorTab, setEditorTab,
-    editorLoading, editorLoaded, editorUnavailable, typeInEditor, editorSaving, editorSaved, editorSaveFailed, editorSaveInterrupted,
-    wantsAutosave, externalChange, loadExternal, keepDraft,
+    tabs, editorDirty, activeFile, activePath, editorConflict,
+    openFiles, showFile, closeFile, fileOf, fileLoaded, fileLoading, fileUnavailable, fileGone, typeInFile,
+    fileSaving, fileSaved, fileSaveFailed, fileSaveInterrupted, externalChange, loadExternal, keepDraft,
     busy, setBusy, notice, setNotice,
-    menu, openMenuOnLayout, openMenuOnList, settleMenuFit, moveMenu, closeMenu,
+    menu, openMenuOnLayout, openMenuOnPreview, openMenuOnList, settleMenuFit, moveMenu, closeMenu,
     draftPreview, requestPreview, previewRendered, previewFailed, resetPreview,
   }
 }
