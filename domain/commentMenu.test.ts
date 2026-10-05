@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   COMMENT_MENU_CLOSED, commentMenuItems, commentMenuLabel, commentMenuPosition, isOpenOnEditor,
-  openOnEditor, selectionForMenu, withCommentMenuPosition,
+  openOnEditor, sameEditorTarget, selectionForMenu, withCommentMenuPosition,
   type CommentMenu, type CommentMenuAction, type MenuEditor,
 } from './commentMenu'
 import { messagesFor } from './messages'
@@ -89,5 +89,24 @@ describe('selectionForMenu', () => {
     expect(selectionForMenu(4, 4, 4)).toEqual({ from: 4, to: 4, moved: false })
     expect(selectionForMenu(4, 10, null)).toEqual({ from: 4, to: 10, moved: false })
     expect(selectionForMenu(4, 10, Number.NaN)).toEqual({ from: 4, to: 10, moved: false })
+  })
+})
+
+describe('sameEditorTarget (a Cut or Paste that waited on the clipboard)', () => {
+  const before = { editor: 'body' as const, shows: 'hello', doc: '# Hello' }
+
+  test('spec: Given the same editor showing the same slide with its text untouched, Then it may be applied', () => {
+    expect(sameEditorTarget(before, { ...before })).toBe(true)
+    expect(sameEditorTarget({ editor: 'layout', shows: 'css/base.css', doc: 'x' }, { editor: 'layout', shows: 'css/base.css', doc: 'x' })).toBe(true)
+  })
+
+  test('adversarial: Given another slide or tab shown, its text changed, another editor, or nothing shown, Then it is dropped', () => {
+    expect(sameEditorTarget(before, { ...before, shows: 'second' })).toBe(false)
+    expect(sameEditorTarget(before, { ...before, doc: '# Hello!' })).toBe(false)
+    expect(sameEditorTarget(before, { ...before, editor: 'note' })).toBe(false)
+    expect(sameEditorTarget(before, null)).toBe(false)
+    expect(sameEditorTarget({ ...before, shows: null }, { ...before, shows: null })).toBe(false)
+    // The same text in another file is still another file.
+    expect(sameEditorTarget({ editor: 'layout', shows: 'css/a.css', doc: '' }, { editor: 'layout', shows: 'css/b.css', doc: '' })).toBe(false)
   })
 })

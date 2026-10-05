@@ -184,6 +184,10 @@ export interface MockDeck {
   /** The OS clipboard's text that `plugin:clipboard-manager|read_text`
    * answers and `write_text` replaces — defaults to none (`null`). */
   clipboardText?: string | null
+  /** Milliseconds `plugin:clipboard-manager|read_text`/`write_text` wait
+   * before answering — defaults to 0. Set it to act (switch slides or
+   * tabs) while a menu's Cut or Paste is still talking to the clipboard. */
+  clipboardDelayMs?: number
   /** Whether `open_deck` reports the deck's folder as trusted to run
    * scripts — defaults to `false`, like a deck somebody else wrote.
    * `trust_open_deck` sets it to `true` (so a reload opens it trusted, as a
@@ -604,8 +608,11 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         }, payload)
         return payload
       }
-      case 'plugin:clipboard-manager|read_text': return deck.clipboardText ?? null
+      case 'plugin:clipboard-manager|read_text':
+        if (deck.clipboardDelayMs) await sleep(deck.clipboardDelayMs)
+        return deck.clipboardText ?? null
       case 'plugin:clipboard-manager|write_text':
+        if (deck.clipboardDelayMs) await sleep(deck.clipboardDelayMs)
         deck.clipboardText = args.text as string
         return null
       case 'get_about_info': return deck.aboutInfo ?? DEFAULT_ABOUT_INFO

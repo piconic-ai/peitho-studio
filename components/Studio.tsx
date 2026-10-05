@@ -107,7 +107,7 @@ import { SlideContextMenu } from './SlideContextMenu'
 import { SlideList } from './SlideList'
 import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
 import { ContextMenu, type ContextMenuEntry } from './ContextMenu'
-import { type CommentMenu, type CommentMenuAction, type MenuEditor, commentMenuItems, commentMenuLabel, commentMenuPosition, openOnEditor, selectionForMenu } from '../domain/commentMenu'
+import { type CommentMenu, type CommentMenuAction, type EditorTarget, type MenuEditor, sameEditorTarget, commentMenuItems, commentMenuLabel, commentMenuPosition, openOnEditor, selectionForMenu } from '../domain/commentMenu'
 import { menuItemIcon, setApartFromComment } from '../domain/menuComment'
 import { focusDeleteLayoutDialog, focusNewLayoutName } from '../dom/layoutModals'
 import { absolutizedDraft, draftPreviewError, draftedLayout, previewDraftCss, previewToDraw } from '../domain/layoutDraftPreview'
@@ -1321,19 +1321,24 @@ export function Studio() {
   // menu did. A cut or paste is the user's own edit (`onChange`, one undo
   // step); vim's register takes up what was cut or copied. Focus goes back
   // to the editor.
+  //
+  // The clipboard answers later: by then another slide or tab may be in
+  // the same editor view. What it acts on is taken first
+  // (`editorTargetOf`), and a cut or paste is applied only to that same
+  // slide or file, its text untouched (`sameEditorTarget`); otherwise it's
+  // dropped (a cut then only copied).
   async function runEditorClipboard(menu: Extract<CommentMenu, { kind: 'on-editor' }>, action: 'cut' | 'copy' | 'paste'): Promise<void> {
     const view = editorViewOf(menu.editor)
-    if (!view) return
+    const before = editorTargetOf(menu.editor)
+    if (!view || before === null) return
     view.focus()
     if (action === 'paste') {
       const text = await editorIpc.readClipboardText()
-      if (text === null || text === '') return
-      const now = codeEditorSelection(view)
-      insertIntoCodeEditor(view, replacementInsertion(now.doc, now.from, now.to, text), 'input.paste')
+      if (text === null || text === '' || !sameEditorTarget(before, editorTargetOf(menu.editor))) return
+      insertIntoCodeEditor(view, replacementInsertion(before.doc, menu.from, menu.to, text), 'input.paste')
       return
     }
-    const { doc } = codeEditorSelection(view)
-    const text = textBetween(doc, menu.from, menu.to)
+    const text = textBetween(before.doc, menu.from, menu.to)
     if (text === '') return
     try {
       await editorIpc.writeClipboardText(text)
@@ -1342,10 +1347,18 @@ export function Studio() {
       return
     }
     if (settings.settings().vimMode) vimClipboard.pullClipboard()
-    if (action === 'cut') {
-      const now = codeEditorSelection(view)
-      insertIntoCodeEditor(view, replacementInsertion(now.doc, menu.from, menu.to, ''), 'delete.cut')
+    if (action === 'cut' && sameEditorTarget(before, editorTargetOf(menu.editor))) {
+      insertIntoCodeEditor(view, replacementInsertion(before.doc, menu.from, menu.to, ''), 'delete.cut')
     }
+  }
+
+  // What editor `which` shows now — the slide's key, or the file's path —
+  // and its text; `null` without the editor.
+  function editorTargetOf(which: MenuEditor): EditorTarget | null {
+    const view = editorViewOf(which)
+    if (!view) return null
+    const shows = which === 'layout' ? layoutEditorShows : selectedSlideKey()
+    return { editor: which, shows, doc: codeEditorSelection(view).doc }
   }
 
   const commentMenuEntries = createMemo<ContextMenuEntry[]>(() => {

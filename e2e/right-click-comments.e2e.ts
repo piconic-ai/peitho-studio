@@ -203,6 +203,44 @@ test.describe('the slide body and notes editors', () => {
     expect(deck.clipboardText).toBe('Some text')
   })
 
+  test('Given a Cut still writing the clipboard, when another slide is opened meanwhile, then neither slide loses text', async ({ page }) => {
+    const deck = await openDeck(page, { clipboardDelayMs: 800 })
+    await line(page, 'Some text').click({ position: { x: 1, y: 4 } })
+    await page.keyboard.press('Home')
+    await page.keyboard.press('Shift+End')
+    await rightClick(line(page, 'Some text'), { x: 20, y: 4 })
+    await menuItem(page, 'cut').click()
+    await page.locator('[data-slide-row="1"]').click()
+    await expect.poll(() => editorText(page)).toBe('# Second\n\nAnother paragraph')
+
+    await expect.poll(() => deck.clipboardText, { timeout: 3000 }).toBe('Some text')
+    await page.waitForTimeout(500)
+    expect(await editorText(page)).toBe('# Second\n\nAnother paragraph')
+    expect(deck.source).toBe(SOURCE)
+    await page.locator('[data-slide-row="0"]').click()
+    await expect.poll(() => editorText(page)).toBe('# Hello\n\nSome text\n\nmore text')
+  })
+
+  test('Given a Paste still reading the clipboard, when another slide is opened meanwhile, then nothing is pasted into either', async ({ page }) => {
+    const deck = await openDeck(page, { clipboardText: 'PASTED', clipboardDelayMs: 800 })
+    await rightClick(line(page, 'Some text'), { x: 4, y: 4 })
+    await menuItem(page, 'paste').click()
+    await page.locator('[data-slide-row="1"]').click()
+    await expect.poll(() => editorText(page)).toBe('# Second\n\nAnother paragraph')
+
+    await page.waitForTimeout(1500)
+    expect(await editorText(page)).toBe('# Second\n\nAnother paragraph')
+    expect(deck.source).toBe(SOURCE)
+  })
+
+  test('Given a Paste still reading the clipboard and nothing else happening, then it is pasted where the right-click put the caret', async ({ page }) => {
+    await openDeck(page, { clipboardText: 'PASTED', clipboardDelayMs: 500 })
+    const last = (await line(page, 'more text').boundingBox())!
+    await page.mouse.click(last.x + last.width - 2, last.y + last.height / 2, { button: 'right' })
+    await menuItem(page, 'paste').click()
+    await expect.poll(() => editorText(page)).toBe('# Hello\n\nSome text\n\nmore textPASTED')
+  })
+
   test('Given an empty clipboard, when Paste is chosen, then nothing changes', async ({ page }) => {
     await openDeck(page, { clipboardText: null })
     await rightClick(line(page, 'Some text'), { x: 4, y: 4 })
@@ -361,5 +399,50 @@ test.describe('the comment item, the same in every right-click menu', () => {
     await page.locator('[data-studio-mode-option="layouts"]').click()
     await page.locator('[data-layout-row="statement"]').click({ button: 'right' })
     await expectCommentFirst(page.locator('[data-menu="layout"]'), 'コメント…')
+  })
+})
+
+test.describe('the layout file editor\'s Cut and Paste across tabs', () => {
+  const HTML = '<section class="peitho-slide layout-cover"><h1>cover</h1></section>'
+  const CSS = '.layout-cover { color: red; }'
+
+  async function openLayouts(page: Page, overrides: Partial<MockDeck>): Promise<MockDeck> {
+    const deck = await openDeck(page, {
+      layouts: ['cover', 'statement'],
+      layoutFiles: { cover: { html: HTML, css: CSS }, statement: { html: '<section class="peitho-slide layout-statement"></section>', css: '' } },
+      ...overrides,
+    })
+    await page.locator('[data-studio-mode-option="layouts"]').click()
+    await expect.poll(() => editorText(page, 'layout-html')).toBe(HTML)
+    return deck
+  }
+
+  test('Given a Cut still writing the clipboard, when another tab is shown meanwhile, then neither file loses text', async ({ page }) => {
+    const deck = await openLayouts(page, { clipboardDelayMs: 800 })
+    await editorContent(page, 'layout-html').click()
+    await page.keyboard.press('ControlOrMeta+a')
+    await rightClick(editorContent(page, 'layout-html').locator('.cm-line').first(), { x: 20, y: 4 })
+    await menuItem(page, 'cut').click()
+    await page.locator('[data-layout-tab="css/cover.css"] [data-layout-tab-show]').click()
+    await expect.poll(() => editorText(page, 'layout-css')).toBe(CSS)
+
+    await expect.poll(() => deck.clipboardText, { timeout: 3000 }).toBe(HTML)
+    await page.waitForTimeout(1500)
+    expect(await editorText(page, 'layout-css')).toBe(CSS)
+    expect(deck.layoutFiles!.cover).toEqual({ html: HTML, css: CSS })
+    await page.locator('[data-layout-tab="layouts/cover.html"] [data-layout-tab-show]').click()
+    await expect.poll(() => editorText(page, 'layout-html')).toBe(HTML)
+  })
+
+  test('Given a Paste still reading the clipboard, when another tab is shown meanwhile, then nothing is pasted into either file', async ({ page }) => {
+    const deck = await openLayouts(page, { clipboardText: 'PASTED', clipboardDelayMs: 800 })
+    await rightClick(editorContent(page, 'layout-html').locator('.cm-line').first(), { x: 4, y: 4 })
+    await menuItem(page, 'paste').click()
+    await page.locator('[data-layout-tab="css/cover.css"] [data-layout-tab-show]').click()
+    await expect.poll(() => editorText(page, 'layout-css')).toBe(CSS)
+
+    await page.waitForTimeout(2000)
+    expect(await editorText(page, 'layout-css')).toBe(CSS)
+    expect(deck.layoutFiles!.cover).toEqual({ html: HTML, css: CSS })
   })
 })

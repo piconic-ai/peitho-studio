@@ -109,3 +109,21 @@ export function selectionForMenu(from: number, to: number, clicked: number | nul
   if (start !== end && clicked >= start && clicked <= end) return { from: start, to: end, moved: false }
   return { from: clicked, to: clicked, moved: clicked !== from || clicked !== to }
 }
+
+/** What an editor's Cut or Paste acts on, taken before it waits on the
+ * clipboard: the editor, what it shows (the slide's key, or the file's
+ * path; `null` for nothing) and its text then. */
+export interface EditorTarget {
+  editor: MenuEditor
+  shows: string | null
+  doc: string
+}
+
+/** Whether a Cut or Paste taken against `before` may still be applied
+ * `now`, once the clipboard answered: the same editor shows the same slide
+ * or file, its text untouched — otherwise the menu's offsets would land in
+ * another document (a slide or tab switched meanwhile), and it's
+ * dropped. */
+export function sameEditorTarget(before: EditorTarget, now: EditorTarget | null): boolean {
+  return now !== null && before.shows !== null && before.editor === now.editor && before.shows === now.shows && before.doc === now.doc
+}
