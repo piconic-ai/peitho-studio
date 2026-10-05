@@ -14,6 +14,9 @@ export function createTauriUpdateIpc() {
     dismiss: () => call('dismiss_update'),
     onChanged: (callback: (status: UpdateStatus) => void): Unsubscribe => subscribeWithPayload<unknown>('updates:changed', raw => callback(parseUpdateStatus(raw))),
     onMenuCheck: (callback: () => void): Unsubscribe => subscribeToThisWindow('menu:check-updates', callback),
+    /** The "Check for Updates…" window (`update_window.rs`) is asked to check
+     * again: its menu item was chosen while it was already open. */
+    onCheckAgain: (callback: () => void): Unsubscribe => subscribeToThisWindow('update-window:check', callback),
     onBeforeExit: (callback: (token: number) => void): Unsubscribe => subscribeWithPayload<number>('updates:before-exit', callback),
     acknowledgeSave: (token: number, saved: boolean) => invoke('acknowledge_update_save', { token, saved }),
   }

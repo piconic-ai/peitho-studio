@@ -64,6 +64,8 @@ export default defineConfig({
         'pages/index': resolve(HERE, 'pages/index.html'),
         // The About window's page (src-tauri/src/about.rs).
         'pages/about': resolve(HERE, 'pages/about.html'),
+        // The Check for Updates window's page (src-tauri/src/update_window.rs).
+        'pages/update': resolve(HERE, 'pages/update.html'),
       },
     },
   },
