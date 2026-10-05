@@ -286,6 +286,18 @@ test.describe('the layout list', () => {
   })
 })
 
+test.describe('the large preview and the thumbnails look like the slides screen\'s', () => {
+  test('Given the selected layout drawn large, then nothing frames it and the pointer over it is the slide preview\'s', async ({ page }) => {
+    await openLayoutScreen(page, deckOf({ layoutFragment: '<h1>saved</h1>' }))
+    const box = page.locator('[data-layout-selected-preview]')
+    const drawing = box.locator('[data-layout-thumbnail]')
+    for (const element of [box, drawing]) await expect(element).toHaveCSS('border-top-width', '0px')
+    const slidePreviewCursor = await page.locator('[data-preview-host]').evaluate(el => getComputedStyle(el).cursor)
+    await expect(drawing).toHaveCSS('cursor', slidePreviewCursor)
+    await expect(drawing).not.toHaveCSS('cursor', 'crosshair')
+  })
+})
+
 test.describe('a comment from the editor', () => {
   async function openWithCrit(page: Page, crit: FakeCritIpc): Promise<MockDeck> {
     const deck = deckOf({ crit, deckPath: '/decks/talk/deck.md' })
