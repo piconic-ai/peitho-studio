@@ -447,13 +447,13 @@ test('Given a layout\'s CSS edited, when typing pauses, then the files are saved
 
   await row(page, 'quote').click()
   await expect.poll(() => editorText(page, 'layout-html')).toBe('<section class="peitho-slide layout-quote"></section>')
-  await page.locator('[data-layout-tab="css"]').click()
+  await page.locator('[data-layout-tab="css/quote.css"] [data-layout-tab-show]').click()
   await fillEditor(page, '.peitho-slide.layout-quote { color: red; }', 'layout-css')
 
   await expect.poll(() => deck.layoutFiles?.quote.css).toBe('.peitho-slide.layout-quote { color: red; }')
   await expect(page.locator('[data-layout-unsaved]')).toBeHidden()
 
-  await page.locator('[data-layout-tab="html"]').click()
+  await page.locator('[data-layout-tab="layouts/quote.html"] [data-layout-tab-show]').click()
   await fillEditor(page, '<div>no section</div>', 'layout-html')
 
   await expect(page.locator('[data-layout-editor-message]')).toContainText('a layout needs a <section> element')
@@ -471,7 +471,7 @@ test('Given typing that keeps going, then the layout is saved once it pauses, no
   const saves: string[] = []
   const deck = deckOf({
     layoutFiles: { quote: { html: '<section></section>', css: null } },
-    onInvoke: (cmd, args) => { if (cmd === 'save_layout') saves.push(args.html as string) },
+    onInvoke: (cmd, args) => { if (cmd === 'save_deck_file') saves.push(args.text as string) },
   })
   await openLayoutScreen(page, deck)
   await row(page, 'quote').click()
@@ -494,7 +494,7 @@ test('Given typing while a save is still running, then the newer text is saved a
   const deck = deckOf({
     layoutFiles: { quote: { html: '<section></section>', css: null } },
     saveLayoutDelayMs: 800,
-    onInvoke: (cmd, args) => { if (cmd === 'save_layout') saves.push(args.html as string) },
+    onInvoke: (cmd, args) => { if (cmd === 'save_deck_file') saves.push(args.text as string) },
   })
   await openLayoutScreen(page, deck)
   await row(page, 'quote').click()
@@ -513,8 +513,8 @@ test('Given an edit that would stop a slide from building, when it is autosaved,
   const saves: unknown[] = []
   const deck = deckOf({
     layoutFiles: { 'title-body': { html: '<section class="peitho-slide layout-title-body"></section>', css: null } },
-    onInvoke: (cmd, args) => { if (cmd === 'save_layout') saves.push(args) },
-    commandError: cmd => (cmd === 'save_layout' ? "this edit to the 'title-body' layout would stop slide 2 ('intro') from building on 'title-body'" : null),
+    onInvoke: (cmd, args) => { if (cmd === 'save_deck_file') saves.push(args) },
+    commandError: cmd => (cmd === 'save_deck_file' ? "this edit to the 'title-body' layout would stop slide 2 ('intro') from building on 'title-body'" : null),
   })
   await openLayoutScreen(page, deck)
 
@@ -527,8 +527,8 @@ test('Given an edit that would stop a slide from building, when it is autosaved,
   // A refused draft isn't tried again until it's edited.
   await page.waitForTimeout(1_500)
   expect(saves).toEqual([{
-    content: SOURCE, name: 'title-body', html: '<section class="peitho-slide layout-title-body"><h1>no body</h1></section>', css: '',
-    base: { html: '<section class="peitho-slide layout-title-body"></section>', css: '' },
+    content: SOURCE, path: 'layouts/title-body.html', text: '<section class="peitho-slide layout-title-body"><h1>no body</h1></section>',
+    base: '<section class="peitho-slide layout-title-body"></section>',
   }])
   expect(deck.layoutFiles?.['title-body'].html).toBe('<section class="peitho-slide layout-title-body"></section>')
 })
@@ -566,7 +566,7 @@ test('Given a slide draft that cannot be saved, when a layout edit is autosaved,
 
   await expect(page.locator('[data-layout-editor-message]')).toContainText('could not be saved')
   await expect(page.locator('[data-layout-unsaved]')).toBeVisible()
-  expect(deck.invokedCommands).not.toContain('save_layout')
+  expect(deck.invokedCommands).not.toContain('save_deck_file')
 })
 
 for (const action of ['create', 'duplicate', 'delete'] as const) {
@@ -594,7 +594,7 @@ for (const action of ['create', 'duplicate', 'delete'] as const) {
 
 test('Given a slide draft that saves, when a layout edit is autosaved, then the draft is saved first and the check runs against it', async ({ page }) => {
   const saves: { content: string }[] = []
-  const deck = deckOf({ renderDraftDelayMs: 300, onInvoke: (cmd, args) => { if (cmd === 'save_layout') saves.push(args as { content: string }) } })
+  const deck = deckOf({ renderDraftDelayMs: 300, onInvoke: (cmd, args) => { if (cmd === 'save_deck_file') saves.push(args as { content: string }) } })
   await mockTauri(page, deck)
   await page.goto('/')
   await expect(page.locator('[data-slide-row]')).toHaveCount(3, { timeout: 10_000 })
@@ -635,7 +635,7 @@ test('Given a pending edit to a layout, when the window switches to Slides, then
   expect(deck.layoutFiles?.quote.html).toBe('<section>edited</section>')
 })
 
-test('Given an edit the check refuses, when another layout, Slides or a new layout is chosen, then the editor stays on it with a notice, and nothing else happens', async ({ page }) => {
+test('Given an edit the check refuses, when another layout is chosen, then it opens beside it while the refused tab keeps its edit; Slides or a new layout is held back with a notice', async ({ page }) => {
   const deck = deckOf()
   await openLayoutScreen(page, deck)
 
@@ -643,12 +643,18 @@ test('Given an edit the check refuses, when another layout, Slides or a new layo
   await fillEditor(page, '<div>no section</div>', 'layout-html')
   await expect(page.locator('[data-layout-editor-message]')).toContainText('a layout needs a <section> element')
 
+  // Another layout opens in tabs of its own; the refused one stays open.
   await row(page, 'title-slide').click()
-  await expect(page.locator('[data-layout-notice]')).toContainText('could not be saved')
-  await expect(row(page, 'quote')).toHaveAttribute('aria-current', 'true')
+  await expect(row(page, 'title-slide')).toHaveAttribute('aria-current', 'true')
+  await expect(page.locator('[data-layout-tab="layouts/title-slide.html"]')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('[data-layout-tab="layouts/quote.html"] [data-layout-tab-dirty]')).toBeVisible()
 
+  // Leaving the screen is held back, the refused tab shown with a notice.
   await page.locator('[data-studio-mode-option="slides"]').click()
+  await expect(page.locator('[data-layout-notice]')).toContainText('could not be saved')
   await expect(page.locator('[data-layout-screen]')).toBeVisible()
+  await expect(page.locator('[data-layout-tab="layouts/quote.html"]')).toHaveAttribute('aria-selected', 'true')
+  await expect.poll(() => editorText(page, 'layout-html')).toBe('<div>no section</div>')
 
   await act(page, 'new-layout')
   await page.locator('[data-new-layout-name]').fill('pull-quote')
@@ -656,13 +662,12 @@ test('Given an edit the check refuses, when another layout, Slides or a new layo
   await expect(page.locator('[data-new-layout-form]')).toContainText('could not be saved')
   await page.keyboard.press('Escape')
   expect(deck.invokedCommands).not.toContain('create_layout')
-  await expect.poll(() => editorText(page, 'layout-html')).toBe('<div>no section</div>')
 
-  // Fixed, it saves and the other layout opens.
+  // Fixed, it saves and the window can go to Slides.
   await fillEditor(page, '<section>fixed</section>', 'layout-html')
-  await row(page, 'title-slide').click()
-  await expect(row(page, 'title-slide')).toHaveAttribute('aria-current', 'true')
-  expect(deck.layoutFiles?.quote.html).toBe('<section>fixed</section>')
+  await expect.poll(() => deck.layoutFiles?.quote?.html).toBe('<section>fixed</section>')
+  await page.locator('[data-studio-mode-option="slides"]').click()
+  await expect(page.locator('[data-layout-screen]')).toBeHidden()
 })
 
 test('Given a pending edit to a layout, when the window is asked to close, then the edit is saved and the window closes; one that can\'t be saved keeps it open with a notice', async ({ page }) => {
@@ -745,7 +750,7 @@ test.describe('the layout editor in vim mode', () => {
   test('Given the layout editor, when vim mode is turned on and off from Settings, then the change takes effect at once', async ({ page }) => {
     await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE_FILES }))
     await row(page, 'quote').click()
-    await page.locator('[data-layout-tab="css"]').click()
+    await page.locator('[data-layout-tab="css/quote.css"] [data-layout-tab-show]').click()
     await editorContent(page, 'layout-css').click()
     await expect(vimStatus(page, 'layout-css')).toHaveCount(0)
 
@@ -960,7 +965,7 @@ test.describe('the selected row while the layout is edited', () => {
     const deck = deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>', saveLayoutDelayMs: 2_000 })
     await openLayoutScreen(page, deck)
     await row(page, 'quote').click()
-    await page.locator('[data-layout-tab="css"]').click()
+    await page.locator('[data-layout-tab="css/quote.css"] [data-layout-tab-show]').click()
     const fontFamilies = () => page.evaluate(() => [...document.fonts].map(face => face.family.replace(/"/g, '')))
     const draftFonts = () => page.evaluate(() => document.querySelector('style[data-peitho-draft-fonts]')?.textContent ?? '')
 
@@ -977,9 +982,9 @@ test.describe('the selected row while the layout is edited', () => {
   test('Given a draft redefining a font family the deck defines, then the draft\'s face is registered under a preview-only name, leaving the deck\'s own family alone', async ({ page }) => {
     const deckCss = '@font-face { font-family: "DeckFace"; src: url(fonts/deck.woff2); }\n.peitho-slide { font-family: "DeckFace"; }'
     // Refused, the draft stays one for the whole test.
-    await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>', css: deckCss, commandError: cmd => (cmd === 'save_layout' ? 'held back' : null) }))
+    await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>', css: deckCss, commandError: cmd => (cmd === 'save_deck_file' ? 'held back' : null) }))
     await row(page, 'quote').click()
-    await page.locator('[data-layout-tab="css"]').click()
+    await page.locator('[data-layout-tab="css/quote.css"] [data-layout-tab-show]').click()
     const draftFonts = () => page.evaluate(() => document.querySelector('style[data-peitho-draft-fonts]')?.textContent ?? '')
 
     await fillEditor(page, '@font-face { font-family: "DeckFace"; src: url(fonts/other.woff2); }\n.peitho-slide.layout-quote h1 { font: italic 2rem/1.2 DeckFace, serif !important; }', 'layout-css')
@@ -1015,7 +1020,7 @@ test.describe('the selected row while the layout is edited', () => {
 test.describe('the layout list\'s PC / Phone switch', () => {
   const toggle = (page: Page) => page.locator('[data-layout-list] [data-viewport-toggle]')
   const ratio = async (page: Page, name: string) => {
-    const box = await row(page, name).locator('[data-layout-thumbnail]').boundingBox()
+    const box = await row(page, name).locator('[data-layout-row-thumbnail]').boundingBox()
     if (!box) throw new Error('the thumbnail has no box')
     return box.height / box.width
   }
@@ -1044,7 +1049,7 @@ test.describe('the layout list\'s PC / Phone switch', () => {
     const pill = (await toggle(page).boundingBox())!
     expect(pill.x - list.x).toBeLessThanOrEqual(12)
 
-    const tabs = (await page.locator('[data-layout-tab="html"]').locator('..').boundingBox())!
+    const tabs = (await page.locator('[data-layout-editor-toolbar]').boundingBox())!
     const row = (await header.boundingBox())!
     expect(row.y).toBeCloseTo(tabs.y, 0)
     expect(row.height).toBeCloseTo(tabs.height, 0)
@@ -1073,7 +1078,7 @@ test.describe('the layout list\'s PC / Phone switch', () => {
     }).toBe(true)
   })
 
-  test('Given phone display in a wide list and a short window, then the selected thumbnail fits in the list\'s visible height at the canvas\'s proportion, centered, and follows a window resize', async ({ page }) => {
+  test('Given phone display in a wide list and a short window, then the selected layout\'s large preview fits in its share of the list\'s height at the canvas\'s proportion, centered, leaving room for the grid, and follows a window resize', async ({ page }) => {
     await page.setViewportSize({ width: 1400, height: 560 })
     await openLayoutScreen(page, deckOf({ layoutFragment: '<h1>saved</h1>' }))
     // The divider dragged left as far as it goes: the list at its widest.
@@ -1084,17 +1089,17 @@ test.describe('the layout list\'s PC / Phone switch', () => {
     await page.mouse.up()
     await toggle(page).click()
 
-    const selected = page.locator('[data-layout-row][aria-current="true"]')
+    const selected = page.locator('[data-layout-selected-preview]')
     const fits = async () => {
-      const area = (await page.locator('[data-layout-rows]').boundingBox())!
+      const area = (await page.locator('[data-layout-list-body]').boundingBox())!
       const thumb = (await selected.locator('[data-layout-thumbnail]').boundingBox())!
       const row = (await selected.boundingBox())!
-      const canvas = await selected.locator('[data-layout-canvas]').evaluate(el => ({
+      const canvas = await selected.locator('[data-layout-selected-canvas]').evaluate(el => ({
         width: parseFloat(el.style.getPropertyValue('--peitho-canvas-width')),
         height: parseFloat(el.style.getPropertyValue('--peitho-canvas-height')),
       }))
       return {
-        inside: thumb.y >= area.y && thumb.y + thumb.height <= area.y + area.height,
+        inside: thumb.y >= area.y && thumb.y + thumb.height <= area.y + area.height * 0.6,
         ratio: Math.abs(thumb.height / thumb.width - canvas.height / canvas.width) < 0.02,
         tall: canvas.height > canvas.width,
         centered: Math.abs((thumb.x + thumb.width / 2) - (row.x + row.width / 2)) <= 1,
@@ -1108,12 +1113,12 @@ test.describe('the layout list\'s PC / Phone switch', () => {
     await expect.poll(async () => { const f = await fits(); return f.inside && f.ratio && f.height < before - 50 }).toBe(true)
   })
 
-  test('Given PC display in a very short window, then the thumbnail fits the list\'s visible height too', async ({ page }) => {
+  test('Given PC display in a very short window, then the large preview fits the list\'s visible height too', async ({ page }) => {
     await page.setViewportSize({ width: 1400, height: 300 })
     await openLayoutScreen(page, deckOf({ layoutFragment: '<h1>saved</h1>' }))
-    const selected = page.locator('[data-layout-row][aria-current="true"]')
+    const selected = page.locator('[data-layout-selected-preview]')
     await expect.poll(async () => {
-      const area = (await page.locator('[data-layout-rows]').boundingBox())!
+      const area = (await page.locator('[data-layout-list-body]').boundingBox())!
       const thumb = (await selected.locator('[data-layout-thumbnail]').boundingBox())!
       return thumb.y + thumb.height <= area.y + area.height && thumb.height > 0
     }).toBe(true)
@@ -1187,7 +1192,7 @@ test.describe('the layout list\'s PC / Phone switch', () => {
     await expect(row(page, 'title-body').locator('[data-layout-canvas] h1')).toHaveText('saved')
   })
 
-  test('Given phone display in a wide list and a tall window, then each thumbnail is capped at the device\'s CSS width (standard phone 390, small phone 375), and PC display takes the row\'s width again', async ({ page }) => {
+  test('Given phone display in a wide list and a tall window, then the large preview is capped at the device\'s CSS width (standard phone 390, small phone 375), and PC display takes the column\'s width again', async ({ page }) => {
     await page.setViewportSize({ width: 1600, height: 3000 })
     await openLayoutScreen(page, deckOf({ layoutFragment: '<h1>saved</h1>' }))
     // The divider dragged left as far as it goes: the list at its widest.
@@ -1196,34 +1201,33 @@ test.describe('the layout list\'s PC / Phone switch', () => {
     await page.mouse.down()
     await page.mouse.move(list.x - 600, list.y + 200, { steps: 5 })
     await page.mouse.up()
-    const width = async (name: string) => (await row(page, name).locator('[data-layout-thumbnail]').boundingBox())!.width
-    const pcWidth = await width('quote')
-    expect(pcWidth).toBeGreaterThan(430)
+    const width = async () => (await page.locator('[data-layout-selected-preview] [data-layout-thumbnail]').boundingBox())!.width
+    await expect.poll(width).toBeGreaterThan(430)
+    const pcWidth = await width()
 
     await toggle(page).click()
-    for (const name of ['title-slide', 'title-body', 'quote']) {
-      await expect.poll(() => width(name)).toBe(390)
-    }
+    await expect.poll(width).toBe(390)
 
     await page.locator('[data-layout-list] [data-phone-shape-menu-button]').click()
     await page.locator('[data-layout-list] [data-phone-shape-option="small-phone"]').click()
-    await expect.poll(() => width('quote')).toBe(375)
+    await expect.poll(width).toBe(375)
     expect(await ratio(page, 'quote')).toBeCloseTo(1871 / 1280, 1)
 
     await toggle(page).click()
-    await expect.poll(() => width('quote')).toBeCloseTo(pcWidth, 0)
+    await expect.poll(width).toBeCloseTo(pcWidth, 0)
   })
 
-  test('Given phone display on the tablet in a list narrower than it, then the thumbnail keeps the row\'s width (the cap never widens it)', async ({ page }) => {
+  test('Given phone display on the tablet in a list narrower than it, then the large preview stays within the column (the cap never widens it)', async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 3000 })
     await openLayoutScreen(page, deckOf())
-    const rowWidth = (await row(page, 'quote').locator('[data-layout-thumbnail]').boundingBox())!.width
-    expect(rowWidth).toBeLessThan(820)
+    const listWidth = (await page.locator('[data-layout-list]').boundingBox())!.width
+    expect(listWidth).toBeLessThan(820)
     await toggle(page).click()
     await page.locator('[data-layout-list] [data-phone-shape-menu-button]').click()
     await page.locator('[data-layout-list] [data-phone-shape-option="tablet"]').click()
     await expect.poll(() => ratio(page, 'quote')).toBeCloseTo(1608 / 1280, 1)
-    const box = (await row(page, 'quote').locator('[data-layout-thumbnail]').boundingBox())!
-    expect(box.width).toBeLessThanOrEqual(rowWidth + 0.5)
+    const box = (await page.locator('[data-layout-selected-preview] [data-layout-thumbnail]').boundingBox())!
+    expect(box.width).toBeLessThanOrEqual(listWidth - 32 + 0.5)
   })
 
   test('Given a layout whose slide opts out with data-canvas="fixed", when Phone is switched on, then its thumbnail keeps the deck\'s shape', async ({ page }) => {

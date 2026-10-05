@@ -100,11 +100,16 @@ test('Given unsaved typing, when the agent rewrites the file, then the typing st
   await page.waitForTimeout(1_500)
   expect(await editorText(page, 'layout-html')).toBe(MINE)
   expect(deck.layoutFiles?.quote.html).toBe(AGENT)
-  expect(count(deck, 'save_layout')).toBe(0)
+  expect(count(deck, 'save_deck_file')).toBe(0)
 
-  // Leaving the layout waits for the choice.
+  // Another layout opens beside it, but leaving the screen waits for the
+  // choice, the file in conflict shown again.
   await page.locator('[data-layout-row="title-slide"]').click()
+  await expect(page.locator('[data-layout-row="title-slide"]')).toHaveAttribute('aria-current', 'true')
+  await page.locator('[data-studio-mode-option="slides"]').click()
   await expect(page.locator('[data-layout-notice]')).toContainText('load them or keep your edits')
+  await expect(page.locator('[data-layout-screen]')).toBeVisible()
+  await expect(page.locator('[data-layout-tab="layouts/quote.html"]')).toHaveAttribute('aria-selected', 'true')
   await expect(page.locator('[data-layout-row="quote"]')).toHaveAttribute('aria-current', 'true')
 })
 
@@ -120,7 +125,7 @@ test('Given a conflict, when Load from disk is chosen, then the editor shows the
   await expect.poll(() => editorText(page, 'layout-html')).toBe(AGENT)
   await expect(page.locator('[data-layout-conflict]')).toBeHidden()
   await expect(page.locator('[data-layout-unsaved]')).toBeHidden()
-  expect(count(deck, 'save_layout')).toBe(0)
+  expect(count(deck, 'save_deck_file')).toBe(0)
 
   await editorContent(page, 'layout-html').click()
   await pressUndo(page)
@@ -161,13 +166,13 @@ test('Given Studio\'s own autosave, when the watcher reports that write, then th
   await expect(page.locator('[data-layout-unsaved]')).toBeHidden()
   // The save's own redraw has run.
   await page.waitForTimeout(300)
-  const reads = count(deck, 'read_layout')
+  const reads = count(deck, 'read_deck_file')
   const previews = count(deck, 'preview_layouts')
 
   await emitLayoutFilesChanged(page)
   await page.waitForTimeout(500)
 
-  expect(count(deck, 'read_layout')).toBe(reads)
+  expect(count(deck, 'read_deck_file')).toBe(reads)
   expect(count(deck, 'preview_layouts')).toBe(previews)
   expect(await editorText(page, 'layout-html')).toBe(MINE)
   // The save is its only step: one Undo goes back to the original.
