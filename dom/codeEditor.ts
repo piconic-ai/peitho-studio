@@ -291,6 +291,14 @@ export function codeEditorSelection(view: EditorView): { doc: string; from: numb
   return { doc: view.state.doc.toString(), from, to }
 }
 
+/** Where on screen the main selection's end (the caret) is drawn, just
+ * below its line — for placing a box that's about the selection — or
+ * `null` when it's scrolled out of view. */
+export function codeEditorSelectionPoint(view: EditorView): Point | null {
+  const coords = view.coordsAtPos(view.state.selection.main.head)
+  return coords === null ? null : { x: coords.left, y: coords.bottom }
+}
+
 /** The text position under `point` (CSS pixels, relative to the page), or
  * `null` when `point` is outside the editor. A point past the last line
  * lands at the nearest position. */

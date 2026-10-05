@@ -3,10 +3,11 @@
 import { type Language } from '../domain/language'
 import { messagesFor, type Messages } from '../domain/messages'
 import { type Size } from '../domain/geometry'
-import { type LayoutField } from '../domain/layoutEditor'
-import { layoutThumbnailStyle, type LayoutRow } from '../domain/layoutScreen'
+import { type FileTreeRow } from '../domain/deckFiles'
+import { layoutGridThumbnailStyle, type LayoutRow } from '../domain/layoutScreen'
 import { STANDARD_LAYOUTS } from '../domain/standardLayouts'
 import type { PhoneShape, ViewportMode } from '../domain/viewport'
+import { FileTree } from './FileTree'
 import { ViewportToggle } from './ViewportToggle'
 
 /** Where a delete stands, as the screen shows it (`domain/layoutDelete.ts`). */
@@ -17,38 +18,86 @@ export interface LayoutScreenProps {
   language: Language
   /** The screen stays mounted; this hides it while the slides show. */
   hidden: boolean
+
+  /** The file tree (`FileTree.tsx`), leftmost. */
+  treeRows: FileTreeRow[]
+  collapsedFolders: string[]
+  treeWidth: number
+  onTreeResize: (event: MouseEvent) => void
+  onTreeRowClick: (path: string) => void
+
+  /** The editor's tabs, in order, and the file shown (`null` for none). */
+  tabs: EditorTabView[]
+  activePath: string | null
+  /** The open files' paths, and those holding typing not saved yet. */
+  openPaths: string[]
+  dirtyPaths: string[]
+  onShowTab: (path: string) => void
+  onCloseTab: (path: string) => void
+  /** What the code editor's host is called for the file shown —
+   * `layout-html` or `layout-css` (`data-editor`, as the e2e helpers find
+   * it). */
+  editorName: string
+  /** The code editor's host element: `Studio.tsx` creates one CodeMirror
+   * editor (`dom/codeEditor.ts`) in it, as for the slide body, so vim mode
+   * reaches it too, and swaps each tab's text (and undo history) in and
+   * out of it. Typing comes back through the editor's own `onChange`. */
+  onEditorHost: (el: HTMLElement) => void
+  /** The Comment button: a comment on the selected lines (or the cursor's
+   * line) of the file shown, for the agent. */
+  onCommentLines: (event: MouseEvent) => void
+  /** Whether the file shown is open for editing. */
+  editorReady: boolean
+  /** Why it isn't (or the last save's refusal), `''` for nothing. */
+  editorMessage: string
+  /** The file shown holds typing not saved yet (each pause in typing saves it). */
+  editorDirty: boolean
+  editorSaving: boolean
+  /** The file shown changed on disk while it held unsaved edits: the user
+   * picks a side (`onLoadExternal` / `onKeepDraft`). */
+  editorConflict: boolean
+  onLoadExternal: () => void
+  onKeepDraft: () => void
+
+  /** Every layout, in the grid of small thumbnails. */
   rows: LayoutRow[]
   selectedName: string | null
-  /** A left-click on layout `name`'s row: selects it, and on the selected
-   * row's thumbnail, opens a comment on it (`dom/layoutComments.ts`). */
-  onRowClick: (name: string, event: MouseEvent) => void
-  /** A press on a row, for telling the click that follows from a drag. */
+  /** The selected layout's names and usage, for under its large preview. */
+  selectedLabel: string
+  selectedEnglishName: string
+  selectedUsage: number
+  /** The selected layout's large preview's box (`layoutThumbnailStyle`). */
+  selectedPreviewStyle: string
+  /** The large preview's canvas host, once mounted: `Studio.tsx` draws the
+   * selected layout into it — its unsaved draft while it's edited — and
+   * draws it again as the selection or the draft changes. */
+  onSelectedPreviewHost: (el: HTMLElement) => void
+  /** A left-click on the large preview: opens a comment on the selected
+   * layout, naming the slot clicked (`dom/layoutComments.ts`). */
+  onSelectedPreviewClick: (event: MouseEvent) => void
+  /** A left-click on layout `name`'s small thumbnail: selects it. */
+  onRowClick: (name: string) => void
+  /** A press on the large preview, for telling the click that follows from
+   * a drag. */
   onRowPress: (event: MouseEvent) => void
-  /** A right-click on layout `name`'s row, or on the list's empty space
-   * (`null`) — opens the layout menu (`LayoutContextMenu.tsx`). */
+  /** A right-click on layout `name`'s row (or the large preview), or on the
+   * list's empty space (`null`) — opens the layout menu
+   * (`LayoutContextMenu.tsx`). */
   onContextMenu: (name: string | null, event: MouseEvent) => void
-  /** Layout `name`'s thumbnail host, once its row mounts: `Studio.tsx`
-   * draws the layout into it — the saved files' preview, or for the layout
-   * being edited, its unsaved draft — and draws it again as the draft
-   * changes. A keyed row's `ref` runs only once (CLAUDE.md's BarefootJS
-   * pitfalls), so the redraw can't happen here. */
+  /** Layout `name`'s small thumbnail host, once its row mounts:
+   * `Studio.tsx` draws the layout into it — the saved files' preview, or
+   * for the layout being edited, its unsaved draft — and draws it again as
+   * the draft changes. A keyed row's `ref` runs only once (CLAUDE.md's
+   * BarefootJS pitfalls), so the redraw can't happen here. */
   onThumbnailHost: (el: HTMLElement, name: string) => void
   /** The canvas layout `name`'s thumbnail is drawn on (the PC / Phone
    * switch's, `viewportCanvas`), for its box's proportion. */
   canvasOf: (name: string) => Size
-  /** The list's scrolling area, once mounted: `Studio.tsx` watches its
-   * size (`thumbnailRoom`). */
-  onRowsHost: (el: HTMLElement) => void
-  /** The scrolling area's inner size, `null` until measured: each
-   * thumbnail fits inside it as well as the row's width
-   * (`layoutThumbnailStyle`), so a tall phone canvas never runs past the
-   * bottom. */
-  thumbnailRoom: Size | null
-  /** The CSS width of the device phone display shows (`previewDevice`),
-   * capping each thumbnail's width so a smaller device shows smaller;
-   * `null` in PC display and the deck-ratio shape. */
-  deviceWidth: number | null
-  /** Why the latest draft didn't render, `''` for nothing — the thumbnail
+  /** The list column's body under its switch, once mounted: `Studio.tsx`
+   * watches its size, which the large preview fits inside
+   * (`selectedPreviewRoom`). */
+  onListBodyHost: (el: HTMLElement) => void
+  /** Why the latest draft didn't render, `''` for nothing — the preview
    * keeps the last one that did. */
   previewError: string
   listWidth: number
@@ -66,7 +115,6 @@ export interface LayoutScreenProps {
   busy: boolean
   /** The last refused operation's reason, `null` for none. */
   notice: string | null
-
 
   newLayoutOpen: boolean
   newLayoutName: string
@@ -87,27 +135,12 @@ export interface LayoutScreenProps {
   onPickReplacement: (name: string) => void
   onConfirmDelete: () => void
   onCancelDelete: () => void
+}
 
-  editorTab: LayoutField
-  onEditorTab: (tab: LayoutField) => void
-  /** Whether the selected layout's files are open for editing. */
-  editorReady: boolean
-  /** Why they aren't (or the last save's refusal), `''` for nothing. */
-  editorMessage: string
-  /** The draft holds edits not saved yet (each pause in typing saves it). */
-  editorDirty: boolean
-  editorSaving: boolean
-  /** The files changed on disk while the draft held unsaved edits: the
-   * user picks a side (`onLoadExternal` / `onKeepDraft`). */
-  editorConflict: boolean
-  onLoadExternal: () => void
-  onKeepDraft: () => void
-  /** The HTML and CSS editors' host elements: `Studio.tsx` creates a
-   * CodeMirror editor (`dom/codeEditor.ts`) in each, as for the slide
-   * body, so vim mode reaches them too. Typing comes back through the
-   * editors' own `onChange`. */
-  onHtmlEditorHost: (el: HTMLElement) => void
-  onCssEditorHost: (el: HTMLElement) => void
+/** One editor tab as the screen shows it: the file's path and name. */
+export interface EditorTabView {
+  path: string
+  name: string
 }
 
 function usageText(messages: Messages, count: number): string {
@@ -119,33 +152,83 @@ function confirmLabel(messages: Messages, view: LayoutDeleteView): string {
 }
 
 function tabClass(active: boolean): string {
-  return (active ? 'border-primary text-foreground ' : 'border-transparent text-muted-foreground ') + 'px-3 py-1.5 text-xs font-medium border-b-2'
+  return (active ? 'border-primary text-foreground bg-background ' : 'border-transparent text-muted-foreground ') + 'shrink-0 flex items-center border-b-2'
 }
 
-/** The deck's layouts in one screen: the selected layout's HTML/CSS
- * (left) and the list (right), whose selected row draws the editor's
- * unsaved draft as it's typed — code on the left, what it looks like on
- * the right; the comments column sits right of both (`Studio.tsx`). A
- * click on the selected row's thumbnail opens a comment on that layout, as
- * a click on the slide preview does on the slide. Every
- * operation on a layout is in the list's right-click menu
+/** The deck's layouts in one screen, left to right: the deck's files as a
+ * tree (`FileTree.tsx`), the files opened from it (or from the list) as
+ * editor tabs, and the layout list — the selected layout drawn large on
+ * top, the editor's unsaved draft as it's typed, and every layout as a
+ * small thumbnail in two columns under it. The comments column sits right
+ * of all three (`Studio.tsx`). A click on the large preview opens a
+ * comment on that layout, as a click on the slide preview does on the
+ * slide; the editor's Comment button opens one on the lines selected.
+ * Every operation on a layout is in the list's right-click menu
  * (`LayoutContextMenu.tsx`); New Layout and Delete open the modals at the
  * end. Every part is permanently mounted and shown or hidden by class —
  * see CLAUDE.md's BarefootJS pitfalls on branches. */
 export function LayoutScreen(props: LayoutScreenProps) {
   return (
     <div data-layout-screen className={(props.hidden ? 'hidden' : 'flex') + ' flex-1 min-w-0 min-h-0'}>
+      <FileTree
+        language={props.language}
+        rows={props.treeRows}
+        collapsed={props.collapsedFolders}
+        activePath={props.activePath}
+        openPaths={props.openPaths}
+        onRowClick={props.onTreeRowClick}
+        width={props.treeWidth}
+      />
+
+      <div className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40" onMouseDown={event => props.onTreeResize(event)} />
+
       <div data-layout-editor className="flex-1 min-w-0 flex flex-col min-h-0 border-r border-border">
-        <div className="shrink-0 h-9 flex items-center gap-1 px-2 border-b border-border">
-          <button type="button" data-layout-tab="html" aria-pressed={props.editorTab === 'html' ? 'true' : 'false'} onClick={() => props.onEditorTab('html')} className={tabClass(props.editorTab === 'html')}>HTML</button>
-          <button type="button" data-layout-tab="css" aria-pressed={props.editorTab === 'css' ? 'true' : 'false'} onClick={() => props.onEditorTab('css')} className={tabClass(props.editorTab === 'css')}>CSS</button>
-          <div className="flex-1" />
+        <div data-layout-editor-toolbar className="shrink-0 h-9 flex items-stretch gap-1 pr-2 border-b border-border">
+          <div data-layout-tabs role="tablist" className="flex-1 min-w-0 flex items-stretch overflow-x-auto">
+            {props.tabs.map(tab => (
+              <div
+                key={tab.path}
+                role="tab"
+                data-layout-tab={tab.path}
+                aria-selected={props.activePath === tab.path ? 'true' : 'false'}
+                className={tabClass(props.activePath === tab.path)}
+              >
+                <button type="button" data-layout-tab-show title={tab.path} onClick={() => props.onShowTab(tab.path)} className="h-full pl-3 pr-1 text-xs font-medium whitespace-nowrap">
+                  {tab.name}
+                </button>
+                <span data-layout-tab-dirty aria-hidden="true" className={(props.dirtyPaths.includes(tab.path) ? '' : 'invisible ') + 'text-[10px] text-muted-foreground'}>●</span>
+                <button
+                  type="button"
+                  data-layout-tab-close
+                  aria-label={messagesFor(props.language).closeTab(tab.name)}
+                  title={messagesFor(props.language).closeTab(tab.name)}
+                  onClick={() => props.onCloseTab(tab.path)}
+                  className="h-full px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
           {/* No Save button: each pause in typing saves the draft. */}
-          <span data-layout-saving hidden={!props.editorSaving} className="text-xs text-muted-foreground">{messagesFor(props.language).savingLayout}</span>
-          <span data-layout-unsaved hidden={!props.editorDirty || props.editorSaving} aria-hidden="true" title={messagesFor(props.language).layoutUnsaved} className="text-xs text-muted-foreground">●</span>
+          <span data-layout-saving hidden={!props.editorSaving} className="self-center text-xs text-muted-foreground">{messagesFor(props.language).savingLayout}</span>
+          <span data-layout-unsaved hidden={!props.editorDirty || props.editorSaving} aria-hidden="true" title={messagesFor(props.language).layoutUnsaved} className="self-center text-xs text-muted-foreground">●</span>
+          {/* Pressing it must not take focus (or a vim visual selection)
+              away from the editor before the click reads the selection. */}
+          <button
+            type="button"
+            data-editor-comment
+            disabled={!props.editorReady}
+            title={messagesFor(props.language).commentOnLinesTitle}
+            onMouseDown={event => event.preventDefault()}
+            onClick={event => props.onCommentLines(event)}
+            className="self-center shrink-0 px-2 py-0.5 rounded-md border border-border text-xs hover:bg-accent disabled:opacity-40"
+          >
+            {messagesFor(props.language).commentOnLines}
+          </button>
         </div>
         <p role="alert" data-layout-editor-message hidden={props.editorMessage === ''} className="shrink-0 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words border-b border-border">{props.editorMessage}</p>
-        {/* The files changed on disk under unsaved edits: an in-app choice
+        {/* The file changed on disk under unsaved edits: an in-app choice
             (never `window.confirm`, CLAUDE.md), permanently mounted. */}
         <div role="alert" data-layout-conflict className={(props.editorConflict ? 'flex' : 'hidden') + ' shrink-0 flex-wrap items-center gap-2 px-3 py-2 text-xs border-b border-border bg-accent'}>
           <span className="flex-1 min-w-0">{messagesFor(props.language).layoutConflict}</span>
@@ -156,24 +239,19 @@ export function LayoutScreen(props: LayoutScreenProps) {
             {messagesFor(props.language).layoutConflictKeep}
           </button>
         </div>
-        {/* Hidden, not disabled, while the files aren't open: an editor
-            can't be typed into then. Both stay mounted (CLAUDE.md's
-            BarefootJS pitfalls on branches). */}
+        <p data-layout-no-file hidden={props.activePath !== null} className="shrink-0 px-3 py-6 text-xs text-muted-foreground text-center">{messagesFor(props.language).noFileOpen}</p>
+        {/* Hidden, not disabled, while the file isn't open: an editor can't
+            be typed into then. Permanently mounted (CLAUDE.md's BarefootJS
+            pitfalls on branches). */}
         <div
-          ref={el => props.onHtmlEditorHost(el)}
-          data-editor="layout-html"
+          ref={el => props.onEditorHost(el)}
+          data-editor={props.editorName}
           data-layout-editor-host
-          className={(props.editorReady && props.editorTab === 'html' ? '' : 'hidden ') + 'flex-1 min-h-0 bg-background text-foreground'}
-        />
-        <div
-          ref={el => props.onCssEditorHost(el)}
-          data-editor="layout-css"
-          data-layout-editor-host
-          className={(props.editorReady && props.editorTab === 'css' ? '' : 'hidden ') + 'flex-1 min-h-0 bg-background text-foreground'}
+          className={(props.editorReady ? '' : 'hidden ') + 'flex-1 min-h-0 bg-background text-foreground'}
         />
         {/* Under the editor it's about, so the reason stays in sight while
-            the text is fixed; the list's thumbnail keeps the last draft
-            that rendered meanwhile. */}
+            the text is fixed; the preview keeps the last draft that
+            rendered meanwhile. */}
         <p role="alert" data-layout-preview-error hidden={props.previewError === ''} className="shrink-0 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words border-t border-border">{props.previewError}</p>
       </div>
 
@@ -182,8 +260,7 @@ export function LayoutScreen(props: LayoutScreenProps) {
       <div data-layout-list className="shrink-0 flex flex-col min-h-0" style={`width: ${String(props.listWidth)}px`}>
         {/* A toolbar for the switch alone, no heading: the window's
             Slides / Layouts switch already says what this column is. At the
-            top-left, as tall as the editor's tab row, where the tabs sit in
-            theirs; no rule under it. */}
+            top-left, as tall as the editor's tab row; no rule under it. */}
         <div data-layout-list-header className="shrink-0 h-9 flex items-center justify-start px-2">
           <ViewportToggle
             language={props.language}
@@ -198,47 +275,71 @@ export function LayoutScreen(props: LayoutScreenProps) {
           />
         </div>
         <p role="alert" data-layout-notice hidden={props.notice === null} className="shrink-0 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words border-b border-border">{props.notice ?? ''}</p>
-        <div
-          ref={el => props.onRowsHost(el)}
-          data-layout-rows
-          // `pb-16`: room below the last row to right-click for New Layout.
-          className="flex-1 min-h-0 overflow-y-auto p-2 pb-16 flex flex-col gap-2"
-          // A row's own handler is delegated to this same element, so both
-          // fire for a right-click on a row and `stopPropagation()` can't
-          // tell them apart (barefootjs#2930, see `SlideList.tsx`): this one
-          // skips a click that landed in a row.
-          onContextMenu={e => {
-            if ((e.target as Element).closest('[data-layout-row]')) return
-            props.onContextMenu(null, e)
-          }}
-        >
-          {props.rows.map(row => (
-            <button
-              type="button"
-              key={row.key}
-              data-layout-row={row.name}
-              aria-current={props.selectedName === row.name ? 'true' : 'false'}
+        <div ref={el => props.onListBodyHost(el)} data-layout-list-body className="flex-1 min-h-0 flex flex-col">
+          {/* The selected layout, large: the preview of what the editor
+              holds. A click on it comments on the layout. */}
+          <div data-layout-selected className={(props.selectedName === null ? 'hidden ' : '') + 'shrink-0 p-2'}>
+            <div
+              data-layout-selected-preview={props.selectedName ?? ''}
               onMouseDown={e => props.onRowPress(e)}
-              onClick={e => props.onRowClick(row.name, e)}
-              onContextMenu={e => props.onContextMenu(row.name, e)}
-              className={(props.selectedName === row.name ? 'border-primary ' : 'border-transparent ') + 'group flex flex-col gap-1 p-1.5 rounded-md border-2 text-left'}
+              onClick={e => props.onSelectedPreviewClick(e)}
+              onContextMenu={e => props.onContextMenu(props.selectedName, e)}
+              className="group flex flex-col items-center gap-1 p-1.5 rounded-md border-2 border-primary"
             >
               <span
                 data-layout-thumbnail
-                className="block relative self-center shrink-0 rounded border border-border bg-black overflow-hidden group-hover:border-muted-foreground"
-                style={layoutThumbnailStyle(props.canvasOf(row.name), props.thumbnailRoom, props.deviceWidth)}
+                className="block relative shrink-0 rounded border border-border bg-black overflow-hidden cursor-crosshair group-hover:border-muted-foreground"
+                style={props.selectedPreviewStyle}
+              >
+                <span ref={el => props.onSelectedPreviewHost(el)} className="absolute top-0 right-0 bottom-0 left-0" />
+              </span>
+              <span className="w-full flex items-baseline gap-2 min-w-0 h-4">
+                <span data-layout-selected-label className="text-xs font-medium truncate">{props.selectedLabel}</span>
+                <span data-layout-selected-english hidden={props.selectedEnglishName === ''} className="text-[10px] font-mono text-muted-foreground truncate">{props.selectedEnglishName}</span>
+                <span className="flex-1" />
+                <span className="shrink-0 text-[10px] text-muted-foreground">{usageText(messagesFor(props.language), props.selectedUsage)}</span>
+              </span>
+            </div>
+          </div>
+          <div
+            data-layout-rows
+            // `pb-16`: room below the last row to right-click for New Layout.
+            className="flex-1 min-h-0 overflow-y-auto p-2 pb-16 grid grid-cols-2 gap-2 content-start"
+            // A row's own handler is delegated to this same element, so both
+            // fire for a right-click on a row and `stopPropagation()` can't
+            // tell them apart (barefootjs#2930, see `SlideList.tsx`): this one
+            // skips a click that landed in a row.
+            onContextMenu={e => {
+              if ((e.target as Element).closest('[data-layout-row]')) return
+              props.onContextMenu(null, e)
+            }}
+          >
+            {props.rows.map(row => (
+              <button
+                type="button"
+                key={row.key}
+                data-layout-row={row.name}
+                aria-current={props.selectedName === row.name ? 'true' : 'false'}
+                onClick={() => props.onRowClick(row.name)}
+                onContextMenu={e => props.onContextMenu(row.name, e)}
+                className={(props.selectedName === row.name ? 'border-primary ' : 'border-transparent ') + 'group min-w-0 flex flex-col gap-1 p-1 rounded-md border-2 text-left'}
               >
                 <span
-                  ref={el => props.onThumbnailHost(el, row.name)}
-                  className="absolute top-0 right-0 bottom-0 left-0"
-                />
-              </span>
-              <span className="flex items-baseline justify-between gap-2 min-w-0">
+                  data-layout-row-thumbnail
+                  className="block relative shrink-0 rounded border border-border bg-black overflow-hidden group-hover:border-muted-foreground"
+                  style={layoutGridThumbnailStyle(props.canvasOf(row.name))}
+                >
+                  <span
+                    ref={el => props.onThumbnailHost(el, row.name)}
+                    className="absolute top-0 right-0 bottom-0 left-0"
+                  />
+                </span>
                 <span className="text-xs truncate">{row.label}</span>
-                <span data-layout-usage className="shrink-0 text-[10px] text-muted-foreground">{usageText(messagesFor(props.language), row.usage)}</span>
-              </span>
-            </button>
-          ))}
+                <span data-layout-english-name hidden={row.englishName === null} className="text-[10px] font-mono text-muted-foreground truncate">{row.englishName ?? ''}</span>
+                <span data-layout-usage className="text-[10px] text-muted-foreground">{usageText(messagesFor(props.language), row.usage)}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       {/* New Layout, opened from the list's empty-space menu: an in-app

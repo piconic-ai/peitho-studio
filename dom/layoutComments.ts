@@ -46,7 +46,7 @@ export function layoutThumbnailClickOf(event: MouseEvent): LayoutThumbnailClick 
   const at = { x: event.clientX, y: event.clientY }
   if (isDrag(from, at, CLICK_SLOP)) return null
   if (!(document.getSelection()?.isCollapsed ?? true)) return null
-  const root = thumbnail.querySelector('[data-layout-canvas]')?.shadowRoot ?? null
+  const root = thumbnail.querySelector('[data-layout-canvas],[data-layout-selected-canvas]')?.shadowRoot ?? null
   const slots = root === null ? [] : Array.from(root.querySelectorAll('[class*="slot-"]')).flatMap(element => {
     const slot = slotNameOfClasses(Array.from(element.classList))
     return slot === null ? [] : [{ slot, rect: element.getBoundingClientRect() }]
