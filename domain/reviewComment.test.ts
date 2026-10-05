@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import fc from 'fast-check'
 import type { CritDeckSession, ReviewComment } from './critReview'
 import { messagesFor } from './messages'
 import type { ManifestSlide } from './render'
@@ -1035,6 +1036,44 @@ describe('a comment on lines of a slide\'s body or notes (the editors\' right-cl
     const slide = buildSlideText(fields.config, fields.body, fields.note)
     const comment = newReviewComment(pending(editorLinesTarget(fields, 'note', 0, 0)), slide, { start: 0, end: slide.length }, 1)
     expect(comment).toMatchObject({ startLine: 5, endLine: 5, quote: 'intro' })
+  })
+
+  test('adversarial: Given a first line indented and a last line with trailing spaces, which saving trims, Then a comment on them still lands on their saved lines, quoting what is saved', () => {
+    const fields = { config: { key: 'k' }, body: '\n  first\nmid\nlast  ', note: '  n1\nn2  ' }
+    const slide = buildSlideText(fields.config, fields.body, fields.note)
+    expect(slide).toBe('<!-- {"key":"k"} -->\nfirst\nmid\nlast\n\n<!--\nn1\nn2\n-->\n')
+    const whole = { start: 0, end: slide.length }
+    const sent = (field: 'body' | 'note', from: number, to: number) => {
+      const comment = newReviewComment(pending(editorLinesTarget(fields, field, from, to)), slide, whole, 1)
+      return { startLine: comment.startLine, endLine: comment.endLine, quote: comment.quote }
+    }
+    const body = fields.body
+    expect(sent('body', body.indexOf('first'), body.indexOf('first'))).toEqual({ startLine: 2, endLine: 2, quote: 'first' })
+    expect(sent('body', body.length, body.length)).toEqual({ startLine: 4, endLine: 4, quote: 'last' })
+    expect(sent('body', 0, body.length)).toEqual({ startLine: 2, endLine: 4, quote: 'first\nmid\nlast' })
+    expect(sent('note', 0, 0)).toEqual({ startLine: 7, endLine: 7, quote: 'n1' })
+    expect(sent('note', fields.note.length, fields.note.length)).toEqual({ startLine: 8, endLine: 8, quote: 'n2' })
+    expect(sent('note', 0, fields.note.length)).toEqual({ startLine: 7, endLine: 8, quote: 'n1\nn2' })
+  })
+
+  test('property: Given any body and notes, Then a comment on any line that saving keeps lands on lines holding its quote', () => {
+    const text = fc.array(fc.stringMatching(/^[ a-z#-]{0,6}$/), { maxLength: 5 }).map(lines => lines.join('\n'))
+    fc.assert(fc.property(text, text, fc.nat(40), fc.boolean(), (body, note, at, inNote) => {
+      const fields = { config: { key: 'k' }, body, note }
+      const field = inNote ? 'note' as const : 'body' as const
+      const slide = buildSlideText(fields.config, body, note)
+      const target = editorLinesTarget(fields, field, at, at)
+      const comment = newReviewComment(pending(target), slide, { start: 0, end: slide.length }, 1)
+      if (target.quote === '') return
+      expect(comment.quote).toBe(target.quote)
+      expect(slide.split('\n').slice(comment.startLine - 1, comment.endLine).join('\n')).toContain(target.quote)
+      expect(comment.startLine).toBeGreaterThan(1)
+    }))
+  })
+
+  test('adversarial: Given only the blank lines saving drops (before the body\'s first line), Then the comment quotes nothing', () => {
+    const fields = { config: {}, body: '\n\nbody', note: '' }
+    expect(editorLinesTarget(fields, 'body', 0, 1)).toMatchObject({ quote: '', text: '' })
   })
 
   test('spec: Given a target, Then the box\'s label names deck.md\'s lines when they are found, and leaves them out when not', () => {

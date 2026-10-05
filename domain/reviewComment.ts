@@ -461,15 +461,32 @@ export function targetLabel(slideNumber: number, target: Pick<CommentTarget, 'ki
  * on the slide's lines as a whole, as a click on no element is. */
 export function editorLinesTarget(fields: { config: PageConfig; body: string; note: string }, field: 'body' | 'note', from: number, to: number): CommentTarget {
   const fieldText = fields[field]
-  const { quote } = lineSelectionOf(fieldText, from, to)
   const starts = slideFieldStarts(fields.config, fields.body, fields.note)
   const fieldAt = field === 'body' ? starts.body : starts.note
-  const start = Number.isFinite(Math.min(from, to)) ? Math.max(0, Math.min(from, to)) : 0
-  const firstLine = fieldText.slice(0, start).lastIndexOf('\n') + 1
+  const saved = savedPartOfLines(fieldText, from, to)
+  const blank = saved === null || saved.text.trim() === ''
+  const offsetInSlide = fieldAt === null || saved === null ? 0 : fieldAt + saved.start
+  return { kind: 'lines', text: blank ? '' : saved.text, quote: blank ? '' : saved.text, offsetInSlide }
+}
+
+/** The part of lines `from`–`to` of `fieldText` that saving keeps — the
+ * field is saved trimmed (`buildSlideText`), so an indented first line or
+ * a last line's trailing spaces lose that whitespace — as the text saved
+ * and where it starts in the saved (trimmed) field; `null` when saving
+ * keeps none of it (only the blank lines around the field). */
+function savedPartOfLines(fieldText: string, from: number, to: number): { text: string; start: number } | null {
+  const { lines } = lineSelectionOf(fieldText, from, to)
+  const lineStarts = [0]
+  for (let at = fieldText.indexOf('\n'); at !== -1; at = fieldText.indexOf('\n', at + 1)) lineStarts.push(at + 1)
+  const rangeStart = lineStarts[lines.start - 1] ?? fieldText.length
+  const next = lineStarts[lines.end]
+  const rangeEnd = next === undefined ? fieldText.length : next - 1
   const leading = fieldText.length - fieldText.trimStart().length
-  const offsetInSlide = fieldAt === null ? 0 : fieldAt + Math.max(0, firstLine - leading)
-  const blank = quote.trim() === ''
-  return { kind: 'lines', text: blank ? '' : quote, quote: blank ? '' : quote, offsetInSlide }
+  const trimmed = fieldText.trim()
+  const start = Math.max(rangeStart, leading)
+  const end = Math.min(rangeEnd, leading + trimmed.length)
+  if (end <= start) return null
+  return { text: fieldText.slice(start, end), start: start - leading }
 }
 
 /** deck.md's lines `target` is on now in `source` (its quote nearest
