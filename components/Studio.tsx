@@ -2749,6 +2749,11 @@ export function Studio() {
       if (isFileChangedOnDisk(message)) {
         layouts.fileSaveInterrupted(path)
         await pullOpenFiles()
+        // Only the layout's other file may have changed (the save checks
+        // the pair): this one read back as it was, so its draft is still
+        // to save — tried again rather than left waiting for a keystroke.
+        const after = layouts.fileOf(path)
+        if (after !== undefined && shouldAutosave(after)) scheduleLayoutAutosave()
         return
       }
       layouts.fileSaveFailed(path, message, text)

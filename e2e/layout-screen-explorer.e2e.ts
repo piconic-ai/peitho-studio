@@ -364,3 +364,32 @@ test.describe('a comment from the editor', () => {
     await expect(tab(page, 'css/base.css')).toHaveAttribute('aria-selected', 'true')
   })
 })
+
+test.describe('saving and reading back around the agent\'s writes', () => {
+  const TITLE_SLIDE_HTML = '<section class="peitho-slide layout-title-slide"><h1>title</h1></section>'
+
+  test('Given an autosave refused because only the layout\'s other file changed on disk, then the edit is saved on the next try rather than left unsaved', async ({ page }) => {
+    let refusals = 0
+    const deck: MockDeck = deckOf({
+      // The agent rewrites the layout's CSS during the HTML's save: the save
+      // is refused, though the HTML itself is as the editor read it.
+      commandError: (cmd, args) => {
+        if (cmd !== 'save_deck_file' || args.path !== 'layouts/title-slide.html' || refusals > 0) return null
+        refusals++
+        deck.layoutFiles!['title-slide'] = { html: TITLE_SLIDE_HTML, css: '.layout-title-slide { color: red; }' }
+        deck.layoutFilesStamp = 'agent-1'
+        return 'the layout\'s files changed on disk since they were read'
+      },
+    })
+    await openLayoutScreen(page, deck)
+    await expect.poll(() => editorText(page, 'layout-html')).toBe(TITLE_SLIDE_HTML)
+
+    const mine = '<section class="peitho-slide layout-title-slide"><h1>mine</h1></section>'
+    await fillEditor(page, mine, 'layout-html')
+
+    await expect.poll(() => deck.layoutFiles!['title-slide'].html, { timeout: 8000 }).toBe(mine)
+    expect(refusals).toBe(1)
+    expect(deck.layoutFiles!['title-slide'].css).toBe('.layout-title-slide { color: red; }')
+    await expect(tab(page, 'layouts/title-slide.html').locator('[data-layout-tab-dirty]')).toBeHidden()
+  })
+})
