@@ -460,6 +460,7 @@ export function Studio() {
       monospace: true,
       spellcheck: false,
       lineWrapping: false,
+      onContextMenu: event => { openEditorMenu('layout', event) },
       onChange: text => {
         const path = layoutEditorShows
         if (path === null) return
@@ -584,19 +585,6 @@ export function Studio() {
   function resetDraftPreview(): void {
     clearTimeout(draftPreviewTimer)
     layouts.resetPreview()
-  }
-
-  // The editor's Comment button: a comment on the selected lines of the
-  // file shown — or the cursor's line — in the same comment box as the
-  // preview's, sent to the agent through crit on those lines of that file
-  // (`lineSelectionOf`, `newLayoutComment`).
-  function commentOnLayoutEditorLines(event: MouseEvent): void {
-    const file = layouts.activeFile()
-    if (!layoutEditor || file?.kind !== 'ready') return
-    const { doc, from, to } = codeEditorSelection(layoutEditor)
-    const { lines, quote } = lineSelectionOf(doc, from, to)
-    const at = codeEditorSelectionPoint(layoutEditor) ?? { x: event.clientX, y: event.clientY }
-    openLayoutCommentBox({ kind: 'file', path: file.path, lines, quote }, at)
   }
 
   // A host remounts only with the whole editor pane (a deck-lifecycle
@@ -3726,7 +3714,6 @@ export function Studio() {
           onCloseTab={path => void closeLayoutTab(path)}
           editorName={layoutEditorName()}
           onEditorHost={el => { layoutEditor = createLayoutCodeEditor(el) }}
-          onCommentLines={commentOnLayoutEditorLines}
           editorReady={layouts.activeFile()?.kind === 'ready'}
           editorMessage={layoutEditorMessage()}
           editorDirty={layoutEditorShownDirty()}

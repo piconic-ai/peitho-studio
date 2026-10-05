@@ -54,11 +54,10 @@ export interface LayoutScreenProps {
   /** The code editor's host element: `Studio.tsx` creates one CodeMirror
    * editor (`dom/codeEditor.ts`) in it, as for the slide body, so vim mode
    * reaches it too, and swaps each tab's text (and undo history) in and
-   * out of it. Typing comes back through the editor's own `onChange`. */
+   * out of it. Typing comes back through the editor's own `onChange`; a
+   * right-click opens the app's menu, whose comment is on the lines picked
+   * (`domain/commentMenu.ts`). */
   onEditorHost: (el: HTMLElement) => void
-  /** The Comment button: a comment on the selected lines (or the cursor's
-   * line) of the file shown, for the agent. */
-  onCommentLines: (event: MouseEvent) => void
   /** Whether the file shown is open for editing. */
   editorReady: boolean
   /** Why it isn't (or the last save's refusal), `''` for nothing. */
@@ -175,7 +174,7 @@ function tabClass(active: boolean): string {
  * small thumbnail in two columns under it. The comments column sits right
  * of all three (`Studio.tsx`). A click on the large preview opens a
  * comment on that layout, as a click on the slide preview does on the
- * slide; the editor's Comment button opens one on the lines selected.
+ * slide; a right-click in the editor opens one on the lines selected.
  * Every operation on a layout is in the list's right-click menu
  * (`ContextMenu.tsx`); New Layout and Delete open the modals at the
  * end. Every part is permanently mounted and shown or hidden by class —
@@ -233,19 +232,6 @@ export function LayoutScreen(props: LayoutScreenProps) {
           {/* No Save button: each pause in typing saves the draft. */}
           <span data-layout-saving hidden={!props.editorSaving} className="self-center text-xs text-muted-foreground">{messagesFor(props.language).savingLayout}</span>
           <span data-layout-unsaved hidden={!props.editorDirty || props.editorSaving} aria-hidden="true" title={messagesFor(props.language).layoutUnsaved} className="self-center text-xs text-muted-foreground">●</span>
-          {/* Pressing it must not take focus (or a vim visual selection)
-              away from the editor before the click reads the selection. */}
-          <button
-            type="button"
-            data-editor-comment
-            disabled={!props.editorReady}
-            title={messagesFor(props.language).commentOnLinesTitle}
-            onMouseDown={event => event.preventDefault()}
-            onClick={event => props.onCommentLines(event)}
-            className="self-center shrink-0 px-2 py-0.5 rounded-md border border-border text-xs hover:bg-accent disabled:opacity-40"
-          >
-            {messagesFor(props.language).commentOnLines}
-          </button>
         </div>
         <p role="alert" data-layout-editor-message hidden={props.editorMessage === ''} className="shrink-0 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words border-b border-border">{props.editorMessage}</p>
         {/* The file changed on disk under unsaved edits: an in-app choice

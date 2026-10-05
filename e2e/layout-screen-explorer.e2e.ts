@@ -255,7 +255,7 @@ test.describe('the editor\'s tabs', () => {
     for (const path of await tabPaths(page)) await tab(page, path!).locator('[data-layout-tab-close]').click()
     await expect(page.locator('[data-layout-tab]')).toHaveCount(0)
     await expect(page.locator('[data-layout-no-file]')).toBeVisible()
-    await expect(page.locator('[data-editor-comment]')).toBeDisabled()
+    await expect(page.locator('[data-layout-editor-host]')).toBeHidden()
   })
 
   test('Given base.css edited, when typing pauses, then it is saved on its own and every thumbnail is drawn again', async ({ page }) => {
@@ -404,11 +404,18 @@ test.describe('a comment from the editor', () => {
     return deck
   }
 
+  /** Right-clicks `lineText`'s line in the editor and picks the menu's
+   * comment on lines. */
+  async function commentFromEditor(page: Page, which: 'layout-html' | 'layout-css', lineText: string): Promise<void> {
+    await editorContent(page, which).locator('.cm-line', { hasText: lineText }).first().click({ button: 'right', position: { x: 4, y: 4 } })
+    await page.locator('[data-menu="comment"] [data-menu-item="comment-lines"]').click()
+  }
+
   function sentLayoutComments(crit: FakeCritIpc): NewLayoutComment[] {
     return crit.calls.filter(call => call.method === 'addLayoutComments').flatMap(call => call.args[0] as NewLayoutComment[])
   }
 
-  test('Given lines selected in base.css, when Comment is pressed, then the box names the file, the lines and their start, and the agent gets the comment on those lines', async ({ page }) => {
+  test('Given lines selected in base.css, when they are right-clicked and commented on, then the box names the file, the lines and their start, and the agent gets the comment on those lines', async ({ page }) => {
     const crit = createFakeCritIpc()
     await openWithCrit(page, crit)
     await treeRow(page, 'css/base.css').click()
@@ -420,7 +427,7 @@ test.describe('a comment from the editor', () => {
     await page.keyboard.press('ArrowDown')
     await page.keyboard.press('Shift+ArrowDown')
     await page.keyboard.press('Shift+End')
-    await page.locator('[data-editor-comment]').click()
+    await commentFromEditor(page, 'layout-css', 'margin: 0;')
 
     await expect(page.locator('[data-comment-box]')).toBeVisible()
     await expect(page.locator('[data-comment-target]')).toHaveText('css/base.css L2-L3 "margin: 0; }"')
@@ -437,14 +444,14 @@ test.describe('a comment from the editor', () => {
     await expect(page.locator('[data-review-row="comment"] [data-review-target]')).toHaveText('css/base.css L2-L3 "margin: 0; }"')
   })
 
-  test('Given only a cursor in a layout\'s HTML, when Comment is pressed, then the comment is on the cursor\'s line', async ({ page }) => {
+  test('Given a layout\'s HTML, when a line is right-clicked and commented on, then the comment is on that line', async ({ page }) => {
     const crit = createFakeCritIpc()
     await openWithCrit(page, crit)
     await expect.poll(() => editorText(page, 'layout-html')).toContain('layout-title-slide')
     await editorContent(page, 'layout-html').click()
     await page.keyboard.press('ControlOrMeta+End')
 
-    await page.locator('[data-editor-comment]').click()
+    await commentFromEditor(page, 'layout-html', '<section')
 
     await expect(page.locator('[data-comment-target]')).toHaveText('layouts/title-slide.html L1 "<section class="peitho-slide …"')
     await page.locator('[data-comment-box] textarea').fill('Add a subtitle')
@@ -455,12 +462,27 @@ test.describe('a comment from the editor', () => {
     ])
   })
 
+  test('Given the file editor right-clicked, then it offers the slide editors\' menu, and a Paste from it is saved like typing; the editor has no Comment button any more', async ({ page }) => {
+    const deck = deckOf({ clipboardText: 'h2 { color: blue; }' })
+    await openLayoutScreen(page, deck)
+    await treeRow(page, 'css/base.css').click()
+    await expect.poll(() => editorText(page, 'layout-css')).toContain('margin: 0;')
+    await expect(page.locator('[data-layout-editor] button', { hasText: /^Comment$/ })).toHaveCount(0)
+
+    const last = editorContent(page, 'layout-css').locator('.cm-line', { hasText: 'h1 { color: red; }' })
+    const box = (await last.boundingBox())!
+    await page.mouse.click(box.x + box.width - 2, box.y + box.height / 2, { button: 'right' })
+    await expect(page.locator('[data-menu="comment"] [data-menu-item]')).toHaveText(['Comment on This Line…', 'Cut', 'Copy', 'Paste'])
+    await page.locator('[data-menu="comment"] [data-menu-item="paste"]').click()
+
+    await expect.poll(() => deck.otherFiles?.['css/base.css']).toBe('body {\n  margin: 0;\n}\nh1 { color: red; }h2 { color: blue; }\n')
+  })
+
   test('Given a sent comment on lines of base.css, when its thread is clicked from the slides screen, then the layout screen opens base.css', async ({ page }) => {
     const crit = createFakeCritIpc()
     await openWithCrit(page, crit)
     await treeRow(page, 'css/base.css').click()
-    await editorContent(page, 'layout-css').click()
-    await page.locator('[data-editor-comment]').click()
+    await commentFromEditor(page, 'layout-css', 'margin')
     await page.locator('[data-comment-box] textarea').fill('Calmer')
     await page.locator('[data-comment-add]').click()
     await page.locator('[data-review-send]').click()

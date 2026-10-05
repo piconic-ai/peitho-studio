@@ -124,10 +124,6 @@ export interface Messages {
   layoutUnsaved: string
   /** The close button on editor tab `name`. */
   closeTab: (name: string) => string
-  /** The layout editor's button that comments on the selected lines (or
-   * the cursor's line) for the agent, and what it does. */
-  commentOnLines: string
-  commentOnLinesTitle: string
   /** No file open in the layout editor. */
   noFileOpen: string
   /** An open file deleted on disk while it held unsaved edits. */
@@ -353,8 +349,6 @@ const en: Messages = {
   savingLayout: 'Saving…',
   layoutUnsaved: 'Unsaved changes',
   closeTab: name => `Close ${name}`,
-  commentOnLines: 'Comment',
-  commentOnLinesTitle: 'Comment on the selected lines (or the cursor\'s line) for the agent',
   noFileOpen: 'Open a file from the tree, or pick a layout in the list',
   fileGone: 'This file is no longer on disk, so these edits can\'t be saved. Copy them elsewhere, or close the tab to discard them',
   layoutSaveFirst: 'The changes to this layout could not be saved. Fix them, or undo them, before leaving this layout',
@@ -562,8 +556,6 @@ const ja: Messages = {
   savingLayout: '保存中…',
   layoutUnsaved: '未保存の変更があります',
   closeTab: name => `${name} を閉じる`,
-  commentOnLines: 'コメント',
-  commentOnLinesTitle: '選択した行(またはカーソルのある行)にコメントして、エージェントに依頼します',
   noFileOpen: 'ツリーからファイルを開くか、一覧でレイアウトを選んでください',
   fileGone: 'このファイルはディスク上にもうないため、編集を保存できません。別の場所に写すか、タブを閉じて破棄してください',
   layoutSaveFirst: 'このレイアウトの変更を保存できませんでした。修正するか取り消してから、このレイアウトを離れてください',
