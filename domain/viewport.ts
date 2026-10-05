@@ -6,7 +6,7 @@
 // own (`PhoneShape`, `deviceForShape`). See
 // `todo/archive/preview-viewport-toggle.md` and
 // `todo/viewport-device-presets.md` for the contract and its rationale.
-import type { Size } from './geometry'
+import { containSize, type Size } from './geometry'
 
 export type ViewportMode = 'desktop' | 'mobile'
 
@@ -54,14 +54,14 @@ export function deviceDimensions(device: Size): string {
   return `${String(device.width)}×${String(device.height)}`
 }
 
+const ICON_BOX: Size = { width: 20, height: 20 }
+
 /** A rectangle with `device`'s proportion, as large as fits a 20x20 box
- * centred in a 24x24 icon: the menu draws each option's shape with it. A
- * device with no usable proportion gets the whole square. */
+ * (`containSize`, so whole pixels) centred in a 24x24 icon: the menu draws
+ * each option's shape with it. A device with no usable proportion, or one
+ * so lopsided a side would come out under a pixel, gets the whole square. */
 export function deviceIconRect(device: Size): Size & { x: number, y: number } {
-  const box = 20
-  const ratio = isUsableDimension(device.width) && isUsableDimension(device.height) ? device.width / device.height : 1
-  const width = ratio >= 1 ? box : box * ratio
-  const height = ratio >= 1 ? box / ratio : box
+  const { width, height } = containSize(ICON_BOX, device) ?? ICON_BOX
   return { x: (24 - width) / 2, y: (24 - height) / 2, width, height }
 }
 

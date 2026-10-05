@@ -110,16 +110,18 @@ describe('deviceDimensions', () => {
 })
 
 describe('deviceIconRect', () => {
-  test('spec: a portrait device is drawn 20 high, as wide as its proportion, centred in the 24x24 icon', () => {
-    const rect = deviceIconRect({ width: 390, height: 664 })
-    expect(rect.height).toBe(20)
-    expect(rect.width).toBeCloseTo(20 * 390 / 664, 10)
-    expect(rect.x).toBeCloseTo((24 - rect.width) / 2, 10)
-    expect(rect.y).toBe(2)
+  test('spec: a portrait device is drawn 20 high, as wide as its proportion in whole pixels (rounded down), centred in the 24x24 icon', () => {
+    // 20 * 390 / 664 = 11.75
+    expect(deviceIconRect({ width: 390, height: 664 })).toEqual({ x: 6.5, y: 2, width: 11, height: 20 })
   })
 
   test('spec: a landscape device (the deck\'s own 16:9) is drawn 20 wide and shorter than it is wide', () => {
-    expect(deviceIconRect({ width: 1280, height: 720 })).toEqual({ x: 2, y: 12 - 20 * 720 / 1280 / 2, width: 20, height: 20 * 720 / 1280 })
+    // 20 * 720 / 1280 = 11.25
+    expect(deviceIconRect({ width: 1280, height: 720 })).toEqual({ x: 2, y: 6.5, width: 20, height: 11 })
+  })
+
+  test('adversarial: a device so lopsided its short side would be under a pixel gets the whole square', () => {
+    expect(deviceIconRect({ width: 1, height: 100 })).toEqual({ x: 2, y: 2, width: 20, height: 20 })
   })
 
   test('spec: the tablet\'s icon is wider than every phone\'s, so the menu tells them apart at a glance', () => {

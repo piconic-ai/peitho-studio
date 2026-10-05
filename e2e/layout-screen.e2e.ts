@@ -1145,12 +1145,12 @@ test.describe('the layout list\'s PC / Phone switch', () => {
     }
 
     await page.locator('[data-studio-mode-option="slides"]').click()
-    const preview = page.locator('[data-preview-host]')
-    await expect.poll(() => preview.evaluate(el => (el as HTMLElement).style.getPropertyValue('--peitho-canvas-height'))).toBe('1608px')
+    const previewCanvasHeight = () => page.locator('[data-preview-host]').evaluate(el => (el as HTMLElement).style.getPropertyValue('--peitho-canvas-height'))
+    await expect.poll(previewCanvasHeight).toBe('1608px')
     await page.locator('[data-panel="preview"] [data-phone-shape-menu-button]').click()
     await expect(page.locator('[data-panel="preview"] [data-phone-shape-option="tablet"]')).toHaveAttribute('aria-checked', 'true')
     await page.locator('[data-panel="preview"] [data-phone-shape-option="small-phone"]').click()
-    await expect.poll(() => preview.evaluate(el => (el as HTMLElement).style.getPropertyValue('--peitho-canvas-height'))).toBe('1871px')
+    await expect.poll(previewCanvasHeight).toBe('1871px')
 
     await page.locator('[data-studio-mode-option="layouts"]').click()
     await expect.poll(() => ratio(page, 'quote')).toBeCloseTo(1871 / 1280, 1)

@@ -401,7 +401,8 @@ test.describe('Given the preview header', () => {
       { shape: 'tablet', tall: true },
       { shape: 'deck', tall: false },
     ])
-    expect(options[1].ratio).toBeCloseTo(390 / 664, 2)
+    // The standard phone (390x664) drawn 11x20: its proportion in whole pixels.
+    expect(options[1].ratio).toBeCloseTo(11 / 20, 2)
     for (const phone of options.slice(0, 3)) expect(options[3].ratio).toBeGreaterThan(phone.ratio)
 
     const switchIcons = await describeIcons(`${TOGGLE} svg`)
