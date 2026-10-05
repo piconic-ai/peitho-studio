@@ -6,7 +6,7 @@
 // own (`PhoneShape`, `deviceForShape`). See
 // `todo/archive/preview-viewport-toggle.md` and
 // `todo/viewport-device-presets.md` for the contract and its rationale.
-import { containSize, type Size } from './geometry'
+import { containScale, containSize, type Size } from './geometry'
 
 export type ViewportMode = 'desktop' | 'mobile'
 
@@ -138,4 +138,60 @@ export function deviceForShape(shape: PhoneShape, deck: Size): Size {
  * list's thumbnails, so both draw a layout at the same size. */
 export function viewportCanvas(deck: Size, mode: ViewportMode, shape: PhoneShape, fixedCanvas: boolean): Size {
   return effectiveCanvas(deck, mode, deviceForShape(shape, deck), fixedCanvas)
+}
+
+/** The device whose real size the slide preview draws the slide at: phone
+ * display on a device preset. `null` for PC display and for the deck-ratio
+ * shape, which fill the panel as before. A stray shape past the type gets
+ * `DEFAULT_DEVICE`, as `deviceForShape` gives it. */
+export function previewDevice(mode: ViewportMode, shape: PhoneShape): DevicePreset | null {
+  if (mode !== 'mobile' || shape === 'deck') return null
+  return devicePreset(shape) ?? DEFAULT_DEVICE
+}
+
+/** The on-screen box the slide preview draws a device's canvas in, and the
+ * scale that draws it there. `fitted` says the device did not fit the panel
+ * at real size, so it was shrunk to fit instead. */
+export interface DevicePreviewSize extends Size {
+  scale: number
+  fitted: boolean
+}
+
+/** The slide preview's box for a device `deviceWidth` CSS px wide, in a
+ * panel of size `area`, with the slide laid out on `canvas` (the deck's
+ * width, grown to the device's proportion — or the deck's own size for a
+ * `data-canvas="fixed"` slide). At real size the box is `deviceWidth` wide,
+ * so the canvas is scaled by `deviceWidth / canvas.width`: the device's CSS
+ * pixels, as a browser's device mode shows them. When that box crosses the
+ * panel on either side it is fitted ("contain", no overscan) instead of
+ * left to scroll. `null` when any size isn't a positive, finite number. */
+export function devicePreviewSize(area: Size, canvas: Size, deviceWidth: number): DevicePreviewSize | null {
+  const sizes = [area.width, area.height, canvas.width, canvas.height, deviceWidth]
+  if (!sizes.every(isUsableDimension)) return null
+  const realScale = deviceWidth / canvas.width
+  const realHeight = canvas.height * realScale
+  if (deviceWidth <= area.width && realHeight <= area.height) {
+    return { width: deviceWidth, height: realHeight, scale: realScale, fitted: false }
+  }
+  const scale = Math.min(area.width / canvas.width, area.height / canvas.height)
+  return { width: canvas.width * scale, height: canvas.height * scale, scale, fitted: true }
+}
+
+/** The scale the slide preview draws `canvas` at in a panel of size `area`:
+ * a device's real size (`devicePreviewSize`) when `deviceWidth` is one,
+ * otherwise — and for an area not measured yet — the panel-filling
+ * `containScale` it has always used. */
+export function previewCanvasScale(area: Size, canvas: Size, deviceWidth: number | null): number {
+  const size = deviceWidth === null ? null : devicePreviewSize(area, canvas, deviceWidth)
+  return size?.scale ?? containScale(area, canvas)
+}
+
+/** How much of the device's real size a fitted preview shows, as a whole
+ * percentage for its label — rounded down, so a fit just short of real size
+ * never reads 100%, and at least 1. `null` when the device is at real size
+ * (no label) or there is no size to go by. */
+export function scaledDownPercent(area: Size, canvas: Size, deviceWidth: number): number | null {
+  const size = devicePreviewSize(area, canvas, deviceWidth)
+  if (size === null || !size.fitted) return null
+  return Math.max(1, Math.floor(size.width / deviceWidth * 100))
 }

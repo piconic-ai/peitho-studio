@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import fc from 'fast-check'
 import { isExhaustivelyAccountedFor } from './spec'
+import { containScale } from './geometry'
 import {
   DEFAULT_DEVICE,
   DEVICE_PRESETS,
@@ -8,7 +9,11 @@ import {
   deviceForShape,
   deviceIconRect,
   devicePreset,
+  devicePreviewSize,
   effectiveCanvas,
+  previewCanvasScale,
+  previewDevice,
+  scaledDownPercent,
   reshapeCanvas,
   toggledViewportMode,
   viewportCanvas,
@@ -488,5 +493,156 @@ describe('viewportCanvas', () => {
         expect(viewportCanvas(deck, mode, shape, fixed)).toEqual(effectiveCanvas(deck, mode, deviceForShape(shape, deck), fixed))
       },
     ))
+  })
+})
+
+describe('previewDevice', () => {
+  test('spec: Given phone display on a device preset, Then that preset is the device the preview shows at real size', () => {
+    for (const preset of DEVICE_PRESETS) expect(previewDevice('mobile', preset.id)).toEqual(preset)
+  })
+
+  test('spec: Given PC display, or phone display with the deck\'s own shape, Then there is no device and the preview fills the panel', () => {
+    expect(previewDevice('desktop', 'phone')).toBeNull()
+    expect(previewDevice('desktop', 'tablet')).toBeNull()
+    expect(previewDevice('mobile', 'deck')).toBeNull()
+  })
+
+  test('adversarial: Given a stray mode or shape past the types, Then a stray mode has no device and a stray shape gets the default phone', () => {
+    expect(previewDevice('tablet' as ViewportMode, 'phone')).toBeNull()
+    expect(previewDevice('mobile', 'square' as PhoneShape)).toEqual(DEFAULT_DEVICE)
+    expect(previewDevice('mobile', 'constructor' as PhoneShape)).toEqual(DEFAULT_DEVICE)
+  })
+})
+
+describe('devicePreviewSize', () => {
+  const smallPhoneCanvas = { width: 1280, height: 1871 }
+  const phoneCanvas = { width: 1280, height: 2179 }
+  const tabletCanvas = { width: 1280, height: 1608 }
+  const roomy = { width: 1000, height: 2000 }
+
+  test('spec: Given room for it, When the small phone is shown, Then it is drawn 375 wide at the canvas\'s proportion, not fitted', () => {
+    const size = devicePreviewSize(roomy, smallPhoneCanvas, 375)
+    expect(size).not.toBeNull()
+    expect(size?.width).toBe(375)
+    expect(size?.height).toBeCloseTo(1871 * 375 / 1280, 9)
+    expect(size?.scale).toBe(375 / 1280)
+    expect(size?.fitted).toBe(false)
+  })
+
+  test('spec: Given room for both, Then the small phone is narrower than the standard phone (390), and each is its own device width', () => {
+    const small = devicePreviewSize(roomy, smallPhoneCanvas, 375)
+    const standardPhone = devicePreviewSize(roomy, phoneCanvas, 390)
+    expect(small?.width).toBe(375)
+    expect(standardPhone?.width).toBe(390)
+    expect(small?.width ?? 0).toBeLessThan(standardPhone?.width ?? 0)
+  })
+
+  test('spec: Given a tablet in a narrow panel, Then it is fitted to the panel\'s width (contain), below real size', () => {
+    const size = devicePreviewSize({ width: 400, height: 2000 }, tabletCanvas, 820)
+    expect(size?.fitted).toBe(true)
+    expect(size?.width).toBeCloseTo(400, 9)
+    expect(size?.scale).toBeCloseTo(400 / 1280, 12)
+    expect(size?.scale ?? 1).toBeLessThan(820 / 1280)
+  })
+
+  test('spec: Given a panel shorter than the device, Then it is fitted to the height rather than scrolled', () => {
+    const size = devicePreviewSize({ width: 1000, height: 500 }, phoneCanvas, 390)
+    expect(size?.fitted).toBe(true)
+    expect(size?.height).toBeCloseTo(500, 9)
+    expect(size?.width).toBeCloseTo(1280 * 500 / 2179, 9)
+  })
+
+  test('spec: Given a panel exactly the device\'s size, Then it is shown at real size (the edge counts as fitting)', () => {
+    const size = devicePreviewSize({ width: 375, height: 1871 * 375 / 1280 }, smallPhoneCanvas, 375)
+    expect(size?.fitted).toBe(false)
+    expect(size?.scale).toBe(375 / 1280)
+  })
+
+  test('spec: Given a fixed (16:9) slide on a phone, Then it is a 16:9 box at the device\'s width', () => {
+    const size = devicePreviewSize(roomy, { width: 1280, height: 720 }, 390)
+    expect(size?.width).toBe(390)
+    expect(size?.height).toBeCloseTo(390 * 720 / 1280, 9)
+    expect(size?.fitted).toBe(false)
+  })
+
+  test('spec: Given a canvas narrower than the device (the deck\'s own shape is not shown this way, but a tiny deck can be), Then it is scaled up to the device width', () => {
+    const size = devicePreviewSize(roomy, { width: 320, height: 480 }, 375)
+    expect(size?.width).toBe(375)
+    expect(size?.scale).toBeGreaterThan(1)
+  })
+
+  test('adversarial: Given a zero, negative, NaN or infinite area, canvas or device width, Then there is no size', () => {
+    const bad = [0, -1, -0, Number.NaN, Infinity, -Infinity]
+    for (const value of bad) {
+      expect(devicePreviewSize({ width: value, height: 600 }, phoneCanvas, 390)).toBeNull()
+      expect(devicePreviewSize({ width: 600, height: value }, phoneCanvas, 390)).toBeNull()
+      expect(devicePreviewSize(roomy, { width: value, height: 2179 }, 390)).toBeNull()
+      expect(devicePreviewSize(roomy, { width: 1280, height: value }, 390)).toBeNull()
+      expect(devicePreviewSize(roomy, phoneCanvas, value)).toBeNull()
+    }
+  })
+
+  test('property: the box always keeps the canvas\'s proportion, never exceeds the device width nor the area, and is at real size exactly when that fits', () => {
+    const dim = fc.double({ min: 1, max: 5000, noNaN: true })
+    fc.assert(fc.property(
+      fc.record({ width: dim, height: dim }),
+      fc.record({ width: dim, height: dim }),
+      dim,
+      (area, canvas, deviceWidth) => {
+        const size = devicePreviewSize(area, canvas, deviceWidth)
+        expect(size).not.toBeNull()
+        if (size === null) return
+        const tolerance = 1e-6 * Math.max(1, size.width, size.height)
+        expect(size.width).toBeCloseTo(canvas.width * size.scale, 6)
+        expect(Math.abs(size.height - canvas.height * size.scale)).toBeLessThan(tolerance)
+        expect(size.width).toBeLessThanOrEqual(area.width + tolerance)
+        expect(size.height).toBeLessThanOrEqual(area.height + tolerance)
+        expect(size.width).toBeLessThanOrEqual(deviceWidth + tolerance)
+        const realFits = deviceWidth <= area.width && canvas.height * deviceWidth / canvas.width <= area.height
+        expect(size.fitted).toBe(!realFits)
+        if (!size.fitted) expect(size.width).toBe(deviceWidth)
+      },
+    ))
+  })
+})
+
+describe('previewCanvasScale', () => {
+  const area = { width: 800, height: 600 }
+
+  test('spec: Given no device (PC display or the deck\'s own shape), Then the slide fills the panel as before (containScale)', () => {
+    expect(previewCanvasScale(area, { width: 1280, height: 720 }, null)).toBe(containScale(area, { width: 1280, height: 720 }))
+  })
+
+  test('spec: Given a device that fits, Then the scale is the device width over the canvas width, with no overscan', () => {
+    expect(previewCanvasScale({ width: 800, height: 2000 }, { width: 1280, height: 2179 }, 390)).toBe(390 / 1280)
+  })
+
+  test('spec: Given a device that does not fit, Then the scale is the plain contain scale', () => {
+    expect(previewCanvasScale(area, { width: 1280, height: 2179 }, 390)).toBeCloseTo(600 / 2179, 12)
+  })
+
+  test('adversarial: Given a device but an unmeasured (0x0) area, Then it falls back to containScale rather than throwing', () => {
+    const zero = { width: 0, height: 0 }
+    expect(previewCanvasScale(zero, { width: 1280, height: 720 }, 390)).toBe(containScale(zero, { width: 1280, height: 720 }))
+  })
+})
+
+describe('scaledDownPercent', () => {
+  test('spec: Given real size fits, Then there is no percentage to show', () => {
+    expect(scaledDownPercent({ width: 1000, height: 2000 }, { width: 1280, height: 1871 }, 375)).toBeNull()
+  })
+
+  test('spec: Given a tablet fitted to a 615-wide panel, Then it reads 75%', () => {
+    expect(scaledDownPercent({ width: 615, height: 2000 }, { width: 1280, height: 1608 }, 820)).toBe(75)
+  })
+
+  test('spec: Given a fit just under real size, Then it rounds down to 99%, never claiming 100%', () => {
+    expect(scaledDownPercent({ width: 389.9, height: 2000 }, { width: 1280, height: 2179 }, 390)).toBe(99)
+  })
+
+  test('adversarial: Given an absurdly small panel, Then it reads at least 1%, and invalid input gives none', () => {
+    expect(scaledDownPercent({ width: 1, height: 1 }, { width: 1280, height: 2179 }, 820)).toBe(1)
+    expect(scaledDownPercent({ width: 0, height: 0 }, { width: 1280, height: 2179 }, 390)).toBeNull()
+    expect(scaledDownPercent({ width: 400, height: 400 }, { width: 1280, height: 2179 }, Number.NaN)).toBeNull()
   })
 })
