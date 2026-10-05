@@ -103,6 +103,15 @@ export interface Messages {
   duplicateLayout: string
   deleteLayout: string
   commentOnLayout: string
+  /** The slide list menu's comment on the slide right-clicked. */
+  commentOnSlide: string
+  /** The right-click menu's comment on what was right-clicked on a
+   * preview (`domain/commentMenu.ts`). */
+  commentHere: string
+  /** An editor's right-click menu: a comment on the line right-clicked,
+   * or on the lines selected. */
+  commentOnThisLine: string
+  commentOnSelectedLines: string
   commentOnAllLayouts: string
   layoutUsage: (count: number) => string
   /** Why Delete is off for the deck's only layout. */
@@ -330,6 +339,10 @@ const en: Messages = {
   duplicateLayout: 'Duplicate Layout',
   deleteLayout: 'Delete Layout',
   commentOnLayout: 'Comment on This Layout…',
+  commentOnSlide: 'Comment on This Slide…',
+  commentHere: 'Comment…',
+  commentOnThisLine: 'Comment on This Line…',
+  commentOnSelectedLines: 'Comment on Selected Lines…',
   commentOnAllLayouts: 'Comment on All Layouts…',
   layoutUsage: count => (count === 0 ? 'Unused' : count === 1 ? '1 slide' : `${String(count)} slides`),
   onlyLayoutCannotBeDeleted: "The deck's only layout can't be deleted",
@@ -535,6 +548,10 @@ const ja: Messages = {
   duplicateLayout: 'レイアウトを複製',
   deleteLayout: 'レイアウトを削除',
   commentOnLayout: 'このレイアウトにコメント…',
+  commentOnSlide: 'このスライドにコメント…',
+  commentHere: 'コメント…',
+  commentOnThisLine: 'この行にコメント…',
+  commentOnSelectedLines: '選択した行にコメント…',
   commentOnAllLayouts: 'レイアウト全体にコメント…',
   layoutUsage: count => (count === 0 ? '未使用' : `${String(count)}枚で使用中`),
   onlyLayoutCannotBeDeleted: 'デッキに1つしかないレイアウトは削除できません',

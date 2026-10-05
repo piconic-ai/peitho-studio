@@ -4,6 +4,7 @@ import { createUiStore } from './uiStore'
 import { chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
 import type { LayoutVerdict } from '../domain/layoutFit'
 import { DEVICE_PRESETS } from '../domain/viewport'
+import { openOnEditor } from '../domain/commentMenu'
 
 const VERDICTS: LayoutVerdict[] = [
   { layout: 'cover', fit: { kind: 'mismatch', reason: "unassigned content remains for missing 'body' slot" } },
@@ -432,6 +433,28 @@ describe('section collapse in the slide list', () => {
       first.toggleSectionCollapsed('intro')
       expect(second.collapsedSectionKeys()).toEqual([])
       expect('setCollapsedSectionKeys' in first).toBe(false)
+    })
+  })
+})
+
+describe('the right-click menu on the previews and the editors', () => {
+  test('spec: Given it closed, when it opens on an editor, moves into the window and closes, then it is where it was moved and then closed', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      expect(store.commentMenu().kind).toBe('closed')
+      store.openCommentMenu(openOnEditor('body', 900, 700, 2, 5))
+      store.moveCommentMenu({ x: 800, y: 600 })
+      expect(store.commentMenu()).toEqual(openOnEditor('body', 800, 600, 2, 5))
+      store.closeCommentMenu()
+      expect(store.commentMenu().kind).toBe('closed')
+    })
+  })
+
+  test('adversarial: Given it closed, when it is moved, then it stays closed', () => {
+    createRoot(() => {
+      const store = createUiStore()
+      store.moveCommentMenu({ x: 1, y: 1 })
+      expect(store.commentMenu().kind).toBe('closed')
     })
   })
 })

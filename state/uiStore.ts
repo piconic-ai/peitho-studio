@@ -2,6 +2,7 @@ import { createSignal, createMemo } from '@barefootjs/client'
 import { type DragState } from '../domain/drag'
 import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withLayoutFitResult, withLayoutNotice } from '../domain/contextMenu'
 import { type LayoutNotice, type LayoutVerdict } from '../domain/layoutFit'
+import { COMMENT_MENU_CLOSED, type CommentMenu, withCommentMenuPosition } from '../domain/commentMenu'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { DEFAULT_DEVICE, type PhoneShape, type ViewportMode, toggledViewportMode } from '../domain/viewport'
 import { toggleCollapsedKey } from '../domain/sectionCollapse'
@@ -124,6 +125,20 @@ export function createUiStore() {
   // and says so, like `presentPending` above.
   const [imageLayoutAdding, setImageLayoutAdding] = createSignal(false)
 
+  // The right-click menu on the previews and the editors
+  // (`domain/commentMenu.ts`): one at a time, its backdrop closing it.
+  const [commentMenu, setCommentMenu] = createSignal<CommentMenu>(COMMENT_MENU_CLOSED)
+  function openCommentMenu(menu: CommentMenu): void {
+    setCommentMenu(menu)
+  }
+  function closeCommentMenu(): void {
+    setCommentMenu(COMMENT_MENU_CLOSED)
+  }
+  /** Moves the open menu to `at` (kept on-screen). */
+  function moveCommentMenu(at: { x: number; y: number }): void {
+    setCommentMenu(menu => withCommentMenuPosition(menu, at))
+  }
+
   // Panel contents stay mounted; folding only changes their visibility.
   const [slidesOpen, setSlidesOpen] = createSignal(true)
   const [editorOpen, setEditorOpen] = createSignal(true)
@@ -225,6 +240,7 @@ export function createUiStore() {
     dragState, setDragState, draggedIndex, dragOverGap, dragDeltaY,
     contextMenu, setContextMenu, closeContextMenu, toggleLayoutPicker, contextMenuAppendIndex,
     openSlideContextMenu, settleLayoutFit, showLayoutNotice,
+    commentMenu, openCommentMenu, closeCommentMenu, moveCommentMenu,
     layoutPreviews, setLayoutPreviews, layoutPreviewStylesheetText, setLayoutPreviewCss,
     clipboardSlideText, setClipboardSlideText,
     presentMenuOpen, setPresentMenuOpen, presentPending, setPresentPending,

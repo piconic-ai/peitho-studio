@@ -107,6 +107,7 @@ import { SlideContextMenu } from './SlideContextMenu'
 import { SlideList } from './SlideList'
 import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
 import { ContextMenu, type ContextMenuEntry } from './ContextMenu'
+import { type CommentMenuAction, type MenuEditor, commentMenuItems, commentMenuLabel, commentMenuPosition, openOnEditor, openOnSlidePreview, selectionForMenu } from '../domain/commentMenu'
 import { focusDeleteLayoutDialog, focusNewLayoutName } from '../dom/layoutModals'
 import { absolutizedDraft, draftPreviewError, draftedLayout, previewDraftCss, previewToDraw } from '../domain/layoutDraftPreview'
 import { scopeRootToHost } from '../domain/slideCss'
@@ -1257,6 +1258,66 @@ export function Studio() {
     if (click !== null && name !== null) openLayoutCommentBox(layoutClickTarget(name, click.slot), click.at)
   }
 
+  // ---- The right-click menu on the previews and the editors ----
+  // (`domain/commentMenu.ts`.) It replaces the webview's own: a comment on
+  // what was right-clicked — the same box and target a left-click there
+  // gives — and in an editor, the Cut / Copy / Paste the native one had.
+
+  function openSlidePreviewMenu(click: PreviewClick): void {
+    if (selectedSlideKey() === null) return
+    ui.openCommentMenu(openOnSlidePreview(click.at.x, click.at.y, click))
+  }
+
+  const commentMenuEntries = createMemo<ContextMenuEntry[]>(() => {
+    const menu = ui.commentMenu()
+    const messages = settings.messages()
+    return commentMenuItems(menu).map(item => ({
+      action: item.action,
+      label: commentMenuLabel(item.action, menu, messages),
+      enabled: item.enabled,
+      title: '',
+      danger: false,
+      separatorBefore: item.separatorBefore,
+    }))
+  })
+
+  function runCommentMenuAction(action: CommentMenuAction): void {
+    const menu = ui.commentMenu()
+    ui.closeCommentMenu()
+    switch (action) {
+      case 'comment':
+        if (menu.kind === 'on-slide-preview') openCommentBox(menu.click)
+        return
+      case 'comment-lines':
+      case 'cut':
+      case 'copy':
+      case 'paste':
+        return
+      default: {
+        const _exhaustive: never = action
+        return _exhaustive
+      }
+    }
+  }
+
+  // Keeps the menu on-screen, as the layout menu's effect does.
+  let commentMenuEl: HTMLElement | undefined
+  createEffect(() => {
+    if (ui.commentMenu().kind === 'closed') return
+    requestAnimationFrame(() => {
+      const menu = ui.commentMenu()
+      if (!commentMenuEl || menu.kind === 'closed') return
+      const rect = commentMenuEl.getBoundingClientRect()
+      const at = clampMenuPosition(
+        { x: menu.x, y: menu.y },
+        { width: rect.width, height: rect.height },
+        { width: window.innerWidth, height: window.innerHeight },
+        8,
+      )
+      if (at.x !== menu.x || at.y !== menu.y) ui.moveCommentMenu(at)
+    })
+  })
+
   const commentBoxLabel = createMemo(() => {
     const box = review.box()
     if (box.kind === 'open-layout') return layoutTargetLabel(box.target)
@@ -2380,6 +2441,7 @@ export function Studio() {
     if (ui.studioMode() !== mode) review.closeBox()
     ui.setStudioMode(mode)
     layouts.closeMenu()
+    ui.closeCommentMenu()
     ui.closePhoneShapeMenu()
   }
 
@@ -3307,11 +3369,25 @@ export function Studio() {
         void selectSlide(Math.max(base - 1, 0))
       }
     }
+    // Escape closes an open right-click menu before anything under it hears
+    // the key: an editor keeps focus through the right-click, and vim would
+    // take the Escape too (leaving insert or visual mode).
+    const onKeyDownCapture = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (ui.commentMenu().kind === 'closed' && layouts.menu().kind === 'closed' && ui.contextMenu().kind === 'closed') return
+      event.preventDefault()
+      event.stopPropagation()
+      ui.closeCommentMenu()
+      layouts.closeMenu()
+      ui.closeContextMenu()
+    }
+    window.addEventListener('keydown', onKeyDownCapture, true)
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('mousedown', closeSectionEditorOnOutsidePress, true)
 
     onCleanup(() => {
       window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keydown', onKeyDownCapture, true)
       window.removeEventListener('mousedown', closeSectionEditorOnOutsidePress, true)
       unlistenFileChanged()
       unlistenLayoutFiles()
@@ -3519,6 +3595,7 @@ export function Studio() {
               onPreviewHost={el => observeInnerSize(el, ui.setPreviewArea)}
               pins={placedPins()}
               onCommentClick={openCommentBox}
+              onCommentMenu={openSlidePreviewMenu}
               onPinClick={showPinnedThread}
             />
           </div>
@@ -3693,6 +3770,16 @@ export function Studio() {
         onDraftInput={review.setBoxDraft}
         onCancel={review.closeBox}
         onAdd={addComment}
+      />
+
+      <ContextMenu
+        name="comment"
+        hidden={ui.commentMenu().kind === 'closed'}
+        position={commentMenuPosition(ui.commentMenu())}
+        items={commentMenuEntries()}
+        onMenuRef={el => { commentMenuEl = el }}
+        onClose={ui.closeCommentMenu}
+        onAction={action => runCommentMenuAction(action as CommentMenuAction)}
       />
 
       <ContextMenu

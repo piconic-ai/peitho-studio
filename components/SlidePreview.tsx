@@ -43,6 +43,9 @@ export interface SlidePreviewProps {
   pins: PreviewPin[]
   /** A click on the slide meant as a comment (`dom/previewComments.ts`). */
   onCommentClick: (click: PreviewClick) => void
+  /** A right-click on the slide: the app's own menu, whose comment is on
+   * what a left-click there would be on. */
+  onCommentMenu: (click: PreviewClick) => void
   /** A pin was clicked: show its comment rather than start a new one. */
   onPinClick: (pinId: string) => void
 }
@@ -105,7 +108,7 @@ export function SlidePreview(props: SlidePreviewProps) {
             const canvas = { width: props.canvasWidth, height: props.canvasHeight }
             mountSlideCanvas(el, props.slideStylesheet(), untrack(() => props.canvasFragmentOf(key)), canvas, 'interactive')
             observeCanvasScale(el, canvas, props.deviceWidth)
-            watchCommentClicks(el, click => props.onCommentClick(click))
+            watchCommentClicks(el, click => props.onCommentClick(click), click => props.onCommentMenu(click))
           })
         }}
         className={(props.selectedSlideKey === null ? 'hidden ' : '') + 'relative flex-1 w-full'}

@@ -15,17 +15,9 @@
 // unit-tested (a real DOM), covered by `e2e/review-comments.e2e.ts`.
 
 import { fractionInRect, pinInSlide, type Point } from '../domain/geometry'
-import { parseSourceSpan, targetKindOf, type PinSpot, type PreviewHit, type PreviewPin } from '../domain/reviewComment'
+import { parseSourceSpan, targetKindOf, type PreviewClick, type PreviewHit, type PreviewPin } from '../domain/reviewComment'
 
-export interface PreviewClick {
-  /** The annotated element clicked, or `null` for the slide as a whole. */
-  hit: PreviewHit | null
-  /** Where on the slide (`PinSpot`: anchored to the element clicked, if
-   * any). */
-  pin: PinSpot | null
-  /** Where on screen, for placing the comment box. */
-  at: Point
-}
+export type { PreviewClick }
 
 /** How far (CSS px) the mouse may move between press and release for it to
  * still be a click rather than a drag. */
@@ -33,16 +25,18 @@ const CLICK_SLOP = 4
 
 const LAYOUT_CONTROLS = 'button, input, select, textarea, summary, label, video, audio, [contenteditable], [role="button"]'
 
-const watched = new WeakMap<ShadowRoot, (click: PreviewClick) => void>()
+const watched = new WeakMap<ShadowRoot, { onClick: (click: PreviewClick) => void; onMenu: (click: PreviewClick) => void }>()
 
 /** Calls `onClick` for each click on `host`'s mounted slide that is meant
- * as a comment. Safe to call again for the same host (it re-mounts on every
- * selection change); the latest `onClick` is the one called. */
-export function watchCommentClicks(host: HTMLElement, onClick: (click: PreviewClick) => void): void {
+ * as a comment, and `onMenu` for each right-click on it — the app's own
+ * menu, whose comment is on what a left-click there would be on. Safe to
+ * call again for the same host (it re-mounts on every selection change);
+ * the latest callbacks are the ones called. */
+export function watchCommentClicks(host: HTMLElement, onClick: (click: PreviewClick) => void, onMenu: (click: PreviewClick) => void = () => {}): void {
   const root = host.shadowRoot
   if (!root) return
   const alreadyWatched = watched.has(root)
-  watched.set(root, onClick)
+  watched.set(root, { onClick, onMenu })
   if (alreadyWatched) return
   let pressedAt: Point | null = null
   root.addEventListener('mousedown', event => {
@@ -52,20 +46,37 @@ export function watchCommentClicks(host: HTMLElement, onClick: (click: PreviewCl
     const from = pressedAt
     pressedAt = null
     if (!(event instanceof MouseEvent) || event.button !== 0) return
-    const target = event.target instanceof Element ? event.target : null
-    const slide = target?.closest<HTMLElement>('.peitho-slide') ?? null
-    if (target === null || slide === null) return
     if (from !== null && Math.hypot(event.clientX - from.x, event.clientY - from.y) > CLICK_SLOP) return
     if (!(document.getSelection()?.isCollapsed ?? true)) return
-    if (target.closest(LAYOUT_CONTROLS)) return
-    const at = { x: event.clientX, y: event.clientY }
-    const onSlide = fractionInRect(at, slide.getBoundingClientRect())
-    const annotated = annotatedOf(target)
-    const quote = annotated?.getAttribute('data-peitho-md') ?? ''
-    const inElement = annotated === null || quote === '' ? null : fractionInRect(at, annotated.getBoundingClientRect())
-    const pin = onSlide === null ? null : { ...onSlide, anchor: inElement === null ? null : { quote, ...inElement } }
-    watched.get(root)?.({ hit: hitOf(target), pin, at })
+    const click = clickOf(event)
+    if (click !== null) watched.get(root)?.onClick(click)
   })
+  // A right-click: no drag or selection to tell apart. One outside the
+  // slide, or on a layout's own control, keeps the webview's menu.
+  root.addEventListener('contextmenu', event => {
+    if (!(event instanceof MouseEvent)) return
+    const click = clickOf(event)
+    if (click === null) return
+    event.preventDefault()
+    watched.get(root)?.onMenu(click)
+  })
+}
+
+/** What a click (or right-click) on the slide is on, as a comment target —
+ * `null` outside the slide, or on a native control a layout's script
+ * drew. */
+function clickOf(event: MouseEvent): PreviewClick | null {
+  const target = event.target instanceof Element ? event.target : null
+  const slide = target?.closest<HTMLElement>('.peitho-slide') ?? null
+  if (target === null || slide === null) return null
+  if (target.closest(LAYOUT_CONTROLS)) return null
+  const at = { x: event.clientX, y: event.clientY }
+  const onSlide = fractionInRect(at, slide.getBoundingClientRect())
+  const annotated = annotatedOf(target)
+  const quote = annotated?.getAttribute('data-peitho-md') ?? ''
+  const inElement = annotated === null || quote === '' ? null : fractionInRect(at, annotated.getBoundingClientRect())
+  const pin = onSlide === null ? null : { ...onSlide, anchor: inElement === null ? null : { quote, ...inElement } }
+  return { hit: hitOf(target), pin, at }
 }
 
 // peitho-core annotates a heading through a `<span>` around its text, so a

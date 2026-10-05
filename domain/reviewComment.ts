@@ -27,8 +27,10 @@ export interface CharSpan {
 }
 
 /** What a click on the preview landed on. `slide` is anything without an
- * annotation (an image, a code block, what a layout draws itself). */
-export type TargetKind = 'heading' | 'paragraph' | 'listItem' | 'tableCell' | 'slide'
+ * annotation (an image, a code block, what a layout draws itself). `lines`
+ * is never clicked: it's lines picked in the slide's body or notes editor
+ * (`editorLinesTarget`). */
+export type TargetKind = 'heading' | 'paragraph' | 'listItem' | 'tableCell' | 'slide' | 'lines'
 
 export interface CommentTarget {
   kind: TargetKind
@@ -423,7 +425,7 @@ export function excerpt(text: string, max = 30): string {
   return flat.length <= max ? flat.join('') : `${flat.slice(0, Math.max(max - 1, 0)).join('')}…`
 }
 
-const KIND_WORDS: Record<Exclude<TargetKind, 'slide'>, string> = {
+const KIND_WORDS: Record<Exclude<TargetKind, 'slide' | 'lines'>, string> = {
   heading: 'heading',
   paragraph: 'paragraph',
   listItem: 'list item',
@@ -431,12 +433,49 @@ const KIND_WORDS: Record<Exclude<TargetKind, 'slide'>, string> = {
 }
 
 /** `Slide 2 › heading "Markdown is the source"`, or `Slide 2` for the
- * whole slide; with `slideKey`, `Slide 2 (key: intro) › …`. English on
- * purpose: it also heads the comment the agent reads. */
-export function targetLabel(slideNumber: number, target: Pick<CommentTarget, 'kind' | 'text'>, slideKey: string | null = null): string {
+ * whole slide; with `slideKey`, `Slide 2 (key: intro) › …`. Lines picked
+ * in the editor read `Slide 2 › lines L5-L7 "…"`, with deck.md's line
+ * numbers when they're known (`lines`; left out otherwise), and their text
+ * left out when it's blank. English on purpose: it also heads the comment
+ * the agent reads. */
+export function targetLabel(slideNumber: number, target: Pick<CommentTarget, 'kind' | 'text'>, slideKey: string | null = null, lines: LineRange | null = null): string {
   const slide = `Slide ${String(slideNumber)}${slideKey === null ? '' : ` (key: ${slideKey})`}`
   if (target.kind === 'slide') return slide
+  if (target.kind === 'lines') {
+    const text = excerpt(target.text)
+    return `${slide} › lines${lines === null ? '' : ` ${linesLabel(lines)}`}${text === '' ? '' : ` "${text}"`}`
+  }
   return `${slide} › ${KIND_WORDS[target.kind]} "${excerpt(target.text)}"`
+}
+
+/** The comment target for lines `from`–`to` (offsets either way round; a
+ * caret when equal) of a slide's body or notes as the editor holds them
+ * (`fieldText`), in a slide whose text is `slideText` (the slide as it's
+ * saved: `buildSlideText`). Like a click on an element, it's found again
+ * by its text (`quote`, the lines whole) nearest where it sits in the
+ * slide, so a comment written before the draft is saved still lands on
+ * deck.md's lines. Blank lines quote nothing: the comment is then on the
+ * slide's lines as a whole, as a click on no element is. */
+export function editorLinesTarget(slideText: string, field: 'body' | 'note', fieldText: string, from: number, to: number): CommentTarget {
+  const { quote } = lineSelectionOf(fieldText, from, to)
+  const trimmed = fieldText.trim()
+  // Where the field's own text sits in the slide: the body and the notes
+  // are saved trimmed, the notes after the body.
+  const fieldAt = trimmed === '' ? -1 : field === 'body' ? slideText.indexOf(trimmed) : slideText.lastIndexOf(trimmed)
+  const firstLine = fieldText.slice(0, Math.max(0, Math.min(from, to))).lastIndexOf('\n') + 1
+  const leading = fieldText.length - fieldText.trimStart().length
+  const offsetInSlide = fieldAt < 0 ? 0 : fieldAt + Math.max(0, firstLine - leading)
+  const blank = quote.trim() === ''
+  return { kind: 'lines', text: blank ? '' : quote, quote: blank ? '' : quote, offsetInSlide }
+}
+
+/** deck.md's lines `target` is on now in `source` (its quote nearest
+ * where it was in its slide, `slideSpan`), or `null` when it isn't found
+ * (edited away, not saved yet) or is on the whole slide. */
+export function targetLines(source: string, slideSpan: CharSpan | null, target: CommentTarget): LineRange | null {
+  if (target.kind === 'slide') return null
+  const found = relocateTarget(source, slideSpan, target)
+  return found === null ? null : lineRangeOf(source, found)
 }
 
 /** The comment as the agent reads it: the target, then what was written. */
@@ -487,7 +526,7 @@ export function newReviewComment(pending: PendingComment, source: string, slideS
   return {
     startLine: lines.start,
     endLine: lines.end,
-    body: agentCommentBody(targetLabel(slideNumber, pending.target, explicitSlideKey(source, slideSpan, pending.slideKey)), pending.body),
+    body: agentCommentBody(targetLabel(slideNumber, pending.target, explicitSlideKey(source, slideSpan, pending.slideKey), found === null ? null : lines), pending.body),
     quote: found === null ? '' : pending.target.quote,
     author: REVIEW_AUTHOR,
   }
@@ -521,6 +560,18 @@ export interface PreviewHit {
   text: string
   byteSpan: CharSpan | null
   quote: string
+}
+
+/** A click on the preview meant as a comment, as `dom/previewComments.ts`
+ * reads it. */
+export interface PreviewClick {
+  /** The annotated element clicked, or `null` for the slide as a whole. */
+  hit: PreviewHit | null
+  /** Where on the slide (`PinSpot`: anchored to the element clicked, if
+   * any). */
+  pin: PinSpot | null
+  /** Where on screen, for placing the comment box. */
+  at: Point
 }
 
 /** The comment target for `hit` on the slide at `slideSpan` of
