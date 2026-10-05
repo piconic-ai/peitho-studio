@@ -3,7 +3,7 @@ import { type DragState } from '../domain/drag'
 import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withLayoutFitResult, withLayoutNotice } from '../domain/contextMenu'
 import { type LayoutNotice, type LayoutVerdict } from '../domain/layoutFit'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
-import { type PhoneShape, type ViewportMode, toggledViewportMode } from '../domain/viewport'
+import { DEFAULT_DEVICE, type PhoneShape, type ViewportMode, toggledViewportMode } from '../domain/viewport'
 import { toggleCollapsedKey } from '../domain/sectionCollapse'
 import { type StudioMode } from '../domain/layoutScreen'
 
@@ -181,11 +181,13 @@ export function createUiStore() {
     setPhoneShapeMenuOpen(false)
   }
 
-  // Which canvas phone display gives: the phone's tall proportion, or the
-  // deck's own (the same size as PC display). Independent of `viewportMode`,
-  // so the choice survives a trip back to PC display. Session-only, and the
-  // setter stays private for the same reason.
-  const [phoneShape, setPhoneShape] = createSignal<PhoneShape>('portrait')
+  // Which canvas phone display gives: a device preset's proportion (the
+  // standard phone, `DEFAULT_DEVICE`, to begin with), or the deck's own (the
+  // same size as PC display). Independent of `viewportMode`, so the choice
+  // survives a trip back to PC display, and shared by the slide preview and
+  // the layout list. Session-only, and the setter stays private for the same
+  // reason.
+  const [phoneShape, setPhoneShape] = createSignal<PhoneShape>(DEFAULT_DEVICE.id)
   /** A pick from the shape menu: the items each name the shape they choose,
    * and choosing one closes the menu. */
   function selectPhoneShape(shape: PhoneShape): void {

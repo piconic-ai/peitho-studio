@@ -1,8 +1,16 @@
 'use client'
 
-import type { PhoneShape, ViewportMode } from '../domain/viewport'
+import { DEVICE_PRESETS, deviceDimensions, deviceIconRect, type PhoneShape, type ViewportMode } from '../domain/viewport'
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
+
+// What each device option in the shape menu shows besides its name, worked
+// out once: the presets never change.
+const DEVICE_OPTIONS = DEVICE_PRESETS.map(preset => ({
+  id: preset.id,
+  icon: deviceIconRect(preset),
+  detail: `${preset.model} ${deviceDimensions(preset)}`,
+}))
 
 // Props are values, not signal getters (BF044) — see `WelcomeScreen.tsx`.
 export interface ViewportToggleProps {
@@ -105,23 +113,29 @@ export function ViewportToggle(props: ViewportToggleProps) {
         aria-label={messagesFor(props.language).phoneCanvasShape}
         className={(props.phoneShapeMenuOpen ? '' : 'hidden ') + menuSideClass(props.menuSide) + ' absolute top-full mt-2 w-96 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg py-1 z-20'}
       >
-        <button
-          type="button"
-          role="menuitemradio"
-          data-phone-shape-option="portrait"
-          aria-checked={props.phoneShape === 'portrait' ? 'true' : 'false'}
-          onClick={() => props.onSelectPhoneShape('portrait')}
-          className="w-full text-left px-3 py-1.5 hover:bg-accent flex items-start gap-2"
-        >
-          <span aria-hidden="true" className="w-3 text-sm">{props.phoneShape === 'portrait' ? '✓' : ''}</span>
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="block w-4 h-4 mt-0.5 shrink-0">
-            <rect x="6" y="2" width="12" height="20" rx="2" />
-          </svg>
-          <span className="block">
-            <span className="block text-sm">{messagesFor(props.language).phoneShapeTall}</span>
-            <span className="block text-xs text-muted-foreground">{messagesFor(props.language).phoneShapeTallDetail}</span>
-          </span>
-        </button>
+        {/* One option per device preset, its icon drawn at the device's
+            own proportion and its detail the model and the size the
+            canvas takes the proportion of. */}
+        {DEVICE_OPTIONS.map(option => (
+          <button
+            key={option.id}
+            type="button"
+            role="menuitemradio"
+            data-phone-shape-option={option.id}
+            aria-checked={props.phoneShape === option.id ? 'true' : 'false'}
+            onClick={() => props.onSelectPhoneShape(option.id)}
+            className="w-full text-left px-3 py-1.5 hover:bg-accent flex items-start gap-2"
+          >
+            <span aria-hidden="true" className="w-3 text-sm">{props.phoneShape === option.id ? '✓' : ''}</span>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="block w-4 h-4 mt-0.5 shrink-0">
+              <rect x={option.icon.x} y={option.icon.y} width={option.icon.width} height={option.icon.height} rx="2" />
+            </svg>
+            <span className="block">
+              <span className="block text-sm">{messagesFor(props.language).deviceNames[option.id]}</span>
+              <span className="block text-xs text-muted-foreground">{option.detail}</span>
+            </span>
+          </button>
+        ))}
         <button
           type="button"
           role="menuitemradio"

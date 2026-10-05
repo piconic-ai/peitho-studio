@@ -85,11 +85,18 @@ describe('layoutRows', () => {
 describe('layoutListGeneration', () => {
   test('spec: Given the PC / Phone switch flipped, or the phone shape changed, When the list is rebuilt, Then every row gets a new key so its thumbnail is drawn on the new canvas', () => {
     const keysFor = (generation: string) => layoutRows(['a', 'b'], new Map(), 'en', generation).map(row => row.key)
-    const pc = keysFor(layoutListGeneration(3, 'desktop', 'portrait'))
-    const phone = keysFor(layoutListGeneration(3, 'mobile', 'portrait'))
+    const pc = keysFor(layoutListGeneration(3, 'desktop', 'phone'))
+    const phone = keysFor(layoutListGeneration(3, 'mobile', 'phone'))
     const phoneDeck = keysFor(layoutListGeneration(3, 'mobile', 'deck'))
     expect(phone.some(key => pc.includes(key))).toBe(false)
     expect(phoneDeck.some(key => phone.includes(key))).toBe(false)
+  })
+
+  test('spec: Given phone display, When another device is picked, Then every row gets a new key so its thumbnail is drawn at that device\'s proportion', () => {
+    const keysFor = (generation: string) => layoutRows(['a', 'b'], new Map(), 'en', generation).map(row => row.key)
+    const phone = keysFor(layoutListGeneration(3, 'mobile', 'phone'))
+    const tablet = keysFor(layoutListGeneration(3, 'mobile', 'tablet'))
+    expect(tablet.some(key => phone.includes(key))).toBe(false)
   })
 
   test('spec: Given nothing changed, When the list is rebuilt, Then the rows keep their keys (no redraw)', () => {
@@ -98,13 +105,13 @@ describe('layoutListGeneration', () => {
 
   test('adversarial: Given every combination of previews, mode and shape, Then no two give the same generation', () => {
     const generations = [0, 1, 10, 11].flatMap(previews =>
-      (['desktop', 'mobile'] as const).flatMap(mode => (['portrait', 'deck'] as const).map(shape => layoutListGeneration(previews, mode, shape))))
+      (['desktop', 'mobile'] as const).flatMap(mode => (['small-phone', 'phone', 'large-phone', 'tablet', 'deck'] as const).map(shape => layoutListGeneration(previews, mode, shape))))
     expect(new Set(generations).size).toBe(generations.length)
   })
 
   test('adversarial: Given a layout name containing the separators, Then rows of different generations still never share a key', () => {
-    const one = layoutRows(['x/mobile/deck:a'], new Map(), 'en', layoutListGeneration(1, 'desktop', 'portrait')).map(row => row.key)
-    const two = layoutRows(['x/mobile/deck:a'], new Map(), 'en', layoutListGeneration(1, 'mobile', 'portrait')).map(row => row.key)
+    const one = layoutRows(['x/mobile/deck:a'], new Map(), 'en', layoutListGeneration(1, 'desktop', 'phone')).map(row => row.key)
+    const two = layoutRows(['x/mobile/deck:a'], new Map(), 'en', layoutListGeneration(1, 'mobile', 'phone')).map(row => row.key)
     expect(two.some(key => one.includes(key))).toBe(false)
   })
 })

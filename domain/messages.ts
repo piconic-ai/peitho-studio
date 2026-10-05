@@ -7,6 +7,7 @@
 // messages peitho-core and the Rust side return. The native menu bar's
 // labels live Rust-side (`src-tauri/src/i18n.rs`).
 import type { Language } from './language'
+import type { DevicePresetId } from './viewport'
 
 export interface Messages {
   // Welcome screen
@@ -133,8 +134,9 @@ export interface Messages {
   previewPc: string
   previewPhone: string
   phoneCanvasShape: string
-  phoneShapeTall: string
-  phoneShapeTallDetail: string
+  /** Each device preset's name in the phone shape menu; the model and its
+   * size follow it as the option's detail. */
+  deviceNames: Record<DevicePresetId, string>
   phoneShapeDeck: string
   phoneShapeDeckDetail: string
   selectSlideToPreview: string
@@ -334,9 +336,13 @@ const en: Messages = {
   previewAsPhone: 'Preview as phone',
   previewPc: 'PC',
   previewPhone: 'Phone',
-  phoneCanvasShape: 'Phone canvas shape',
-  phoneShapeTall: 'Tall',
-  phoneShapeTallDetail: 'A tall canvas shaped like a portrait phone',
+  phoneCanvasShape: 'Device to preview as',
+  deviceNames: {
+    'small-phone': 'Small phone',
+    phone: 'Phone',
+    'large-phone': 'Large phone',
+    tablet: 'Tablet',
+  },
   phoneShapeDeck: 'Same ratio as PC',
   phoneShapeDeckDetail: 'Keeps the deck\'s own ratio (16:9 / 4:3)',
   selectSlideToPreview: 'Select a slide to preview it.',
@@ -527,9 +533,13 @@ const ja: Messages = {
   previewAsPhone: 'スマートフォン表示でプレビュー',
   previewPc: 'PC',
   previewPhone: 'スマートフォン',
-  phoneCanvasShape: 'スマートフォン表示のキャンバスの形',
-  phoneShapeTall: '縦長',
-  phoneShapeTallDetail: '縦向きのスマートフォンに合わせた縦長のキャンバス',
+  phoneCanvasShape: 'プレビューする端末',
+  deviceNames: {
+    'small-phone': '小さめのスマホ',
+    phone: '標準のスマホ',
+    'large-phone': '大きめのスマホ',
+    tablet: 'タブレット',
+  },
   phoneShapeDeck: 'PCと同じ比率',
   phoneShapeDeckDetail: 'デッキ本来の比率(16:9 / 4:3)のまま',
   selectSlideToPreview: 'プレビューするスライドを選んでください。',

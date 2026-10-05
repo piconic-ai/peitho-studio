@@ -1,13 +1,17 @@
 import { describe, expect, test } from 'bun:test'
 import { LANGUAGES, type Language } from './language'
 import { LANGUAGE_NAMES, messagesFor, type Messages } from './messages'
+import { DEVICE_PRESETS } from './viewport'
 
 // Every message rendered as text: plain strings as they are, message
-// functions called with sample arguments.
+// functions called with sample arguments, and a table of names (such as
+// `deviceNames`) flattened to one entry per name (`deviceNames.phone`).
 function rendered(messages: Messages): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [key, value] of Object.entries(messages)) {
-    out[key] = typeof value === 'function' ? (value as (...args: unknown[]) => string)('ARG1', 'ARG2') : value
+    if (typeof value === 'function') out[key] = (value as (...args: unknown[]) => string)('ARG1', 'ARG2')
+    else if (typeof value === 'object') for (const [name, text] of Object.entries(value as Record<string, string>)) out[`${key}.${name}`] = text
+    else out[key] = value
   }
   return out
 }
@@ -53,8 +57,26 @@ describe('messagesFor', () => {
   })
 
   test('spec: Given both languages, when their messages are compared, then they have exactly the same keys', () => {
-    const keysOf = (language: Language) => Object.keys(messagesFor(language)).sort()
+    const keysOf = (language: Language) => Object.keys(rendered(messagesFor(language))).sort()
     expect(keysOf('ja')).toEqual(keysOf('en'))
+  })
+
+  test('spec: Given the phone shape menu, when its devices are named, then every preset has a name in each language, and no two share one', () => {
+    for (const language of LANGUAGES) {
+      const names = DEVICE_PRESETS.map(preset => messagesFor(language).deviceNames[preset.id])
+      for (const name of names) expect(typeof name === 'string' && name.trim() !== '').toBe(true)
+      expect(new Set(names).size).toBe(DEVICE_PRESETS.length)
+    }
+    expect(messagesFor('en').deviceNames['small-phone']).toBe('Small phone')
+    expect(messagesFor('ja').deviceNames['large-phone']).toBe('大きめのスマホ')
+  })
+
+  test('adversarial: Given a device id that is not a preset (past the type checker), when its name is looked up, then nothing comes back rather than an inherited member', () => {
+    for (const language of LANGUAGES) {
+      const names = messagesFor(language).deviceNames as Record<string, string>
+      expect(Object.keys(names).sort()).toEqual(DEVICE_PRESETS.map(preset => preset.id).sort())
+      expect(names.deck).toBeUndefined()
+    }
   })
 
   test('spec: Given every language, when each message is worded, then none is blank', () => {
