@@ -1,5 +1,6 @@
 'use client'
 
+import { suppressNativeContextMenu } from '../dom/nativeContextMenu'
 import { createSignal, createMemo, createEffect, onMount, onCleanup, untrack } from '@barefootjs/client'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -3531,8 +3532,10 @@ export function Studio() {
     window.addEventListener('keydown', onKeyDownCapture, true)
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('mousedown', closeSectionEditorOnOutsidePress, true)
+    const unsuppressNativeContextMenu = suppressNativeContextMenu()
 
     onCleanup(() => {
+      unsuppressNativeContextMenu()
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keydown', onKeyDownCapture, true)
       window.removeEventListener('mousedown', closeSectionEditorOnOutsidePress, true)
