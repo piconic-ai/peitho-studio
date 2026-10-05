@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: 「更新を確認…」をmacOSのアプリメニューへ移し、設定パネルではなく専用の小ウィンドウで確認結果を出す
 tags: [updater, menu, ui]
 ---
@@ -80,6 +80,15 @@ tags: [updater, menu, ui]
   開いてよいか。`ensure_can_open_deck`と同じく抑止するか、表示だけなら
   許すかを決める(表示のみなので許す案が有力)。
 
+調べた結果:
+- `"about"`の特別扱いは`updates.rs`の3か所だけだった。`peitho.rs`のデッキ
+  メニュー反映や`lib.rs`のウィンドウイベントは、Studio以外のウィンドウでも
+  空振りするだけ(Aboutと同じ)。`updates::is_studio_window`にまとめ、
+  `exit_acks`/`has_unasked_studio_window`を純粋関数に切り出した。
+- 終了時の更新適用中(`saving`/`installing`)は、`lib.rs`の`on_menu_event`が
+  冒頭の`updates::blocks_editing`で全メニューを無視するので、新しいウィンドウは
+  そもそも開かない。開いていた場合も`exit_acks`から外れるので待たれない。
+
 ## 方針
 
 - Rust: `about.rs`にならって`update_window.rs`(または`updates.rs`内の
@@ -119,11 +128,11 @@ tags: [updater, menu, ui]
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `cargo test` グリーン
-- [ ] `grep -rn '"about"' src-tauri/src/updates.rs`が0件
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `cargo test` グリーン
+- [x] `grep -rn '"about"' src-tauri/src/updates.rs`が0件
   (Studio以外の判定が関数にまとまっている)
-- [ ] `lib.rs`に「更新を確認…」の直書きラベルがない
+- [x] `lib.rs`に「更新を確認…」の直書きラベルがない
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機での確認(ユーザー自身に依頼する): アプリメニューの並び、
