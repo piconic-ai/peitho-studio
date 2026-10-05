@@ -113,6 +113,18 @@ export interface Messages {
   deleting: string
   savingLayout: string
   layoutUnsaved: string
+  /** The layout screen's file tree, as its heading. */
+  fileTree: string
+  /** The close button on editor tab `name`. */
+  closeTab: (name: string) => string
+  /** The layout editor's button that comments on the selected lines (or
+   * the cursor's line) for the agent, and what it does. */
+  commentOnLines: string
+  commentOnLinesTitle: string
+  /** No file open in the layout editor. */
+  noFileOpen: string
+  /** An open file deleted on disk while it held unsaved edits. */
+  fileGone: string
   /** Why the layout editor can't be left yet (another layout, the slides,
    * a new layout): its edits couldn't be saved. */
   layoutSaveFirst: string
@@ -222,6 +234,8 @@ export interface Messages {
   layoutDeleted: (layout: string) => string
   layoutDeletedHistoryCleared: (layout: string) => string
   layoutSaved: (layout: string) => string
+  /** A file no single layout owns (`css/base.css`) saved. */
+  fileSaved: (path: string) => string
   layoutApplied: (layout: string) => string
   layoutAlreadyApplied: (layout: string) => string
   imageLayoutAddFailed: (error: string) => string
@@ -327,8 +341,14 @@ const en: Messages = {
   deleting: 'Deleting…',
   savingLayout: 'Saving…',
   layoutUnsaved: 'Unsaved changes',
+  fileTree: 'Files',
+  closeTab: name => `Close ${name}`,
+  commentOnLines: 'Comment',
+  commentOnLinesTitle: 'Comment on the selected lines (or the cursor\'s line) for the agent',
+  noFileOpen: 'Open a file from the tree, or pick a layout in the list',
+  fileGone: 'This file is no longer on disk, so these edits can\'t be saved. Copy them elsewhere, or close the tab to discard them',
   layoutSaveFirst: 'The changes to this layout could not be saved. Fix them, or undo them, before leaving this layout',
-  layoutConflict: 'This layout\'s files changed on disk while you had unsaved edits here.',
+  layoutConflict: 'This file changed on disk while you had unsaved edits here.',
   layoutConflictLoad: 'Load from disk',
   layoutConflictKeep: 'Keep my edits',
   layoutConflictFirst: 'This layout\'s files changed on disk: load them or keep your edits before leaving this layout',
@@ -421,6 +441,7 @@ const en: Messages = {
   layoutDeleted: layout => `Deleted the ${layout} layout`,
   layoutDeletedHistoryCleared: layout => `Deleted the ${layout} layout — undo history cleared, since it pointed slides at it`,
   layoutSaved: layout => `Saved the ${layout} layout`,
+  fileSaved: path => `Saved ${path}`,
   layoutApplied: layout => `Applied the ${layout} layout to the slide`,
   layoutAlreadyApplied: layout => `The slide already uses the ${layout} layout`,
   imageLayoutAddFailed: error => `Could not add the image layout: ${error}`,
@@ -526,8 +547,14 @@ const ja: Messages = {
   deleting: '削除中…',
   savingLayout: '保存中…',
   layoutUnsaved: '未保存の変更があります',
+  fileTree: 'ファイル',
+  closeTab: name => `${name} を閉じる`,
+  commentOnLines: 'コメント',
+  commentOnLinesTitle: '選択した行(またはカーソルのある行)にコメントして、エージェントに依頼します',
+  noFileOpen: 'ツリーからファイルを開くか、一覧でレイアウトを選んでください',
+  fileGone: 'このファイルはディスク上にもうないため、編集を保存できません。別の場所に写すか、タブを閉じて破棄してください',
   layoutSaveFirst: 'このレイアウトの変更を保存できませんでした。修正するか取り消してから、このレイアウトを離れてください',
-  layoutConflict: '未保存の編集がある間に、このレイアウトのファイルがディスク上で変更されました。',
+  layoutConflict: '未保存の編集がある間に、このファイルがディスク上で変更されました。',
   layoutConflictLoad: 'ディスクの内容を読み込む',
   layoutConflictKeep: '自分の編集を残す',
   layoutConflictFirst: 'このレイアウトのファイルがディスク上で変更されました。読み込むか自分の編集を残すかを選んでから、このレイアウトを離れてください',
@@ -620,6 +647,7 @@ const ja: Messages = {
   layoutDeleted: layout => `レイアウト ${layout} を削除しました`,
   layoutDeletedHistoryCleared: layout => `レイアウト ${layout} を削除しました。このレイアウトを指していた取り消し履歴は消去しました`,
   layoutSaved: layout => `レイアウト ${layout} を保存しました`,
+  fileSaved: path => `${path} を保存しました`,
   layoutApplied: layout => `スライドにレイアウト ${layout} を適用しました`,
   layoutAlreadyApplied: layout => `スライドはすでにレイアウト ${layout} を使っています`,
   imageLayoutAddFailed: error => `画像用レイアウトを追加できませんでした: ${error}`,
