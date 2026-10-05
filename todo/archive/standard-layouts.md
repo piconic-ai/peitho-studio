@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: 新規デッキに定番レイアウト11種(タイトルスライド〜空白)を全部入りで組み込み、Studioが作る/変えるスライドには常にlayoutを明示する
 tags: [layout, scaffold, new-deck]
 ---
@@ -15,12 +15,12 @@ tags: [layout, scaffold, new-deck]
 数字(大) / 空白)。壁打ちの結論:
 - 新規作成ダイアログで取捨選択はさせず、**11種を常に全部入りで書き出す**。
   使い分けはスライドごとのレイアウト変更(既存の右クリック「Change Layout」と、
-  `todo/layout-screen.md`の専用画面)で行う。
+  `todo/archive/layout-screen.md`の専用画面)で行う。
 - 割り当ては**明示方式**: Studioが作る/変えるスライドには必ずページコメントに
   `"layout":"<name>"`を書く(構造マッチングに頼らない — 理由は背景参照)。
 
-レイアウト画面3本組の1本目。後続: `todo/layout-screen.md`、
-`todo/layout-review-comments.md`。
+レイアウト画面3本組の1本目。後続: `todo/archive/layout-screen.md`、
+`todo/archive/layout-review-comments.md`。
 
 ## スコープ
 
@@ -30,11 +30,11 @@ tags: [layout, scaffold, new-deck]
   - 新規作成ダイアログでのレイアウト取捨選択UI(全部入り固定と決定済み)。
   - テーマ(色・フォント)の選択。`todo/archive/new-deck-settings.md`で
     スコープ外にした判断を維持する。
-  - 既存デッキへ定番レイアウトを後から追加する機能(→`todo/layout-screen.md`
+  - 既存デッキへ定番レイアウトを後から追加する機能(→`todo/archive/layout-screen.md`
     の「新規作成」で定番から選べるようにする想定。ここではやらない)。
   - peitho-core / `peitho new`側への定番レイアウトの移植(Studio内で
     `engine/builtin/`にvendorする)。
-  - レイアウト専用画面・作成/複製/削除(→`todo/layout-screen.md`)。
+  - レイアウト専用画面・作成/複製/削除(→`todo/archive/layout-screen.md`)。
 - **受け入れ条件**:
   - New Deckで作ったデッキの`layouts/`に定番11種(+画像用、方針参照)の
     `.html`があり、`css/`にそれらのCSSがある。
@@ -119,7 +119,7 @@ tags: [layout, scaffold, new-deck]
   結果(マニフェスト)の実際のレイアウト名を使う。取れなければ`title-body`
   (定番がある場合)、それも無ければ何も書かない(従来動作)。
 - **CSS**: `css/layouts.css`に11種分をまとめるか、レイアウトごとに
-  `css/<name>.css`を置く。後者を推奨(`todo/layout-screen.md`の複製/削除で
+  `css/<name>.css`を置く。後者を推奨(`todo/archive/layout-screen.md`の複製/削除で
   HTMLとCSSを対で扱えるため)。どちらもルートクラスでスコープする。
 
 ## レイヤー配置
@@ -157,11 +157,11 @@ tags: [layout, scaffold, new-deck]
 - [x] `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] `title-body-code`を`title-body`に置き換え、`title-body-image`を残す
+- [x] `title-body-code`を`title-body`に置き換え、`title-body-image`を残す
   扱いでよいか(方針「既存2種との関係」)
-- [ ] 実機で新規デッキを作り、11種それぞれの見た目が参考画像の配置に
+- [x] 実機で新規デッキを作り、11種それぞれの見た目が参考画像の配置に
   近いか(ユーザー自身に依頼)
-- [ ] 方針からの追加判断でよいか(実装時に決めたもの):
+- [x] 方針からの追加判断でよいか(実装時に決めたもの):
   - 「+」は直前のレイアウトのうち「見出しだけのスライドがビルドできる」
     もの(`RenderPayload.headingLayouts`)だけを引き継ぐ。`caption`/`blank`
     (title slotが無い)や`title-body-image`(画像必須)、および

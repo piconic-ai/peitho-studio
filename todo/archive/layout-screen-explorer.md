@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: レイアウト画面を「ファイル(ツリー) | エディタ(タブ) | レイアウト一覧(プレビュー兼用)」に組み替え、エディタで選んだ行へのAIコメントと、一覧への英名表示を加える
 tags: [layout, ui, screen, explorer, editor, comments]
 ---
@@ -21,10 +21,10 @@ tags: [layout, ui, screen, explorer, editor, comments]
 コメントしてAI Agentに依頼できるようにする。
 「JavaScriptのタブ」は今回は扱わない(ユーザー指示)。
 
-前提: `todo/layout-screen-rearrange.md`(#163: エディタ|一覧、選択行のライブ描画、
+前提: `todo/archive/layout-screen-rearrange.md`(#163: エディタ|一覧、選択行のライブ描画、
 サムネイルのクリックでコメント)、`todo/archive/layout-editor-sync.md`(#164: 自動保存、
-外部変更の反映)、`todo/viewport-device-presets.md`(#165: 端末プリセット・実寸表示)、
-`todo/layout-review-comments.md`(#162: crit経由のレイアウトコメント)。
+外部変更の反映)、`todo/archive/viewport-device-presets.md`(#165: 端末プリセット・実寸表示)、
+`todo/archive/layout-review-comments.md`(#162: crit経由のレイアウトコメント)。
 
 ## スコープ
 
@@ -177,11 +177,11 @@ tags: [layout, ui, screen, explorer, editor, comments]
 - [x] `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 要調査1でcritが行コメントを受け付けない場合の進め方(調査の結果、受け付けたので
+- [x] 要調査1でcritが行コメントを受け付けない場合の進め方(調査の結果、受け付けたので
   該当しない見込み。判断はkfly8に委ねる)
-- [ ] 実機での見た目/挙動確認(ユーザー自身に依頼): 配置、ツリー、タブ、連動、
+- [x] 実機での見た目/挙動確認(ユーザー自身に依頼): 配置、ツリー、タブ、連動、
   英名、エディタからのコメント
-- [ ] 実機で、エディタの行コメントが実際のエージェントに届き、直してもらえるか
+- [x] 実機で、エディタの行コメントが実際のエージェントに届き、直してもらえるか
 
 ## 実機確認後の追加(2026-10-05)
 
@@ -240,10 +240,10 @@ tags: [layout, ui, screen, explorer, editor, comments]
   属さないファイル(`css/base.css`)にも出るので「このファイル」と言うようにした。
 
 人間の判断が必要な項目(追加分):
-- [ ] 実機で、右クリックメニューがWKWebViewのネイティブメニューに邪魔されないか
+- [x] 実機で、右クリックメニューがWKWebViewのネイティブメニューに邪魔されないか
   (devビルドの「Inspect Element」を含む)。
-- [ ] 実機で、メニューのペーストがOSのクリップボードから入るか。
-- [ ] 実機で、列の折りたたみ・サムネイルの枠・プレビューの見た目。
+- [x] 実機で、メニューのペーストがOSのクリップボードから入るか。
+- [x] 実機で、列の折りたたみ・サムネイルの枠・プレビューの見た目。
 
 ## 実機確認後の追加2(2026-10-05、b848bc1の確認を受けて)
 
@@ -268,8 +268,8 @@ tags: [layout, ui, screen, explorer, editor, comments]
   読むラベルと同じ)なので、日本語のUIでも「All layouts」と出る。
 
 人間の判断が必要な項目(追加分2):
-- [ ] 実機で、プレビューの右クリックメニューとレイアウトの選択肢の見た目・位置。
-- [ ] コメント欄の見出しを日本語のUIで日本語にするか(今は英語のまま)。
+- [x] 実機で、プレビューの右クリックメニューとレイアウトの選択肢の見た目・位置。
+- [x] コメント欄の見出しを日本語のUIで日本語にするか(今は英語のまま)。→ 未決のまま`todo/layout-followups.md`へ移した。
 
 ## レビュー指摘への対応(Pullfrog、b848bc1)
 

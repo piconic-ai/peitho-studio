@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: Studioに「スライド / レイアウト」のモード切替を設け、レイアウト一覧・プレビュー・適用・新規作成・複製・削除・HTML/CSS編集を専用画面で行えるようにする
 tags: [layout, ui, screen]
 ---
@@ -14,18 +14,18 @@ tags: [layout, ui, screen]
 コメントしてAIに変更させる。壁打ちの結論:
 - 画面形態は**Studio内のモード切替**(ヘッダーで「スライド / レイアウト」)。
   加えてこの画面からAIにコメントできること(→コメント部分は
-  `todo/layout-review-comments.md`に切り出し)。
+  `todo/archive/layout-review-comments.md`に切り出し)。
 - 使用中レイアウトの削除は**置き換え先を選ばせる**。
 
-レイアウト画面3本組の2本目。前提: `todo/standard-layouts.md`(定番の
-表示名表と、明示方式)。後続: `todo/layout-review-comments.md`。
+レイアウト画面3本組の2本目。前提: `todo/archive/standard-layouts.md`(定番の
+表示名表と、明示方式)。後続: `todo/archive/layout-review-comments.md`。
 
 ## スコープ
 
 - **目的**: デッキのレイアウトを一覧で見て、スライドへの適用と、
   レイアウトファイル自体の作成・複製・削除・編集を1つの画面で完結させる。
 - **やらないこと**:
-  - コメント→AIでのレイアウト変更(→`todo/layout-review-comments.md`)。
+  - コメント→AIでのレイアウト変更(→`todo/archive/layout-review-comments.md`)。
   - 視覚的なドラッグ編集(WYSIWYGのレイアウトエディタ)。編集はHTML/CSSの
     テキスト編集のみ。
   - frontmatterの`layouts:`/`css:`パス指定への対応(Studio全体で未対応。
@@ -86,7 +86,7 @@ tags: [layout, ui, screen]
     サムネイルには効かない(`previewDraftCss`)。
   - (同上)コメント欄(`ReviewPanel`)はレイアウト画面でも同じ列・同じ
     開閉状態・同じスレッドで出る(レイアウトへのコメント送信は
-    `todo/layout-review-comments.md`)。
+    `todo/archive/layout-review-comments.md`)。
   - 選択したレイアウトのHTML/CSSを画面内で編集・保存でき、保存すると
     プレビューとスライドモードのサムネイルが更新される。壊れたHTML
     (`parse_layout`が失敗する)は保存前にエラー表示し、保存しない。
@@ -148,7 +148,7 @@ tags: [layout, ui, screen]
   3. HTML/CSS編集・保存
 - 新規作成のテンプレート: 「空白」(`<section class="peitho-slide
   layout-<name>"><h1><slot name="title" accepts="inline" arity="1">
-  </slot></h1></section>`程度)と、`todo/standard-layouts.md`の定番各種。
+  </slot></h1></section>`程度)と、`todo/archive/standard-layouts.md`の定番各種。
 - 名前の検証は`validate_deck_name`と同じ考え方の純粋関数で(空・パス区切り・
   `.`始まり・既存名を拒否、使える文字は英数字と`-`/`_`)。
 
@@ -187,9 +187,9 @@ tags: [layout, ui, screen]
 - [x] `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 実機でのモード切替・一覧・編集保存の見た目/挙動確認(ユーザー自身に依頼)
-- [ ] 画面構成(左一覧/中央エディタ/右プレビュー/右端コメント)がイメージに合うか
-- [ ] 実機での右クリックメニュー(WKWebViewのネイティブメニューが出ないこと)と、
+- [x] 実機でのモード切替・一覧・編集保存の見た目/挙動確認(ユーザー自身に依頼)
+- [x] 画面構成(左一覧/中央エディタ/右プレビュー/右端コメント)がイメージに合うか
+- [x] 実機での右クリックメニュー(WKWebViewのネイティブメニューが出ないこと)と、
   レイアウトエディタでのVimモード(IME切替・クリップボード共有)
 
 ## 先送り事項

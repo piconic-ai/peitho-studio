@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 description: レイアウト専用画面から、選択したレイアウト/レイアウト全体へコメントし、crit経由で外部Coding Agentに直させる
 tags: [layout, crit, agent, review]
 ---
@@ -14,7 +14,7 @@ tags: [layout, crit, agent, review]
 Coding Agentへ渡す。アプリ内LLMは持たない — `todo/archive/crit-review-bridge.md`
 の決定を維持)。
 
-レイアウト画面3本組の3本目。前提: `todo/layout-screen.md`(専用画面)。
+レイアウト画面3本組の3本目。前提: `todo/archive/layout-screen.md`(専用画面)。
 関連: `todo/deck-agents-md.md`(エージェントに`layouts/`/`css/`の書き方を
 教える指示ファイル — こちらが先に入っていると依頼の成功率が上がる)。
 
@@ -40,7 +40,7 @@ Coding Agentへ渡す。アプリ内LLMは持たない — `todo/archive/crit-re
     キャッシュ無効化)。
   - 返信・解決は既存のReviewPanelと同じ見た目・操作で扱える。
 
-## 既にある下地(`todo/layout-screen.md`のPRで用意済み)
+## 既にある下地(`todo/archive/layout-screen.md`のPRで用意済み)
 
 コメント送信そのものはまだ無い。差し込み先として次が入っている:
 
@@ -176,9 +176,9 @@ Coding Agentへ渡す。アプリ内LLMは持たない — `todo/archive/crit-re
 - [x] `bun run test:e2e` グリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
-- [ ] 要調査で(B)になった場合の進め方 — 結果は(A)だったので該当しない
+- [x] 要調査で(B)になった場合の進め方 — 結果は(A)だったので該当しない
   見込み。確認だけお願いしたい
-- [ ] 実機で実際のエージェント(Claude Code等)にレイアウト変更を依頼し、
+- [x] 実機で実際のエージェント(Claude Code等)にレイアウト変更を依頼し、
   反映されるか(ユーザー自身に依頼)。自動で確かめられていないのは次の2点:
   - 実エージェントが`[Layout …]`/`[All layouts …]`の依頼を読んで
     `layouts/`/`css/`を直せるか(crit経由で届くことは`round_trip`テストで確認済み)

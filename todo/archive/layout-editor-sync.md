@@ -12,9 +12,9 @@ tags: [layout, editor, autosave, agent, watch]
 自動保存が良さそう。また、コメント経由で、AIに編集してもらったら、エディタ側にも
 自動反映されると良さそう。相互に編集できると良いな」。
 
-前提: `todo/layout-screen.md`(#157、レイアウト画面と明示保存)、
-`todo/layout-review-comments.md`(#162、コメント→crit→エージェント)、
-`todo/layout-screen-rearrange.md`(#163、配置の組み替え)。
+前提: `todo/archive/layout-screen.md`(#157、レイアウト画面と明示保存)、
+`todo/archive/layout-review-comments.md`(#162、コメント→crit→エージェント)、
+`todo/archive/layout-screen-rearrange.md`(#163、配置の組み替え)。
 
 ## スコープ
 
