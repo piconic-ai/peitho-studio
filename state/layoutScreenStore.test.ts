@@ -197,6 +197,18 @@ describe('the layout list\'s right-click menu', () => {
       expect(layouts.menu()).toEqual({ kind: 'on-list', x: 5, y: 6 })
     })
   })
+
+  test('spec: Given a right-click on the large preview in a slot, When a row is right-clicked before its check answers, Then the preview\'s answer is dropped', () => {
+    createRoot(() => {
+      const layouts = createLayoutScreenStore()
+      const onPreview = layouts.openMenuOnPreview('quote', 'body', 7, 8, true)!
+      expect(layouts.menu()).toMatchObject({ kind: 'on-preview', name: 'quote', slot: 'body', fit: { kind: 'checking' } })
+      const onRow = layouts.openMenuOnLayout('quote', 0, 0, true)!
+      expect(onRow).not.toBe(onPreview)
+      layouts.settleMenuFit(onPreview, [])
+      expect(layouts.menu()).toMatchObject({ kind: 'on-layout', fit: { kind: 'checking' } })
+    })
+  })
 })
 
 describe('the layout editor\'s live preview', () => {

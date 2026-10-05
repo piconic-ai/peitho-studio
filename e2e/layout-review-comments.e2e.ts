@@ -241,6 +241,39 @@ test.describe('a click on the selected layout\'s large preview', () => {
     await expect(page.locator(BOX)).toBeHidden()
   })
 
+  test('Given the large preview right-clicked in a slot, When Comment… is chosen, Then the box names the slot, as a left-click there does', async ({ page }) => {
+    await openWithThumbnails(page, createFakeCritIpc())
+    const body = await centerOf(page, '.slot-body', 'cover')
+    await page.mouse.click(body.x, body.y, { button: 'right' })
+
+    const menu = page.locator('[data-menu="layout"]')
+    await expect(menu.locator('[data-menu-item]')).toHaveText(['Comment…', 'Apply to Slide', 'Duplicate Layout', 'Delete Layout'])
+    await expect(page.locator(BOX)).toBeHidden()
+    await menu.locator('[data-menu-item="comment-here"]').click()
+
+    await expect(menu).toBeHidden()
+    await expect(page.locator('[data-comment-target]')).toHaveText('Layout cover › slot "body"')
+    await expect(page.locator(`${BOX} textarea`)).toBeFocused()
+  })
+
+  test('Given the large preview right-clicked, When Duplicate Layout is chosen, Then the layout is copied as from its row', async ({ page }) => {
+    const deck = await openWithThumbnails(page, createFakeCritIpc())
+    const box = (await thumbnail(page, 'cover').boundingBox())!
+    await page.mouse.click(box.x + 10, box.y + 10, { button: 'right' })
+    await page.locator('[data-menu="layout"] [data-menu-item="duplicate"]').click()
+    await expect.poll(() => deck.layouts).toContain('cover-copy')
+  })
+
+  test('Given the large preview\'s menu open, When Escape is pressed, Then it closes and no box opens', async ({ page }) => {
+    await openWithThumbnails(page, createFakeCritIpc())
+    const box = (await thumbnail(page, 'cover').boundingBox())!
+    await page.mouse.click(box.x + 10, box.y + 10, { button: 'right' })
+    await expect(page.locator('[data-menu="layout"]')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-menu="layout"]')).toBeHidden()
+    await expect(page.locator(BOX)).toBeHidden()
+  })
+
   test('adversarial: Given a click near the window\'s bottom-right corner, Then the box stays inside the window', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 520 })
     await openWithThumbnails(page, createFakeCritIpc())

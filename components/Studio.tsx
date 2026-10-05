@@ -17,7 +17,7 @@ import {
 } from '../domain/reviewComment'
 import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, connectTargetOf, showsConnectGuide } from '../domain/agentConnect'
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
-import { layoutThumbnailClickOf, noteLayoutRowPress } from '../dom/layoutComments'
+import { layoutThumbnailClickOf, layoutThumbnailContextClickOf, noteLayoutRowPress } from '../dom/layoutComments'
 import { keepShownPopupsInWindow } from '../dom/popupFit'
 import { observeInnerSize } from '../dom/elementSize'
 import { focusCommentBox, focusUnsentEdit, placePreviewPins, revealReviewThread, watchPreviewLayout, type PreviewClick } from '../dom/previewComments'
@@ -111,7 +111,7 @@ import { type CommentMenu, type CommentMenuAction, type MenuEditor, commentMenuI
 import { focusDeleteLayoutDialog, focusNewLayoutName } from '../dom/layoutModals'
 import { absolutizedDraft, draftPreviewError, draftedLayout, previewDraftCss, previewToDraw } from '../domain/layoutDraftPreview'
 import { scopeRootToHost } from '../domain/slideCss'
-import { type LayoutMenuAction, layoutMenuItems, layoutMenuLabel, layoutMenuPosition, layoutMenuTarget, layoutMenuTitle } from '../domain/layoutMenu'
+import { type LayoutMenuAction, layoutMenuItems, layoutMenuLabel, layoutMenuPosition, layoutMenuSeparatorBefore, layoutMenuSlot, layoutMenuTarget, layoutMenuTitle } from '../domain/layoutMenu'
 
 // Just the heading — `addSlide` attaches an explicit, collision-free
 // PageComment `key` around this (see its own comment for why).
@@ -2757,7 +2757,25 @@ export function Studio() {
       return
     }
     const index = editor.selectedIndex()
-    const requestId = layouts.openMenuOnLayout(name, event.clientX, event.clientY, index !== null)
+    checkLayoutMenuFit(layouts.openMenuOnLayout(name, event.clientX, event.clientY, index !== null), index)
+  }
+
+  // A right-click on the selected layout's large preview: the layout menu,
+  // headed by a comment on what was right-clicked — the slot, as a
+  // left-click there (`clickSelectedPreview`) — then the layout's own
+  // Apply, Duplicate and Delete.
+  function openSelectedPreviewMenu(event: MouseEvent): void {
+    event.preventDefault()
+    const name = layouts.selectedLayout()
+    if (name === null) return
+    const slot = layoutThumbnailContextClickOf(event)?.slot ?? null
+    const index = editor.selectedIndex()
+    checkLayoutMenuFit(layouts.openMenuOnPreview(name, slot, event.clientX, event.clientY, index !== null), index)
+  }
+
+  // Settles the layout menu's fit check (`requestId`, `null` for none) for
+  // the slide at `index`.
+  function checkLayoutMenuFit(requestId: number | null, index: number | null): void {
     if (requestId === null || index === null) return
     deckIpc.checkSlideLayouts(liveSource(), index)
       .then(verdicts => { layouts.settleMenuFit(requestId, verdicts) })
@@ -2773,12 +2791,13 @@ export function Studio() {
       enabled: item.enabled,
       title: layoutMenuTitle(item.reason, messages),
       danger: item.action === 'delete',
-      separatorBefore: false,
+      separatorBefore: layoutMenuSeparatorBefore(layouts.menu(), item.action),
     }))
   })
 
   function runLayoutMenuAction(action: LayoutMenuAction): void {
     const name = layoutMenuTarget(layouts.menu())
+    const slot = layoutMenuSlot(layouts.menu())
     const at = layoutMenuPosition(layouts.menu())
     layouts.closeMenu()
     switch (action) {
@@ -2804,6 +2823,9 @@ export function Studio() {
         return
       case 'comment-all-layouts':
         openLayoutCommentBox({ kind: 'all-layouts' }, at)
+        return
+      case 'comment-here':
+        if (name !== null) openLayoutCommentBox(layoutClickTarget(name, slot), at)
         return
       default: {
         const _exhaustive: never = action
@@ -3732,6 +3754,7 @@ export function Studio() {
           onRowClick={name => void selectLayout(name)}
           onRowPress={noteLayoutRowPress}
           onContextMenu={openLayoutMenu}
+          onSelectedPreviewMenu={openSelectedPreviewMenu}
           onThumbnailHost={mountLayoutThumbnail}
           canvasOf={layoutCanvasOf}
           onListBodyHost={el => observeInnerSize(el, layouts.setThumbnailRoom)}

@@ -10,7 +10,7 @@ import {
 import { toggledFolder, type DeckFileEntry } from '../domain/deckFiles'
 import { type LayoutNameProblem, layoutNameProblem } from '../domain/layoutScreen'
 import {
-  LAYOUT_MENU_CLOSED, openOnLayout, openOnList, withLayoutMenuFit, withLayoutMenuPosition, type LayoutMenu,
+  LAYOUT_MENU_CLOSED, openOnLayout, openOnPreview, openOnList, withLayoutMenuFit, withLayoutMenuPosition, type LayoutMenu,
 } from '../domain/layoutMenu'
 import type { LayoutVerdict } from '../domain/layoutFit'
 import type { Size } from '../domain/geometry'
@@ -210,6 +210,13 @@ export function createLayoutScreenStore() {
     setMenu(openOnLayout(name, x, y, requestId))
     return requestId
   }
+  /** Opens the menu on layout `name`'s large preview, right-clicked in
+   * `slot` (`null` for none); the fit check as `openMenuOnLayout`'s. */
+  function openMenuOnPreview(name: string, slot: string | null, x: number, y: number, checkFit: boolean): number | null {
+    const requestId = checkFit ? ++lastMenuFitRequest : null
+    setMenu(openOnPreview(name, slot, x, y, requestId))
+    return requestId
+  }
   function openMenuOnList(x: number, y: number): void {
     setMenu(openOnList(x, y))
   }
@@ -262,7 +269,7 @@ export function createLayoutScreenStore() {
     openFiles, showFile, closeFile, fileOf, fileLoaded, fileLoading, fileUnavailable, fileGone, typeInFile,
     fileSaving, fileSaved, fileSaveFailed, fileSaveInterrupted, externalChange, loadExternal, keepDraft,
     busy, setBusy, notice, setNotice,
-    menu, openMenuOnLayout, openMenuOnList, settleMenuFit, moveMenu, closeMenu,
+    menu, openMenuOnLayout, openMenuOnPreview, openMenuOnList, settleMenuFit, moveMenu, closeMenu,
     draftPreview, requestPreview, previewRendered, previewFailed, resetPreview,
   }
 }

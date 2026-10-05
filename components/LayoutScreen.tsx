@@ -87,12 +87,15 @@ export interface LayoutScreenProps {
   /** A left-click on the large preview: opens a comment on the selected
    * layout, naming the slot clicked (`dom/layoutComments.ts`). */
   onSelectedPreviewClick: (event: MouseEvent) => void
+  /** A right-click on the large preview: the layout menu, headed by a
+   * comment on the slot right-clicked (`domain/layoutMenu.ts`). */
+  onSelectedPreviewMenu: (event: MouseEvent) => void
   /** A left-click on layout `name`'s small thumbnail: selects it. */
   onRowClick: (name: string) => void
   /** A press on the large preview, for telling the click that follows from
    * a drag. */
   onRowPress: (event: MouseEvent) => void
-  /** A right-click on layout `name`'s row (or the large preview), or on the
+  /** A right-click on layout `name`'s row, or on the
    * list's empty space (`null`) — opens the layout menu
    * (`ContextMenu.tsx`). */
   onContextMenu: (name: string | null, event: MouseEvent) => void
@@ -292,7 +295,7 @@ export function LayoutScreen(props: LayoutScreenProps) {
               data-layout-selected-preview={props.selectedName ?? ''}
               onMouseDown={e => props.onRowPress(e)}
               onClick={e => props.onSelectedPreviewClick(e)}
-              onContextMenu={e => props.onContextMenu(props.selectedName, e)}
+              onContextMenu={e => props.onSelectedPreviewMenu(e)}
               className="flex flex-col items-center gap-1"
             >
               {/* No frame and the default cursor, as on the slide preview:

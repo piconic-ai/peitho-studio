@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
   LAYOUT_MENU_CLOSED, type LayoutMenu, type LayoutMenuAction, type LayoutMenuContext,
-  layoutMenuItems, layoutMenuLabel, layoutMenuPosition, layoutMenuTarget, layoutMenuTitle,
-  openOnLayout, openOnList, withLayoutMenuFit, withLayoutMenuPosition,
+  layoutMenuItems, layoutMenuLabel, layoutMenuPosition, layoutMenuSeparatorBefore, layoutMenuSlot, layoutMenuTarget, layoutMenuTitle,
+  openOnLayout, openOnList, openOnPreview, withLayoutMenuFit, withLayoutMenuPosition,
 } from './layoutMenu'
 import { messagesFor } from './messages'
 
@@ -104,7 +104,7 @@ describe('position and target', () => {
 
 describe('labels and titles', () => {
   test('spec: Given every action, When worded in each language, Then each has its own non-empty label', () => {
-    const actions: LayoutMenuAction[] = ['new-layout', 'apply', 'edit', 'duplicate', 'delete', 'comment-layout', 'comment-all-layouts']
+    const actions: LayoutMenuAction[] = ['new-layout', 'apply', 'edit', 'duplicate', 'delete', 'comment-layout', 'comment-all-layouts', 'comment-here']
     for (const language of ['en', 'ja'] as const) {
       const labels = actions.map(action => layoutMenuLabel(action, messagesFor(language)))
       expect(labels.every(label => label.trim() !== '')).toBe(true)
@@ -117,5 +117,38 @@ describe('labels and titles', () => {
     expect(layoutMenuTitle(null, en)).toBe('')
     expect(layoutMenuTitle({ kind: 'mismatch', reason: "missing 'body' slot" }, en)).toBe("missing 'body' slot")
     for (const kind of ['no-slide', 'checking', 'only-layout'] as const) expect(layoutMenuTitle({ kind }, en)).not.toBe('')
+  })
+})
+
+describe('the menu on the selected layout\'s large preview', () => {
+  test('spec: Given a right-click on the large preview in a slot, Then a comment on what was clicked comes first, then — set apart — Apply, Duplicate and Delete; no Edit', () => {
+    const menu = withLayoutMenuFit(openOnPreview('quote', 'body', 10, 20, 4), 4, [{ layout: 'quote', fit: { kind: 'fits' } }])
+    expect(layoutMenuItems(menu, READY).map(item => item.action)).toEqual(['comment-here', 'apply', 'duplicate', 'delete'])
+    expect(enabledOf(menu, READY)).toEqual({ 'comment-here': true, apply: true, duplicate: true, delete: true })
+    expect(layoutMenuItems(menu, READY).map(item => layoutMenuSeparatorBefore(menu, item.action))).toEqual([false, true, false, false])
+    expect(layoutMenuTarget(menu)).toBe('quote')
+    expect(layoutMenuSlot(menu)).toBe('body')
+    expect(layoutMenuLabel('comment-here', messagesFor('ja'))).toBe('コメント…')
+  })
+
+  test('spec: Given a busy screen or the deck\'s only layout, Then the comment is still offered while the rest wait or are off, as on a row', () => {
+    const menu = openOnPreview('quote', null, 0, 0, null)
+    expect(enabledOf(menu, { ...READY, busy: true })).toEqual({ 'comment-here': true, apply: false, duplicate: false, delete: false })
+    expect(enabledOf(menu, { ...READY, layoutCount: 1 }).delete).toBe(false)
+    expect(layoutMenuSlot(menu)).toBeNull()
+  })
+
+  test('spec: Given its fit check, Then it settles as a row\'s does, and a stale answer is dropped', () => {
+    const menu = openOnPreview('quote', null, 0, 0, 5)
+    expect(enabledOf(menu, READY).apply).toBe(false)
+    expect(withLayoutMenuFit(menu, 4, [])).toBe(menu)
+    expect(enabledOf(withLayoutMenuFit(menu, 5, null), READY).apply).toBe(true)
+  })
+
+  test('adversarial: Given a row\'s menu or empty space, Then nothing is set apart and no slot is known', () => {
+    for (const menu of [openOnLayout('quote', 0, 0, null), openOnList(0, 0), LAYOUT_MENU_CLOSED]) {
+      expect(layoutMenuSlot(menu)).toBeNull()
+      expect(layoutMenuItems(menu, READY).some(item => layoutMenuSeparatorBefore(menu, item.action))).toBe(false)
+    }
   })
 })
