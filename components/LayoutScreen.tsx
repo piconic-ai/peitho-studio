@@ -284,11 +284,13 @@ export function LayoutScreen(props: LayoutScreenProps) {
               onMouseDown={e => props.onRowPress(e)}
               onClick={e => props.onSelectedPreviewClick(e)}
               onContextMenu={e => props.onContextMenu(props.selectedName, e)}
-              className="group flex flex-col items-center gap-1 p-1.5 rounded-md border-2 border-primary"
+              className="flex flex-col items-center gap-1"
             >
+              {/* No frame, as on the slide preview: the drawing stands on
+                  its own. */}
               <span
                 data-layout-thumbnail
-                className="block relative shrink-0 rounded border border-border bg-black overflow-hidden cursor-crosshair group-hover:border-muted-foreground"
+                className="block relative shrink-0 bg-black overflow-hidden cursor-crosshair"
                 style={props.selectedPreviewStyle}
               >
                 <span ref={el => props.onSelectedPreviewHost(el)} className="absolute top-0 right-0 bottom-0 left-0" />

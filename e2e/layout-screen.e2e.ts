@@ -1227,7 +1227,8 @@ test.describe('the layout list\'s PC / Phone switch', () => {
     await page.locator('[data-layout-list] [data-phone-shape-option="tablet"]').click()
     await expect.poll(() => ratio(page, 'quote')).toBeCloseTo(1608 / 1280, 1)
     const box = (await page.locator('[data-layout-selected-preview] [data-layout-thumbnail]').boundingBox())!
-    expect(box.width).toBeLessThanOrEqual(listWidth - 32 + 0.5)
+    // Less the section's padding around the frameless drawing (`LAYOUT_ROW_CHROME`).
+    expect(box.width).toBeLessThanOrEqual(listWidth - 16 + 0.5)
   })
 
   test('Given a layout whose slide opts out with data-canvas="fixed", when Phone is switched on, then its thumbnail keeps the deck\'s shape', async ({ page }) => {

@@ -313,6 +313,10 @@ describe('the selected layout\'s large preview and the grid under it', () => {
     expect(layoutGridThumbnailStyle({ width: 1280, height: 720 })).toBe('width: 100%; aspect-ratio: 1280 / 720')
   })
 
+  test('spec: Given the large preview, Then nothing frames it: around its drawing is only the section\'s padding and the name line under it', () => {
+    expect(LAYOUT_ROW_CHROME).toEqual({ width: 8 * 2, height: 8 * 2 + 4 + 16 })
+  })
+
   test('adversarial: Given no body measured yet, or an odd height, Then there is no room, or it is whole pixels', () => {
     expect(selectedPreviewRoom(null)).toBeNull()
     expect(selectedPreviewRoom({ width: 0, height: 0 })).toEqual({ width: 0, height: 0 })

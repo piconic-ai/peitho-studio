@@ -143,10 +143,10 @@ export function selectedPreviewRoom(body: Size | null): Size | null {
 
 /** What the selected layout's large preview takes around its drawing,
  * against its room (`selectedPreviewRoom`), in CSS px — from
- * `LayoutScreen.tsx`'s classes: the section's `p-2` (8 a side), the box's
- * `border-2` and `p-1.5` (8 a side), and under the drawing its `gap-1` (4)
- * and the name line (`text-xs`, 16 tall). */
-export const LAYOUT_ROW_CHROME: Size = { width: 8 * 2 + 8 * 2, height: 8 * 2 + 8 * 2 + 4 + 16 }
+ * `LayoutScreen.tsx`'s classes: the section's `p-2` (8 a side), and under
+ * the drawing its `gap-1` (4) and the name line (`text-xs`, 16 tall). No
+ * frame: like the slide preview, the drawing stands on its own. */
+export const LAYOUT_ROW_CHROME: Size = { width: 8 * 2, height: 8 * 2 + 4 + 16 }
 
 /** The selected layout's large preview's box in `room`
  * (`selectedPreviewRoom`), for a layout drawn on `canvas`: as large as
