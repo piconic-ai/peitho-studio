@@ -439,29 +439,77 @@ test('Given the delete and New Layout modals, when Escape or a click outside is 
   expect(deck.layouts).toEqual(['title-slide', 'title-body', 'quote'])
 })
 
-test('Given a layout\'s CSS edited, when saved, then the files are written and Save turns off; HTML that does not parse is refused with the reason and kept unsaved', async ({ page }) => {
+test('Given a layout\'s CSS edited, when typing pauses, then the files are saved on their own with no Save button; HTML that does not parse is refused with the reason and kept unsaved', async ({ page }) => {
   const deck = deckOf({ layoutFiles: { quote: { html: '<section class="peitho-slide layout-quote"></section>', css: '.peitho-slide.layout-quote {}' } } })
   await openLayoutScreen(page, deck)
+  await expect(page.locator('[data-save-layout]')).toHaveCount(0)
+  await expect(page.locator('[data-revert-layout]')).toHaveCount(0)
 
   await row(page, 'quote').click()
   await expect.poll(() => editorText(page, 'layout-html')).toBe('<section class="peitho-slide layout-quote"></section>')
   await page.locator('[data-layout-tab="css"]').click()
   await fillEditor(page, '.peitho-slide.layout-quote { color: red; }', 'layout-css')
-  await page.locator('[data-save-layout]').click()
 
   await expect.poll(() => deck.layoutFiles?.quote.css).toBe('.peitho-slide.layout-quote { color: red; }')
-  await expect(page.locator('[data-save-layout]')).toBeDisabled()
+  await expect(page.locator('[data-layout-unsaved]')).toBeHidden()
 
   await page.locator('[data-layout-tab="html"]').click()
   await fillEditor(page, '<div>no section</div>', 'layout-html')
-  await page.locator('[data-save-layout]').click()
 
   await expect(page.locator('[data-layout-editor-message]')).toContainText('a layout needs a <section> element')
   await expect.poll(() => editorText(page, 'layout-html')).toBe('<div>no section</div>')
+  await expect(page.locator('[data-layout-unsaved]')).toBeVisible()
   expect(deck.layoutFiles?.quote.html).toBe('<section class="peitho-slide layout-quote"></section>')
+
+  // Fixed, the next pause saves it.
+  await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>fixed</h1></section>', 'layout-html')
+  await expect.poll(() => deck.layoutFiles?.quote.html).toBe('<section class="peitho-slide layout-quote"><h1>fixed</h1></section>')
+  await expect(page.locator('[data-layout-editor-message]')).toBeHidden()
 })
 
-test('Given an edit that would stop a slide from building, when saved, then the deck source goes along for the check, and its refusal shows in the editor with the edit kept unsaved', async ({ page }) => {
+test('Given typing that keeps going, then the layout is saved once it pauses, not on every keystroke', async ({ page }) => {
+  const saves: string[] = []
+  const deck = deckOf({
+    layoutFiles: { quote: { html: '<section></section>', css: null } },
+    onInvoke: (cmd, args) => { if (cmd === 'save_layout') saves.push(args.html as string) },
+  })
+  await openLayoutScreen(page, deck)
+  await row(page, 'quote').click()
+  await expect.poll(() => editorText(page, 'layout-html')).toBe('<section></section>')
+
+  await editorContent(page, 'layout-html').click()
+  await page.keyboard.press('ControlOrMeta+End')
+  for (const key of 'abcdef') {
+    await page.keyboard.type(key)
+    await page.waitForTimeout(150)
+  }
+
+  await expect.poll(() => saves).toEqual(['<section></section>abcdef'])
+  await page.waitForTimeout(1_500)
+  expect(saves).toEqual(['<section></section>abcdef'])
+})
+
+test('Given typing while a save is still running, then the newer text is saved after it, never overwritten by the older one', async ({ page }) => {
+  const saves: string[] = []
+  const deck = deckOf({
+    layoutFiles: { quote: { html: '<section></section>', css: null } },
+    saveLayoutDelayMs: 800,
+    onInvoke: (cmd, args) => { if (cmd === 'save_layout') saves.push(args.html as string) },
+  })
+  await openLayoutScreen(page, deck)
+  await row(page, 'quote').click()
+
+  await fillEditor(page, '<section>one</section>', 'layout-html')
+  await expect(page.locator('[data-layout-saving]')).toBeVisible()
+  await fillEditor(page, '<section>two</section>', 'layout-html')
+
+  await expect.poll(() => deck.layoutFiles?.quote.html, { timeout: 8_000 }).toBe('<section>two</section>')
+  expect(saves).toEqual(['<section>one</section>', '<section>two</section>'])
+  await expect(page.locator('[data-layout-unsaved]')).toBeHidden()
+  await expect.poll(() => editorText(page, 'layout-html')).toBe('<section>two</section>')
+})
+
+test('Given an edit that would stop a slide from building, when it is autosaved, then the deck source goes along for the check, and its refusal shows in the editor with the edit kept unsaved', async ({ page }) => {
   const saves: unknown[] = []
   const deck = deckOf({
     layoutFiles: { 'title-body': { html: '<section class="peitho-slide layout-title-body"></section>', css: null } },
@@ -472,12 +520,16 @@ test('Given an edit that would stop a slide from building, when saved, then the 
 
   await row(page, 'title-body').click()
   await fillEditor(page, '<section class="peitho-slide layout-title-body"><h1>no body</h1></section>', 'layout-html')
-  await page.locator('[data-save-layout]').click()
 
   await expect(page.locator('[data-layout-editor-message]')).toContainText("would stop slide 2 ('intro') from building")
   await expect.poll(() => editorText(page, 'layout-html')).toBe('<section class="peitho-slide layout-title-body"><h1>no body</h1></section>')
-  await expect(page.locator('[data-save-layout]')).toBeEnabled()
-  expect(saves).toEqual([{ content: SOURCE, name: 'title-body', html: '<section class="peitho-slide layout-title-body"><h1>no body</h1></section>', css: '' }])
+  await expect(page.locator('[data-layout-unsaved]')).toBeVisible()
+  // A refused draft isn't tried again until it's edited.
+  await page.waitForTimeout(1_500)
+  expect(saves).toEqual([{
+    content: SOURCE, name: 'title-body', html: '<section class="peitho-slide layout-title-body"><h1>no body</h1></section>', css: '',
+    base: { html: '<section class="peitho-slide layout-title-body"></section>', css: '' },
+  }])
   expect(deck.layoutFiles?.['title-body'].html).toBe('<section class="peitho-slide layout-title-body"></section>')
 })
 
@@ -505,16 +557,15 @@ async function openWithUnsavableDraft(page: Page, deck: MockDeck): Promise<void>
 
 // Layout files are checked against the deck as saved: a draft that can't
 // be saved isn't what the deck reopens with.
-test('Given a slide draft that cannot be saved, when a layout edit is saved, then it is refused before the check and the edit stays unsaved', async ({ page }) => {
+test('Given a slide draft that cannot be saved, when a layout edit is autosaved, then it is refused before the check and the edit stays unsaved', async ({ page }) => {
   const deck = deckOf()
   await openWithUnsavableDraft(page, deck)
 
   await row(page, 'quote').click()
   await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>edited</h1></section>', 'layout-html')
-  await page.locator('[data-save-layout]').click()
 
   await expect(page.locator('[data-layout-editor-message]')).toContainText('could not be saved')
-  await expect(page.locator('[data-save-layout]')).toBeEnabled()
+  await expect(page.locator('[data-layout-unsaved]')).toBeVisible()
   expect(deck.invokedCommands).not.toContain('save_layout')
 })
 
@@ -541,7 +592,7 @@ for (const action of ['create', 'duplicate', 'delete'] as const) {
   })
 }
 
-test('Given a slide draft that saves, when a layout edit is saved, then the draft is saved first and the check runs against it', async ({ page }) => {
+test('Given a slide draft that saves, when a layout edit is autosaved, then the draft is saved first and the check runs against it', async ({ page }) => {
   const saves: { content: string }[] = []
   const deck = deckOf({ renderDraftDelayMs: 300, onInvoke: (cmd, args) => { if (cmd === 'save_layout') saves.push(args as { content: string }) } })
   await mockTauri(page, deck)
@@ -554,41 +605,98 @@ test('Given a slide draft that saves, when a layout edit is saved, then the draf
   await page.locator('[data-studio-mode-option="layouts"]').click()
   await row(page, 'quote').click()
   await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>edited</h1></section>', 'layout-html')
-  await page.locator('[data-save-layout]').click()
 
   await expect.poll(() => saves.length).toBe(1)
   expect(saves[0].content).toContain('Typed')
   expect(saves[0].content).toBe(deck.source)
 })
 
-test('Given unsaved edits to a layout, when another layout is clicked, then the edits stay open and a notice says to save or revert first', async ({ page }) => {
-  await openLayoutScreen(page, deckOf())
-
-  await row(page, 'quote').click()
-  await fillEditor(page, '<section>edited</section>', 'layout-html')
-  await row(page, 'title-slide').click()
-
-  await expect(row(page, 'quote')).toHaveAttribute('aria-current', 'true')
-  await expect(page.locator('[data-layout-notice]')).toContainText('Save or revert')
-  await page.locator('[data-revert-layout]').click()
-  await row(page, 'title-slide').click()
-  await expect(row(page, 'title-slide')).toHaveAttribute('aria-current', 'true')
-})
-
-test('Given unsaved edits to a layout, when a new layout is created, then nothing is created and the edits stay open with a notice to save or revert first', async ({ page }) => {
+test('Given a pending edit to a layout, when another layout is clicked before the pause, then the edit is saved first and the other layout opens', async ({ page }) => {
   const deck = deckOf()
   await openLayoutScreen(page, deck)
 
   await row(page, 'quote').click()
   await fillEditor(page, '<section>edited</section>', 'layout-html')
+  await row(page, 'title-slide').click()
+
+  await expect(row(page, 'title-slide')).toHaveAttribute('aria-current', 'true')
+  expect(deck.layoutFiles?.quote.html).toBe('<section>edited</section>')
+})
+
+test('Given a pending edit to a layout, when the window switches to Slides, then it is saved first', async ({ page }) => {
+  const deck = deckOf()
+  await openLayoutScreen(page, deck)
+
+  await row(page, 'quote').click()
+  await fillEditor(page, '<section>edited</section>', 'layout-html')
+  await page.locator('[data-studio-mode-option="slides"]').click()
+
+  await expect(page.locator('[data-layout-screen]')).toBeHidden()
+  expect(deck.layoutFiles?.quote.html).toBe('<section>edited</section>')
+})
+
+test('Given an edit the check refuses, when another layout, Slides or a new layout is chosen, then the editor stays on it with a notice, and nothing else happens', async ({ page }) => {
+  const deck = deckOf()
+  await openLayoutScreen(page, deck)
+
+  await row(page, 'quote').click()
+  await fillEditor(page, '<div>no section</div>', 'layout-html')
+  await expect(page.locator('[data-layout-editor-message]')).toContainText('a layout needs a <section> element')
+
+  await row(page, 'title-slide').click()
+  await expect(page.locator('[data-layout-notice]')).toContainText('could not be saved')
+  await expect(row(page, 'quote')).toHaveAttribute('aria-current', 'true')
+
+  await page.locator('[data-studio-mode-option="slides"]').click()
+  await expect(page.locator('[data-layout-screen]')).toBeVisible()
+
   await act(page, 'new-layout')
   await page.locator('[data-new-layout-name]').fill('pull-quote')
   await page.locator('[data-create-layout]').click()
-
-  await expect(page.locator('[data-layout-notice]')).toContainText('Save or revert')
-  await expect(row(page, 'quote')).toHaveAttribute('aria-current', 'true')
-  await expect.poll(() => editorText(page, 'layout-html')).toBe('<section>edited</section>')
+  await expect(page.locator('[data-new-layout-form]')).toContainText('could not be saved')
+  await page.keyboard.press('Escape')
   expect(deck.invokedCommands).not.toContain('create_layout')
+  await expect.poll(() => editorText(page, 'layout-html')).toBe('<div>no section</div>')
+
+  // Fixed, it saves and the other layout opens.
+  await fillEditor(page, '<section>fixed</section>', 'layout-html')
+  await row(page, 'title-slide').click()
+  await expect(row(page, 'title-slide')).toHaveAttribute('aria-current', 'true')
+  expect(deck.layoutFiles?.quote.html).toBe('<section>fixed</section>')
+})
+
+test('Given a pending edit to a layout, when the window is asked to close, then the edit is saved and the window closes; one that can\'t be saved keeps it open with a notice', async ({ page }) => {
+  const deck = deckOf()
+  await openLayoutScreen(page, deck)
+  const flushBeforeClose = () => page.evaluate(() => {
+    (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, toWindow?: string) => void })
+      .__mockEmitTauriEvent('layout:flush-before-close', null, 'main')
+  })
+
+  await row(page, 'quote').click()
+  await fillEditor(page, '<div>no section</div>', 'layout-html')
+  await expect(page.locator('[data-layout-editor-message]')).toContainText('a layout needs a <section> element')
+  await flushBeforeClose()
+  await expect(page.locator('[data-layout-notice]')).toContainText('close the window again')
+  expect(deck.invokedCommands).not.toContain('plugin:window|close')
+
+  await fillEditor(page, '<section>edited</section>', 'layout-html')
+  await flushBeforeClose()
+  await expect.poll(() => deck.invokedCommands).toContain('plugin:window|close')
+  expect(deck.layoutFiles?.quote.html).toBe('<section>edited</section>')
+})
+
+test('Given a layout edit, then the window\'s close is told a draft is pending until it is saved', async ({ page }) => {
+  const reports: boolean[] = []
+  const deck = deckOf({ onInvoke: (cmd, args) => { if (cmd === 'report_layout_draft') reports.push(args.pending as boolean) } })
+  await openLayoutScreen(page, deck)
+  await row(page, 'quote').click()
+
+  await fillEditor(page, '<section>edited</section>', 'layout-html')
+
+  await expect.poll(() => reports).toContain(true)
+  await expect.poll(() => deck.layoutFiles?.quote?.html).toBe('<section>edited</section>')
+  await expect.poll(() => reports.at(-1)).toBe(false)
 })
 
 test('Given the layout screen, when Delete or an arrow key is pressed outside a text field, then no slide is deleted or moved', async ({ page }) => {
@@ -631,7 +739,7 @@ test.describe('the layout editor in vim mode', () => {
 
     await expect.poll(() => editorText(page, 'layout-html')).toBe('  <h1>quote</h1>\n</section>')
     await expect(vimStatus(page)).toBeVisible()
-    await expect(page.locator('[data-save-layout]')).toBeEnabled()
+    await expect(page.locator('[data-layout-unsaved]')).toBeVisible()
   })
 
   test('Given the layout editor, when vim mode is turned on and off from Settings, then the change takes effect at once', async ({ page }) => {
@@ -785,8 +893,9 @@ test.describe('the selected row while the layout is edited', () => {
   const thumbnail = (page: Page, name: string) => row(page, name).locator('[data-layout-canvas]')
   const selected = (page: Page) => page.locator('[data-layout-row][aria-current="true"] [data-layout-canvas]')
 
-  test('Given an edit to the layout HTML, when typing pauses, then the selected row\'s thumbnail shows the draft without saving it, and the other rows keep their saved look', async ({ page }) => {
-    const deck = deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' })
+  test('Given an edit to the layout HTML, when typing pauses, then the selected row\'s thumbnail shows the draft before it is saved, and the other rows keep their saved look', async ({ page }) => {
+    // The save is held back, so the row is seen drawing the draft itself.
+    const deck = deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>', saveLayoutDelayMs: 3_000 })
     await openLayoutScreen(page, deck)
     await row(page, 'quote').click()
     await expect(selected(page).locator('h1')).toHaveText('saved')
@@ -796,8 +905,10 @@ test.describe('the selected row while the layout is edited', () => {
     await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('draft')
     await expect(thumbnail(page, 'title-slide').locator('h1')).toHaveText('saved')
     await expect(thumbnail(page, 'title-body').locator('h1')).toHaveText('saved')
-    expect(deck.invokedCommands).not.toContain('save_layout')
     expect(deck.layoutFiles?.quote.html).toBe(QUOTE.quote.html)
+
+    await expect.poll(() => deck.layoutFiles?.quote.html, { timeout: 8_000 }).toBe('<section class="peitho-slide layout-quote"><h1>draft</h1></section>')
+    await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('draft')
   })
 
   test('Given a draft that does not render, then the last good thumbnail stays and the error shows by the editor; typing goes on', async ({ page }) => {
@@ -844,8 +955,10 @@ test.describe('the selected row while the layout is edited', () => {
     await expect(selected(page).locator('img')).toHaveAttribute('src', 'http://localhost:9/assets/bbbb-logo.png')
   })
 
-  test('Given a font face added in the draft CSS, then it is registered for the row, and dropped once the draft is reverted', async ({ page }) => {
-    await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' }))
+  test('Given a font face added in the draft CSS, then it is registered for the row while a draft, and the draft\'s own registration is dropped once it is saved', async ({ page }) => {
+    // The save is held back long enough to see the draft's registration.
+    const deck = deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>', saveLayoutDelayMs: 2_000 })
+    await openLayoutScreen(page, deck)
     await row(page, 'quote').click()
     await page.locator('[data-layout-tab="css"]').click()
     const fontFamilies = () => page.evaluate(() => [...document.fonts].map(face => face.family.replace(/"/g, '')))
@@ -856,29 +969,15 @@ test.describe('the selected row while the layout is edited', () => {
     await expect.poll(fontFamilies).toContain('DraftFace')
     await expect.poll(draftFonts).toContain('http://localhost:9/fonts/draft.woff2')
 
-    await page.locator('[data-revert-layout]').click()
-    await expect.poll(fontFamilies).not.toContain('DraftFace')
+    // Saved, the deck's own CSS carries the face from then on.
+    await expect.poll(() => deck.layoutFiles?.quote.css, { timeout: 8_000 }).toContain('DraftFace')
     await expect.poll(draftFonts).toBe('')
-  })
-
-  test('Given a draft font face, when the window switches to Slides, then the face is dropped, and it comes back with the layout screen', async ({ page }) => {
-    await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' }))
-    await row(page, 'quote').click()
-    await page.locator('[data-layout-tab="css"]').click()
-    const fontFamilies = () => page.evaluate(() => [...document.fonts].map(face => face.family.replace(/"/g, '')))
-    await fillEditor(page, '@font-face { font-family: "DraftFace"; src: url(fonts/draft.woff2); }', 'layout-css')
-    await expect.poll(fontFamilies).toContain('DraftFace')
-
-    await page.locator('[data-studio-mode-option="slides"]').click()
-    await expect.poll(fontFamilies).not.toContain('DraftFace')
-
-    await page.locator('[data-studio-mode-option="layouts"]').click()
-    await expect.poll(fontFamilies).toContain('DraftFace')
   })
 
   test('Given a draft redefining a font family the deck defines, then the draft\'s face is registered under a preview-only name, leaving the deck\'s own family alone', async ({ page }) => {
     const deckCss = '@font-face { font-family: "DeckFace"; src: url(fonts/deck.woff2); }\n.peitho-slide { font-family: "DeckFace"; }'
-    await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>', css: deckCss }))
+    // Refused, the draft stays one for the whole test.
+    await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>', css: deckCss, commandError: cmd => (cmd === 'save_layout' ? 'held back' : null) }))
     await row(page, 'quote').click()
     await page.locator('[data-layout-tab="css"]').click()
     const draftFonts = () => page.evaluate(() => document.querySelector('style[data-peitho-draft-fonts]')?.textContent ?? '')
@@ -895,27 +994,18 @@ test.describe('the selected row while the layout is edited', () => {
     expect(families.filter(family => family === 'DeckFace')).toHaveLength(1)
   })
 
-  test('Given a draft drawn in the row, when it is reverted, saved, or another layout is opened, then the row draws the saved files again', async ({ page }) => {
-    await openLayoutScreen(page, deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' }))
+  test('Given a draft drawn in the row, when it is saved and another layout is opened, then the row draws its saved files, and the newly opened one its own', async ({ page }) => {
+    const deck = deckOf({ layoutFiles: QUOTE, layoutFragment: '<h1>saved</h1>' })
+    await openLayoutScreen(page, deck)
     await row(page, 'quote').click()
     await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>draft</h1></section>', 'layout-html')
     await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('draft')
 
-    await page.locator('[data-revert-layout]').click()
-    await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('saved')
-
-    await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>draft again</h1></section>', 'layout-html')
-    await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('draft again')
-    await page.locator('[data-save-layout]').click()
-    await expect(page.locator('[data-save-layout]')).toBeDisabled()
-    // The mock's `preview_layouts` draws every layout as `layoutFragment`.
-    await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('saved')
-
-    await fillEditor(page, '<section class="peitho-slide layout-quote"><h1>third draft</h1></section>', 'layout-html')
-    await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('third draft')
-    await page.locator('[data-revert-layout]').click()
+    await expect.poll(() => deck.layoutFiles?.quote.html).toBe('<section class="peitho-slide layout-quote"><h1>draft</h1></section>')
     await row(page, 'title-body').click()
-    await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('saved')
+    await expect(row(page, 'title-body')).toHaveAttribute('aria-current', 'true')
+    // The mock's `preview_layouts` draws a layout's saved HTML.
+    await expect(thumbnail(page, 'quote').locator('h1')).toHaveText('draft')
     await expect(thumbnail(page, 'title-body').locator('h1')).toHaveText('saved')
   })
 })

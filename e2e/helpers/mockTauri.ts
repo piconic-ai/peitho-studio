@@ -207,8 +207,27 @@ export interface MockDeck {
    * to the page. Without it they answer `null` (no crit at all). */
   crit?: FakeCritIpc
   /** What `layout_files_stamp` answers — defaults to `''`. Change it to
-   * stand for a layout file written outside Studio (the agent's edit). */
+   * stand for a layout file written outside Studio (the agent's edit), and
+   * `emitLayoutFilesChanged` for the watcher's report of it. A
+   * `save_layout` moves it on (`saved-1`, `saved-2`, …) and answers it, as
+   * the real one answers the files' fingerprint once written. */
   layoutFilesStamp?: string
+  /** Milliseconds `save_layout` waits before writing — defaults to 0. Set
+   * it to type or act while an autosave is in flight. */
+  saveLayoutDelayMs?: number
+  /** Milliseconds `layout_files_stamp` waits before answering what it read
+   * when called — defaults to 0. Set it to let a write land while a read
+   * of the older fingerprint is still in flight. */
+  layoutFilesStampDelayMs?: number
+}
+
+/** Stands in for the layout-files watcher (`watch_layout_dirs` in
+ * peitho.rs): tells the page its deck's layout files changed on disk. */
+export async function emitLayoutFilesChanged(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, toWindow?: string) => void })
+      .__mockEmitTauriEvent('layout-files-changed', null, 'main')
+  })
 }
 
 const DEFAULT_ABOUT_INFO = {
@@ -352,6 +371,7 @@ function layoutFileOf(deck: MockDeck, name: string): { html: string; css: string
  * read it back afterward to assert on the persisted content. Call before
  * `page.goto('/')`. */
 export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
+  let savedLayouts = 0
   // Mirrors `sync_crit_watch` in peitho.rs: crit's events reach this window.
   deck.crit?.onReviewEvent(event => {
     page.evaluate(payload => {
@@ -370,6 +390,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
     if (cmd === 'check_slide_layouts' && deck.checkSlideLayoutsDelayMs) await sleep(deck.checkSlideLayoutsDelayMs)
     if (cmd === 'render_draft' && deck.renderDraftDelayMs) await sleep(deck.renderDraftDelayMs)
     if (cmd === 'delete_layout' && deck.deleteLayoutDelayMs) await sleep(deck.deleteLayoutDelayMs)
+    if (cmd === 'save_layout' && deck.saveLayoutDelayMs) await sleep(deck.saveLayoutDelayMs)
     if (cmd === 'preview_layout_draft' && deck.layoutDraftPreviewDelayMs) await sleep(deck.layoutDraftPreviewDelayMs(args.html as string))
     if (cmd.startsWith('import_deck_image_') && deck.importImageDelayMs) await sleep(deck.importImageDelayMs)
     deck.onInvoke?.(cmd, args)
@@ -407,13 +428,19 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         if (!html.includes('<section')) throw new Error('a layout needs a <section> element')
         return { fragment: html, css: args.css as string }
       }
-      case 'preview_layouts': return { previews: (deck.layouts ?? []).map(name => ({ name, fragment: deck.layoutFragment ?? '' })), css: '' }
+      // A layout with files draws them (its HTML as the fragment), as the
+      // real preview renders the saved files; any other `layoutFragment`.
+      case 'preview_layouts': return { previews: (deck.layouts ?? []).map(name => ({ name, fragment: layoutFileOf(deck, name)?.html ?? deck.layoutFragment ?? '' })), css: '' }
       case 'list_deck_variants': return deck.deckVariants ?? []
       case 'check_slide_layouts':
         return deck.layoutVerdicts?.(args.content as string, args.slideIndex as number) ?? null
       case 'add_image_layout':
         return deck.addImageLayout?.(args.content as string, args.slideIndex as number) ?? []
-      case 'layout_files_stamp': return deck.layoutFilesStamp ?? ''
+      case 'layout_files_stamp': {
+        const stamp = deck.layoutFilesStamp ?? ''
+        if (deck.layoutFilesStampDelayMs) await sleep(deck.layoutFilesStampDelayMs)
+        return stamp
+      }
       case 'read_layout': {
         const name = args.name as string
         return layoutFileOf(deck, name) ?? { html: `<section class="peitho-slide layout-${name}"></section>`, css: null }
@@ -453,8 +480,17 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'save_layout': {
         const html = args.html as string
         if (!html.includes('<section')) throw new Error('a layout needs a <section> element')
+        // Like `engine::layout_files::save_layout`, refuses files that no
+        // longer hold what the editor last read or wrote.
+        const base = args.base as { html: string; css: string } | null
+        const current = layoutFileOf(deck, args.name as string)
+        if (base && current && (current.html !== base.html || (current.css ?? '') !== base.css)) {
+          throw new Error('the layout\'s files changed on disk since they were read')
+        }
         ;(deck.layoutFiles ??= {})[args.name as string] = { html, css: args.css as string }
-        return null
+        savedLayouts++
+        deck.layoutFilesStamp = `saved-${String(savedLayouts)}`
+        return deck.layoutFilesStamp
       }
       case 'present_deck':
         // Fires after the spawn itself resolves, matching real timing —

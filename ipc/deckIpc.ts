@@ -106,12 +106,20 @@ export interface DeckIpc {
   previewLayoutDraft(name: string, html: string, css: string): Promise<{ fragment: string; css: string }>
   /** Overwrites layout `name`'s HTML and CSS; refuses HTML that doesn't
    * parse as a layout, and an edit that would stop `content` (the deck
-   * source now) from building as it does. */
-  saveLayout(content: string, name: string, html: string, css: string): Promise<void>
+   * source now) from building as it does. Resolves with the layout files'
+   * fingerprint once written (`layoutFilesStamp`), so the watcher's report
+   * of this write can be told from someone else's. With `base` (what the
+   * editor last read or wrote), refuses with `LAYOUT_CHANGED_ON_DISK`
+   * (`domain/layoutEditor.ts`) when the files no longer hold it. */
+  saveLayout(content: string, name: string, html: string, css: string, base?: { html: string; css: string }): Promise<string>
   /** A fingerprint of the deck's layout files (`layouts/*.html`,
    * `css/*.css`): it changes when one is added, removed or written — by
-   * the Coding Agent, say. Only deck.md itself is watched for changes. */
+   * the Coding Agent, say. */
   layoutFilesStamp(): Promise<string>
+  /** Tells this window's close whether the layout editor holds a draft not
+   * saved yet: closing then asks for it to be saved first
+   * (`onLayoutFlushBeforeClose`). See `report_layout_draft` in peitho.rs. */
+  reportLayoutDraft(pending: boolean): Promise<void>
   presentDeck(rehearsal: boolean): Promise<void>
   /** Tells the Edit menu's deck settings what this window's deck holds
    * (checks and current-value labels), shown while this window is in
@@ -122,6 +130,13 @@ export interface DeckIpc {
    * already open here. */
   trustOpenDeck(): Promise<void>
   onDeckFileChanged(callback: () => void): Unsubscribe
+  /** The deck's layout files (`layouts/*.html`, `css/*.css`) changed on
+   * disk — once per burst, this window's deck only, Studio's own writes
+   * included. See `watch_layout_dirs` in peitho.rs. */
+  onLayoutFilesChanged(callback: () => void): Unsubscribe
+  /** This window was asked to close while the layout editor held an
+   * unsaved draft (`reportLayoutDraft`): save it, then close again. */
+  onLayoutFlushBeforeClose(callback: () => void): Unsubscribe
   onMenuNewDeck(callback: () => void): Unsubscribe
   /** Edit > Undo (or its Cmd+Z accelerator), sent only to the focused
    * window — see `src-tauri/src/edit_menu.rs`. The menu item replaced the
@@ -190,12 +205,15 @@ export function createTauriDeckIpc(): DeckIpc {
     deleteLayout: (content, name) => invoke('delete_layout', { content, name }),
     readLayout: name => invoke('read_layout', { name }),
     layoutFilesStamp: () => invoke('layout_files_stamp'),
+    reportLayoutDraft: pending => invoke('report_layout_draft', { pending }),
     previewLayoutDraft: (name, html, css) => invoke('preview_layout_draft', { name, html, css }),
-    saveLayout: (content, name, html, css) => invoke('save_layout', { content, name, html, css }),
+    saveLayout: (content, name, html, css, base) => invoke('save_layout', { content, name, html, css, base: base ?? null }),
     presentDeck: rehearsal => invoke('present_deck', { rehearsal }),
     reportDeckSettings: settings => invoke('report_deck_settings', { settings }),
     trustOpenDeck: () => invoke('trust_open_deck'),
     onDeckFileChanged: callback => subscribe('deck-file-changed', callback),
+    onLayoutFilesChanged: callback => subscribeToThisWindow('layout-files-changed', callback),
+    onLayoutFlushBeforeClose: callback => subscribeToThisWindow('layout:flush-before-close', callback),
     onMenuNewDeck: callback => subscribe('menu:new-deck', callback),
     onMenuUndo: callback => subscribeToThisWindow('menu:undo', callback),
     onMenuRedo: callback => subscribeToThisWindow('menu:redo', callback),
