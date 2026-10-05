@@ -14,6 +14,7 @@ mod input_source;
 mod logging;
 mod peitho;
 mod settings;
+mod update_window;
 
 use i18n::{Language, MenuLabels};
 use peitho::{DeckMenuState, PeithoSession, PendingDecks};
@@ -32,7 +33,8 @@ const WARM_UP_RECENT_DECKS: usize = 3;
 /// top of File, "Settings…" (Cmd+,) to the app menu, links to the
 /// project's GitHub pages (`help_links`) and "Show Log File in Finder" to Help, with Edit's Undo/Redo
 /// swapped for `edit_menu`'s own items and the deck-wide settings
-/// (`deck_menu`) at the end of Edit, and About for `about`'s own window.
+/// (`deck_menu`) at the end of Edit, About for `about`'s own window, and
+/// "Check for Updates…" right after About for `update_window`'s.
 /// Kept as an explicit rebuild rather than mutating
 /// `Menu::default()`'s output, since that method doesn't hand back the
 /// File submenu separately to prepend into.
@@ -68,6 +70,8 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
     // Not `PredefinedMenuItem::about`: its native panel can't hold links,
     // so this opens `about`'s own window instead.
     let about_item = MenuItem::with_id(app, about::MENU_ID, labels.about(app_name), true, None::<&str>)?;
+    // Opens `update_window`'s window; sits right after About, wherever About is.
+    let check_updates_item = MenuItem::with_id(app, update_window::MENU_ID, labels.check_updates, true, None::<&str>)?;
 
     let new_deck = MenuItem::with_id(app, "new_deck", labels.new_deck, true, Some("CmdOrCtrl+N"))?;
     let open_deck = MenuItem::with_id(app, "open_deck", labels.open_deck, true, Some("CmdOrCtrl+O"))?;
@@ -129,21 +133,20 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
         .iter()
         .map(|link| MenuItem::with_id(app, link.menu_id(), link.label(labels), true, None::<&str>))
         .collect::<tauri::Result<_>>()?;
-    // macOS has About in the app menu instead.
     let log_file_separator = PredefinedMenuItem::separator(app)?;
     let log_file = MenuItem::with_id(app, logging::LOG_FILE_MENU_ID, labels.show_log_file, true, None::<&str>)?;
+    // Only added to off macOS, below.
+    #[cfg_attr(target_os = "macos", allow(unused_mut))]
     let mut help_items: Vec<&dyn IsMenuItem<tauri::Wry>> = help_link_items
         .iter()
         .map(|item| item as &dyn IsMenuItem<tauri::Wry>)
         .chain([&log_file_separator as &dyn IsMenuItem<tauri::Wry>, &log_file])
         .collect();
-    // macOS has About in the app menu instead.
+    // macOS has About and Check for Updates in the app menu instead.
     #[cfg(not(target_os = "macos"))]
     let about_separator = PredefinedMenuItem::separator(app)?;
     #[cfg(not(target_os = "macos"))]
-    help_items.extend([&about_separator as &dyn IsMenuItem<tauri::Wry>, &about_item]);
-    let check_update = MenuItem::with_id(app, "check_updates", if language == Language::Ja { "更新を確認…" } else { "Check for Updates…" }, true, None::<&str>)?;
-    help_items.push(&check_update);
+    help_items.extend([&about_separator as &dyn IsMenuItem<tauri::Wry>, &about_item, &check_updates_item]);
     let help_menu = Submenu::with_items(app, labels.help, true, &help_items)?;
 
     Menu::with_items(
@@ -156,6 +159,7 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
                 true,
                 &[
                     &about_item,
+                    &check_updates_item,
                     &PredefinedMenuItem::separator(app)?,
                     &settings::menu_item(app, labels.settings)?,
                     &PredefinedMenuItem::separator(app)?,
@@ -239,8 +243,10 @@ pub fn run() {
                 // The settings panel is an in-app modal: open it in the
                 // window the user is looking at.
                 edit_menu::emit_to_focused(app_handle, settings::MENU_EVENT, ());
-            } else if id == "check_updates" {
-                if let Err(error) = updates::show_check_window(app_handle) { log::error!("failed to show update window: {error}"); }
+            } else if id == update_window::MENU_ID {
+                if let Err(err) = update_window::open_window(app_handle) {
+                    log::error!("failed to open the update window: {err}");
+                }
             } else if id == about::MENU_ID {
                 if let Err(err) = about::open_window(app_handle) {
                     log::error!("failed to open the About window: {err}");
@@ -379,7 +385,6 @@ pub fn run() {
             peitho::crit_session_dirs,
             peitho::layout_files_stamp,
             updates::get_update_status,
-            updates::take_update_check,
             updates::open_update_releases,
             updates::check_for_updates,
             updates::prepare_update,
