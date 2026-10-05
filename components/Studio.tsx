@@ -1306,8 +1306,12 @@ export function Studio() {
     }
     const key = selectedSlideKey()
     if (key === null) return
-    const slideText = buildSlideText(editor.pageConfig(), editor.bodyDraft(), editor.noteDraft())
-    const target = editorLinesTarget(slideText, menu.editor, doc, menu.from, menu.to)
+    const fields = {
+      config: editor.pageConfig(),
+      body: menu.editor === 'body' ? doc : editor.bodyDraft(),
+      note: menu.editor === 'note' ? doc : editor.noteDraft(),
+    }
+    const target = editorLinesTarget(fields, menu.editor, menu.from, menu.to)
     review.openBox(key, target, null, clampMenuPosition(at, { width: 336, height: 180 }, { width: window.innerWidth, height: window.innerHeight }, 8))
     focusCommentBox()
   }

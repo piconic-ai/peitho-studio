@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { CritDeckSession, ReviewComment } from './critReview'
 import { messagesFor } from './messages'
 import type { ManifestSlide } from './render'
+import { buildSlideText } from './slides'
 import {
   REVIEW_AUTHOR, liveReplies, rewriteUnsent, unsentBody,
   agentCommentBody, annotatedSpan, commentSlideKey, explicitSlideKey, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
@@ -989,14 +990,15 @@ describe('a comment on lines of a slide\'s body or notes (the editors\' right-cl
   // A slide as `buildSlideText` writes it, inside a deck.
   const BODY = '# Title\n\nfirst line\nsecond line'
   const NOTE = 'say hello\nthen go on'
-  const SLIDE = `<!-- {"key":"intro"} -->\n${BODY}\n\n<!--\n${NOTE}\n-->\n`
+  const FIELDS = { config: { key: 'intro' }, body: BODY, note: NOTE }
+  const SLIDE = buildSlideText(FIELDS.config, BODY, NOTE)
   const SOURCE = `---\nlang: en\n---\n\n# Cover\n\n---\n\n${SLIDE}`
   const span = { start: SOURCE.indexOf('<!-- {"key"'), end: SOURCE.length }
   const pending = (target: CommentTarget): PendingComment => ({ id: 'p1', slideKey: 'intro', target, pin: null, body: 'Tighter', createdAt: '2026-10-05T00:00:00Z' })
 
   test('spec: Given two body lines selected, When the comment is sent, Then it is on those lines of deck.md, quoting them, labelled with the lines', () => {
     const from = BODY.indexOf('first')
-    const target = editorLinesTarget(SLIDE, 'body', BODY, from, BODY.length)
+    const target = editorLinesTarget(FIELDS, 'body', from, BODY.length)
     expect(target).toMatchObject({ kind: 'lines', quote: 'first line\nsecond line', text: 'first line\nsecond line' })
     expect(newReviewComment(pending(target), SOURCE, span, 2)).toEqual({
       startLine: 12, endLine: 13, quote: 'first line\nsecond line', author: 'Peitho Studio',
@@ -1006,35 +1008,53 @@ describe('a comment on lines of a slide\'s body or notes (the editors\' right-cl
 
   test('spec: Given only a caret on a notes line, When the comment is sent, Then it is on that line of the notes in deck.md', () => {
     const at = NOTE.indexOf('then') + 2
-    const comment = newReviewComment(pending(editorLinesTarget(SLIDE, 'note', NOTE, at, at)), SOURCE, span, 2)
+    const comment = newReviewComment(pending(editorLinesTarget(FIELDS, 'note', at, at)), SOURCE, span, 2)
     expect(comment).toMatchObject({ startLine: 17, endLine: 17, quote: 'then go on', body: '[Slide 2 (key: intro) › lines L17 "then go on"] Tighter' })
   })
 
   test('spec: Given the same line text in the body and the notes, Then each editor\'s comment lands on its own one', () => {
     const body = 'same\nother'
     const note = 'same'
-    const slide = `${body}\n\n<!--\n${note}\n-->\n`
+    const fields = { config: {}, body, note }
+    const slide = buildSlideText({}, body, note)
     const whole = { start: 0, end: slide.length }
-    expect(targetLines(slide, whole, editorLinesTarget(slide, 'body', body, 0, 0))).toEqual({ start: 1, end: 1 })
-    expect(targetLines(slide, whole, editorLinesTarget(slide, 'note', note, 0, 0))).toEqual({ start: 5, end: 5 })
+    expect(targetLines(slide, whole, editorLinesTarget(fields, 'body', 0, 0))).toEqual({ start: 1, end: 1 })
+    expect(targetLines(slide, whole, editorLinesTarget(fields, 'note', 0, 0))).toEqual({ start: 5, end: 5 })
+  })
+
+  test('adversarial: Given a body whose text is also the slide\'s key, Then the comment is on the body\'s line, not the PageComment\'s', () => {
+    const fields = { config: { key: 'intro' }, body: 'intro', note: '' }
+    const slide = buildSlideText(fields.config, fields.body, fields.note)
+    expect(slide).toBe('<!-- {"key":"intro"} -->\nintro\n')
+    const comment = newReviewComment(pending(editorLinesTarget(fields, 'body', 0, 0)), slide, { start: 0, end: slide.length }, 1)
+    expect(comment).toMatchObject({ startLine: 2, endLine: 2, quote: 'intro' })
+  })
+
+  test('adversarial: Given notes whose text is also the body\'s or the key, Then the comment is on the notes\' line', () => {
+    const fields = { config: { key: 'intro' }, body: 'intro', note: 'intro' }
+    const slide = buildSlideText(fields.config, fields.body, fields.note)
+    const comment = newReviewComment(pending(editorLinesTarget(fields, 'note', 0, 0)), slide, { start: 0, end: slide.length }, 1)
+    expect(comment).toMatchObject({ startLine: 5, endLine: 5, quote: 'intro' })
   })
 
   test('spec: Given a target, Then the box\'s label names deck.md\'s lines when they are found, and leaves them out when not', () => {
-    const target = editorLinesTarget(SLIDE, 'body', BODY, 0, 0)
+    const target = editorLinesTarget(FIELDS, 'body', 0, 0)
     expect(targetLabel(2, target, null, targetLines(SOURCE, span, target))).toBe('Slide 2 › lines L10 "# Title"')
     expect(targetLabel(2, target, null, targetLines('# Gone\n', null, target))).toBe('Slide 2 › lines "# Title"')
   })
 
   test('adversarial: Given a blank line, Then the comment quotes nothing and falls back to the slide\'s lines, its label naming no text', () => {
     const at = BODY.indexOf('\n\n') + 1
-    const target = editorLinesTarget(SLIDE, 'body', BODY, at, at)
+    const target = editorLinesTarget(FIELDS, 'body', at, at)
     expect(target).toMatchObject({ kind: 'lines', quote: '', text: '' })
     expect(newReviewComment(pending(target), SOURCE, span, 2)).toMatchObject({ quote: '', body: '[Slide 2 (key: intro) › lines] Tighter' })
   })
 
-  test('adversarial: Given an empty field, offsets out of range, or a field the slide doesn\'t hold, Then a target still comes back and never throws', () => {
-    for (const [field, text, from, to] of [['body', '', 0, 0], ['note', '', 5, -3], ['body', BODY, -10, 999], ['note', 'not in the slide', 0, 3]] as const) {
-      const target = editorLinesTarget(SLIDE, field, text, from, to)
+  test('adversarial: Given an empty field or offsets out of range, Then a target still comes back and never throws', () => {
+    for (const [field, fields, from, to] of [
+      ['body', { ...FIELDS, body: '' }, 0, 0], ['note', { ...FIELDS, note: '' }, 5, -3], ['body', FIELDS, -10, 999], ['note', FIELDS, Number.NaN, 3],
+    ] as const) {
+      const target = editorLinesTarget(fields, field, from, to)
       expect(target.kind).toBe('lines')
       expect(target.offsetInSlide).toBeGreaterThanOrEqual(0)
       expect(() => newReviewComment(pending(target), SOURCE, span, 2)).not.toThrow()
@@ -1043,7 +1063,7 @@ describe('a comment on lines of a slide\'s body or notes (the editors\' right-cl
 
   test('adversarial: Given lines with an emoji and HTML, Then the label cuts them as any excerpt, and the quote keeps them whole', () => {
     const body = '<b>😀 émoji</b> line'
-    const target = editorLinesTarget(body, 'body', body, 0, 0)
+    const target = editorLinesTarget({ config: {}, body, note: '' }, 'body', 0, 0)
     expect(target.quote).toBe(body)
     expect(targetLabel(1, target)).toBe('Slide 1 › lines "<b>😀 émoji</b> line"')
   })

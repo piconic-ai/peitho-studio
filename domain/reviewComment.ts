@@ -18,7 +18,8 @@ import type { Messages } from './messages'
 import { isPointInRect, type Point, type Rect } from './geometry'
 import type { ManifestSlide } from './render'
 import { buildSlideList, type SlideListEntry } from './slideList'
-import { splitSlides } from './slides'
+import { slideFieldStarts, splitSlides } from './slides'
+import type { PageConfig } from './pageConfig'
 
 /** A half-open `[start, end)` range of UTF-16 indices into a string. */
 export interface CharSpan {
@@ -449,22 +450,24 @@ export function targetLabel(slideNumber: number, target: Pick<CommentTarget, 'ki
 }
 
 /** The comment target for lines `from`–`to` (offsets either way round; a
- * caret when equal) of a slide's body or notes as the editor holds them
- * (`fieldText`), in a slide whose text is `slideText` (the slide as it's
- * saved: `buildSlideText`). Like a click on an element, it's found again
- * by its text (`quote`, the lines whole) nearest where it sits in the
- * slide, so a comment written before the draft is saved still lands on
- * deck.md's lines. Blank lines quote nothing: the comment is then on the
- * slide's lines as a whole, as a click on no element is. */
-export function editorLinesTarget(slideText: string, field: 'body' | 'note', fieldText: string, from: number, to: number): CommentTarget {
+ * caret when equal) of field `field` of a slide whose config, body and
+ * notes are `fields` (the editor's drafts) — on the slide as it's saved
+ * (`buildSlideText`). Like a click on an element, it's found again by its
+ * text (`quote`, the lines whole) nearest where it sits in the slide
+ * (`offsetInSlide`, from where the serialization puts the field,
+ * `slideFieldStarts` — never by searching it, as the same text may be in
+ * the PageComment), so a comment written before the draft is saved still
+ * lands on deck.md's lines. Blank lines quote nothing: the comment is then
+ * on the slide's lines as a whole, as a click on no element is. */
+export function editorLinesTarget(fields: { config: PageConfig; body: string; note: string }, field: 'body' | 'note', from: number, to: number): CommentTarget {
+  const fieldText = fields[field]
   const { quote } = lineSelectionOf(fieldText, from, to)
-  const trimmed = fieldText.trim()
-  // Where the field's own text sits in the slide: the body and the notes
-  // are saved trimmed, the notes after the body.
-  const fieldAt = trimmed === '' ? -1 : field === 'body' ? slideText.indexOf(trimmed) : slideText.lastIndexOf(trimmed)
-  const firstLine = fieldText.slice(0, Math.max(0, Math.min(from, to))).lastIndexOf('\n') + 1
+  const starts = slideFieldStarts(fields.config, fields.body, fields.note)
+  const fieldAt = field === 'body' ? starts.body : starts.note
+  const start = Number.isFinite(Math.min(from, to)) ? Math.max(0, Math.min(from, to)) : 0
+  const firstLine = fieldText.slice(0, start).lastIndexOf('\n') + 1
   const leading = fieldText.length - fieldText.trimStart().length
-  const offsetInSlide = fieldAt < 0 ? 0 : fieldAt + Math.max(0, firstLine - leading)
+  const offsetInSlide = fieldAt === null ? 0 : fieldAt + Math.max(0, firstLine - leading)
   const blank = quote.trim() === ''
   return { kind: 'lines', text: blank ? '' : quote, quote: blank ? '' : quote, offsetInSlide }
 }
