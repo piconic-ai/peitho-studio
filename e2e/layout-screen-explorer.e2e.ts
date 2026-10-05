@@ -286,7 +286,7 @@ test.describe('the layout list', () => {
   })
 })
 
-test.describe('the large preview and the thumbnails look like the slides screen\'s', () => {
+test.describe('the large preview looks like the slide preview', () => {
   test('Given the selected layout drawn large, then nothing frames it and the pointer over it is the slide preview\'s', async ({ page }) => {
     await openLayoutScreen(page, deckOf({ layoutFragment: '<h1>saved</h1>' }))
     const box = page.locator('[data-layout-selected-preview]')
@@ -295,6 +295,33 @@ test.describe('the large preview and the thumbnails look like the slides screen\
     const slidePreviewCursor = await page.locator('[data-preview-host]').evaluate(el => getComputedStyle(el).cursor)
     await expect(drawing).toHaveCSS('cursor', slidePreviewCursor)
     await expect(drawing).not.toHaveCSS('cursor', 'crosshair')
+  })
+})
+
+test.describe('the grid thumbnails\' frame', () => {
+  /** The frame's look: width, style and color of its top border. */
+  const frameOf = (el: Element) => { const style = getComputedStyle(el); return `${style.borderTopWidth} ${style.borderTopStyle} ${style.borderTopColor}` }
+  const slideThumbnail = (page: Page, index: number) => page.locator(`[data-slide-row="${String(index)}"] span.rounded-md.overflow-hidden`).first()
+
+  test('Given the slides screen\'s selected and hovered thumbnails, then the layout grid\'s selected and hovered thumbnails are framed the same', async ({ page }) => {
+    await openLayoutScreen(page, deckOf())
+    await page.locator('[data-studio-mode-option="slides"]').click()
+    const slideSelected = await slideThumbnail(page, 0).evaluate(frameOf)
+    await slideThumbnail(page, 1).hover()
+    const slideHovered = await slideThumbnail(page, 1).evaluate(frameOf)
+    await page.mouse.move(0, 0)
+    const slideRest = await slideThumbnail(page, 1).evaluate(frameOf)
+    expect(slideSelected).not.toBe(slideRest)
+
+    await page.locator('[data-studio-mode-option="layouts"]').click()
+    const grid = (name: string) => page.locator(`[data-layout-row="${name}"] [data-layout-row-thumbnail]`)
+    expect(await grid('title-slide').evaluate(frameOf)).toBe(slideSelected)
+    await page.mouse.move(0, 0)
+    expect(await grid('quote').evaluate(frameOf)).toBe(slideRest)
+    await grid('quote').hover()
+    expect(await grid('quote').evaluate(frameOf)).toBe(slideHovered)
+    // Nothing else frames a row any more.
+    await expect(page.locator('[data-layout-row="title-slide"]')).toHaveCSS('border-top-width', '0px')
   })
 })
 

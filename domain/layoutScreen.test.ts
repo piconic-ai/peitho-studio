@@ -309,8 +309,8 @@ describe('the selected layout\'s large preview and the grid under it', () => {
     expect(SELECTED_PREVIEW_SHARE).toBeLessThan(0.9)
   })
 
-  test('spec: Given a grid thumbnail, Then it takes its cell\'s width at the canvas\'s proportion', () => {
-    expect(layoutGridThumbnailStyle({ width: 1280, height: 720 })).toBe('width: 100%; aspect-ratio: 1280 / 720')
+  test('spec: Given a grid thumbnail, Then its drawing keeps the canvas\'s proportion inside its border, as a slide list thumbnail does', () => {
+    expect(layoutGridThumbnailStyle({ width: 1280, height: 720 })).toBe('aspect-ratio: 1280 / 720; box-sizing: content-box')
   })
 
   test('spec: Given the large preview, Then nothing frames it: around its drawing is only the section\'s padding and the name line under it', () => {

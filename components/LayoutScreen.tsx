@@ -324,11 +324,16 @@ export function LayoutScreen(props: LayoutScreenProps) {
                 aria-current={props.selectedName === row.name ? 'true' : 'false'}
                 onClick={() => props.onRowClick(row.name)}
                 onContextMenu={e => props.onContextMenu(row.name, e)}
-                className={(props.selectedName === row.name ? 'border-primary ' : 'border-transparent ') + 'group min-w-0 flex flex-col gap-1 p-1 rounded-md border-2 text-left'}
+                className="min-w-0 flex flex-col gap-1 p-1 text-left"
               >
+                {/* The slide list's thumbnail frame (`SlideList.tsx`), class
+                    for class: yellow and thick when selected, gray and
+                    thick on hover. */}
                 <span
                   data-layout-row-thumbnail
-                  className="block relative shrink-0 rounded border border-border bg-black overflow-hidden group-hover:border-muted-foreground"
+                  className={props.selectedName === row.name
+                    ? 'block relative shrink-0 rounded-md overflow-hidden border-4 border-[#eab308] bg-black'
+                    : 'block relative shrink-0 rounded-md overflow-hidden border-2 border-border bg-black hover:border-4 hover:border-muted-foreground'}
                   style={layoutGridThumbnailStyle(props.canvasOf(row.name))}
                 >
                   <span

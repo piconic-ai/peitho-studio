@@ -169,12 +169,15 @@ export function layoutThumbnailSize(room: Size | null, canvas: Size, deviceWidth
  * without one the row's full width at the canvas's proportion. */
 export function layoutThumbnailStyle(canvas: Size, room: Size | null, deviceWidth: number | null = null): string {
   const size = layoutThumbnailSize(room, canvas, deviceWidth)
-  if (size === null) return layoutGridThumbnailStyle(canvas)
+  if (size === null) return `width: 100%; aspect-ratio: ${String(canvas.width)} / ${String(canvas.height)}`
   return `width: ${String(size.width)}px; height: ${String(size.height)}px`
 }
 
 /** A small thumbnail's inline style in the two-column grid under the large
- * preview: its cell's whole width, at the canvas's proportion. */
+ * preview: its cell's whole width (a stretched block), the drawing inside
+ * its border at the canvas's proportion — the border is outside the
+ * content box, as on a slide list thumbnail, whose border thickens on hover
+ * and selection without squeezing the drawing out of proportion. */
 export function layoutGridThumbnailStyle(canvas: Size): string {
-  return `width: 100%; aspect-ratio: ${String(canvas.width)} / ${String(canvas.height)}`
+  return `aspect-ratio: ${String(canvas.width)} / ${String(canvas.height)}; box-sizing: content-box`
 }
