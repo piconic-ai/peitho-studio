@@ -6,13 +6,9 @@
 
 # Peitho Studio
 
-A desktop editor for [Peitho](https://github.com/mizzy/peitho) presentations: Markdown as the source of truth, HTML slides you can interact with. Use HTML, CSS and JavaScript to build slides your audience can explore. Edit them yourself, work with an AI coding agent, or use both.
+*Write slides with [Peitho](https://github.com/mizzy/peitho).*
 
-[Website](https://peitho-studio.piconic.ai/) · [Download](https://github.com/piconic-ai/peitho-studio/releases/latest)
-
-[![Peitho Studio introduction: Markdown editing and Agent-assisted slide design](site/public/studio.webp)](https://peitho-studio.piconic.ai/#demo)
-
-[Watch the demo](https://peitho-studio.piconic.ai/#demo): edit Markdown, see the preview, and ask your Agent to refine the slide layout.
+A desktop editor for presentations: Markdown as the source of truth, HTML slides you can interact with. Use HTML, CSS and JavaScript to build slides your audience can explore. Edit them yourself, work with an AI coding agent, or use both.
 
 ## Features
 
@@ -21,6 +17,10 @@ A desktop editor for [Peitho](https://github.com/mizzy/peitho) presentations: Ma
 - **Your files, your tools.** Decks stay in plain Markdown and HTML. Edit them in Studio, another editor or an AI coding agent; Studio automatically reloads external changes.
 - **Comments for your AI Agent.** Leave feedback on specific slide elements, send it to your connected coding agent, and review its replies and changes in Studio.
 - **Present with Peitho.** Launch your deck from Studio using the `peitho` CLI.
+
+[![Peitho Studio introduction: Markdown editing and Agent-assisted slide design](site/public/studio.webp)](https://peitho-studio.piconic.ai/#demo)
+
+[Watch the demo](https://peitho-studio.piconic.ai/#demo): edit Markdown, see the preview, and ask your Agent to refine the slide layout.
 
 ## Install
 
