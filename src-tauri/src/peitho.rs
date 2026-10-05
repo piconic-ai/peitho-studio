@@ -33,6 +33,7 @@ use crate::engine::builtin;
 use crate::engine::crit::{
     self as crit_shapes, DeckSession, FinishedRound, NewLayoutComment, NewReviewComment, NewReviewReply, ReviewComment, ReviewUpdate,
 };
+use crate::engine::deck_files;
 use crate::engine::image_layout;
 use crate::engine::images;
 use crate::engine::layout_files;
@@ -1348,7 +1349,9 @@ pub fn delete_layout(content: String, name: String, window: WebviewWindow, sessi
 }
 
 /// Layout `name`'s placeholder preview rendered from the editor's unsaved
-/// `html` and `css`, for the layout screen's live preview. Writes nothing.
+/// `html` and `css` — a side with no editor tab open (`None`) as on disk
+/// (`deck_files::layout_draft_texts`) — for the layout screen's live
+/// preview. Writes nothing.
 /// The files the draft references are served beside the saved deck's
 /// (`AssetServer::add_draft_assets` — additive, never touching what a deck
 /// render serves), so its URLs resolve against the same asset server.
@@ -1358,12 +1361,14 @@ pub fn delete_layout(content: String, name: String, window: WebviewWindow, sessi
 #[tauri::command(async)]
 pub fn preview_layout_draft(
     name: String,
-    html: String,
-    css: String,
+    html: Option<String>,
+    css: Option<String>,
     window: WebviewWindow,
     session: State<PeithoSession>,
 ) -> Result<layout_files::LayoutDraftPreview, String> {
-    let preview = layout_files::preview_layout_draft(&session_deck_path(&session, window.label())?, &name, &html, &css)?;
+    let deck_path = session_deck_path(&session, window.label())?;
+    let (html, css) = deck_files::layout_draft_texts(&deck_path, &name, html, css)?;
+    let preview = layout_files::preview_layout_draft(&deck_path, &name, &html, &css)?;
     let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
     if let Some(state) = guard.get(window.label()) {
         state.asset_server.add_draft_assets(&preview.image_assets);
@@ -1374,39 +1379,46 @@ pub fn preview_layout_draft(
 /// A fingerprint of this window's deck's layout files
 /// (`layout_files::layout_files_stamp`): it changes when one is added,
 /// removed or written — by the Coding Agent, say. Compared with what
-/// Studio itself last wrote (`save_layout`'s answer), it tells the layout
+/// Studio itself last wrote (`save_deck_file`'s answer), it tells the layout
 /// watcher's report of someone else's change from Studio's own.
 #[tauri::command(async)]
 pub fn layout_files_stamp(window: WebviewWindow, session: State<PeithoSession>) -> Result<String, String> {
     Ok(layout_files::layout_files_stamp(&session_deck_dir(&session, window.label())?))
 }
 
-/// Layout `name`'s HTML and own CSS, for the layout screen's editor.
+/// The layout screen's file tree for this window's deck
+/// (`deck_files::list_deck_files`).
 #[tauri::command(async)]
-pub fn read_layout(name: String, window: WebviewWindow, session: State<PeithoSession>) -> Result<layout_files::LayoutSource, String> {
-    layout_files::read_layout(&session_deck_path(&session, window.label())?, &name)
+pub fn list_deck_files(window: WebviewWindow, session: State<PeithoSession>) -> Result<Vec<deck_files::DeckFileEntry>, String> {
+    Ok(deck_files::list_deck_files(&session_deck_dir(&session, window.label())?))
 }
 
-/// Overwrites layout `name`'s HTML and CSS in this window's deck — nothing
-/// is written when the HTML doesn't parse as a layout, or when the edit
-/// would stop the deck (`content`, its source now) from building, or when
-/// the files no longer hold `base` (what the editor last read or wrote:
-/// someone else wrote them meanwhile). Returns
-/// the layout files' fingerprint once written (`layout_files_stamp`), so
-/// the frontend can tell the watcher's report of this very write
+/// The text of `path` — a layout's HTML or a CSS file of this window's
+/// deck (`deck_files::read_deck_file`) — for an editor tab.
+#[tauri::command(async)]
+pub fn read_deck_file(path: String, window: WebviewWindow, session: State<PeithoSession>) -> Result<String, String> {
+    deck_files::read_deck_file(&session_deck_path(&session, window.label())?, &path)
+}
+
+/// Overwrites `path` — a layout's HTML or a CSS file — in this window's
+/// deck with `text` (`deck_files::save_deck_file`): nothing is written when
+/// the edit would stop the deck (`content`, its source now) from building,
+/// or when the file no longer holds `base` (what the editor last read or
+/// wrote: someone else wrote it meanwhile). Returns the layout files'
+/// fingerprint once written (`layout_files_stamp`), so the frontend can
+/// tell the watcher's report of this very write
 /// (`LAYOUT_FILES_CHANGED_EVENT`) from someone else's.
 #[tauri::command(async)]
-pub fn save_layout(
+pub fn save_deck_file(
     content: String,
-    name: String,
-    html: String,
-    css: String,
-    base: Option<layout_files::LayoutBase>,
+    path: String,
+    text: String,
+    base: Option<String>,
     window: WebviewWindow,
     session: State<PeithoSession>,
 ) -> Result<String, String> {
     let deck_path = session_deck_path(&session, window.label())?;
-    layout_files::save_layout(&deck_path, &content, &name, &html, &css, base.as_ref())?;
+    deck_files::save_deck_file(&deck_path, &content, &path, &text, base.as_deref())?;
     Ok(layout_files::layout_files_stamp(&deck_dir_of(&deck_path)))
 }
 
