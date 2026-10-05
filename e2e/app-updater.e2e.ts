@@ -13,12 +13,13 @@ async function setup(page: Page, deck: MockDeck) {
   await page.goto('/')
   await expect(page.locator('[data-slide-row]')).toHaveCount(1)
 }
-test('manual checks show current and failure; update settings remain coherent', async ({ page }) => {
+test('manual checks from the settings panel show current and failure; update settings remain coherent', async ({ page }) => {
   const deck: MockDeck = { source: SOURCE }
   await setup(page, deck)
-  await emit(page, 'menu:check-updates', null)
-  await expect(page.locator('[data-update-status]')).toContainText('up to date')
+  await emit(page, 'menu:settings', null)
   const panel = page.getByRole('dialog', { name: 'Settings' })
+  await panel.getByRole('button', { name: 'Check for updates' }).click()
+  await expect(panel.locator('[data-update-status]')).toContainText('up to date')
   await panel.locator('[data-setting=auto-check-updates]').uncheck()
   await expect(panel.getByText('Security update notifications are also off.')).toBeVisible()
   await panel.locator('[data-setting=auto-update]').check()

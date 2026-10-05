@@ -3281,7 +3281,6 @@ export function Studio() {
     for (const event of updateInputEvents) window.addEventListener(event, blockInputDuringUpdate, true)
     onCleanup(() => { for (const event of updateInputEvents) window.removeEventListener(event, blockInputDuringUpdate, true) })
     const unlistenUpdates = updateIpc.onChanged(applyUpdateStatus)
-    const unlistenUpdateMenu = updateIpc.onMenuCheck(() => { openSettings(); void runUpdateAction('check') })
     const unlistenUpdateExit = updateIpc.onBeforeExit(token => {
       void (async () => {
         let saved = false
@@ -3292,9 +3291,8 @@ export function Studio() {
         }
       })()
     })
-    void updateIpc.takeMenuCheck().then(check => { if (check) { openSettings(); void runUpdateAction('check') } }).catch(() => {})
     void updateIpc.getStatus().then(status => { if (!heardUpdate) setUpdateStatus(status) }).catch(() => {})
-    onCleanup(() => { unlistenUpdates(); unlistenUpdateMenu(); unlistenUpdateExit() })
+    onCleanup(() => { unlistenUpdates(); unlistenUpdateExit() })
     void loadSettings()
     void loadSystemLocales()
 
