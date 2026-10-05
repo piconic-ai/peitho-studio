@@ -51,6 +51,11 @@ export interface CodeEditorOptions {
    * editor leaves such a paste to this handler instead of pasting it
    * itself; a paste with no image is pasted as usual. */
   onPasteImages?: (files: File[]) => void
+  /** A right-click on the editor: the app opens its own menu
+   * (`domain/commentMenu.ts`) in place of the webview's. Given, the press
+   * that opens it neither moves the selection nor takes focus — the menu
+   * decides (`selectionForMenu`) — so a vim visual selection survives it. */
+  onContextMenu?: (event: MouseEvent) => void
 }
 
 // Marks a transaction `setCodeEditorText` sends, so `onChange` reports only
@@ -187,11 +192,29 @@ function imagePaste(onPaste: (files: File[]) => void): Extension {
   })
 }
 
+// The app's own right-click menu in place of the webview's (see
+// `CodeEditorOptions.onContextMenu`).
+function contextMenu(onContextMenu: (event: MouseEvent) => void): Extension {
+  return EditorView.domEventHandlers({
+    mousedown: event => {
+      if (event.button !== 2) return false
+      event.preventDefault()
+      return true
+    },
+    contextmenu: event => {
+      event.preventDefault()
+      onContextMenu(event)
+      return true
+    },
+  })
+}
+
 function editorExtensions(options: CodeEditorOptions, vimOn: boolean): Extension[] {
   return [
     // First, so vim's keys win over every other keymap below.
     vimCompartment.of(vimExtension(options, vimOn)),
     options.onPasteImages ? imagePaste(options.onPasteImages) : [],
+    options.onContextMenu ? contextMenu(options.onContextMenu) : [],
     // No `historyKeymap`: Cmd+Z / Cmd+Shift+Z are the Edit menu's
     // accelerators (`src-tauri/src/edit_menu.rs`), which walk the app's
     // timeline and land in `replayCodeEditorGroup` below. Binding them here
@@ -291,6 +314,13 @@ export function codeEditorSelection(view: EditorView): { doc: string; from: numb
   return { doc: view.state.doc.toString(), from, to }
 }
 
+/** Selects `from`–`to` (a caret when equal), as a click there would. */
+export function selectInCodeEditor(view: EditorView, from: number, to: number): void {
+  const length = view.state.doc.length
+  const clamp = (at: number) => Math.max(0, Math.min(length, at))
+  view.dispatch({ selection: { anchor: clamp(from), head: clamp(to) } })
+}
+
 /** Where on screen the main selection's end (the caret) is drawn, just
  * below its line — for placing a box that's about the selection — or
  * `null` when it's scrolled out of view. */
@@ -311,7 +341,7 @@ export function codeEditorPositionAt(view: EditorView, point: Point): number | n
  * `userEvent` — so it reaches `onChange` and is one step of its own in the
  * undo history (never merged with typing just before or after), and moves
  * the cursor to `insertion.cursor`. */
-export function insertIntoCodeEditor(view: EditorView, insertion: TextInsertion, userEvent: 'input.paste' | 'input.drop'): void {
+export function insertIntoCodeEditor(view: EditorView, insertion: TextInsertion, userEvent: 'input.paste' | 'input.drop' | 'delete.cut'): void {
   view.dispatch({
     changes: { from: insertion.from, to: insertion.to, insert: insertion.insert },
     selection: { anchor: insertion.cursor },

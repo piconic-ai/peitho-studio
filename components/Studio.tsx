@@ -12,8 +12,8 @@ import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
   REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentTargetOf, layoutClickTarget, layoutTargetLabel, layoutTargetOfComment, lineSelectionOf, newLayoutComment, newReviewComment, pollsForAgent,
-  previewPinsOf, reviewStatusText, slideIndexOfComment, slideSpans, targetLabel,
-  type LayoutCommentTarget, type PreviewPin,
+  previewPinsOf, reviewStatusText, slideIndexOfComment, slideSpans, targetLabel, editorLinesTarget, targetLines,
+  type CommentTarget, type LayoutCommentTarget, type PreviewPin,
 } from '../domain/reviewComment'
 import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, connectTargetOf, showsConnectGuide } from '../domain/agentConnect'
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
@@ -27,7 +27,7 @@ import { PanelToggle } from './PanelToggle'
 import { ReviewPanel } from './ReviewPanel'
 import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
-import { imageParagraphInsertion, insertionRangeAfterWait } from '../domain/editorText'
+import { imageParagraphInsertion, insertionRangeAfterWait, replacementInsertion, textBetween } from '../domain/editorText'
 import { fileNameOf, partitionDroppedPaths } from '../domain/images'
 import { previewDevice, scaledDownPercent, viewportCanvas } from '../domain/viewport'
 import { hasFixedCanvas } from '../domain/slideFragment'
@@ -59,7 +59,7 @@ import { takesCommandKeys, type VimMode } from '../domain/vimMode'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
 import { COLUMN_WIDTH_BOUNDS, measureWidthsNextFrame, startColumnResize } from '../dom/columnResize'
 import { blurEditorFieldOnRowPress, isFocusWithin, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
-import { canReplayCodeEditorGroup, codeEditorPositionAt, codeEditorSelection, codeEditorSelectionPoint, createCodeEditor, insertIntoCodeEditor, isCodeEditorComposing, isolateCodeEditorHistory, replaceCodeEditorTextUndoable, replayCodeEditorGroup, replayFocusedCodeEditorHistory, resetCodeEditorText, restoreCodeEditor, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, snapshotCodeEditor, type CodeEditorOptions, type CodeEditorSnapshot } from '../dom/codeEditor'
+import { canReplayCodeEditorGroup, codeEditorPositionAt, codeEditorSelection, codeEditorSelectionPoint, createCodeEditor, insertIntoCodeEditor, isCodeEditorComposing, isolateCodeEditorHistory, replaceCodeEditorTextUndoable, replayCodeEditorGroup, replayFocusedCodeEditorHistory, resetCodeEditorText, restoreCodeEditor, selectInCodeEditor, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, snapshotCodeEditor, type CodeEditorOptions, type CodeEditorSnapshot } from '../dom/codeEditor'
 import { createEditorSlideStates } from '../dom/editorSlideStates'
 import { createVimClipboardBridge, onClipboardMayHaveChanged } from '../dom/vimClipboard'
 import { readPastedImage } from '../dom/imagePaste'
@@ -107,7 +107,7 @@ import { SlideContextMenu } from './SlideContextMenu'
 import { SlideList } from './SlideList'
 import { LayoutScreen, type LayoutDeleteView } from './LayoutScreen'
 import { ContextMenu, type ContextMenuEntry } from './ContextMenu'
-import { type CommentMenuAction, type MenuEditor, commentMenuItems, commentMenuLabel, commentMenuPosition, openOnEditor, openOnSlidePreview, selectionForMenu } from '../domain/commentMenu'
+import { type CommentMenu, type CommentMenuAction, type MenuEditor, commentMenuItems, commentMenuLabel, commentMenuPosition, openOnEditor, openOnSlidePreview, selectionForMenu } from '../domain/commentMenu'
 import { focusDeleteLayoutDialog, focusNewLayoutName } from '../dom/layoutModals'
 import { absolutizedDraft, draftPreviewError, draftedLayout, previewDraftCss, previewToDraw } from '../domain/layoutDraftPreview'
 import { scopeRootToHost } from '../domain/slideCss'
@@ -612,6 +612,7 @@ export function Studio() {
       onChange: text => editor.setEditorSession(session => withDraftBody(session, text)),
       onHistoryGroup: seq => { recordTextGroup('body', seq) },
       onPasteImages: files => { void pasteImages(files) },
+      onContextMenu: event => { openEditorMenu('body', event) },
     })
   }
 
@@ -697,6 +698,7 @@ export function Studio() {
       placeholder: untrack(() => settings.messages().speakerNotesPlaceholder),
       onChange: text => editor.setEditorSession(session => withDraftNote(session, text)),
       onHistoryGroup: seq => { recordTextGroup('note', seq) },
+      onContextMenu: event => { openEditorMenu('note', event) },
     })
   }
 
@@ -1268,6 +1270,86 @@ export function Studio() {
     ui.openCommentMenu(openOnSlidePreview(click.at.x, click.at.y, click))
   }
 
+  function editorViewOf(which: MenuEditor): ReturnType<typeof createCodeEditor> | undefined {
+    switch (which) {
+      case 'body': return bodyEditor
+      case 'note': return noteEditor
+      case 'layout': return layoutEditor
+      default: {
+        const _exhaustive: never = which
+        return _exhaustive
+      }
+    }
+  }
+
+  // A right-click in an editor: inside the selection it's kept, anywhere
+  // else the caret goes there (`selectionForMenu`), and the menu acts on
+  // that. Nothing to act on — no slide open, no file shown — no menu.
+  function openEditorMenu(which: MenuEditor, event: MouseEvent): void {
+    const view = editorViewOf(which)
+    if (!view) return
+    if (which === 'layout' ? layouts.activeFile()?.kind !== 'ready' : selectedSlideKey() === null) return
+    const { from, to } = codeEditorSelection(view)
+    const next = selectionForMenu(from, to, codeEditorPositionAt(view, { x: event.clientX, y: event.clientY }))
+    if (next.moved) selectInCodeEditor(view, next.from, next.to)
+    ui.openCommentMenu(openOnEditor(which, event.clientX, event.clientY, next.from, next.to))
+  }
+
+  // The editor menu's comment: on lines of the file shown (the layout
+  // screen), or of the slide's body or notes — deck.md's lines, found by
+  // their text (`editorLinesTarget`) — in the same box as the preview's.
+  function commentOnEditorLines(menu: Extract<CommentMenu, { kind: 'on-editor' }>): void {
+    const view = editorViewOf(menu.editor)
+    if (!view) return
+    const { doc } = codeEditorSelection(view)
+    const at = { x: menu.x, y: menu.y }
+    if (menu.editor === 'layout') {
+      const file = layouts.activeFile()
+      if (file?.kind !== 'ready') return
+      const { lines, quote } = lineSelectionOf(doc, menu.from, menu.to)
+      openLayoutCommentBox({ kind: 'file', path: file.path, lines, quote }, at)
+      return
+    }
+    const key = selectedSlideKey()
+    if (key === null) return
+    const slideText = buildSlideText(editor.pageConfig(), editor.bodyDraft(), editor.noteDraft())
+    const target = editorLinesTarget(slideText, menu.editor, doc, menu.from, menu.to)
+    review.openBox(key, target, null, clampMenuPosition(at, { width: 336, height: 180 }, { width: window.innerWidth, height: window.innerHeight }, 8))
+    focusCommentBox()
+  }
+
+  // The editor menu's Cut / Copy / Paste, on the OS clipboard (the same
+  // access vim mode's `p` reads, `ipc/editorIpc.ts`), as the webview's own
+  // menu did. A cut or paste is the user's own edit (`onChange`, one undo
+  // step); vim's register takes up what was cut or copied. Focus goes back
+  // to the editor.
+  async function runEditorClipboard(menu: Extract<CommentMenu, { kind: 'on-editor' }>, action: 'cut' | 'copy' | 'paste'): Promise<void> {
+    const view = editorViewOf(menu.editor)
+    if (!view) return
+    view.focus()
+    if (action === 'paste') {
+      const text = await editorIpc.readClipboardText()
+      if (text === null || text === '') return
+      const now = codeEditorSelection(view)
+      insertIntoCodeEditor(view, replacementInsertion(now.doc, now.from, now.to, text), 'input.paste')
+      return
+    }
+    const { doc } = codeEditorSelection(view)
+    const text = textBetween(doc, menu.from, menu.to)
+    if (text === '') return
+    try {
+      await editorIpc.writeClipboardText(text)
+    } catch {
+      // Nothing was put on the clipboard: a cut leaves the text in place.
+      return
+    }
+    if (settings.settings().vimMode) vimClipboard.pullClipboard()
+    if (action === 'cut') {
+      const now = codeEditorSelection(view)
+      insertIntoCodeEditor(view, replacementInsertion(now.doc, menu.from, menu.to, ''), 'delete.cut')
+    }
+  }
+
   const commentMenuEntries = createMemo<ContextMenuEntry[]>(() => {
     const menu = ui.commentMenu()
     const messages = settings.messages()
@@ -1289,9 +1371,12 @@ export function Studio() {
         if (menu.kind === 'on-slide-preview') openCommentBox(menu.click)
         return
       case 'comment-lines':
+        if (menu.kind === 'on-editor') commentOnEditorLines(menu)
+        return
       case 'cut':
       case 'copy':
       case 'paste':
+        if (menu.kind === 'on-editor') void runEditorClipboard(menu, action)
         return
       default: {
         const _exhaustive: never = action
@@ -1318,10 +1403,18 @@ export function Studio() {
     })
   })
 
+  // deck.md's lines a comment on lines of a slide is on now, as far as the
+  // preview's source shows them (`null` until they're found there).
+  function renderedTargetLines(slideKey: string, target: CommentTarget) {
+    if (target.kind !== 'lines') return null
+    const span = renderedSlideSpans().find(slide => slide.key === slideKey)?.span ?? null
+    return targetLines(render.renderedSource(), span, target)
+  }
+
   const commentBoxLabel = createMemo(() => {
     const box = review.box()
     if (box.kind === 'open-layout') return layoutTargetLabel(box.target)
-    return box.kind === 'open' ? targetLabel(slideNumberOf(box.slideKey), box.target) : ''
+    return box.kind === 'open' ? targetLabel(slideNumberOf(box.slideKey), box.target, null, renderedTargetLines(box.slideKey, box.target)) : ''
   })
 
   const commentBoxAt = createMemo(() => {
@@ -1452,7 +1545,7 @@ export function Studio() {
       unsent: [
         ...review.pending().map(comment => {
           const number = slideNumberOf(comment.slideKey)
-          return { id: comment.id, label: targetLabel(number, comment.target), body: comment.body, createdAt: comment.createdAt, slideIndex: number > 0 ? number - 1 : null, layout: null }
+          return { id: comment.id, label: targetLabel(number, comment.target, null, renderedTargetLines(comment.slideKey, comment.target)), body: comment.body, createdAt: comment.createdAt, slideIndex: number > 0 ? number - 1 : null, layout: null }
         }),
         ...review.layoutPending().map(comment => (
           { id: comment.id, label: layoutTargetLabel(comment.target), body: comment.body, createdAt: comment.createdAt, slideIndex: null, layout: comment.target }

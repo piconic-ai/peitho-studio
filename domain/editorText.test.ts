@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import fc from 'fast-check'
-import { applyTextChange, editorTextChange, imageParagraphInsertion, insertionRangeAfterWait, normalizeLineBreaks } from './editorText'
+import { applyTextChange, editorTextChange, imageParagraphInsertion, insertionRangeAfterWait, normalizeLineBreaks, replacementInsertion, textBetween } from './editorText'
 
 describe('normalizeLineBreaks', () => {
   test('spec: given Windows and old Mac line breaks, when normalized, then every break is \\n', () => {
@@ -208,5 +208,32 @@ describe('insertionRangeAfterWait', () => {
 
   test('adversarial: Given empty texts on both sides, when inserting, then the saved place is used', () => {
     expect(insertionRangeAfterWait({ doc: '', from: 0, to: 0 }, { doc: '', from: 0, to: 0 })).toEqual({ from: 0, to: 0 })
+  })
+})
+
+describe('textBetween / replacementInsertion (the editors\' right-click Cut, Copy and Paste)', () => {
+  test('spec: Given a selection, Then Copy takes its text; Cut takes it out, the cursor where it was', () => {
+    expect(textBetween('hello world', 6, 11)).toBe('world')
+    expect(replacementInsertion('hello world', 6, 11, '')).toEqual({ from: 6, to: 11, insert: '', cursor: 6 })
+  })
+
+  test('spec: Given a caret or a selection, Then Paste puts the text in its place, line breaks as the editor holds them, the cursor after it', () => {
+    expect(replacementInsertion('ab', 1, 1, 'X')).toEqual({ from: 1, to: 1, insert: 'X', cursor: 2 })
+    expect(replacementInsertion('hello world', 11, 6, 'there\r\nfriend')).toEqual({ from: 6, to: 11, insert: 'there\nfriend', cursor: 18 })
+    expect(applyTextChange('hello world', replacementInsertion('hello world', 6, 11, 'you'))).toBe('hello you')
+  })
+
+  test('adversarial: Given offsets backwards, out of range or not numbers, Then they are clamped to the text and never throw', () => {
+    expect(textBetween('abc', 5, -2)).toBe('abc')
+    expect(textBetween('abc', Number.NaN, 2)).toBe('ab')
+    expect(textBetween('', 0, 3)).toBe('')
+    expect(replacementInsertion('abc', 99, 99, 'z')).toEqual({ from: 3, to: 3, insert: 'z', cursor: 4 })
+    expect(replacementInsertion('', -1, 4, '')).toEqual({ from: 0, to: 0, insert: '', cursor: 0 })
+  })
+
+  test('property: Given any text without CR and any range, Then pasting what was copied there gives the text back', () => {
+    fc.assert(fc.property(fc.string().map(text => text.replace(/\r/g, '')), fc.integer({ min: -5, max: 50 }), fc.integer({ min: -5, max: 50 }), (doc, from, to) => {
+      expect(applyTextChange(doc, replacementInsertion(doc, from, to, textBetween(doc, from, to)))).toBe(doc)
+    }))
   })
 })

@@ -6,7 +6,7 @@ import {
   REVIEW_AUTHOR, liveReplies, rewriteUnsent, unsentBody,
   agentCommentBody, annotatedSpan, commentSlideKey, explicitSlideKey, charSpanOfByteSpan, commentCountsBySlide, commentTargetOf, excerpt, lineRangeOf, locateQuote,
   awaitingAgentCount, newReviewComment, pollsForAgent, trimSpan, parseSourceSpan, pinOfQuote, previewPinsOf, relocateTarget, reviewStatusText, sendAvailability, slideIndexOfComment, slideIndexOfLine, slideSpans, targetKindOf, targetLabel,
-  utf8OffsetToIndex, type CommentTarget, type PendingComment, type PendingReply, type PinSpot,
+  utf8OffsetToIndex, editorLinesTarget, targetLines, type CommentTarget, type PendingComment, type PendingReply, type PinSpot,
   fileLinesLabel, layoutAgentLabel, layoutClickTarget, layoutHtmlFile, layoutTargetLabel, layoutTargetOfComment, lineSelectionOf, newLayoutComment, slotAtPoint, slotNameOfClasses, splitLayoutLabel, type LayoutCommentTarget, type PendingLayoutComment,
 } from './reviewComment'
 
@@ -982,5 +982,73 @@ describe('slotAtPoint', () => {
 
   test('adversarial: Given two slots of the same size both holding the point, Then the first one listed (document order)', () => {
     expect(slotAtPoint({ x: 5, y: 5 }, [{ slot: 'a', rect: box(0, 0, 10, 10) }, { slot: 'b', rect: box(0, 0, 10, 10) }])).toBe('a')
+  })
+})
+
+describe('a comment on lines of a slide\'s body or notes (the editors\' right-click menu)', () => {
+  // A slide as `buildSlideText` writes it, inside a deck.
+  const BODY = '# Title\n\nfirst line\nsecond line'
+  const NOTE = 'say hello\nthen go on'
+  const SLIDE = `<!-- {"key":"intro"} -->\n${BODY}\n\n<!--\n${NOTE}\n-->\n`
+  const SOURCE = `---\nlang: en\n---\n\n# Cover\n\n---\n\n${SLIDE}`
+  const span = { start: SOURCE.indexOf('<!-- {"key"'), end: SOURCE.length }
+  const pending = (target: CommentTarget): PendingComment => ({ id: 'p1', slideKey: 'intro', target, pin: null, body: 'Tighter', createdAt: '2026-10-05T00:00:00Z' })
+
+  test('spec: Given two body lines selected, When the comment is sent, Then it is on those lines of deck.md, quoting them, labelled with the lines', () => {
+    const from = BODY.indexOf('first')
+    const target = editorLinesTarget(SLIDE, 'body', BODY, from, BODY.length)
+    expect(target).toMatchObject({ kind: 'lines', quote: 'first line\nsecond line', text: 'first line\nsecond line' })
+    expect(newReviewComment(pending(target), SOURCE, span, 2)).toEqual({
+      startLine: 12, endLine: 13, quote: 'first line\nsecond line', author: 'Peitho Studio',
+      body: '[Slide 2 (key: intro) › lines L12-L13 "first line second line"] Tighter',
+    })
+  })
+
+  test('spec: Given only a caret on a notes line, When the comment is sent, Then it is on that line of the notes in deck.md', () => {
+    const at = NOTE.indexOf('then') + 2
+    const comment = newReviewComment(pending(editorLinesTarget(SLIDE, 'note', NOTE, at, at)), SOURCE, span, 2)
+    expect(comment).toMatchObject({ startLine: 17, endLine: 17, quote: 'then go on', body: '[Slide 2 (key: intro) › lines L17 "then go on"] Tighter' })
+  })
+
+  test('spec: Given the same line text in the body and the notes, Then each editor\'s comment lands on its own one', () => {
+    const body = 'same\nother'
+    const note = 'same'
+    const slide = `${body}\n\n<!--\n${note}\n-->\n`
+    const whole = { start: 0, end: slide.length }
+    expect(targetLines(slide, whole, editorLinesTarget(slide, 'body', body, 0, 0))).toEqual({ start: 1, end: 1 })
+    expect(targetLines(slide, whole, editorLinesTarget(slide, 'note', note, 0, 0))).toEqual({ start: 5, end: 5 })
+  })
+
+  test('spec: Given a target, Then the box\'s label names deck.md\'s lines when they are found, and leaves them out when not', () => {
+    const target = editorLinesTarget(SLIDE, 'body', BODY, 0, 0)
+    expect(targetLabel(2, target, null, targetLines(SOURCE, span, target))).toBe('Slide 2 › lines L10 "# Title"')
+    expect(targetLabel(2, target, null, targetLines('# Gone\n', null, target))).toBe('Slide 2 › lines "# Title"')
+  })
+
+  test('adversarial: Given a blank line, Then the comment quotes nothing and falls back to the slide\'s lines, its label naming no text', () => {
+    const at = BODY.indexOf('\n\n') + 1
+    const target = editorLinesTarget(SLIDE, 'body', BODY, at, at)
+    expect(target).toMatchObject({ kind: 'lines', quote: '', text: '' })
+    expect(newReviewComment(pending(target), SOURCE, span, 2)).toMatchObject({ quote: '', body: '[Slide 2 (key: intro) › lines] Tighter' })
+  })
+
+  test('adversarial: Given an empty field, offsets out of range, or a field the slide doesn\'t hold, Then a target still comes back and never throws', () => {
+    for (const [field, text, from, to] of [['body', '', 0, 0], ['note', '', 5, -3], ['body', BODY, -10, 999], ['note', 'not in the slide', 0, 3]] as const) {
+      const target = editorLinesTarget(SLIDE, field, text, from, to)
+      expect(target.kind).toBe('lines')
+      expect(target.offsetInSlide).toBeGreaterThanOrEqual(0)
+      expect(() => newReviewComment(pending(target), SOURCE, span, 2)).not.toThrow()
+    }
+  })
+
+  test('adversarial: Given lines with an emoji and HTML, Then the label cuts them as any excerpt, and the quote keeps them whole', () => {
+    const body = '<b>😀 émoji</b> line'
+    const target = editorLinesTarget(body, 'body', body, 0, 0)
+    expect(target.quote).toBe(body)
+    expect(targetLabel(1, target)).toBe('Slide 1 › lines "<b>😀 émoji</b> line"')
+  })
+
+  test('adversarial: Given a whole-slide target, Then it has no lines of its own', () => {
+    expect(targetLines(SOURCE, span, { kind: 'slide', text: '', quote: '', offsetInSlide: 0 })).toBeNull()
   })
 })
