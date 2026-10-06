@@ -16,7 +16,7 @@ async function open(page: Page, source = SOURCE, leftArity = '0..*'): Promise<Mo
   deck.layoutFiles!['title-only'] = { html: '<section class="peitho-slide" data-template="title-only" style="width:1280px;height:720px;padding:64px;box-sizing:border-box;background:white"><h1><slot name="title" accepts="inline" arity="1"></slot></h1></section>', css: null }
   deck.layoutVerdicts = () => deck.layouts!.map(layout => ({ layout, fit: { kind: 'fits' } }))
   await mockTauri(page, deck); await page.goto('/')
-  await expect(page.locator('[data-slide-row]')).toHaveCount(1)
+  await expect(page.locator('[data-slide-row]')).toHaveCount(splitSlides(source).length)
   await page.locator('[data-slide-row="0"]').click()
   await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Title')
   return deck
@@ -764,4 +764,39 @@ test('Enter at the list container boundary adds a final bullet instead of a plai
   await page.locator(FIELD).press('Meta+Enter')
   await expect.poll(() => deck.source).toContain('- One\n- Two')
   await expect(page.locator(`${PREVIEW} li`)).toHaveCount(2)
+})
+
+test('switching slides waits for pending list preparation and saves the latest input', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\n- One\n\n:::\n\n---\n<!-- {"key":"second","layout":"two-column"} -->\n# Second\n'
+  const deck = await open(page, source, '0..1')
+  await page.evaluate(() => {
+    const w = window as unknown as { __mockInvoke: (cmd: string, args: unknown) => Promise<unknown>; __releaseList?: () => void }
+    const invoke = w.__mockInvoke
+    w.__mockInvoke = async (cmd, args) => {
+      if (cmd === 'create_image_canvas') await new Promise<void>(resolve => { w.__releaseList = resolve })
+      return invoke(cmd, args)
+    }
+  })
+  await page.locator(`${PREVIEW} li`).click()
+  await listCaret(page, 0, true)
+  await page.keyboard.type('Keep')
+  await page.waitForFunction(() => Boolean((window as unknown as { __releaseList?: () => void }).__releaseList))
+  await page.locator('[data-slide-row="1"]').click()
+  await expect.poll(() => editorText(page)).toContain('# Title')
+  await page.evaluate(() => (window as unknown as { __releaseList: () => void }).__releaseList())
+  await expect.poll(() => editorText(page)).toBe('# Second')
+  await expect.poll(() => deck.source).toContain('- OneKeep')
+  await page.locator('[data-slide-row="0"]').click()
+  await expect(page.locator(`${PREVIEW} li`)).toHaveText('OneKeep')
+})
+
+test('a failed list layout preparation still preserves subsequent typing in Markdown', async ({ page }) => {
+  const deck = await open(page, SOURCE + '\n::: {slot=left}\n\n- One\n\n:::\n', '0..1')
+  deck.commandError = command => command === 'create_image_canvas' ? 'Cannot write layout' : null
+  await page.locator(`${PREVIEW} li`).click()
+  await listCaret(page, 0, true)
+  await page.keyboard.type('Keep')
+  await expect.poll(() => editorText(page)).toContain('- OneKeep')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(() => deck.source).toContain('- OneKeep')
 })

@@ -622,6 +622,8 @@ export function Studio() {
     await addImagesToPreview(files, null)
   }
 
+  let pendingSlideTextEdit: Promise<void> | null = null
+
   function startSlideTextEdit(target: SlideEditTarget): SlideEditSession | null {
     const view = bodyEditor
     const index = editor.selectedIndex()
@@ -682,7 +684,15 @@ export function Studio() {
             }
             if (queuedBody !== null) applyBody(queuedBody)
             if (finished && historyStarted) isolateCodeEditorHistory(view)
-          }).catch(err => { setErrorMessage(String(err)) })
+          }).catch(err => {
+            // Retain typed content even if the layout cannot be created.
+            prepared = true
+            if (!cancelled && queuedBody !== null) applyBody(queuedBody)
+            setErrorMessage(String(err))
+          })
+          const pending = preparing
+          pendingSlideTextEdit = pending
+          void pending.finally(() => { if (pendingSlideTextEdit === pending) pendingSlideTextEdit = null })
         }
         return true
       },
@@ -2061,6 +2071,7 @@ export function Studio() {
   // work, never blocking on a dialog the webview won't show.
   async function selectSlide(index: number): Promise<void> {
     if (index === editor.selectedIndex()) return
+    await pendingSlideTextEdit
     if (editor.isDirty() && !await handleSave()) return
     // Edits may have arrived while the save was in flight. Keep that draft
     // in its session instead of replacing it with another slide.
@@ -2074,6 +2085,7 @@ export function Studio() {
   }
 
   async function handleSave(): Promise<boolean> {
+    await pendingSlideTextEdit
     const range = editor.selectedRange()
     const index = editor.selectedIndex()
     if (!range || index === null) return false
@@ -2222,7 +2234,7 @@ export function Studio() {
   // a change that is no longer in the file.
   let structuralQueue: Promise<void> = Promise.resolve()
   function serialized<T>(run: () => Promise<T>): Promise<T> {
-    const next = structuralQueue.then(run)
+    const next = structuralQueue.then(async () => { await pendingSlideTextEdit; return run() })
     structuralQueue = next.then(() => undefined, () => undefined)
     return next
   }
@@ -2501,6 +2513,7 @@ export function Studio() {
   // queued without a dirty body, so the queue is drained first; never call
   // it from inside `serialized`, which would wait on itself.
   async function flushDeck(): Promise<boolean> {
+    await pendingSlideTextEdit
     await structuralQueue
     await saves.drain()
     if (editor.isDirty()) await handleSave()
