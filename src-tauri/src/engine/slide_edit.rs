@@ -131,7 +131,10 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
                 if let Some(rect) = placements.iter().find(|rect| rect.slot == slot) {
                     let previous = el.get_attribute("style").unwrap_or_default();
                     let layer = previous.split(';').find(|part| part.trim().starts_with("z-index:")).unwrap_or("");
-                    el.set_attribute("style", &format!("{}{layer};", placement_style(rect).expect("validated placement")))?;
+                    let style = if el.get_attribute("data-studio-text").is_some() {
+                        format!("position:absolute;left:{}%;top:{}%;width:{}%;height:auto;margin:0;overflow:visible;", rect.x * 100., rect.y * 100., rect.width * 100.)
+                    } else { placement_style(rect).expect("validated placement") };
+                    el.set_attribute("style", &format!("{style}{layer};"))?;
                 }
                 Ok(())
             }),
@@ -258,7 +261,12 @@ mod tests {
     fn pasted_text_objects_accept_formatted_paragraphs_and_headings_without_body_capacity_errors() {
         let (_dir, path, source) = deck();
         for content in ["Keep **formatting**", "# Title"] {
-            let canvas = text_canvas(&path, &source, "title-slide").unwrap();
+            let mut canvas = text_canvas(&path, &source, "title-slide").unwrap();
+            let placed = image_canvas_change(&path, &source, &canvas.layout, 0, &[ImagePlacement { slot: canvas.slots[0].clone(), x: 0.2, y: 0.3, width: 0.55, height: 0.04 }], &[]).unwrap();
+            let html = std::fs::read_to_string(path.parent().unwrap().join(format!("layouts/{}.html", placed.layout))).unwrap();
+            assert!(html.contains("height:auto;margin:0;overflow:visible;"));
+            assert!(!html.contains("overflow:hidden"));
+            canvas.layout = placed.layout;
             let source = source.replace("\"two-column\"", &format!("\"{}\"", canvas.layout));
             let source = format!("{source}\n::: {{slot={}}}\n\n{content}\n\n:::\n", canvas.slots[0]);
             let output = super::super::pipeline::render_source(&path, &source).unwrap();

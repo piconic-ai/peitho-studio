@@ -1451,7 +1451,7 @@ export function Studio() {
     const edit = click.image ? null : click.hit?.byteSpan ? textEditFor({ ...click.hit, kind: 'text', byteSpan: click.hit.byteSpan, heading: click.hit.kind === 'heading' }, render.renderedSource(), body, bodyStart, rawBody) : null
     const copiedDeckPath = deck.deckPath()
     const previewRoot = document.querySelector('[data-preview-host]')?.shadowRoot
-    const imageElement = click.image ? Array.from(previewRoot?.querySelectorAll<HTMLElement>('[data-studio-image]') ?? []).find(element => element.dataset.studioImage === click.image?.slot) : Array.from(previewRoot?.querySelectorAll<HTMLElement>('[data-peitho-src]') ?? []).find(element => element.getAttribute('data-peitho-md') === click.hit?.quote)?.closest<HTMLElement>('[data-studio-text],h1,h2,h3,h4,h5,h6,p,li')
+    const imageElement = click.image ? Array.from(previewRoot?.querySelectorAll<HTMLElement>('[data-studio-image]') ?? []).find(element => element.dataset.studioImage === click.image?.slot) : Array.from(previewRoot?.querySelectorAll<HTMLElement>('[data-peitho-src]') ?? []).find(element => element.getAttribute('data-peitho-md') === click.hit?.quote && element.getAttribute('data-peitho-src') === `${click.hit?.byteSpan?.start}-${click.hit?.byteSpan?.end}`)?.closest<HTMLElement>('[data-studio-text],h1,h2,h3,h4,h5,h6,p,li')
     const slideRect = imageElement?.closest('.peitho-slide')?.getBoundingClientRect()
     const imageRect = imageElement?.getBoundingClientRect()
     const placement = slideRect && imageRect ? { x: (imageRect.x - slideRect.x) / slideRect.width, y: (imageRect.y - slideRect.y) / slideRect.height, width: imageRect.width / slideRect.width, height: imageRect.height / slideRect.height } : undefined

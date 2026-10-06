@@ -337,7 +337,9 @@ test('one image moves behind actual slide text and returns to the foreground', a
   const image = page.locator(`${PREVIEW} [data-studio-image]`)
   const foreground = () => image.evaluate(element => {
     const rect = element.getBoundingClientRect()
-    return (element.getRootNode() as ShadowRoot).elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest('[data-studio-image]') !== null
+    const root = element.getRootNode()
+    if (!(root instanceof ShadowRoot) || !element.isConnected) return null
+    return root.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest('[data-studio-image]') !== null
   })
   await expect.poll(foreground).toBe(true)
   await image.click({ button: 'right', position: { x: 30, y: 30 } })
@@ -526,4 +528,35 @@ test('re-editing a rendered hard break does not add a blank line', async ({ page
   await page.locator(FIELD).pressSequentially('!')
   await expect.poll(() => editorText(page)).toContain('First  \nSecond!')
   expect(await editorText(page)).not.toContain('\u00a0')
+})
+
+test('pasted text uses the selected identical paragraph and grows without clipping its margins', async ({ page }) => {
+  await open(page, SOURCE + '\n::: {slot=left}\n\nsame\n\n:::\n\n::: {slot=right}\n\nsame\n\n:::\n')
+  const selected = page.locator(`${PREVIEW} [data-studio-slot="right"] p`)
+  await selected.evaluate(el => { el.style.fontSize = '64px' })
+  const slide = page.locator(`${PREVIEW} .peitho-slide`)
+  const slideBox = (await slide.boundingBox())!
+  const original = (await selected.boundingBox())!
+  await selected.click({ button: 'right' })
+  const menu = page.locator('[data-slide-menu]')
+  await menu.getByRole('button', { name: /^Copy/ }).click()
+  await slide.click({ button: 'right', position: { x: 5, y: 5 } })
+  await menu.getByRole('button', { name: /^Paste/ }).click()
+  const pasted = page.locator(`${PREVIEW} [data-studio-text]`)
+  await expect(pasted).toContainText('same')
+  const bounds = (await pasted.boundingBox())!
+  expect(bounds.x).toBeCloseTo(original.x + slideBox.width * .02, 0)
+  await expect(pasted).toHaveCSS('height', /px$/)
+  expect(await pasted.evaluate(el => (el as HTMLElement).style.height)).toBe('auto')
+  expect(await pasted.evaluate(el => getComputedStyle(el).overflow)).toBe('visible')
+  const visible = async () => pasted.evaluate(el => {
+    const wrapper = el.getBoundingClientRect(), child = el.querySelector('p')!.getBoundingClientRect()
+    return child.top >= wrapper.top - 1 && child.bottom <= wrapper.bottom + 1
+  })
+  expect(await visible()).toBe(true)
+  await pasted.locator('p').dblclick()
+  await page.locator(FIELD).fill('first\nsecond\nthird\nfourth')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(async () => (await pasted.boundingBox())!.height).toBeGreaterThan(bounds.height)
+  expect(await visible()).toBe(true)
 })

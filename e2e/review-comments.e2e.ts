@@ -162,12 +162,12 @@ test('Given no session, When an agent\'s own crit starts one and waits in it, Th
   crit.agentStartsSession()
 
   await expect(page.locator(CONNECT)).toBeHidden({ timeout: 8_000 })
-  await expect(page.locator('[data-review-status]')).toHaveText('Choose Comment, then click a part of the slide to leave feedback.')
+  await expect(page.locator('[data-review-status]')).toHaveText('Right-click a slide or element and choose Comment to leave feedback.')
 })
 
 test('Given an agent already waiting, Then no card is shown', async ({ page }) => {
   await openDeck(page, createFakeCritIpc())
-  await expect(page.locator('[data-review-status]')).toHaveText('Choose Comment, then click a part of the slide to leave feedback.')
+  await expect(page.locator('[data-review-status]')).toHaveText('Right-click a slide or element and choose Comment to leave feedback.')
   await expect(page.locator(CONNECT)).toBeHidden()
 })
 

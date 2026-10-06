@@ -552,7 +552,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         html = html.replace(/(<section[^>]*style=")([^"]*)"/, '$1$2;position:relative"')
         for (const slot of (args.removeSlots as string[] | undefined) ?? []) html = html.replace(new RegExp(`<(?:figure|div)[^>]*data-studio-(?:image|text)="${slot}"[\\s\\S]*?<\\/(?:figure|div)>`), '')
         for (const rect of args.placements as { slot: string; x: number; y: number; width: number; height: number }[]) {
-          html = html.replace(new RegExp(`(data-studio-(?:image|text)="${rect.slot}" style=")[^"]*"`), `$1position:absolute;left:${rect.x * 100}%;top:${rect.y * 100}%;width:${rect.width * 100}%;height:${rect.height * 100}%;margin:0"`)
+          html = html.replace(new RegExp(`(data-studio-(image|text)="${rect.slot}" style=")[^"]*"`), (_, prefix: string, kind: string) => `${prefix}position:absolute;left:${rect.x * 100}%;top:${rect.y * 100}%;width:${rect.width * 100}%;height:${kind === 'text' ? 'auto' : `${rect.height * 100}%`};margin:0;overflow:${kind === 'text' ? 'visible' : 'hidden'}"`)
         }
         if (args.imageOrder) {
           const figures = new Map([...html.matchAll(/<(?:figure|div)[^>]*data-studio-(?:image|text)="([^"]+)"[\s\S]*?<\/(?:figure|div)>/g)].map(match => [match[1], match[0]]))
