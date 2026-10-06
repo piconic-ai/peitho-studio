@@ -299,7 +299,8 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
   // keyboard and accessibility activation.
   let mouseStartedEdit = false
   root.addEventListener('mousedown', event => {
-    textMouseDown = event instanceof MouseEvent && event.button === 0
+    const target = event.target instanceof Element ? event.target : null
+    textMouseDown = event instanceof MouseEvent && event.button === 0 && Boolean(target) && !target?.closest(`${CONTROLS},[data-studio-image]`)
     const previous = box
     startTextEditing(event)
     mouseStartedEdit = Boolean(box && box !== previous)

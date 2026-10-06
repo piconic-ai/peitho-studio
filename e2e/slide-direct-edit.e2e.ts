@@ -67,6 +67,19 @@ test('the first mouse press selects text and accepts typing without another clic
   await expect.poll(() => deck.source).toContain('X')
 })
 
+test('clicking an in-slide control finishes text editing and releases preview updates', async ({ page }) => {
+  await open(page)
+  await page.locator(`${PREVIEW} .peitho-slide`).evaluate(slide => {
+    const button = document.createElement('button'); button.textContent = 'Slide action'; slide.append(button)
+  })
+  await page.locator(`${PREVIEW} h1`).click()
+  await expect(page.locator(FIELD)).toHaveCount(1)
+  await page.locator(`${PREVIEW} button`).click()
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  await fillEditor(page, '# Updated from Markdown')
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Updated from Markdown')
+})
+
 test('both empty columns accept text without requiring slot syntax', async ({ page }) => {
   const deck = await open(page)
   await expect(page.locator(`${PREVIEW} [data-studio-slot="left"]`)).toHaveAttribute('data-studio-empty', '')
