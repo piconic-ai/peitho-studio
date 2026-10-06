@@ -46,7 +46,7 @@ test('clearing a paragraph removes it so the emptied slot can take new text with
   const cleared = clearedSlideText(target, edit, slideTextLines(''))
   expect(cleared).toBe('# aaaaa')
   const typed = slotTextInsertion(cleared!, 'body', 'blocks', 'fdsafsda')!
-  expect(cleared!.slice(0, typed.from) + typed.insert).toBe('# aaaaa\n\n::: {slot=body}\n\nfdsafsda\n\n:::\n')
+  expect(cleared!.slice(0, typed.from) + typed.insert).toBe('# aaaaa\n\nfdsafsda\n')
   expect(clearedSlideText(target, edit, 'kept')).toBeNull()
 })
 
@@ -60,6 +60,14 @@ test('only blank paragraphs and free text boxes are cleared away', () => {
   const free = body.indexOf('Free')
   expect(clearedSlideText(text('studio-text-1'), edit(free, free + 4), ' \u00a0  \n\u00a0')).toBe('# Title\n\n- One')
   expect(clearedSlideText(text(), edit(free, free + 4), '\u00a0x')).toBeNull()
+})
+
+test('an empty body slot gets loose blocks while other slots stay fenced', () => {
+  expect(slotTextInsertion('# T', 'body', 'blocks', ' 本文 ')!.insert).toBe('\n\n本文\n')
+  expect(slotTextInsertion('# T', 'body', 'list', 'One\nTwo')!.insert).toBe('\n\n- One\n- Two\n')
+  expect(slotTextInsertion('', 'body', 'blocks', 'Only')!.insert).toBe('Only\n')
+  expect(slotTextInsertion('# T', 'body', 'blocks', '  \n ')).toBeNull()
+  expect(slotTextInsertion('# T', 'subtitle', 'blocks', 'Sub')!.insert).toBe('\n\n::: {slot=subtitle}\n\nSub\n\n:::\n')
 })
 
 test('an empty left or right column gets routed content without a body slot', () => {

@@ -59,7 +59,8 @@ export function slotTextInsertion(body: string, slot: string, accepts: string, v
   if (accepts === 'inline') content = `## ${content.replace(/\n/g, ' ')}`
   if (accepts === 'list' && !/^\s*(?:[-+*]|\d+[.)])\s/.test(content)) content = content.split('\n').map(line => `- ${line}`).join('\n')
   if (slot === 'title') content = `# ${value.trim().replace(/\n/g, ' ')}`
-  else content = `::: {slot=${slot}}\n\n${content}\n\n:::`
+  // Loose blocks after the heading already route to `body`.
+  else if (slot !== 'body') content = `::: {slot=${slot}}\n\n${content}\n\n:::`
   if (slot === 'title') {
     const heading = /^(?:[ \t]*\r?\n)*[ \t]{0,3}#(?:[ \t]+([^\r\n]*)|(?=\r?\n|$))/.exec(body)
     if (heading) {
