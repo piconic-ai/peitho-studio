@@ -631,8 +631,9 @@ export function Studio() {
     const renderedBody = range ? extractPageComment(extractNote(range.text).rest).rest : null
     const recovery = errorMessage()?.includes(`slide ${index + 1} `) && errorMessage()?.includes("missing 'body' slot")
     if (renderedBody === null || (renderedBody !== before.trim() && !recovery)) return null
-    const bodyStart = (range?.start ?? 0) + (range?.text.indexOf(renderedBody) ?? 0) - (before.length - before.trimStart().length)
-    const edit = target.kind === 'text' ? textEditFor(target, render.renderedSource(), before, bodyStart) : recovery ? looseBodyEdit(before, target.slot, target.accepts) : null
+    const rawBody = range ? extractPageComment(extractNote(range.text, true).rest, true).rest : ''
+    const bodyStart = (range?.start ?? 0) + (range?.text.indexOf(rawBody) ?? 0)
+    const edit = target.kind === 'text' ? textEditFor(target, render.renderedSource(), before, bodyStart, rawBody) : recovery ? looseBodyEdit(before, target.slot, target.accepts) : null
     if (target.kind === 'text' && edit === null) return null
     let currentBody = before
     let historyStarted = false
@@ -650,6 +651,9 @@ export function Studio() {
     return {
       value: edit?.value ?? '',
       commit: value => {
+        if (target.kind === 'text' && target.slot?.startsWith('studio-text-') && value.trim() === '') {
+          return edit !== null && applyBody(removeSlideText({ ...edit, heading: false }))
+        }
         const insertion = edit ? textEditInsertion(edit, before, value) : target.kind === 'slot' ? slotTextInsertion(before, target.slot, target.accepts, value) : null
         if (!insertion) return false
         return applyBody(before.slice(0, insertion.from) + insertion.insert + before.slice(insertion.to))
@@ -1195,7 +1199,13 @@ export function Studio() {
   createEffect(() => {
     editor.bodyDraft()
     editor.noteDraft()
-    if (!editor.isDirty()) return
+    if (!editor.isDirty()) {
+      untrack(() => {
+        const source = editor.fullSource()
+        if (source !== render.renderedSource()) void renderPreview(source)
+      })
+      return
+    }
     const timer = window.setTimeout(() => {
       const draft = currentDraftSource()
       if (draft !== null) void renderPreview(draft)
@@ -1380,6 +1390,7 @@ export function Studio() {
     return menu.kind === 'on-slide' && Boolean(menu.comment?.image || menu.comment?.hit)
   })
 
+  const [pasteSerial, setPasteSerial] = createSignal(0)
   const [elementClipboard, setElementClipboard] = createSignal<{ markdown: string; image: boolean; deckPath: string | null; placement?: { x: number; y: number; width: number; height: number } } | null>(null)
   const previewCanvasMenu = createMemo(() => {
     const menu = ui.contextMenu()
@@ -1410,13 +1421,14 @@ export function Studio() {
       const source = syncedSource(currentSlideTexts())
       let canvas = await imageIpc.createImageCanvas(source, base, copied.image ? 1 : 0, [], [], undefined, undefined, copied.image ? 0 : 1)
       if (editor.selectedIndex() !== index || currentSlideText(index) !== before || slidePositionsEpoch !== epoch) return
-      if (copied.image && copied.placement) {
+      if (copied.placement) {
         const rect = copied.placement
-        canvas = await imageIpc.createImageCanvas(source, canvas.layout, 0, [{ slot: canvas.slots[0], ...rect, x: Math.min(1 - rect.width, rect.x + .02), y: Math.min(1 - rect.height, rect.y + .02) }]).then(positioned => ({ ...positioned, slots: canvas.slots }))
+        canvas = await imageIpc.createImageCanvas(source, canvas.layout, 0, [{ slot: canvas.slots[0], ...rect, x: Math.min(1 - rect.width, rect.x + .02 * (pasteSerial() + 1)), y: Math.min(1 - rect.height, rect.y + .02 * (pasteSerial() + 1)) }]).then(positioned => ({ ...positioned, slots: canvas.slots }))
       }
       if (editor.selectedIndex() !== index || currentSlideText(index) !== before || slidePositionsEpoch !== epoch) return
       const body = `${fields.rest}\n\n::: {slot=${canvas.slots[0]}}\n\n${copied.markdown}\n\n:::`
       await perform({ kind: 'slides', cmd: { type: 'replace', index, text: buildSlideText({ ...fields.config, layout: canvas.layout }, body, note) } })
+      setPasteSerial(pasteSerial() + 1)
     } catch (err) { setErrorMessage(String(err)) }
     finally { setPreviewImageBusy(false) }
   }
@@ -1434,10 +1446,12 @@ export function Studio() {
     const range = splitSlides(render.renderedSource())[index]
     const renderedBody = range ? extractPageComment(extractNote(range.text).rest).rest : null
     if (renderedBody !== body.trim()) return
-    const bodyStart = range!.start + range!.text.indexOf(renderedBody) - (body.length - body.trimStart().length)
-    const edit = click.image ? null : click.hit?.byteSpan ? textEditFor({ ...click.hit, kind: 'text', byteSpan: click.hit.byteSpan, heading: click.hit.kind === 'heading' }, render.renderedSource(), body, bodyStart) : null
+    const rawBody = extractPageComment(extractNote(range!.text, true).rest, true).rest
+    const bodyStart = range!.start + range!.text.indexOf(rawBody)
+    const edit = click.image ? null : click.hit?.byteSpan ? textEditFor({ ...click.hit, kind: 'text', byteSpan: click.hit.byteSpan, heading: click.hit.kind === 'heading' }, render.renderedSource(), body, bodyStart, rawBody) : null
     const copiedDeckPath = deck.deckPath()
-    const imageElement = click.image ? Array.from(document.querySelector('[data-preview-host]')?.shadowRoot?.querySelectorAll<HTMLElement>('[data-studio-image]') ?? []).find(element => element.dataset.studioImage === click.image?.slot) : null
+    const previewRoot = document.querySelector('[data-preview-host]')?.shadowRoot
+    const imageElement = click.image ? Array.from(previewRoot?.querySelectorAll<HTMLElement>('[data-studio-image]') ?? []).find(element => element.dataset.studioImage === click.image?.slot) : Array.from(previewRoot?.querySelectorAll<HTMLElement>('[data-peitho-src]') ?? []).find(element => element.getAttribute('data-peitho-md') === click.hit?.quote)?.closest<HTMLElement>('[data-studio-text],h1,h2,h3,h4,h5,h6,p,li')
     const slideRect = imageElement?.closest('.peitho-slide')?.getBoundingClientRect()
     const imageRect = imageElement?.getBoundingClientRect()
     const placement = slideRect && imageRect ? { x: (imageRect.x - slideRect.x) / slideRect.width, y: (imageRect.y - slideRect.y) / slideRect.height, width: imageRect.width / slideRect.width, height: imageRect.height / slideRect.height } : undefined
@@ -1446,10 +1460,11 @@ export function Studio() {
     try {
       if (action !== 'delete') {
         await editorIpc.writeClipboardText(copied)
+        setPasteSerial(0)
         setElementClipboard({ markdown: copied, image: Boolean(click.image), deckPath: copiedDeckPath, placement })
       }
       if (action === 'copy' || editor.selectedIndex() !== index || slidePositionsEpoch !== epoch || currentSlideText(index) !== before) return
-      if (click.image) { await removePreviewImage(click.image.slot); return }
+      if (click.image || click.textSlot) { await removePreviewImage(click.image?.slot ?? click.textSlot!); return }
       if (edit && bodyEditor) {
         const change = editorTextChange(body, removeSlideText(edit))
         if (change) insertIntoCodeEditor(bodyEditor, { ...change, cursor: change.from }, 'delete.cut')
@@ -3659,6 +3674,7 @@ export function Studio() {
         return
       }
       if (isTypingInField()) return
+      if (document.activeElement?.closest('[data-panel="preview"]')) return
       // The slide shortcuts (arrows, Delete, Cmd+X/C/V…) would act on slides
       // out of sight while the layout screen shows.
       if (ui.studioMode() === 'layouts') return
@@ -3666,6 +3682,7 @@ export function Studio() {
       // Edit menu's Undo/Redo accelerators, the one path for both keyboard
       // and mouse (see `onMenuHistory` above).
       const key = event.key.toLowerCase()
+      if ((['Delete', 'Backspace'].includes(event.key) || (event.metaKey || event.ctrlKey) && ['x', 'c', 'v'].includes(key)) && !document.activeElement?.closest('[data-panel="slides"]')) return
       // `slideEntries().length`, not `manifest.slideCount`/`manifest.slides.length`
       // — the latter excludes drafts, which would leave ArrowUp/ArrowDown
       // permanently unable to reach a draft placeholder (or anything past
@@ -3961,6 +3978,7 @@ export function Studio() {
               onImagePosition={positionPreviewImage}
               imageBusy={previewImageBusy()}
               onPasteElement={tryPasteElement}
+              onTextAction={(target, action) => { void runElementAction(action, { hit: { ...target, kind: target.heading ? 'heading' : 'paragraph' }, textSlot: target.slot, pin: null, at: { x: 0, y: 0 } }) }}
               onImageClipboard={(slot, action) => { void runElementAction(action, { hit: null, pin: null, at: { x: 0, y: 0 }, image: { slot, order: [] } }) }}
               onRemoveImage={slot => { void removePreviewImage(slot) }}
             />
@@ -4168,6 +4186,7 @@ export function Studio() {
         canvasMenu={previewCanvasMenu()}
         canPasteElement={Boolean(elementClipboard() && elementClipboard()?.deckPath === deck.deckPath())}
         onPasteElement={() => { void pasteElement() }}
+        onAddImage={() => { ui.closeContextMenu(); document.querySelector<HTMLInputElement>('[data-preview-image-input]')?.dispatchEvent(new Event('studio-add-image')) }}
         onElementAction={action => { void runElementAction(action) }}
         imageBusy={previewImageBusy()}
         onImageOrder={runImageOrderAction}

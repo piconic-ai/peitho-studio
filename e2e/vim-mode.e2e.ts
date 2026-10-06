@@ -234,7 +234,7 @@ test.describe('functional', () => {
     await page.keyboard.type('i')
 
     await page.locator('[data-slide-row="1"]').click({ button: 'right' })
-    const menuDelete = page.getByText('Delete', { exact: true })
+    const menuDelete = page.locator('[data-slide-menu]').getByRole('button', { name: /^Delete/ })
     await expect(menuDelete).toBeVisible()
 
     await page.keyboard.press('Escape')

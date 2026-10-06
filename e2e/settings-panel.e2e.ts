@@ -111,7 +111,7 @@ test.describe('robustness', () => {
     const deck: MockDeck = { source: TWO_SLIDES }
     await openDeck(page, deck)
     await page.locator('[data-slide-row="1"]').click({ button: 'right' })
-    await page.getByText('Delete', { exact: true }).click()
+    await page.locator('[data-slide-menu]').getByRole('button', { name: /^Delete/ }).click()
     await expect(page.locator('[data-slide-row]')).toHaveCount(1, { timeout: 5_000 })
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
 

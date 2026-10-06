@@ -99,7 +99,7 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
     }).transpose()?;
     let layout = carried.as_ref().unwrap_or(layout);
     for rect in placements {
-        if !rect.slot.starts_with("studio-image-") || layout.slot(&rect.slot).is_none() { return Err("this image is not freely positioned".into()) }
+        if !(rect.slot.starts_with("studio-image-") || rect.slot.starts_with("studio-text-")) || layout.slot(&rect.slot).is_none() { return Err("this image is not freely positioned".into()) }
         placement_style(rect)?;
     }
     for slot in removed {
@@ -263,10 +263,33 @@ mod tests {
             let source = format!("{source}\n::: {{slot={}}}\n\n{content}\n\n:::\n", canvas.slots[0]);
             let output = super::super::pipeline::render_source(&path, &source).unwrap();
             assert!(output.fragments["slide"].contains("data-studio-text=\"studio-text-1\""));
+            let verdicts = super::super::layout_fit::check_slide_layouts(&path, &source, 0).unwrap().unwrap();
+            assert_eq!(verdicts.iter().find(|verdict| verdict.layout == "two-column").unwrap().fit, super::super::layout_fit::LayoutFit::Fits);
             let rebased = rebase_image_canvas(&path, &source, &canvas.layout, "two-column").unwrap();
             let source = source.replace(&canvas.layout, &rebased.layout);
             assert!(super::super::pipeline::render_source(&path, &source).is_ok());
         }
+    }
+
+    #[test]
+    fn removed_text_content_does_not_leave_rendered_text_behind() {
+        let (_dir, fixture_path, fixture_source) = deck();
+        let path = if let Ok(path) = std::env::var("PEITHO_REPRO_DECK") { std::path::PathBuf::from(path) } else {
+            let canvas = text_canvas(&fixture_path, &fixture_source, "title-slide").unwrap();
+            let source = fixture_source.replace("\"slide\"", "\"cover\"").replace("\"two-column\"", &format!("\"{}\"", canvas.layout));
+            std::fs::write(&fixture_path, format!("{source}\n::: {{slot=studio-text-1}}\n\nあああああ\n\n:::\n")).unwrap();
+            fixture_path
+        };
+        let source = std::fs::read_to_string(&path).unwrap();
+        let original = super::super::pipeline::render_source(&path, &source).unwrap();
+        assert!(original.fragments["cover"].contains("あああああ"));
+        let from = source.find("::: {slot=studio-text-1}").unwrap();
+        let end = from + source[from..].find("\n:::").unwrap() + 4;
+        let removed = format!("{}{}", &source[..from], &source[end..]);
+        let output = super::super::pipeline::render_source(&path, &removed).unwrap();
+        assert!(!output.fragments["cover"].contains("あああああ"));
+        let empty = source.replace("あああああ", "\u{00a0}");
+        assert!(super::super::pipeline::render_source(&path, &empty).is_ok());
     }
 
     #[test]

@@ -17,6 +17,7 @@ export interface SlideContextMenuProps {
   menuItems: MenuItem[]
   image?: { slot: string; order: string[] } | null
   onElementAction?: (action: 'cut' | 'copy' | 'delete') => void
+  onAddImage?: () => void
   canvasMenu?: boolean
   canPasteElement?: boolean
   onPasteElement?: () => void
@@ -140,6 +141,11 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
         <div hidden={!props.canvasMenu || props.elementMenu}>
           <button type="button" disabled={!props.canPasteElement || props.imageBusy} onClick={() => props.onPasteElement?.()} className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40">
             <span>{messagesFor(props.language).paste}</span><span className="text-xs text-muted-foreground">⌘V</span>
+          </button>
+        </div>
+        <div hidden={!props.canvasMenu}>
+          <button type="button" onClick={() => props.onAddImage?.()} className="w-full flex items-center pl-9 pr-3 py-1.5 hover:bg-accent" data-preview-add-image-menu>
+            {props.language === 'ja' ? '画像を追加…' : 'Add image…'}
           </button>
         </div>
         <div hidden={props.canvasMenu} data-slide-menu-controls>

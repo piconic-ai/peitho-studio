@@ -1,5 +1,8 @@
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
+import { splitSlides, extractNote, extractPageComment } from '../domain/slides'
 import { editorText, fillEditor } from './helpers/codeEditor'
 
 const PREVIEW = '[data-preview-host]'
@@ -21,7 +24,7 @@ async function open(page: Page, source = SOURCE): Promise<MockDeck> {
 
 test('text edits update Markdown as one undoable edit, and clicks no longer open comments', async ({ page }) => {
   const deck = await open(page)
-  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(`${PREVIEW} h1`).dblclick()
   await expect(page.locator(FIELD)).toHaveText('Title')
   await expect(page.locator('[data-comment-box]')).toBeHidden()
   await page.locator(FIELD).fill('成長率')
@@ -50,13 +53,13 @@ test('both empty columns accept text without requiring slot syntax', async ({ pa
 
 test('cancel leaves Markdown unchanged and commenting remains an explicit mode', async ({ page }) => {
   const deck = await open(page)
-  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(`${PREVIEW} h1`).dblclick()
   await page.locator(FIELD).fill('Discard')
   await page.locator(FIELD).press('Escape')
   await expect(page.locator(FIELD)).toHaveCount(0)
   expect(deck.source).toBe(SOURCE)
-  await page.locator('[data-preview-comment-mode]').click()
-  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(`${PREVIEW} h1`).click({ button: 'right' })
+  await page.locator('[data-slide-menu-item="comment"]').click()
   await expect(page.locator('[data-comment-box]')).toBeVisible()
   await expect(page.locator(FIELD)).toHaveCount(0)
 })
@@ -125,19 +128,19 @@ test('editing stays in the slide with its typography and commits on outside clic
   const deck = await open(page)
   const heading = page.locator(`${PREVIEW} h1`)
   const size = await heading.evaluate(el => getComputedStyle(el).fontSize)
-  await heading.click()
+  await heading.dblclick()
   await expect(page.locator(`${PREVIEW} textarea`)).toHaveCount(0)
   await expect(page.locator(`${PREVIEW} [data-studio-edit] button`)).toHaveCount(0)
   expect(await page.locator(FIELD).evaluate(el => getComputedStyle(el).fontSize)).toBe(size)
   await page.locator(FIELD).fill('Inline title')
-  await page.locator('[data-preview-comment-mode]').click()
+  await page.locator('[data-slide-row="0"]').click()
   await expect.poll(() => deck.source).toContain('# Inline title')
   await expect(page.locator(FIELD)).toHaveCount(0)
 })
 
 test('Enter finishes a title and multiline column text remains in that column', async ({ page }) => {
   const deck = await open(page)
-  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(`${PREVIEW} h1`).dblclick()
   await page.locator(FIELD).fill('New title')
   await page.locator(FIELD).press('Enter')
   await expect.poll(() => deck.source).toContain('# New title')
@@ -159,7 +162,7 @@ test('with the editor closed, blank lines in a cover text box do not create extr
   await page.locator('[data-slide-row="0"]').click()
   await page.getByRole('button', { name: 'Editor: Close', exact: true }).click()
   await expect(page.locator('[data-editor="body"]')).toBeHidden()
-  await page.locator(`${PREVIEW} p`).click()
+  await page.locator(`${PREVIEW} p`).dblclick()
   await page.locator(FIELD).fill('First')
   await page.locator(FIELD).press('End')
   await page.locator(FIELD).press('Enter')
@@ -174,7 +177,7 @@ test('with the editor closed, blank lines in a cover text box do not create extr
 
 test('Markdown updates while typing without replacing the focused slide element', async ({ page }) => {
   await open(page)
-  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(`${PREVIEW} h1`).dblclick()
   await page.locator(FIELD).fill('Live title')
   await expect.poll(() => editorText(page)).toBe('# Live title')
   await page.waitForTimeout(900)
@@ -193,7 +196,7 @@ test('editing the first of two slides keeps the next settings behind a real slid
   await mockTauri(page, deck); await page.goto('/')
   await expect(page.locator('[data-slide-row]')).toHaveCount(2)
   await page.locator('[data-slide-row="0"]').click()
-  await page.locator(`${PREVIEW} p`).click()
+  await page.locator(`${PREVIEW} p`).dblclick()
   await page.locator(FIELD).fill('Edited body')
   await expect.poll(() => editorText(page)).toContain('Edited body')
   await page.locator(FIELD).press('Meta+Enter')
@@ -206,7 +209,7 @@ test('editing the first of two slides keeps the next settings behind a real slid
 
 test('IME conversion updates Markdown only after composition ends', async ({ page }) => {
   await open(page)
-  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(`${PREVIEW} h1`).dblclick()
   await page.locator(FIELD).evaluate(el => {
     el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
     el.textContent = '変換中'
@@ -226,10 +229,10 @@ test('direct edits preserve inline code and emphasis and leave untouched Markdow
   const paragraph = page.locator(`${PREVIEW} [data-studio-slot="left"] p`)
   // Match the real engine's inline HTML; the fixture mock intentionally renders plain text.
   await paragraph.evaluate(el => { el.innerHTML = 'Use <code>code</code> and <strong>bold</strong>.' })
-  await paragraph.click({ position: { x: 5, y: 5 } })
+  await paragraph.dblclick({ position: { x: 5, y: 5 } })
   await page.locator(FIELD).press('Meta+Enter')
   expect(deck.source).toBe(source)
-  await paragraph.click({ position: { x: 5, y: 5 } })
+  await paragraph.dblclick({ position: { x: 5, y: 5 } })
   await page.locator(FIELD).press('End')
   await page.locator(FIELD).pressSequentially('!')
   await expect.poll(() => editorText(page)).toContain('Use \`code\` and **bold**.!')
@@ -239,7 +242,7 @@ test('direct edits preserve inline code and emphasis and leave untouched Markdow
 
 test('typing Markdown punctuation on the canvas writes literal text safely', async ({ page }) => {
   await open(page)
-  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(`${PREVIEW} h1`).dblclick()
   await page.locator(FIELD).fill('Use *literal* <tag>')
   await expect.poll(() => editorText(page)).toBe('# Use \\*literal\\* \\<tag\\>')
   await page.locator(FIELD).press('Meta+Enter')
@@ -250,7 +253,7 @@ test('a complete canvas session undoes and redoes as one unit across typing, pau
   await open(page)
   await fillEditor(page, '# Before session')
   await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Before session')
-  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(`${PREVIEW} h1`).dblclick()
   await page.locator(FIELD).fill('')
   await page.locator(FIELD).pressSequentially('First')
   await page.waitForTimeout(700)
@@ -268,7 +271,7 @@ test('a complete canvas session undoes and redoes as one unit across typing, pau
   await expect.poll(() => editorText(page)).toBe('# Moved First second')
   // A later canvas edit must start its own group.
   await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Moved First second')
-  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(`${PREVIEW} h1`).dblclick()
   await page.locator(FIELD).fill('Next session')
   await page.locator(FIELD).press('Meta+Enter')
   await history('undo')
@@ -296,7 +299,7 @@ test('image context menu supports all four actions, boundaries, Undo and failed 
     await expect(toolbar).toBeVisible()
   }
   await showMenu()
-  await expect(toolbar.locator('button:visible')).toHaveCount(9)
+  await expect(toolbar.locator('button:visible')).toHaveCount(10)
   await expect(toolbar.locator('button:visible').first()).toHaveAttribute('data-slide-menu-item', 'comment')
   await expect(toolbar.getByRole('button', { name: /^New Slide/ })).toBeHidden()
   await expect(page.locator(`${PREVIEW} [data-studio-image-order]`)).toHaveCount(0)
@@ -354,7 +357,7 @@ test('preview menus contain element actions and paste while thumbnail menus own 
   const menu = page.locator('[data-slide-menu]')
   await page.locator(`${PREVIEW} h1`).click({ button: 'right' })
   await expect(menu).toBeVisible()
-  await expect(menu.locator('button:visible')).toHaveCount(5)
+  await expect(menu.locator('button:visible')).toHaveCount(6)
   await expect(menu.locator('button:visible').first()).toHaveAttribute('data-slide-menu-item', 'comment')
   await expect(menu.getByRole('button', { name: /^New Slide/ })).toBeHidden()
   await page.mouse.click(1, 600)
@@ -426,15 +429,98 @@ test('copied and cut elements paste as separate canvas objects via menu and keyb
   await expect(page.locator(`${PREVIEW} [data-studio-text] h1`)).toHaveText('Title')
   await page.locator('[data-preview-image-input]').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64') })
   const images = page.locator(`${PREVIEW} [data-studio-image]`)
+  const originalImageRect = await images.boundingBox()
   await images.click({ button: 'right' })
   await menu.getByRole('button', { name: /^Cut/ }).click()
   await expect(images).toHaveCount(0)
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.evaluate(text => navigator.clipboard.writeText(text!), deck.clipboardText)
   await background.click({ position: { x: 5, y: 5 } })
-  await page.locator(PREVIEW).press('Meta+v')
+  await page.locator(PREVIEW).press('ControlOrMeta+v')
   await expect(images).toHaveCount(1)
+  const firstPasteRect = await images.boundingBox()
+  expect(firstPasteRect!.x).toBeGreaterThan(originalImageRect!.x)
+  expect(firstPasteRect!.y).toBeGreaterThan(originalImageRect!.y)
   await images.click()
-  await images.press('Meta+v')
+  await images.press('ControlOrMeta+v')
   await expect(images).toHaveCount(2)
+  const secondPasteRect = await images.nth(1).boundingBox()
+  expect(secondPasteRect!.x).toBeGreaterThan(firstPasteRect!.x)
+  expect(secondPasteRect!.y).toBeGreaterThan(firstPasteRect!.y)
+})
+
+
+test('selection shortcuts act on text objects, typing enters edit mode, and empty canvas never deletes a slide', async ({ page }) => {
+  const deck = await open(page, SOURCE + '\n::: {slot=left}\n\nText object\n\n:::\n')
+  await page.locator(`${PREVIEW} p`).click()
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  await page.keyboard.press('Meta+c')
+  await expect.poll(() => deck.clipboardText).toBe('Text object')
+  await page.keyboard.press('Delete')
+  await expect.poll(() => deck.source).not.toContain('Text object')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(1)
+  await page.locator(`${PREVIEW} h1`).click()
+  await page.keyboard.press('a')
+  await expect(page.locator(FIELD)).toHaveText('a')
+  await page.keyboard.press('Meta+Enter')
+  await expect.poll(() => editorText(page)).toBe('# a')
+  await page.locator(`${PREVIEW} .peitho-slide`).click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press('Delete')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(1)
+  await expect(page.locator('[data-preview-comment-mode], [data-preview-add-image]')).toHaveCount(0)
+  await page.locator(`${PREVIEW} .peitho-slide`).click({ button: 'right', position: { x: 5, y: 5 } })
+  await expect(page.locator('[data-preview-add-image-menu]')).toBeVisible()
+})
+
+const reproDirectory = process.env.PEITHO_REPRO_DECK_DIR
+
+test('real deck text removed from Markdown disappears and cannot keep an unsynchronized editing field', async ({ page }) => {
+  test.skip(!reproDirectory, 'Set PEITHO_REPRO_DECK_DIR to the read-only reproduction snapshot')
+  const source = readFileSync(join(reproDirectory!, 'deck.md'), 'utf8')
+  const layoutFiles = Object.fromEntries(readdirSync(join(reproDirectory!, 'layouts')).filter(file => file.endsWith('.html')).map(file => [file.slice(0, -5), { html: readFileSync(join(reproDirectory!, 'layouts', file), 'utf8'), css: null }]))
+  const css = readdirSync(join(reproDirectory!, 'css')).filter(file => file.endsWith('.css')).map(file => readFileSync(join(reproDirectory!, 'css', file), 'utf8')).join('\n')
+  const deck: MockDeck = { source, deckPath: '/Users/kfly8/Desktop/test/deck.md', editAnnotations: true, editableLayouts: true, layouts: Object.keys(layoutFiles), layoutFiles, css }
+  await mockTauri(page, deck); await page.goto('/')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(3)
+  await page.locator('[data-slide-row="0"]').click()
+  const text = page.locator(`${PREVIEW} [data-studio-text="studio-text-1"]`)
+  await expect(text).toContainText('あああああ')
+  const original = extractPageComment(extractNote(splitSlides(source)[0].text).rest).rest
+  await text.locator('p').dispatchEvent('click', { detail: 2 })
+  await page.locator(FIELD).fill('')
+  await fillEditor(page, original.replace(/::: \{slot=studio-text-1\}[\s\S]*?\n:::/, ''))
+  await expect(text).toBeHidden()
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  await expect.poll(() => editorText(page)).not.toContain('studio-text-1')
+  await page.locator('[data-editor="body"] .cm-content').press('ControlOrMeta+a')
+  await page.keyboard.insertText(original)
+  await expect.poll(() => deck.source).toContain('あああああ')
+  await expect(text).toContainText('あああああ')
+  await text.locator('p').dispatchEvent('click', { detail: 2 })
+  await page.locator(FIELD).fill('Markdownと同期')
+  await expect.poll(() => deck.source).toContain('Markdownと同期')
+  await page.locator(FIELD).press('Meta+Enter')
+  await text.locator('p').dispatchEvent('click', { detail: 1 })
+  await page.keyboard.press('Delete')
+  await expect(text).toHaveCount(0)
+  await expect.poll(() => editorText(page)).not.toContain('studio-text-1')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(3)
+})
+
+
+test('re-editing a rendered hard break does not add a blank line', async ({ page }) => {
+  await open(page, SOURCE + '\n::: {slot=left}\n\nFirst  \nSecond\n\n:::\n')
+  const paragraph = page.locator(`${PREVIEW} [data-studio-slot="left"] p`).first()
+  await paragraph.evaluate(el => {
+    const start = Number(el.getAttribute('data-peitho-src')!.split('-')[0])
+    el.setAttribute('data-peitho-src', `${start}-${start + 'First  \nSecond'.length}`)
+    el.setAttribute('data-peitho-md', 'First  \nSecond')
+    el.innerHTML = 'First<br />\nSecond'
+    el.nextElementSibling?.remove()
+  })
+  await paragraph.dblclick({ position: { x: 5, y: 5 } })
+  await page.locator(FIELD).press('ControlOrMeta+End')
+  await page.locator(FIELD).pressSequentially('!')
+  await expect.poll(() => editorText(page)).toContain('First  \nSecond!')
+  expect(await editorText(page)).not.toContain('\u00a0')
 })

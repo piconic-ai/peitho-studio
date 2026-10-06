@@ -54,7 +54,7 @@ pub fn check_slide_layouts(deck_path: &Path, source: &str, slide_index: usize) -
         return Ok(None);
     };
     if let Some(from) = slide.layout_request.as_ref().and_then(|request| parsed.assets.layouts.get(request.name.as_str())) {
-        if from.html().contains("data-studio-image=") {
+        if from.html().contains("data-studio-image=") || from.html().contains("data-studio-text=") {
             let carried = parsed.assets.layouts.iter().map(|base| super::slide_edit::with_canvas_images(base, from)).collect::<Result<Vec<_>, _>>()?;
             return verdicts_for(slide, &Layouts::new(carried).map_err(|err| err.to_string())?).map(Some);
         }

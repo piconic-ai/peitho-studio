@@ -11,6 +11,7 @@ export interface SlideEditingCallbacks {
   imageGesture: (slot: string, rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>
   pasteImages: (files: File[]) => void
   pasteElement: (text: string) => boolean
+  textAction: (target: Extract<SlideEditTarget, { kind: 'text' }>, action: 'cut' | 'copy' | 'delete') => void
   imageClipboard: (slot: string, action: 'cut' | 'copy') => void
   removeImage: (slot: string) => void
 }
@@ -30,6 +31,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
   let commit: (() => boolean) | null = null
   let composing = false
   let selectedImage: HTMLElement | null = null
+  let selectedText: HTMLElement | null = null
   const close = () => { const cleanup = restore; restore = null; box = null; commit = null; cleanup?.(); host.removeAttribute('data-studio-text-editing'); flushSlideTextEdit(host) }
   const state = { callbacks, close }
   watched.set(root, state)
@@ -58,6 +60,8 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       const sameSlide = selectedImage.closest('.peitho-slide')?.getAttribute('data-slide-key') === root.querySelector('.peitho-slide')?.getAttribute('data-slide-key')
       selectedImage = sameSlide ? Array.from(root.querySelectorAll<HTMLElement>('[data-studio-image]')).find(image => image.dataset.studioImage === selectedImage?.dataset.studioImage) ?? null : null
     }
+    if (selectedText && !selectedText.isConnected) selectedText = null
+    for (const element of root.querySelectorAll<HTMLElement>('[data-peitho-src], [data-studio-empty]')) element.toggleAttribute('data-studio-selected', element === selectedText)
     const images = Array.from(root.querySelectorAll<HTMLElement>('[data-studio-image]'))
     for (const image of images) image.toggleAttribute('data-studio-selected', image === selectedImage)
     for (const image of root.querySelectorAll<HTMLElement>('[data-studio-image]')) {
@@ -73,6 +77,8 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       const accepts = element.dataset.studioAccepts ?? ''
       const empty = ['inline', 'blocks', 'list', 'image'].includes(accepts) && element.dataset.studioSlot !== 'footnotes' && element.textContent?.trim() === '' && !element.querySelector('img,svg,video,canvas')
       element.toggleAttribute('data-studio-empty', Boolean(empty) && state.callbacks.enabled())
+      const freeText = element.closest<HTMLElement>('[data-studio-text]')
+      if (freeText) freeText.hidden = Boolean(empty) && !freeText.querySelector('[data-studio-edit]')
       const ja = state.callbacks.language() === 'ja'
       const labels: Record<string, string> = ja ? { title: 'タイトルを入力', body: '本文を入力', left: '左の文章を入力', right: '右の文章を入力', subtitle: 'サブタイトルを入力' } : { title: 'Add a title', body: 'Add text', left: 'Add left column text', right: 'Add right column text', subtitle: 'Add a subtitle' }
       element.dataset.studioPlaceholder = accepts === 'image' ? (ja ? '画像を追加' : 'Add an image') : (labels[element.dataset.studioSlot ?? ''] ?? (ja ? 'クリックして入力' : 'Click to add text'))
@@ -85,7 +91,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
   root.addEventListener('contextmenu', event => {
     if (!state.callbacks.enabled() || !(event.target instanceof Element)) return
     const image = event.target.closest<HTMLElement>('[data-studio-image]')
-    if (image) { selectedImage = image; image.tabIndex = 0; image.focus(); markEmpty() }
+    if (image) { selectedText = null; selectedImage = image; image.tabIndex = 0; image.focus(); markEmpty() }
   }, true)
   root.addEventListener('mousedown', event => {
     if (!(event instanceof MouseEvent) || event.button !== 0 || !state.callbacks.enabled()) return
@@ -94,7 +100,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     const slide = image?.closest<HTMLElement>('.peitho-slide')
     if (!image || !slide) return
     event.preventDefault()
-    selectedImage = image; image.tabIndex = 0; image.focus(); markEmpty()
+    selectedText = null; selectedImage = image; image.tabIndex = 0; image.focus(); markEmpty()
     const bounds = slide.getBoundingClientRect()
     const rect = image.getBoundingClientRect()
     const initial = { x: (rect.left - bounds.left) / bounds.width, y: (rect.top - bounds.top) / bounds.height, width: rect.width / bounds.width, height: rect.height / bounds.height }
@@ -130,7 +136,26 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
       event.stopPropagation(); return
     }
-    if (!selectedImage?.isConnected || root.activeElement !== selectedImage) return
+    if (selectedText?.isConnected && root.activeElement === selectedText) {
+      const target = targetForText(selectedText)
+      if ((event.metaKey || event.ctrlKey) && ['c', 'x'].includes(event.key.toLowerCase()) || ['Delete', 'Backspace'].includes(event.key)) {
+        event.preventDefault(); event.stopPropagation()
+        if (target) state.callbacks.textAction(target, ['Delete', 'Backspace'].includes(event.key) ? 'delete' : event.key.toLowerCase() === 'x' ? 'cut' : 'copy')
+        return
+      }
+      if (event.key === 'Enter' || event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault(); event.stopPropagation()
+        selectedText.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, detail: 2 }))
+        if (event.key !== 'Enter' && box) {
+          const range = document.createRange(); range.selectNodeContents(box)
+          const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+          document.execCommand('insertText', false, event.key)
+        }
+        return
+      }
+      event.stopPropagation(); return
+    }
+    if (!selectedImage?.isConnected || root.activeElement !== selectedImage) { event.stopPropagation(); return }
     if ((event.metaKey || event.ctrlKey) && ['c', 'x'].includes(event.key.toLowerCase())) {
       event.preventDefault(); event.stopPropagation()
       state.callbacks.imageClipboard(selectedImage.dataset.studioImage ?? '', event.key.toLowerCase() === 'x' ? 'cut' : 'copy')
@@ -139,6 +164,11 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       state.callbacks.removeImage(selectedImage.dataset.studioImage ?? '')
     }
   })
+  function targetForText(element: HTMLElement): Extract<SlideEditTarget, { kind: 'text' }> | null {
+    const byteSpan = parseSourceSpan(element.getAttribute('data-peitho-src'))
+    const quote = element.getAttribute('data-peitho-md')
+    return byteSpan && quote !== null ? { kind: 'text', slot: element.closest<HTMLElement>('[data-studio-text]')?.dataset.studioText, byteSpan, quote, text: element.textContent ?? '', heading: Boolean(element.closest('h1,h2,h3,h4,h5,h6')) } : null
+  }
   root.addEventListener('click', event => {
     if (!state.callbacks.enabled() || !(event instanceof MouseEvent)) return
     const target = event.target instanceof Element ? event.target : null
@@ -153,7 +183,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     if (element) {
       const byteSpan = parseSourceSpan(element.getAttribute('data-peitho-src'))
       const quote = element.getAttribute('data-peitho-md')
-      if (byteSpan && quote !== null && !element.closest('pre,code')) editTarget = { kind: 'text', byteSpan, quote, text: element.textContent ?? '', heading: Boolean(element.closest('h1,h2,h3,h4,h5,h6')) }
+      if (byteSpan && quote !== null && !element.closest('pre,code')) editTarget = { kind: 'text', slot: element.closest<HTMLElement>('[data-studio-text]')?.dataset.studioText, byteSpan, quote, text: element.textContent ?? '', heading: Boolean(element.closest('h1,h2,h3,h4,h5,h6')) }
     } else {
       element = target.closest<HTMLElement>('[data-studio-empty]')
       if (element) {
@@ -161,7 +191,11 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
         editTarget = { kind: 'slot', slot: element.dataset.studioSlot ?? '', accepts: element.dataset.studioAccepts ?? '' }
       }
     }
-    if (!element || !editTarget) return
+    if (!element || !editTarget) { selectedText = null; markEmpty(); return }
+    if (event.detail < 2 && editTarget.kind === 'text') {
+      selectedText = element; element.tabIndex = 0; element.focus(); markEmpty(); event.preventDefault(); return
+    }
+    selectedText = element; markEmpty()
     const session = state.callbacks.edit(editTarget)
     if (!session) return
     event.preventDefault()
@@ -189,7 +223,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       markEmpty()
     }
     const markdown = (node: Node): string => {
-      if (node.nodeType === Node.TEXT_NODE) return literalSlideText(node.textContent ?? '')
+      if (node.nodeType === Node.TEXT_NODE) return literalSlideText(node.previousSibling instanceof Element && node.previousSibling.tagName === 'BR' ? (node.textContent ?? '').replace(/^\n/, '') : node.textContent ?? '')
       if (!(node instanceof Element)) return ''
       const text = Array.from(node.childNodes).map(markdown).join('')
       switch (node.tagName) {
@@ -223,7 +257,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
         e.preventDefault(); if (commit?.()) close()
       }
     }
-    const blur = () => { if (!composing && commit?.()) close() }
+    const blur = () => { if (!composing) { commit?.(); close() } }
     field.addEventListener('input', input)
     field.addEventListener('compositionstart', compositionStart)
     field.addEventListener('compositionend', compositionEnd)
@@ -244,7 +278,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     if (event.target !== host || host.shadowRoot?.activeElement || box || !state.callbacks.enabled()) return
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
       event.stopPropagation()
-    }
+    } else if (event.target === host) { event.stopPropagation() }
   })
   const paste = (event: Event) => {
     if (!state.callbacks.enabled() || !(event instanceof ClipboardEvent)) return

@@ -79,7 +79,7 @@ function clickOf(event: MouseEvent): PreviewClick | null {
   const pin = onSlide === null ? null : { ...onSlide, anchor: inElement === null ? null : { quote, ...inElement } }
   const image = target.closest<HTMLElement>('[data-studio-image]') ?? slide.querySelector<HTMLElement>('[data-studio-image][data-studio-selected]')
   const order = canvasImageOrder(Array.from(slide.querySelectorAll<HTMLElement>('[data-studio-image], [data-studio-text]')).map(element => ({ slot: (element.dataset.studioImage ?? element.dataset.studioText)!, layer: Number(element.style.zIndex) })))
-  return { hit: hitOf(target), pin, at, ...(image ? { image: { slot: image.dataset.studioImage!, order } } : {}) }
+  return { hit: hitOf(target), pin, at, textSlot: target.closest<HTMLElement>('[data-studio-text]')?.dataset.studioText, ...(image ? { image: { slot: image.dataset.studioImage!, order } } : {}) }
 }
 
 // peitho-core annotates a heading through a `<span>` around its text, so a

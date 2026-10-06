@@ -8,7 +8,7 @@ test('Japanese text edits locate the annotated bytes in the selected body and pr
   const edit = textEditFor({ kind: 'text', heading: true, text: '売上', quote: '売上', byteSpan: { start, end: start + 6 } }, source, body, source.indexOf(body))!
   const insertion = textEditInsertion(edit, body, '成長率')!
   expect(body.slice(0, insertion.from) + insertion.insert + body.slice(insertion.to)).toBe('# 成長率\n\n本文')
-  expect(textEditInsertion(edit, body, '')).toBeNull()
+  expect(textEditInsertion(edit, body, '')?.insert).toBe('\u00a0')
   expect(textEditInsertion(edit, body + 'changed', 'New')).toBeNull()
 })
 
@@ -74,4 +74,21 @@ test('deleting a text element removes list markers and empty slot fences but kee
   expect(removeSlideText(locate('# Title\n\nBody', 'Title', true))).toBe('# \u00a0\n\nBody')
   expect(imageSlotContent('# Title\n\n::: {slot=studio-image-1}\n\n![Photo](img/a.png)\n\n:::', 'studio-image-1')).toBe('![Photo](img/a.png)')
   expect(imageSlotContent('# Title', 'studio-image-2')).toBeNull()
+})
+
+test('source annotations map through normalized blank lines without selecting an earlier identical paragraph', () => {
+  const raw = '# Title\n\nsame\n\n\n::: {slot=studio-text-1}\n\nsame\n\n:::'
+  const body = raw.replace(/\n{3,}/g, '\n\n')
+  const source = '<!-- {"key":"cover"} -->\n' + raw
+  const start = source.lastIndexOf('same')
+  const edit = textEditFor({ kind: 'text', quote: 'same', text: 'same', byteSpan: { start, end: start + 4 } }, source, body, source.indexOf(raw), raw)!
+  expect(edit.from).toBe(body.lastIndexOf('same'))
+  expect(textEditInsertion(edit, body, 'updated')!.insert).toBe('updated')
+})
+
+test('deleting text preserves an unrelated slot example inside fenced code', () => {
+  const body = '# Title\n\nRemove me\n\n```markdown\n::: {slot=left}\n\n:::\n```'
+  const from = body.indexOf('Remove me')
+  const edit = textEditFor({ kind: 'text', quote: 'Remove me', text: 'Remove me', byteSpan: { start: from, end: from + 9 } }, body, body, 0)!
+  expect(removeSlideText(edit)).toBe(body.replace('Remove me', ''))
 })

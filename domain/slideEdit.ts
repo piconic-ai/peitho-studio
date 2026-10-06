@@ -2,7 +2,7 @@ import { annotatedSpan, type CharSpan } from './reviewComment'
 import type { TextInsertion } from './editorText'
 
 export type SlideEditTarget =
-  | { kind: 'text'; byteSpan: CharSpan; quote: string; text: string; heading?: boolean }
+  | { kind: 'text'; byteSpan: CharSpan; quote: string; text: string; heading?: boolean; slot?: string }
   | { kind: 'slot'; slot: string; accepts: string }
 
 export interface SlideTextEdit {
@@ -17,10 +17,15 @@ export interface SlideTextEdit {
 
 /** Locate only inside the selected slide's body; stale/expanded-source
  * annotations must never replace text elsewhere in a deck. */
-export function textEditFor(target: Extract<SlideEditTarget, { kind: 'text' }>, renderedSource: string, body: string, bodyStart: number): SlideTextEdit | null {
+export function textEditFor(target: Extract<SlideEditTarget, { kind: 'text' }>, renderedSource: string, body: string, bodyStart: number, rawBody?: string): SlideTextEdit | null {
   const span = annotatedSpan(renderedSource, target.byteSpan, target.quote)
   if (span === null) return null
-  const local = { start: span.start - bodyStart, end: span.end - bodyStart }
+  let local = { start: span.start - bodyStart, end: span.end - bodyStart }
+  if (rawBody !== undefined) {
+    if (rawBody.replace(/\n{3,}/g, '\n\n') !== body.trim() || rawBody.slice(local.start, local.end) !== target.quote) return null
+    const leading = body.length - body.trimStart().length
+    local = { start: leading + rawBody.slice(0, local.start).replace(/\n{3,}/g, '\n\n').length, end: leading + rawBody.slice(0, local.end).replace(/\n{3,}/g, '\n\n').length }
+  }
   if (local.start < 0 || body.slice(local.start, local.end) !== target.quote) return null
   const prefix = /^(?:#{1,6}\s+|\s*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?)/.exec(target.quote)?.[0] ?? ''
   const suffix = /\n+$/.exec(target.quote)?.[0] ?? ''
@@ -28,7 +33,8 @@ export function textEditFor(target: Extract<SlideEditTarget, { kind: 'text' }>, 
 }
 
 export function textEditInsertion(edit: SlideTextEdit, currentBody: string, value: string): TextInsertion | null {
-  if (currentBody !== edit.body || (edit.heading && value.trim() === '')) return null
+  if (currentBody !== edit.body) return null
+  if (edit.heading && value.trim() === '') value = '\u00a0'
   const insert = edit.prefix + value.replace(/\r\n?/g, '\n') + edit.suffix
   return { from: edit.from, to: edit.to, insert, cursor: edit.from + insert.length }
 }
@@ -47,7 +53,7 @@ export function slotTextInsertion(body: string, slot: string, accepts: string, v
 }
 
 export function removeImageSlot(body: string, slot: string): string | null {
-  if (!/^studio-image-\d+$/.test(slot)) return null
+  if (!/^studio-(?:image|text)-\d+$/.test(slot)) return null
   const fence = new RegExp(`(^|\\n)::: \\{slot=${slot}\\}\\n[\\s\\S]*?\\n:::(?=\\n|$)`)
   return fence.test(body) ? body.replace(fence, '').trim() : null
 }
@@ -98,8 +104,12 @@ export function removeSlideText(edit: SlideTextEdit): string {
   if (edit.heading) return edit.body.slice(0, edit.from) + edit.prefix + '\u00a0' + edit.suffix + edit.body.slice(edit.to)
   const lineStart = edit.body.lastIndexOf('\n', edit.from - 1) + 1
   const prefix = edit.body.slice(lineStart, edit.from)
-  const from = /^(?:[ \t]*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?|[ \t]*)$/.test(prefix) ? lineStart : edit.from
-  return (edit.body.slice(0, from) + edit.body.slice(edit.to)).replace(/::: \{slot=[a-z][a-z0-9-]*\}\n[\s\u00a0]*\n:::/g, '').trim()
+  const from = /^(?:#{1,6}\s+|[ \t]*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?|[ \t]*)$/.test(prefix) ? lineStart : edit.from
+  const before = edit.body.slice(0, from)
+  const after = edit.body.slice(edit.to)
+  const opening = /(?:^|\n)::: \{slot=[a-z][a-z0-9-]*\}\n[\s\u00a0]*$/.exec(before)
+  const closing = /^[\s\u00a0]*\n:::(?=\n|$)/.exec(after)
+  return (opening && closing ? before.slice(0, opening.index) + after.slice(closing[0].length) : before + after).trim()
 }
 
 export function imageSlotContent(body: string, slot: string): string | null {

@@ -1,6 +1,6 @@
 'use client'
 
-import { createEffect, createSignal, untrack } from '@barefootjs/client'
+import { createEffect, untrack } from '@barefootjs/client'
 import type { PhoneShape, ViewportMode } from '../domain/viewport'
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
@@ -55,12 +55,12 @@ export interface SlidePreviewProps {
   onImagePosition: (slot: string, rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>
   imageBusy: boolean
   onPasteElement: (text: string) => boolean
+  onTextAction: (target: Extract<SlideEditTarget, { kind: 'text' }>, action: 'cut' | 'copy' | 'delete') => void
   onImageClipboard: (slot: string, action: 'cut' | 'copy') => void
   onRemoveImage: (slot: string) => void
 }
 
 export function SlidePreview(props: SlidePreviewProps) {
-  const [commentMode, setCommentMode] = createSignal(false)
   let imageInput: HTMLInputElement | null = null
   let previewHost: HTMLElement | null = null
   let imageSlot: string | null = null
@@ -70,7 +70,7 @@ export function SlidePreview(props: SlidePreviewProps) {
     imageInput?.click()
   }
   createEffect(() => {
-    commentMode(); props.language
+    props.language
     previewHost?.dispatchEvent(new Event('studio-edit-mode'))
   })
   return (
@@ -90,15 +90,8 @@ export function SlidePreview(props: SlidePreviewProps) {
           onSelectPhoneShape={props.onSelectPhoneShape}
           menuSide="left"
         />
-        <button data-preview-comment-mode aria-pressed={commentMode()} onClick={() => setCommentMode(!commentMode())}
-          className={(commentMode() ? 'bg-primary text-primary-foreground ' : 'text-muted-foreground hover:bg-muted ') + 'rounded px-2 py-1 text-xs whitespace-nowrap'}>
-          {props.language === 'ja' ? 'コメント' : 'Comment'}
-        </button>
-        <button data-preview-add-image disabled={props.imageBusy} onClick={() => pickImage(null)} className="rounded px-2 py-1 text-xs whitespace-nowrap text-muted-foreground hover:bg-muted disabled:opacity-50">
-          {props.language === 'ja' ? '画像を追加' : 'Add image'}
-        </button>
         <input data-preview-image-input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple className="hidden"
-          ref={el => { imageInput = el }}
+          ref={el => { imageInput = el; el.addEventListener('studio-add-image', () => pickImage(null)) }}
           onChange={e => { props.onAddImages(Array.from(e.target.files ?? []), imageSlot); e.target.value = '' }} />
         {/* Only while a device is shown smaller than its real size; at real
             size nothing is said. */}
@@ -141,15 +134,16 @@ export function SlidePreview(props: SlidePreviewProps) {
             const canvas = { width: props.canvasWidth, height: props.canvasHeight }
             mountSlideCanvas(el, props.slideStylesheet(), untrack(() => props.canvasFragmentOf(key)), canvas, 'interactive')
             observeCanvasScale(el, canvas, props.deviceWidth)
-            watchCommentClicks(el, click => { if (commentMode()) props.onCommentClick(click) }, click => props.onCommentMenu(click))
+            watchCommentClicks(el, () => {}, click => props.onCommentMenu(click))
             untrack(() => watchSlideEditing(el, {
               language: () => props.language,
-              enabled: () => !commentMode(),
+              enabled: () => true,
               edit: target => props.onTextEdit(target),
               image: pickImage,
               imageGesture: (slot, rect) => props.onImagePosition(slot, rect),
               pasteImages: files => props.onAddImages(files, null),
               pasteElement: text => props.onPasteElement(text),
+              textAction: (target, action) => props.onTextAction(target, action),
               imageClipboard: (slot, action) => props.onImageClipboard(slot, action),
               removeImage: slot => props.onRemoveImage(slot),
             }))

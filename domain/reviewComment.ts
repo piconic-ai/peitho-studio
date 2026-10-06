@@ -585,6 +585,8 @@ export interface PreviewHit {
 /** A click on the preview meant as a comment, as `dom/previewComments.ts`
  * reads it. */
 export interface PreviewClick {
+  textSlot?: string
+
   image?: { slot: string; order: string[] }
 
   /** The annotated element clicked, or `null` for the slide as a whole. */
