@@ -186,7 +186,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     if (target.closest('.peitho-slide') && !target.closest('[data-peitho-src], [data-studio-slot]')) { host.tabIndex = 0; host.focus() }
     const slide = target.closest('.peitho-slide')
     if (!slide) return
-    if (box) { if (!composing && commit?.()) close(); return }
+    if (box) { if (box.contains(target)) return; if (!composing && commit?.()) close(); return }
     let element = target.closest<HTMLElement>('[data-peitho-src]') ?? target.closest('h1,h2,h3,h4,h5,h6')?.querySelector<HTMLElement>('[data-peitho-src]') ?? null
     let editTarget: SlideEditTarget | null = null
     if (element) {
@@ -201,10 +201,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       }
     }
     if (!element || !editTarget) { selectedText = null; markEmpty(); return }
-    if (event.detail < 2 && editTarget.kind === 'text') {
-      selectedText = element; element.tabIndex = 0; element.focus(); markEmpty(); event.preventDefault(); return
-    }
-    selectedText = element; markEmpty()
+    selectedText = element; element.tabIndex = 0; markEmpty()
     const session = state.callbacks.edit(editTarget)
     if (!session) return
     event.preventDefault()

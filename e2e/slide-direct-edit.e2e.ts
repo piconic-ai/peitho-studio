@@ -452,9 +452,13 @@ test('copied and cut elements paste as separate canvas objects via menu and keyb
 })
 
 
-test('selection shortcuts act on text objects, typing enters edit mode, and empty canvas never deletes a slide', async ({ page }) => {
+test('one click edits text, Escape selects the object, and empty canvas never deletes a slide', async ({ page }) => {
   const deck = await open(page, SOURCE + '\n::: {slot=left}\n\nText object\n\n:::\n')
   await page.locator(`${PREVIEW} p`).click()
+  await expect(page.locator(FIELD)).toHaveText('Text object')
+  await page.locator(FIELD).click()
+  await expect(page.locator(FIELD)).toHaveCount(1)
+  await page.keyboard.press('Escape')
   await expect(page.locator(FIELD)).toHaveCount(0)
   await page.keyboard.press('Meta+c')
   await expect.poll(() => deck.clipboardText).toBe('Text object')
@@ -462,6 +466,8 @@ test('selection shortcuts act on text objects, typing enters edit mode, and empt
   await expect.poll(() => deck.source).not.toContain('Text object')
   await expect(page.locator('[data-slide-row]')).toHaveCount(1)
   await page.locator(`${PREVIEW} h1`).click()
+  await expect(page.locator(FIELD)).toHaveCount(1)
+  await page.keyboard.press('ControlOrMeta+a')
   await page.keyboard.press('a')
   await expect(page.locator(FIELD)).toHaveText('a')
   await page.keyboard.press('Meta+Enter')
@@ -503,6 +509,7 @@ test('real deck text removed from Markdown disappears and cannot keep an unsynch
   await expect.poll(() => deck.source).toContain('Markdownと同期')
   await page.locator(FIELD).press('Meta+Enter')
   await text.locator('p').dispatchEvent('click', { detail: 1 })
+  await page.keyboard.press('Escape')
   await page.keyboard.press('Delete')
   await expect(text).toHaveCount(0)
   await expect.poll(() => editorText(page)).not.toContain('studio-text-1')
@@ -565,6 +572,7 @@ test('canvas paste shortcuts work without a native paste event and coalesce a de
   const deck = await open(page, SOURCE + '\n::: {slot=left}\n\nClipboard text\n\n:::\n')
   const paragraph = page.locator(`${PREVIEW} [data-studio-slot="left"] p`)
   await paragraph.click()
+  await paragraph.press('Escape')
   await paragraph.press('Meta+c')
   await expect.poll(() => deck.clipboardText).toBe('Clipboard text')
   await paragraph.dispatchEvent('keydown', { key: 'v', metaKey: true, bubbles: true, composed: true })
