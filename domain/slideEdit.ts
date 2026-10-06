@@ -45,7 +45,8 @@ export function textEditFor(target: Extract<SlideEditTarget, { kind: 'text' }>, 
 
 export function textEditInsertion(edit: SlideTextEdit, currentBody: string, value: string): TextInsertion | null {
   if (currentBody !== edit.body) return null
-  if (edit.heading && value.trim() === '') value = '\u00a0'
+  if (edit.heading) value = slideHeadingText(value)
+  if (edit.heading && value === '') value = '\u00a0'
   const insert = edit.prefix + value.replace(/\r\n?/g, '\n') + edit.suffix
   return { from: edit.from, to: edit.to, insert, cursor: edit.from + insert.length }
 }
@@ -110,6 +111,13 @@ export function literalSlideText(text: string): string {
  * paragraph boundary (and consuming another layout slot item). */
 export function slideTextLines(text: string): string {
   return text.replace(/\r\n?/g, '\n').split('\n').map(line => /^[ \t]*$/.test(line) ? '\u00a0' : line).join('  \n')
+}
+
+/** An ATX heading ends at its first line break, so any break the canvas
+ * produced (a trailing BR, a hard break, an NBSP-held empty line) would push
+ * the rest into another body block. Join the lines with one space instead. */
+export function slideHeadingText(text: string): string {
+  return text.replace(/\r\n?/g, '\n').replace(/[ \t\u00a0]*\n[\s\u00a0]*/g, ' ').replace(/^[\s\u00a0]+|[\s\u00a0]+$/g, '')
 }
 
 export function slideInlineCode(text: string): string {

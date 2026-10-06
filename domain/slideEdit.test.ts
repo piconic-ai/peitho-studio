@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { removeSlideText, imageSlotContent, literalSlideText, slideInlineCode, slideTextLines, looseBodyEdit, removeImageSlot, slotTextInsertion, textEditFor, textEditInsertion } from './slideEdit'
+import { removeSlideText, imageSlotContent, literalSlideText, slideHeadingText, slideInlineCode, slideTextLines, looseBodyEdit, removeImageSlot, slotTextInsertion, textEditFor, textEditInsertion } from './slideEdit'
 
 test('Japanese text edits locate the annotated bytes in the selected body and preserve heading syntax', () => {
   const body = '# 売上\n\n本文'
@@ -10,6 +10,30 @@ test('Japanese text edits locate the annotated bytes in the selected body and pr
   expect(body.slice(0, insertion.from) + insertion.insert + body.slice(insertion.to)).toBe('# 成長率\n\n本文')
   expect(textEditInsertion(edit, body, '')?.insert).toBe('\u00a0')
   expect(textEditInsertion(edit, body + 'changed', 'New')).toBeNull()
+})
+
+test('a line break typed into a heading stays inside the heading instead of becoming another body block', () => {
+  const body = '# Presentation\n\nStart writing your slides here.'
+  const source = `<!-- {"key":"cover"} -->\n${body}`
+  const start = source.indexOf('Presentation')
+  const edit = textEditFor({ kind: 'text', heading: true, text: 'Presentation', quote: 'Presentation', byteSpan: { start, end: start + 12 } }, source, body, source.indexOf(body))!
+  const apply = (value: string) => { const i = textEditInsertion(edit, body, value)!; return body.slice(0, i.from) + i.insert + body.slice(i.to) }
+  // A trailing BR left by the canvas, as written back through slideTextLines.
+  expect(apply(slideTextLines('Neresentation\n'))).toBe('# Neresentation\n\nStart writing your slides here.')
+  expect(apply(slideTextLines('Ne\nresentation'))).toBe('# Ne resentation\n\nStart writing your slides here.')
+  expect(apply(slideTextLines('\n\n'))).toBe('# \u00a0\n\nStart writing your slides here.')
+})
+
+test('heading text joins every kind of line break with a single space', () => {
+  expect(slideHeadingText('Title')).toBe('Title')
+  expect(slideHeadingText('売上  \n成長率')).toBe('売上 成長率')
+  expect(slideHeadingText('A\r\nB\rC')).toBe('A B C')
+  expect(slideHeadingText('A  \n\u00a0  \n\u00a0  \nB')).toBe('A B')
+  expect(slideHeadingText('\u00a0Title\u00a0')).toBe('Title')
+  expect(slideHeadingText('')).toBe('')
+  expect(slideHeadingText('\n  \n\u00a0')).toBe('')
+  expect(slideHeadingText('a\\\\')).toBe('a\\\\')
+  expect(slideHeadingText('**bold**  \n*em*')).toBe('**bold** *em*')
 })
 
 test('an empty left or right column gets routed content without a body slot', () => {
