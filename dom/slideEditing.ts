@@ -10,7 +10,8 @@ export interface SlideEditingCallbacks {
   image: (slot: string | null) => void
   imageGesture: (slot: string, rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>
   pasteImages: (files: File[]) => void
-  pasteElement: (text: string) => boolean
+  pasteElement: (text: string, gesture?: object) => boolean
+  pasteShortcut: (gesture: object) => void
   textAction: (target: Extract<SlideEditTarget, { kind: 'text' }>, action: 'cut' | 'copy' | 'delete') => void
   imageClipboard: (slot: string, action: 'cut' | 'copy') => void
   removeImage: (slot: string) => void
@@ -33,6 +34,14 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
   let selectedImage: HTMLElement | null = null
   let selectedText: HTMLElement | null = null
   const close = () => { const cleanup = restore; restore = null; box = null; commit = null; cleanup?.(); host.removeAttribute('data-studio-text-editing'); flushSlideTextEdit(host) }
+  // WKWebView may emit only the shortcut; other engines also emit paste.
+  // Share a gesture so the two paths cannot create duplicate objects.
+  let pasteGesture: object | undefined
+  const keyboardPaste = () => {
+    const gesture = {}; pasteGesture = gesture
+    state.callbacks.pasteShortcut(gesture)
+    setTimeout(() => { if (pasteGesture === gesture) pasteGesture = undefined }, 1000)
+  }
   const state = { callbacks, close }
   watched.set(root, state)
   const style = document.createElement('style')
@@ -132,9 +141,9 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     document.addEventListener('mousemove', move); document.addEventListener('mouseup', up)
   })
   root.addEventListener('keydown', event => {
-    if (!(event instanceof KeyboardEvent) || !state.callbacks.enabled() || box) return
+    if (!(event instanceof KeyboardEvent) || !state.callbacks.enabled() || box || event.target instanceof Element && event.target.closest(CONTROLS)) return
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
-      event.stopPropagation(); return
+      keyboardPaste(); event.stopPropagation(); return
     }
     if (selectedText?.isConnected && root.activeElement === selectedText) {
       const target = targetForText(selectedText)
@@ -277,17 +286,17 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
   host.addEventListener('keydown', event => {
     if (event.target !== host || host.shadowRoot?.activeElement || box || !state.callbacks.enabled()) return
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
-      event.stopPropagation()
+      keyboardPaste(); event.stopPropagation()
     } else if (event.target === host) { event.stopPropagation() }
   })
   const paste = (event: Event) => {
-    if (!state.callbacks.enabled() || !(event instanceof ClipboardEvent)) return
+    if (!state.callbacks.enabled() || !(event instanceof ClipboardEvent) || !box && event.target instanceof Element && event.target.closest(CONTROLS)) return
     const files = Array.from(event.clipboardData?.files ?? []).filter(file => file.type.startsWith('image/'))
     if (files.length === 0) {
       if (box && event.clipboardData) {
         event.preventDefault()
         document.execCommand('insertText', false, event.clipboardData.getData('text/plain'))
-      } else if (state.callbacks.pasteElement(event.clipboardData?.getData('text/plain') ?? '')) {
+      } else if (state.callbacks.pasteElement(event.clipboardData?.getData('text/plain') ?? '', pasteGesture)) {
         event.preventDefault(); event.stopPropagation()
       }
       return

@@ -1397,17 +1397,30 @@ export function Studio() {
     return menu.kind === 'on-slide' && menu.comment !== null
   })
 
-  function tryPasteElement(text: string): boolean {
+  const handledPasteGestures = new WeakSet<object>()
+  async function pasteElementShortcut(gesture: object): Promise<void> {
+    const copied = elementClipboard()
+    const index = editor.selectedIndex()
+    if (!copied || copied.deckPath !== deck.deckPath()) return
+    try {
+      const text = await editorIpc.readClipboardText()
+      if (copied === elementClipboard() && copied.deckPath === deck.deckPath() && index === editor.selectedIndex() && text === copied.markdown) await pasteElement(gesture)
+    } catch (err) { setErrorMessage(String(err)) }
+  }
+
+  function tryPasteElement(text: string, gesture?: object): boolean {
     const copied = elementClipboard()
     if (!copied || copied.deckPath !== deck.deckPath() || copied.markdown !== text) return false
-    void pasteElement()
+    void pasteElement(gesture)
     return true
   }
 
-  async function pasteElement(): Promise<void> {
+  async function pasteElement(gesture?: object): Promise<void> {
+    if (gesture && handledPasteGestures.has(gesture)) return
     const copied = elementClipboard()
     const index = editor.selectedIndex()
     if (!copied || index === null || copied.deckPath !== deck.deckPath() || previewImageBusy()) return
+    if (gesture) handledPasteGestures.add(gesture)
     ui.closeContextMenu()
     const before = currentSlideText(index)
     const epoch = slidePositionsEpoch
@@ -3978,6 +3991,7 @@ export function Studio() {
               onImagePosition={positionPreviewImage}
               imageBusy={previewImageBusy()}
               onPasteElement={tryPasteElement}
+              onPasteShortcut={gesture => { void pasteElementShortcut(gesture) }}
               onTextAction={(target, action) => { void runElementAction(action, { hit: { ...target, kind: target.heading ? 'heading' : 'paragraph' }, textSlot: target.slot, pin: null, at: { x: 0, y: 0 } }) }}
               onImageClipboard={(slot, action) => { void runElementAction(action, { hit: null, pin: null, at: { x: 0, y: 0 }, image: { slot, order: [] } }) }}
               onRemoveImage={slot => { void removePreviewImage(slot) }}

@@ -560,3 +560,19 @@ test('pasted text uses the selected identical paragraph and grows without clippi
   await expect.poll(async () => (await pasted.boundingBox())!.height).toBeGreaterThan(bounds.height)
   expect(await visible()).toBe(true)
 })
+
+test('canvas paste shortcuts work without a native paste event and coalesce a delayed native event', async ({ page }) => {
+  const deck = await open(page, SOURCE + '\n::: {slot=left}\n\nClipboard text\n\n:::\n')
+  const paragraph = page.locator(`${PREVIEW} [data-studio-slot="left"] p`)
+  await paragraph.click()
+  await paragraph.press('Meta+c')
+  await expect.poll(() => deck.clipboardText).toBe('Clipboard text')
+  await paragraph.dispatchEvent('keydown', { key: 'v', metaKey: true, bubbles: true, composed: true })
+  await expect(page.locator(`${PREVIEW} [data-studio-text]`)).toHaveCount(1)
+  await paragraph.evaluate(el => {
+    const clipboardData = new DataTransfer(); clipboardData.setData('text/plain', 'Clipboard text')
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, composed: true, cancelable: true }))
+  })
+  await page.waitForTimeout(200)
+  await expect(page.locator(`${PREVIEW} [data-studio-text]`)).toHaveCount(1)
+})
