@@ -306,7 +306,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
   })
   root.addEventListener('mouseup', () => {
     textMouseDown = false
-    if (mouseStartedEdit && box) {
+    if (mouseStartedEdit && box && root.activeElement !== box) {
       box.focus()
       const selection = window.getSelection()
       if (!selection?.rangeCount || !box.contains(selection.getRangeAt(0).startContainer)) {
