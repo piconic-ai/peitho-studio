@@ -71,7 +71,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     [data-studio-empty]::before { content: attr(data-studio-placeholder); font: 24px system-ui; color: #777; }
     [data-studio-slot][data-studio-accepts="image"][data-studio-empty] { cursor: pointer; }
     [data-studio-selected] { outline: 2px solid #2563eb; outline-offset: 5px; }
-    [data-studio-edit] { outline: 2px solid #2563eb; outline-offset: 5px; cursor: text; white-space: pre-wrap; min-width: 1em; }
+    [data-studio-edit] { outline: 2px solid #2563eb; outline-offset: 5px; cursor: text; min-width: 1em; }
     [data-studio-slot][data-studio-edit] { display: block !important; }
     [data-studio-edit][data-studio-empty]::before { content: none; }
     [data-studio-edit-error] { outline-color: #dc2626; }
@@ -254,6 +254,9 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     let listHost: HTMLElement | null = null
     if (list) {
       listHost = document.createElement('div')
+      // Match the list's whitespace behavior on its temporary editing host,
+      // including layouts that style UL/OL differently from their parent.
+      listHost.style.whiteSpace = getComputedStyle(list).whiteSpace
       element.before(listHost); listHost.append(element)
       element = listHost; element.tabIndex = 0; selectedText = element; markEmpty()
     }

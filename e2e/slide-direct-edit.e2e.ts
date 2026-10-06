@@ -201,6 +201,42 @@ test('editing stays in the slide with its typography and commits on outside clic
   await expect(page.locator(FIELD)).toHaveCount(0)
 })
 
+test('list editing preserves rendered line spacing and formatting whitespace', async ({ page }) => {
+  await open(page, SOURCE + '\n::: {slot=left}\n\n- First\n- Second\n- Third\n\n:::\n')
+  const list = page.locator(`${PREVIEW} [data-studio-slot="left"] ul`)
+  await list.evaluate(el => {
+    el.style.fontSize = '32px'; el.style.lineHeight = '1.35'
+    el.innerHTML = '\n' + Array.from(el.children).map(li => li.outerHTML).join('\n') + '\n'
+  })
+  const geometry = () => list.evaluate(el => ({
+    height: el.getBoundingClientRect().height,
+    lines: Array.from(el.querySelectorAll('li')).map(li => ({ y: li.getBoundingClientRect().y, height: li.getBoundingClientRect().height, lineHeight: getComputedStyle(li).lineHeight })),
+  }))
+  const before = await geometry()
+  await list.locator('li').first().click()
+  expect(await geometry()).toEqual(before)
+  await page.keyboard.press('Escape')
+  expect(await geometry()).toEqual(before)
+})
+
+test('paragraph editing preserves soft breaks and rendered hard-break line spacing', async ({ page }) => {
+  await open(page, SOURCE + '\n::: {slot=left}\n\nFirst  \nSecond\n\n:::\n')
+  const paragraph = page.locator(`${PREVIEW} [data-studio-slot="left"] p`).first()
+  await paragraph.evaluate(el => {
+    el.innerHTML = 'First<br>\nSecond with\na soft break'
+    el.style.lineHeight = '1.35'
+  })
+  const geometry = () => paragraph.evaluate(el => {
+    const rect = el.getBoundingClientRect(), style = getComputedStyle(el)
+    return { y: rect.y, height: rect.height, lineHeight: style.lineHeight, whiteSpace: style.whiteSpace }
+  })
+  const before = await geometry()
+  await paragraph.click({ position: { x: 5, y: 5 } })
+  expect(await geometry()).toEqual(before)
+  await page.keyboard.press('Escape')
+  expect(await geometry()).toEqual(before)
+})
+
 test('Enter finishes a title and multiline column text remains in that column', async ({ page }) => {
   const deck = await open(page)
   await page.locator(`${PREVIEW} h1`).dblclick()
@@ -633,7 +669,12 @@ test('pasted text uses the selected identical paragraph and grows without clippi
   await expect(page.locator(FIELD)).toHaveCount(0)
   const singleLine = (await pasted.boundingBox())!.height
   await pasted.locator('p').click()
-  await page.locator(FIELD).fill('first\nsecond\nthird\nfourth')
+  await page.locator(FIELD).fill('first')
+  await page.locator(FIELD).press('End')
+  for (const line of ['second', 'third', 'fourth']) {
+    await page.keyboard.press('Enter')
+    await page.keyboard.type(line)
+  }
   await page.locator(FIELD).press('Meta+Enter')
   await expect.poll(async () => (await pasted.boundingBox())!.height).toBeGreaterThan(singleLine)
   expect(await visible()).toBe(true)
