@@ -33,6 +33,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
   let composing = false
   let selectedImage: HTMLElement | null = null
   let selectedText: HTMLElement | null = null
+  let textMouseDown = false
   const close = () => { const cleanup = restore; restore = null; box = null; commit = null; cleanup?.(); host.removeAttribute('data-studio-text-editing'); flushSlideTextEdit(host) }
   // WKWebView may emit only the shortcut; other engines also emit paste.
   // Share a gesture so the two paths cannot create duplicate objects.
@@ -178,8 +179,8 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     const quote = element.getAttribute('data-peitho-md')
     return byteSpan && quote !== null ? { kind: 'text', slot: element.closest<HTMLElement>('[data-studio-text]')?.dataset.studioText, byteSpan, quote, text: element.textContent ?? '', heading: Boolean(element.closest('h1,h2,h3,h4,h5,h6')) } : null
   }
-  root.addEventListener('click', event => {
-    if (!state.callbacks.enabled() || !(event instanceof MouseEvent)) return
+  const startTextEditing = (event: Event) => {
+    if (!state.callbacks.enabled() || !(event instanceof MouseEvent) || event.button !== 0) return
     const target = event.target instanceof Element ? event.target : null
     if (!target || target.closest(CONTROLS) || target.closest('[data-studio-image]')) return
     selectedImage = null; markEmpty()
@@ -214,7 +215,9 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     selectedText = element; element.tabIndex = 0; markEmpty()
     const session = state.callbacks.edit(editTarget)
     if (!session) return
-    event.preventDefault()
+    // WKWebView needs the native mouse-down focus action to establish its
+    // text input responder; DOM focus alone leaves the first click unable to type.
+    if (event.type !== 'mousedown') event.preventDefault()
     // Keep the actual slide element and its inherited typography; no floating field.
     box = element
     host.setAttribute('data-studio-text-editing', '')
@@ -273,7 +276,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
         e.preventDefault(); if (commit?.()) close()
       }
     }
-    const blur = () => { if (!composing) { commit?.(); close() } }
+    const blur = () => { if (!composing && !textMouseDown) { commit?.(); close() } }
     field.addEventListener('input', input)
     field.addEventListener('compositionstart', compositionStart)
     field.addEventListener('compositionend', compositionEnd)
@@ -283,12 +286,39 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     // A real click places the caret at the clicked character; empty boxes start at the end.
     const doc = document as Document & { caretPositionFromPoint?: (x: number, y: number, options?: { shadowRoots: ShadowRoot[] }) => { offsetNode: Node; offset: number } | null; caretRangeFromPoint?: (x: number, y: number) => Range | null }
     const position = doc.caretPositionFromPoint?.(event.clientX, event.clientY, { shadowRoots: [root] })
-    const range = position ? document.createRange() : doc.caretRangeFromPoint?.(event.clientX, event.clientY)
+    let range = position ? document.createRange() : doc.caretRangeFromPoint?.(event.clientX, event.clientY)
     if (position && range) { range.setStart(position.offsetNode, position.offset); range.collapse(true) }
-    if (range && field.contains(range.startContainer)) {
-      const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+    if (!range || !field.contains(range.startContainer)) {
+      range = document.createRange(); range.selectNodeContents(field); range.collapse(false)
     }
+    const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
 
+  }
+  // Make the field editable during the first mouse gesture, before the
+  // browser finishes its focus/selection handling. Click also supports
+  // keyboard and accessibility activation.
+  let mouseStartedEdit = false
+  root.addEventListener('mousedown', event => {
+    textMouseDown = event instanceof MouseEvent && event.button === 0
+    const previous = box
+    startTextEditing(event)
+    mouseStartedEdit = Boolean(box && box !== previous)
+  })
+  root.addEventListener('mouseup', () => {
+    textMouseDown = false
+    if (mouseStartedEdit && box) {
+      box.focus()
+      const selection = window.getSelection()
+      if (!selection?.rangeCount || !box.contains(selection.getRangeAt(0).startContainer)) {
+        const range = document.createRange(); range.selectNodeContents(box); range.collapse(false)
+        selection?.removeAllRanges(); selection?.addRange(range)
+      }
+    }
+  })
+  document.addEventListener('mouseup', () => { textMouseDown = false })
+  root.addEventListener('click', event => {
+    if (mouseStartedEdit) { mouseStartedEdit = false; return }
+    startTextEditing(event)
   })
   host.addEventListener('keydown', event => {
     if (event.target !== host || host.shadowRoot?.activeElement || box || !state.callbacks.enabled()) return

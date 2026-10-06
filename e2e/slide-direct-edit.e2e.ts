@@ -47,6 +47,26 @@ test('clicking text-slot whitespace edits the nearest text block in one click', 
   await expect.poll(() => deck.source).toContain('Edited from whitespace\n\nSecond paragraph')
 })
 
+test('the first mouse press selects text and accepts typing without another click or focus command', async ({ page }) => {
+  const deck = await open(page)
+  const heading = page.locator(`${PREVIEW} h1`)
+  await heading.evaluate(el => {
+    el.getRootNode().addEventListener('mousedown', event => {
+      document.documentElement.dataset.mouseDownPrevented = String(event.defaultPrevented)
+    }, { once: true })
+  })
+  const bounds = (await heading.boundingBox())!
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+  await page.mouse.down()
+  await expect(page.locator('html')).toHaveAttribute('data-mouse-down-prevented', 'false')
+  await expect(page.locator(FIELD)).toHaveAttribute('contenteditable', 'true')
+  await expect(page.locator(FIELD)).toHaveAttribute('data-studio-selected', '')
+  await page.mouse.up()
+  await page.keyboard.type('X')
+  await expect(page.locator(FIELD)).toContainText('X')
+  await expect.poll(() => deck.source).toContain('X')
+})
+
 test('both empty columns accept text without requiring slot syntax', async ({ page }) => {
   const deck = await open(page)
   await expect(page.locator(`${PREVIEW} [data-studio-slot="left"]`)).toHaveAttribute('data-studio-empty', '')
