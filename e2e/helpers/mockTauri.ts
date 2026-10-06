@@ -213,6 +213,10 @@ export interface MockDeck {
    * `data-peitho-src`/`data-peitho-md` on its headings, list items and
    * paragraphs (see `annotatedFragment`) — instead of `fragmentFor`. */
   editAnnotations?: boolean
+  /** Answers `render_draft` (and `open_deck`'s render) and
+   * `create_image_canvas` with the real engine (`helpers/realEngine.ts`):
+   * peitho-core's actual output, its errors rejecting as in the app. */
+  realEngine?: (cmd: string, args: Record<string, unknown>) => Promise<unknown>
   /** The path `open_deck` reports — defaults to the source itself (which
    * the header then shows; most tests never read it). */
   deckPath?: string
@@ -488,7 +492,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       }
       case 'get_recent_decks': return deck.recentDecks ?? []
       case 'open_deck':
-        return { deckPath: deck.deckPath ?? deck.source, deckDir: '/fake', trusted: deck.trusted ?? false, render: renderPayloadFor(deck.source, deck) }
+        return { deckPath: deck.deckPath ?? deck.source, deckDir: '/fake', trusted: deck.trusted ?? false, render: deck.realEngine ? await deck.realEngine('render_draft', { content: deck.source }) : renderPayloadFor(deck.source, deck) }
       case 'render_draft':
         if (deck.rejectUnknownLayouts) {
           splitSlides(args.content as string).forEach((range, i) => {
@@ -496,7 +500,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
             if (layout !== undefined && !(deck.layouts ?? []).includes(layout)) throw new Error(`slide ${String(i + 1)} names layout '${layout}', which the deck doesn't have`)
           })
         }
-        return renderPayloadFor(args.content as string, deck)
+        return deck.realEngine ? deck.realEngine(cmd, args) : renderPayloadFor(args.content as string, deck)
       case 'read_deck_source': return deck.source
       case 'save_deck_source':
         await deck.beforeSave?.(args.content as string)
@@ -541,6 +545,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         return name
       }
       case 'create_image_canvas': {
+        if (deck.realEngine) return deck.realEngine(cmd, args)
         const base = args.baseLayout as string
         const name = `studio-canvas-${Object.keys(deck.layoutFiles ?? {}).length}`
         let html = layoutFileOf(deck, base)?.html ?? '<section class="peitho-slide" style="position:relative"><h1><slot name="title" accepts="inline" arity="1"></slot></h1></section>'
