@@ -9,7 +9,7 @@ import { initialUpdateStatus, type UpdateStatus } from '../../domain/updates'
 // A synthetic RenderPayload, not real peitho-core output — verified
 // against production behavior separately (run-peitho-studio skill).
 import type { Page } from '@playwright/test'
-import { splitSlides, extractPageComment, extractHeadingText, slugifyTitle, uniqueSlideKey, parseDurationToMs } from '../../domain/slides'
+import { splitSlides, extractNote, extractPageComment, extractHeadingText, slugifyTitle, uniqueSlideKey, parseDurationToMs } from '../../domain/slides'
 import type { Manifest, ManifestSection, ManifestSlide, RenderPayload } from '../../domain/render'
 import type { DeckVariant } from '../../domain/deckVariants'
 import type { LayoutVerdict } from '../../domain/layoutFit'
@@ -20,6 +20,8 @@ import type { FakeCritIpc } from '../../ipc/fakeCritIpc'
 
 export interface MockDeck {
   source: string
+  /** Model Studio's editable slot wrappers from the supplied layout HTML. */
+  editableLayouts?: boolean
   /** Paths `get_recent_decks` returns — defaults to none. */
   recentDecks?: string[]
   /** What `dev_default_deck` returns — defaults to `deck.source`'s own
@@ -370,6 +372,32 @@ function renderPayloadFor(source: string, deck: MockDeck): RenderPayload {
   const { manifest, fragments } = buildManifest(source, deck.fragmentFor ?? DEFAULT_FRAGMENT_FOR, deck.canvas ?? canvasFor(source), deck.editAnnotations ?? false)
   const layouts = deck.layouts ?? []
   const slideLayouts = slideLayoutsFor(source, manifest.slides, layouts)
+  if (deck.editableLayouts) {
+    for (const slide of manifest.slides) {
+      const range = splitSlides(source).find(range => range.text === slide.src)!
+      const template = layoutFileOf(deck, slideLayouts[slide.key])?.html
+      if (!template) continue
+      fragments[slide.key] = template.replace(/<slot\s+name="([^"]+)"\s+accepts="([^"]+)"[^>]*><\/slot>/g, (_, slot: string, accepts: string) => {
+        let content = ''; let offset = range.start
+        if (slot === 'title') {
+          const heading = /^# (.+)$/m.exec(range.text)
+          content = heading?.[1] ?? ''; offset += (heading?.index ?? 0) + 2
+        } else {
+          const fence = new RegExp(`::: \\{slot=${slot}\\}\\n([\\s\\S]*?)\\n:::`).exec(range.text)
+          content = fence?.[1].trim() ?? ''
+          offset += fence ? fence.index + fence[0].indexOf(fence[1]) + fence[1].indexOf(content) : 0
+          if (!fence && slot === 'body') {
+            content = extractPageComment(extractNote(range.text).rest).rest.replace(/^# [^\n]*(?:\n|$)/, '').trim()
+            offset = range.start + range.text.indexOf(content)
+          }
+        }
+        const attrs = `data-peitho-src="${utf8Bytes(source.slice(0, offset))}-${utf8Bytes(source.slice(0, offset + content.length))}" data-peitho-md="${encodeEditMarkdown(content)}"`
+        const rendered = content === '' ? '' : accepts === 'inline' ? `<span ${attrs}>${escapeHtml(content)}</span>` : annotatedFragment(source, offset, content).replace(/^<section[^>]*>/, '').replace(/<\/section>$/, '')
+        const tag = accepts === 'inline' ? 'span' : 'div'
+        return `<${tag} data-studio-slot="${slot}" data-studio-accepts="${accepts}" style="display:contents">${rendered}</${tag}>`
+      })
+    }
+  }
   const headingLayouts = deck.headingLayouts ?? [...new Set([...layouts, ...Object.values(slideLayouts)])]
   return { manifest, fragments, slideLayouts, headingLayouts, assetBaseUrl: 'http://localhost:9/', css: deck.css ?? DEFAULT_CSS }
 }
@@ -511,6 +539,46 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         layouts.push(name)
         ;(deck.layoutFiles ??= {})[name] = { html: `<section class="peitho-slide layout-${name}"></section>`, css: `.peitho-slide.layout-${name} {\n}\n` }
         return name
+      }
+      case 'create_image_canvas': {
+        const base = args.baseLayout as string
+        const name = `studio-canvas-${Object.keys(deck.layoutFiles ?? {}).length}`
+        let html = layoutFileOf(deck, base)?.html ?? '<section class="peitho-slide" style="position:relative"><h1><slot name="title" accepts="inline" arity="1"></slot></h1></section>'
+        if (args.carryLayout) {
+          const from = layoutFileOf(deck, args.carryLayout as string)?.html ?? ''
+          const figures = [...from.matchAll(/<(?:figure|div)[^>]*data-studio-(?:image|text)="[^"]+"[\s\S]*?<\/(?:figure|div)>/g)].map(match => match[0]).join('')
+          html = html.replace('</section>', `${figures}</section>`)
+        }
+        html = html.replace(/(<section[^>]*style=")([^"]*)"/, '$1$2;position:relative"')
+        for (const slot of (args.removeSlots as string[] | undefined) ?? []) html = html.replace(new RegExp(`<(?:figure|div)[^>]*data-studio-(?:image|text)="${slot}"[\\s\\S]*?<\\/(?:figure|div)>`), '')
+        for (const rect of args.placements as { slot: string; x: number; y: number; width: number; height: number }[]) {
+          html = html.replace(new RegExp(`(data-studio-(image|text)="${rect.slot}" style=")[^"]*"`), (_, prefix: string, kind: string) => `${prefix}position:absolute;left:${rect.x * 100}%;top:${rect.y * 100}%;width:${rect.width * 100}%;height:${kind === 'text' ? 'auto' : `${rect.height * 100}%`};margin:0;overflow:${kind === 'text' ? 'visible' : 'hidden'}"`)
+        }
+        if (args.imageOrder) {
+          const figures = new Map([...html.matchAll(/<(?:figure|div)[^>]*data-studio-(?:image|text)="([^"]+)"[\s\S]*?<\/(?:figure|div)>/g)].map(match => [match[1], match[0]]))
+          html = html.replace(/<(?:figure|div)[^>]*data-studio-(?:image|text)="[^"]+"[\s\S]*?<\/(?:figure|div)>/g, '')
+          const order = args.imageOrder as string[]
+          const content = order.indexOf('studio-content')
+          html = html.replace('</section>', `${order.filter(slot => slot !== 'studio-content').map(slot => figures.get(slot)!.replace(/style="([^"]*)"/, (_, style: string) => `style="${style.replace(/z-index:[^;]*;?/g, '')};z-index:${order.indexOf(slot) - content};"`)).join('')}</section>`)
+          html = html.replace(/(<section[^>]*style=")([^"]*)"/, '$1$2;isolation:isolate"')
+        }
+        const slots: string[] = []
+        let i = 1
+        for (let n = 0; n < Number(args.count); n++) {
+          while (html.includes(`name="studio-image-${i}"`)) i++
+          const slot = `studio-image-${i++}`; slots.push(slot)
+          const layer = Math.max(0, ...[...html.matchAll(/z-index:(-?\d+)/g)].map(match => Number(match[1]))) + 1
+          html = html.replace('</section>', `<figure data-studio-image="${slot}" style="position:absolute;left:15%;top:25%;width:55%;height:55%;margin:0;z-index:${layer}"><slot name="${slot}" accepts="image" arity="1"></slot></figure></section>`)
+        }
+        ;(deck.layouts ??= []).push(name)
+        if (args.textCount) {
+          let next = 1
+          while (html.includes(`name="studio-text-${next}"`)) next++
+          const slot = `studio-text-${next}`; slots.push(slot)
+          html = html.replace('</section>', `<div data-studio-text="${slot}" style="position:absolute;left:20%;top:30%;width:55%;z-index:10"><slot name="${slot}" accepts="blocks" arity="0..*"></slot></div></section>`)
+        }
+        ;(deck.layoutFiles ??= {})[name] = { html, css: null }
+        return { layout: name, slots }
       }
       case 'duplicate_layout': {
         const name = args.name as string

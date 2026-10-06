@@ -1,4 +1,4 @@
-// An image put on a slide whose layout has no slot for one: peitho-core's
+// An unrouted Markdown image on a slide whose layout has no slot for one: peitho-core's
 // "no slot accepts image" build error now comes with a way out in the error
 // bar (todo/image-slot-layout-suggestion.md) — the "Change Layout" picker
 // when another layout of the deck fits the slide, or adding the built-in
@@ -12,10 +12,9 @@
 // `engine::image_layout`'s own Rust tests.
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
-import { editorContent, moveToEditorEnd } from './helpers/codeEditor'
+import { moveToEditorEnd } from './helpers/codeEditor'
 import type { LayoutVerdict } from '../domain/layoutFit'
 
-const PNG_BYTES = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]
 const IMAGE_LAYOUTS = new Set(['photo', 'title-body-image'])
 
 /** A stand-in for peitho-core's layouts: `layouts` are the deck's, of which
@@ -91,13 +90,11 @@ async function openDeck(page: Page, source: string, engine: FakeEngine, override
   return { deck, invocations }
 }
 
-async function pasteImage(page: Page): Promise<void> {
+/** Pasted files now create free image objects. The error-bar repair is
+ * still needed for Markdown typed by hand or imported from another deck. */
+async function typeUnroutedImage(page: Page): Promise<void> {
   await moveToEditorEnd(page)
-  await editorContent(page).evaluate((content, bytes) => {
-    const data = new DataTransfer()
-    data.items.add(new File([new Uint8Array(bytes)], 'image.png', { type: 'image/png' }))
-    content.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
-  }, PNG_BYTES)
+  await page.keyboard.type('\n\n![](img/photo.png)')
 }
 
 const fixButton = (page: Page) => page.locator('[data-image-slot-fix]')
@@ -109,10 +106,10 @@ const PINNED = '<!-- {"key":"one","layout":"title-body-code"} -->\n# Slide One\n
 const UNPINNED = '<!-- {"key":"one"} -->\n# Slide One\n\n---\n\n<!-- {"key":"two"} -->\n# Slide Two\n'
 
 test.describe('functional', () => {
-  test('Given a deck with a layout that takes an image, when an image is pasted onto a slide pinned to one that does not, then the error bar opens the layout picker for that slide and choosing the fitting layout fixes it', async ({ page }) => {
+  test('Given a deck with a layout that takes an image, when an unrouted image is typed into a slide pinned to one that does not, then the error bar opens the layout picker for that slide and choosing the fitting layout fixes it', async ({ page }) => {
     const { deck } = await openDeck(page, PINNED, { layouts: ['photo', 'title-body-code'] })
 
-    await pasteImage(page)
+    await typeUnroutedImage(page)
 
     await expect(errorBar(page)).toBeVisible()
     await expect(fixButton(page)).toHaveText('Choose a Layout That Fits…')
@@ -130,10 +127,10 @@ test.describe('functional', () => {
     await expect(errorBar(page)).toBeHidden()
   })
 
-  test('Given a deck with no layout that takes an image, when an image is pasted onto a pinned slide and the image layout is added from the error bar, then that slide is re-pinned to it and renders', async ({ page }) => {
+  test('Given a deck with no layout that takes an image, when an unrouted image is typed into a pinned slide and the image layout is added from the error bar, then that slide is re-pinned to it and renders', async ({ page }) => {
     const { deck, invocations } = await openDeck(page, PINNED, { layouts: ['title-body-code'] })
 
-    await pasteImage(page)
+    await typeUnroutedImage(page)
 
     await expect(fixButton(page)).toHaveText('Add an Image Layout')
     await fixButton(page).click()
@@ -153,7 +150,7 @@ test.describe('functional', () => {
   test('Given a deck with one layout and unpinned slides, when the image layout is added from the error bar, then the slide keeps no pin and its image is saved', async ({ page }) => {
     const { deck, invocations } = await openDeck(page, UNPINNED, { layouts: ['title-body-code'] })
 
-    await pasteImage(page)
+    await typeUnroutedImage(page)
     await fixButton(page).click()
 
     await expect.poll(() => slidesOf(deck.source)[0]).toContain('![](img/')
@@ -175,7 +172,7 @@ test.describe('functional', () => {
       }),
     })
 
-    await pasteImage(page)
+    await typeUnroutedImage(page)
     await fixButton(page).click()
 
     await expect(fixButton(page)).toBeDisabled()
@@ -196,7 +193,7 @@ test.describe('functional', () => {
       },
     })
 
-    await pasteImage(page)
+    await typeUnroutedImage(page)
     await fixButton(page).click()
 
     await expect(page.getByText(/Could not add the image layout: .*would stop slide 2 \('two'\)/)).toBeVisible()
@@ -221,7 +218,7 @@ test.describe('non-functional', () => {
   test('Given an image slot error with a fix offered, when the usual six seconds pass, then the error bar stays so the fix can still be used', async ({ page }) => {
     await openDeck(page, PINNED, { layouts: ['title-body-code'] })
 
-    await pasteImage(page)
+    await typeUnroutedImage(page)
     await expect(fixButton(page)).toBeVisible()
 
     await page.waitForTimeout(7_000)

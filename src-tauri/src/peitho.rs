@@ -1241,11 +1241,17 @@ pub fn preview_layouts(window: WebviewWindow, session: State<PeithoSession>) -> 
         (state.deck_path.clone(), state.deck_dir.clone())
     };
     let resolved = crate::engine::assets::resolve(&deck_dir)?;
+    // Old immutable image positions exist for Undo, not as extra templates
+    // to render in the library after every drag.
+    let used = std::fs::read_to_string(&deck_path).ok()
+        .and_then(|source| pipeline::parse_source(&deck_path, &source).ok())
+        .map(|parsed| parsed.deck.parsed_slides().iter().filter_map(|slide| slide.layout_request.as_ref().map(|request| request.name.as_str().to_string())).collect::<std::collections::HashSet<_>>())
+        .unwrap_or_default();
     let mut previews = Vec::new();
     let mut css = String::new();
     for layout in resolved.layouts.iter() {
-        let synthetic = layout_preview::placeholder_source(layout);
-        let fragment = pipeline::render_source(&deck_path, &synthetic)
+        if layout.name().starts_with("studio-canvas-") && layout.html().contains("data-studio-image-styles") && !used.contains(layout.name()) { continue }
+        let fragment = layout_preview::render_preview(&deck_path, layout)
             .ok()
             .and_then(|output| {
                 if css.is_empty() {
@@ -1256,6 +1262,7 @@ pub fn preview_layouts(window: WebviewWindow, session: State<PeithoSession>) -> 
             .unwrap_or_default();
         previews.push(LayoutPreview { name: layout.name().to_string(), fragment });
     }
+    previews.sort_by(|a, b| crate::engine::builtin::compare_layout_names(&a.name, &b.name));
     Ok(LayoutPreviewsPayload { previews, css })
 }
 
@@ -1297,6 +1304,28 @@ pub fn add_image_layout(
     session: State<PeithoSession>,
 ) -> Result<Vec<&'static str>, String> {
     image_layout::add_image_layout(&session_deck_path(&session, window.label())?, &content, slide_index)
+}
+
+#[tauri::command(async)]
+pub fn create_image_canvas(
+    content: String,
+    base_layout: String,
+    count: usize,
+    placements: Vec<crate::engine::slide_edit::ImagePlacement>,
+    remove_slots: Option<Vec<String>>,
+    carry_layout: Option<String>,
+    image_order: Option<Vec<String>>,
+    text_count: Option<usize>,
+    window: WebviewWindow,
+    session: State<PeithoSession>,
+) -> Result<crate::engine::slide_edit::ImageCanvas, String> {
+    let path = session_deck_path(&session, window.label())?;
+    if let Some(from) = carry_layout {
+        return crate::engine::slide_edit::rebase_image_canvas(&path, &content, &from, &base_layout);
+    }
+    if text_count.unwrap_or(0) > 0 { return crate::engine::slide_edit::text_canvas(&path, &content, &base_layout); }
+    if let Some(order) = image_order { return crate::engine::slide_edit::order_image_canvas(&path, &content, &base_layout, &order); }
+    crate::engine::slide_edit::image_canvas_change(&path, &content, &base_layout, count, &placements, &remove_slots.unwrap_or_default())
 }
 
 // The layout screen's commands. Each works on this window's deck folder
@@ -2452,7 +2481,8 @@ Start writing your slides here.\n";
             "two-column" => format!("# A title\n\n{}\n{}", fenced("left"), fenced("right")),
             "one-column-text" => "# A title\n\nA paragraph.\n".to_string(),
             "section-title-description" => format!("# A title\n\n{}\nA description.\n", fenced("subtitle")),
-            "caption" | "blank" => "Just a line of text.\n".to_string(),
+            "caption" => "Just a line of text.\n".to_string(),
+            "blank" => String::new(),
             "big-number" => "# 42%\n\nOf something.\n".to_string(),
             other => panic!("no filled content for '{other}'"),
         };

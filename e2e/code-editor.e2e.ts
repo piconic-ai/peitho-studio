@@ -240,7 +240,7 @@ test.describe('functional: each slide keeps its own undo history', () => {
     await selectRow(page, 0, '# Slide One')
 
     await page.locator('[data-slide-row="1"]').click({ button: 'right' })
-    await page.getByText('Delete', { exact: true }).click()
+    await page.locator('[data-slide-menu]').getByRole('button', { name: /^Delete/ }).click()
     await expect(page.locator('[data-slide-row]')).toHaveCount(2)
 
     await expect.poll(() => editorText(page)).toBe('# Slide Three typed')

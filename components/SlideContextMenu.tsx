@@ -1,5 +1,6 @@
 'use client'
 
+import { moveImageOrder, type ImageOrderAction } from '../domain/imageOrder'
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
 import { menuItemEnabled, menuItemChecked, type MenuItem } from '../domain/contextMenu'
@@ -14,6 +15,15 @@ export interface SlideContextMenuProps {
   hidden: boolean
   position: { x: number; y: number }
   menuItems: MenuItem[]
+  image?: { slot: string; order: string[] } | null
+  onElementAction?: (action: 'cut' | 'copy' | 'delete') => void
+  onAddImage?: () => void
+  canvasMenu?: boolean
+  canPasteElement?: boolean
+  onPasteElement?: () => void
+  elementMenu?: boolean
+  imageBusy?: boolean
+  onImageOrder?: (action: ImageOrderAction) => void
   layoutPickerOpen: boolean
   layoutPickerView: 'loading' | 'empty' | 'ready'
   layoutPreviews: { name: string; fragment: string }[] | null
@@ -96,6 +106,49 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           <span>{commentItemLabel(messagesFor(props.language))}</span>
         </button>
         <div className="my-1 border-t border-border" />
+        <div hidden={!props.elementMenu} data-element-menu-controls>
+          <button type="button" disabled={props.imageBusy} onClick={() => props.onElementAction?.('cut')} className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40">
+            <span>{messagesFor(props.language).cut}</span><span className="text-xs text-muted-foreground">⌘X</span>
+          </button>
+          <button type="button" disabled={props.imageBusy} onClick={() => props.onElementAction?.('copy')} className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40">
+            <span>{messagesFor(props.language).copy}</span><span className="text-xs text-muted-foreground">⌘C</span>
+          </button>
+          <button type="button" disabled={!props.canPasteElement || props.imageBusy} onClick={() => props.onPasteElement?.()} className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40">
+            <span>{messagesFor(props.language).paste}</span><span className="text-xs text-muted-foreground">⌘V</span>
+          </button>
+          <div className="my-1 border-t border-border" />
+          <button type="button" disabled={props.imageBusy} onClick={() => props.onElementAction?.('delete')} className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 text-destructive">
+            <span>{messagesFor(props.language).delete}</span><span className="text-xs text-muted-foreground">⌦</span>
+          </button>
+          <div hidden={!props.image} className="my-1 border-t border-border" />
+        </div>
+        <div hidden={!props.image} data-image-order-menu>
+          {(['front', 'forward', 'backward', 'back'] as ImageOrderAction[]).map(action => (
+            <button key={action} type="button" data-image-order-action={action}
+              disabled={!props.image || props.imageBusy || moveImageOrder(props.image.order, props.image.slot, action).join() === props.image.order.join()}
+              onClick={() => props.onImageOrder?.(action)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent">
+              <svg aria-hidden="true" className="block w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="3" y="9" width="12" height="12" />
+                <rect x="9" y="3" width="12" height="12" fill="var(--popover, white)" />
+                <path d={action === 'front' || action === 'forward' ? 'M5 14V3m-3 3 3-3 3 3' : 'M19 10v11m-3-3 3 3 3-3'} />
+                <path d={action === 'front' ? 'M2 1h6' : action === 'back' ? 'M16 23h6' : ''} />
+              </svg>
+              <span>{({ ja: { front: '最前面', forward: '前面', backward: '背面', back: '最背面' }, en: { front: 'Bring to front', forward: 'Bring forward', backward: 'Send backward', back: 'Send to back' } }[props.language])[action]}</span>
+            </button>
+          ))}
+        </div>
+        <div hidden={!props.canvasMenu || props.elementMenu}>
+          <button type="button" disabled={!props.canPasteElement || props.imageBusy} onClick={() => props.onPasteElement?.()} className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40">
+            <span>{messagesFor(props.language).paste}</span><span className="text-xs text-muted-foreground">⌘V</span>
+          </button>
+        </div>
+        <div hidden={!props.canvasMenu}>
+          <button type="button" onClick={() => props.onAddImage?.()} className="w-full flex items-center pl-9 pr-3 py-1.5 hover:bg-accent" data-preview-add-image-menu>
+            {props.language === 'ja' ? '画像を追加…' : 'Add image…'}
+          </button>
+        </div>
+        <div hidden={props.canvasMenu} data-slide-menu-controls>
         <button
           type="button"
           onClick={() => props.onNewSlide()}
@@ -251,6 +304,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
         >
           <span>{messagesFor(props.language).moveSlideDown}</span><span className="text-xs text-muted-foreground">⌘⇧↓</span>
         </button>
+        </div>
       </div>
     </>
   )

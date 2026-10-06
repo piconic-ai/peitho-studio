@@ -78,7 +78,7 @@ const HTML_COMMENT_RE = /<!--([\s\S]*?)-->/g
 /** Pulls the first non-JSON HTML comment (the speaker note, if any) out of
  * a slide's raw text. Everything else — the PageComment config, the
  * Markdown body, any other stray comment — is left untouched in `rest`. */
-export function extractNote(raw: string): { rest: string; note: string } {
+export function extractNote(raw: string, preserveSpacing = false): { rest: string; note: string } {
   HTML_COMMENT_RE.lastIndex = 0
   let note = ''
   let removedMatch: string | null = null
@@ -92,7 +92,7 @@ export function extractNote(raw: string): { rest: string; note: string } {
     }
   }
   const withoutNote = removedMatch ? raw.replace(removedMatch, '') : raw
-  const rest = withoutNote.replace(/\n{3,}/g, '\n\n').trim()
+  const rest = (preserveSpacing ? withoutNote : withoutNote.replace(/\n{3,}/g, '\n\n')).trim()
   return { rest, note }
 }
 
@@ -114,7 +114,7 @@ export function injectNote(rest: string, note: string): string {
  * hand-written JSON comment sharing HTML-comment syntax with the speaker
  * note is exactly the "hard to tell apart, easy to fat-finger" problem this
  * app exists to solve. */
-export function extractPageComment(raw: string): { rest: string; config: PageConfig } {
+export function extractPageComment(raw: string, preserveSpacing = false): { rest: string; config: PageConfig } {
   const re = /<!--([\s\S]*?)-->/g
   let match: RegExpExecArray | null
   while ((match = re.exec(raw)) !== null) {
@@ -125,7 +125,8 @@ export function extractPageComment(raw: string): { rest: string; config: PageCon
       // "leave it, don't guess" contract as before this function
       // delegated parsing to parsePageComment.
       if (parsed.kind === 'malformed') return { rest: raw, config: {} }
-      const rest = raw.replace(match[0], '').replace(/\n{3,}/g, '\n\n').trim()
+      const withoutConfig = raw.replace(match[0], '')
+      const rest = (preserveSpacing ? withoutConfig : withoutConfig.replace(/\n{3,}/g, '\n\n')).trim()
       return { rest, config: configOf(parsed) }
     }
   }
@@ -374,6 +375,15 @@ export function withDurationPart(ms: number, part: DurationPart, value: number):
   const { minutes, seconds } = msToMinutesSeconds(ms)
   if (Number.isNaN(value)) return minutesSecondsToMs(minutes, seconds)
   return part === 'minutes' ? minutesSecondsToMs(value, seconds) : minutesSecondsToMs(minutes, value)
+}
+
+/** Replace one slide while keeping a blank line before the following
+ * separator. Without it, Markdown reads `paragraph\n---` as a Setext
+ * heading and consumes the next slide's settings as this slide's content. */
+export function replaceSlideText(source: string, range: SlideRange, text: string): string {
+  const after = source.slice(range.end)
+  const replacement = /^---(?:\r?\n|$)/.test(after) ? `${text.trimEnd()}\n\n` : text
+  return source.slice(0, range.start) + replacement + after
 }
 
 /** Rebuilds a deck's full source from an ordered list of slide texts,

@@ -8,6 +8,8 @@ import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 import { ViewportToggle } from './ViewportToggle'
 import { watchCommentClicks, type PreviewClick } from '../dom/previewComments'
 import { type PreviewPin } from '../domain/reviewComment'
+import { watchSlideEditing } from '../dom/slideEditing'
+import type { SlideEditTarget, SlideEditSession } from '../domain/slideEdit'
 
 export interface SlidePreviewProps {
   /** The UI language every label here is shown in. */
@@ -48,9 +50,30 @@ export interface SlidePreviewProps {
   onCommentMenu: (click: PreviewClick) => void
   /** A pin was clicked: show its comment rather than start a new one. */
   onPinClick: (pinId: string) => void
+  onTextEdit: (target: SlideEditTarget) => SlideEditSession | null
+  onAddImages: (files: File[], slot: string | null) => void
+  onImagePosition: (slot: string, rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>
+  imageBusy: boolean
+  onPasteElement: (text: string, gesture?: object) => boolean
+  onPasteShortcut: (gesture: object) => void
+  onTextAction: (target: Extract<SlideEditTarget, { kind: 'text' }>, action: 'cut' | 'copy' | 'delete') => void
+  onImageClipboard: (slot: string, action: 'cut' | 'copy') => void
+  onRemoveImage: (slot: string) => void
 }
 
 export function SlidePreview(props: SlidePreviewProps) {
+  let imageInput: HTMLInputElement | null = null
+  let previewHost: HTMLElement | null = null
+  let imageSlot: string | null = null
+  function pickImage(slot: string | null): void {
+    imageSlot = slot
+    if (imageInput) imageInput.multiple = slot === null
+    imageInput?.click()
+  }
+  createEffect(() => {
+    props.language
+    previewHost?.dispatchEvent(new Event('studio-edit-mode'))
+  })
   return (
     <div className="flex-1 min-w-0 flex flex-col min-h-0">
       {/* Permanently mounted like the two children below, hidden while no
@@ -68,6 +91,9 @@ export function SlidePreview(props: SlidePreviewProps) {
           onSelectPhoneShape={props.onSelectPhoneShape}
           menuSide="left"
         />
+        <input data-preview-image-input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple className="hidden"
+          ref={el => { imageInput = el; el.addEventListener('studio-add-image', () => pickImage(null)) }}
+          onChange={e => { props.onAddImages(Array.from(e.target.files ?? []), imageSlot); e.target.value = '' }} />
         {/* Only while a device is shown smaller than its real size; at real
             size nothing is said. */}
         <span
@@ -90,6 +116,7 @@ export function SlidePreview(props: SlidePreviewProps) {
         data-preview-host
         data-preview-device-width={props.deviceWidth === null ? '' : String(props.deviceWidth)}
         ref={el => {
+          previewHost = el
           props.onPreviewHost(el)
           // Tracks `selectedSlideKey` and the canvas size, but reads the
           // fragment `untrack`ed: an edit to the *already-selected* slide
@@ -108,7 +135,20 @@ export function SlidePreview(props: SlidePreviewProps) {
             const canvas = { width: props.canvasWidth, height: props.canvasHeight }
             mountSlideCanvas(el, props.slideStylesheet(), untrack(() => props.canvasFragmentOf(key)), canvas, 'interactive')
             observeCanvasScale(el, canvas, props.deviceWidth)
-            watchCommentClicks(el, click => props.onCommentClick(click), click => props.onCommentMenu(click))
+            watchCommentClicks(el, () => {}, click => props.onCommentMenu(click))
+            untrack(() => watchSlideEditing(el, {
+              language: () => props.language,
+              enabled: () => true,
+              edit: target => props.onTextEdit(target),
+              image: pickImage,
+              imageGesture: (slot, rect) => props.onImagePosition(slot, rect),
+              pasteImages: files => props.onAddImages(files, null),
+              pasteElement: (text, gesture) => props.onPasteElement(text, gesture),
+              pasteShortcut: gesture => props.onPasteShortcut(gesture),
+              textAction: (target, action) => props.onTextAction(target, action),
+              imageClipboard: (slot, action) => props.onImageClipboard(slot, action),
+              removeImage: slot => props.onRemoveImage(slot),
+            }))
           })
         }}
         className={(props.selectedSlideKey === null ? 'hidden ' : '') + 'relative flex-1 w-full'}

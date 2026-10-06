@@ -103,9 +103,21 @@ pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, Str
 /// layout deletion this way, with the layout and its CSS left out, before
 /// removing any file.
 pub fn render_parsed(deck_path: &Path, parsed_source: ParsedSource) -> Result<RenderOutput, String> {
+    let mut resolver = DraftImageResolver::new(deck_dir_of(deck_path));
+    render_parsed_with_images(deck_path, parsed_source, |request| resolver.resolve(request))
+}
+
+/// Use an alternate Markdown image resolver for synthetic layout examples.
+/// Layout HTML assets still resolve against the real deck directory.
+pub(super) fn render_parsed_with_images(
+    deck_path: &Path,
+    parsed_source: ParsedSource,
+    resolve_image: impl FnMut(ImageRequest<'_>) -> peitho_core::Result<ResolvedImageAsset>,
+) -> Result<RenderOutput, String> {
     let deck_dir = deck_dir_of(deck_path);
 
     let ParsedSource { deck: parsed, assets: ResolvedAssets { layouts, css: css_files, highlighter, fonts_dir } } = parsed_source;
+    let layouts = super::slide_edit::editable_layouts(&layouts)?;
     let highlighter = highlighter.get();
 
     let slide_layouts = slide_layouts(&parsed, &layouts);
@@ -123,7 +135,7 @@ pub fn render_parsed(deck_path: &Path, parsed_source: ParsedSource) -> Result<Re
 
     let mut resolver = DraftImageResolver::new(deck_dir);
     let (resolved, mut image_assets) =
-        resolve_image_paths(checked, |request| resolver.resolve(request)).map_err(|err| err.to_string())?;
+        resolve_image_paths(checked, resolve_image).map_err(|err| err.to_string())?;
     // Resolved after Markdown images so a file referenced from both dedupes
     // onto the asset the Markdown path already registered (same order as
     // `peitho`'s own `build_artifacts`).
@@ -407,6 +419,20 @@ mod tests {
     }
 
     #[test]
+    fn edited_paragraph_needs_a_blank_line_before_the_next_slide_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let first = "<!-- {\"key\":\"cover\",\"layout\":\"title-body-code\"} -->\n# Title\n\nEdited body\n";
+        let second = "---\n\n<!-- {\"key\":\"next\",\"layout\":\"title-body-code\"} -->\n# Next\n\nUnchanged body\n";
+        let error = render_source(&deck_path, &format!("{first}{second}")).err().expect("a Setext heading consumes the boundary");
+        assert!(error.contains("page settings comment must appear before slide content"), "{error}");
+        let output = render_source(&deck_path, &format!("{first}\n{second}")).unwrap();
+        assert_eq!(output.fragments.len(), 2);
+        assert!(output.fragments["cover"].contains("Edited body"));
+        assert!(output.fragments["next"].contains("Unchanged body"));
+    }
+
+    #[test]
     fn render_source_spec_an_explicit_layout_disambiguates_a_title_only_slide() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = write_two_layout_deck(dir.path(), "<!-- {\"key\":\"new-slide\",\"layout\":\"cover\"} -->");
@@ -525,6 +551,27 @@ mod tests {
         let source = "# One\n\n---\n\n<!-- {\"key\":\"hidden\",\"draft\":true} -->\n# Two\n";
         let output = render_source(&deck_path, source).unwrap_or_else(|err| panic!("{err}"));
         assert_eq!(output.slide_layouts.keys().collect::<Vec<_>>(), ["one"]);
+    }
+
+    #[test]
+    fn canvas_blank_lines_render_as_one_title_slide_body_item() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let layouts = dir.path().join("layouts");
+        std::fs::create_dir(&layouts).unwrap();
+        std::fs::write(layouts.join("title-slide.html"), crate::engine::builtin::STANDARD_LAYOUTS.iter().find(|layout| layout.name == "title-slide").unwrap().html).unwrap();
+        std::fs::create_dir(dir.path().join("css")).unwrap();
+        std::fs::write(dir.path().join("css/base.css"), "").unwrap();
+        let source = "<!-- {\"key\":\"cover\",\"layout\":\"title-slide\"} -->\n# Title\n\nFirst  \n\u{a0}  \nSecond\n";
+        let output = render_source(&deck_path, source).unwrap();
+        let html = &output.fragments["cover"];
+        assert_eq!(html.matches("<p").count(), 1, "{html}");
+        assert_eq!(html.matches("<br").count(), 2, "{html}");
+        assert!(!edit_annotations(html).is_empty(), "{html}");
+        let empty_title = source.replace("# Title", "# \u{a0}");
+        assert!(render_source(&deck_path, &empty_title).is_ok());
+        let old = source.replace("\u{a0}  ", "");
+        assert!(render_source(&deck_path, &old).err().unwrap().contains("got 2 item(s)"));
     }
 
     #[test]

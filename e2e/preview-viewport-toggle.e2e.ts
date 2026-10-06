@@ -702,6 +702,7 @@ test.describe('Given the phone shape menu (the ▾ beside the Phone segment)', (
 
     await page.keyboard.press('Escape')
     await expect(page.locator(MENU)).toBeHidden()
+    await page.locator('[data-slide-row="0"] button[title]').focus()
     await page.keyboard.press('ArrowDown')
     await expect(page.locator(PREVIEW)).toHaveAttribute('data-slide-canvas-key', 'arcade')
   })

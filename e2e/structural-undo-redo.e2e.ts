@@ -20,7 +20,7 @@ async function openDeck(page: Page, deck: MockDeck): Promise<void> {
 
 async function rightClickMenu(page: Page, row: number, item: string): Promise<void> {
   await page.locator(`[data-slide-row="${row}"]`).click({ button: 'right' })
-  await page.getByText(item, { exact: true }).click()
+  await page.locator('[data-slide-menu]').getByRole('button', { name: new RegExp(`^${item}`) }).click()
 }
 
 /** Sends Edit > Undo / Redo the way the Rust side does: `emit_to` the

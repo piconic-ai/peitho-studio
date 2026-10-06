@@ -1,3 +1,4 @@
+import { canvasImageOrder } from '../domain/imageOrder'
 // Turns a click on the preview canvas into a comment target, with no mode
 // to switch into first (todo/archive/review-comment-ui.md): the slide list already
 // moves between slides, so a click on the preview is free to mean "comment
@@ -76,7 +77,9 @@ function clickOf(event: MouseEvent): PreviewClick | null {
   const quote = annotated?.getAttribute('data-peitho-md') ?? ''
   const inElement = annotated === null || quote === '' ? null : fractionInRect(at, annotated.getBoundingClientRect())
   const pin = onSlide === null ? null : { ...onSlide, anchor: inElement === null ? null : { quote, ...inElement } }
-  return { hit: hitOf(target), pin, at }
+  const image = target.closest<HTMLElement>('[data-studio-image]') ?? slide.querySelector<HTMLElement>('[data-studio-image][data-studio-selected]')
+  const order = canvasImageOrder(Array.from(slide.querySelectorAll<HTMLElement>('[data-studio-image], [data-studio-text]')).map(element => ({ slot: (element.dataset.studioImage ?? element.dataset.studioText)!, layer: Number(element.style.zIndex) })))
+  return { hit: hitOf(target), pin, at, textSlot: target.closest<HTMLElement>('[data-studio-text]')?.dataset.studioText, ...(image ? { image: { slot: image.dataset.studioImage!, order } } : {}) }
 }
 
 // peitho-core annotates a heading through a `<span>` around its text, so a
@@ -84,15 +87,16 @@ function clickOf(event: MouseEvent): PreviewClick | null {
 const HEADINGS = 'h1, h2, h3, h4, h5, h6'
 
 function annotatedOf(target: Element): Element | null {
-  return target.closest('[data-peitho-src]') ?? target.closest(HEADINGS)?.querySelector(':scope > [data-peitho-src]') ?? null
+  return target.closest('[data-peitho-src]') ?? target.closest(HEADINGS)?.querySelector('[data-peitho-src]') ?? null
 }
 
 function hitOf(target: Element): PreviewHit | null {
   const annotated = annotatedOf(target)
   if (annotated === null) return null
-  const kind = targetKindOf(annotated.tagName, annotated.parentElement?.tagName ?? null)
+  const heading = annotated.closest(HEADINGS)
+  const kind = heading ? 'heading' : targetKindOf(annotated.tagName, annotated.parentElement?.tagName ?? null)
   if (kind === 'slide') return null
-  const text = (kind === 'heading' && annotated.tagName === 'SPAN' ? annotated.parentElement : annotated)?.textContent ?? ''
+  const text = (heading ?? annotated).textContent ?? ''
   return {
     kind,
     text,

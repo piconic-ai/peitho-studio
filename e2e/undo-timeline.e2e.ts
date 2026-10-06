@@ -54,7 +54,7 @@ async function typeAndSave(page: Page, deck: MockDeck, text: string, which: Edit
 
 async function rightClickMenu(page: Page, row: number, item: string): Promise<void> {
   await page.locator(`[data-slide-row="${row}"]`).click({ button: 'right' })
-  await page.getByText(item, { exact: true }).click()
+  await page.locator('[data-slide-menu]').getByRole('button', { name: new RegExp(`^${item}`) }).click()
 }
 
 async function changeLayout(page: Page, row: number, layout: string): Promise<void> {

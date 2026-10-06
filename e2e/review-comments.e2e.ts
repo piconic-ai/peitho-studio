@@ -31,7 +31,8 @@ async function openDeck(page: Page, crit: FakeCritIpc, source = SOURCE): Promise
 }
 
 async function comment(page: Page, target: string, text: string): Promise<void> {
-  await page.locator(`${PREVIEW} ${target}`).click()
+  await page.locator(`${PREVIEW} ${target}`).click({ button: 'right' })
+  await page.locator('[data-slide-menu-item="comment"]').click()
   await expect(page.locator(BOX)).toBeVisible()
   await page.locator(`${BOX} textarea`).fill(text)
   await page.locator('[data-comment-add]').click()
@@ -44,7 +45,8 @@ function sentComments(crit: FakeCritIpc): NewReviewComment[] {
 
 test('Given a deck, When a heading in the preview is clicked, Then a box opens naming the slide and the heading, and a pin marks the spot', async ({ page }) => {
   await openDeck(page, createFakeCritIpc({ session: 'none' }))
-  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(`${PREVIEW} h1`).click({ button: 'right' })
+  await page.locator('[data-slide-menu-item="comment"]').click()
   await expect(page.locator(BOX)).toBeVisible()
   await expect(page.locator('[data-comment-target]')).toHaveText('Slide 1 › heading "Hello"')
   await expect(page.locator(`${BOX} textarea`)).toBeFocused()
@@ -53,15 +55,18 @@ test('Given a deck, When a heading in the preview is clicked, Then a box opens n
 
 test('Given a deck, When a list item or a paragraph is clicked, Then the box names that kind of element', async ({ page }) => {
   await openDeck(page, createFakeCritIpc({ session: 'none' }))
-  await page.locator(`${PREVIEW} li >> nth=1`).click()
+  await page.locator(`${PREVIEW} li >> nth=1`).click({ button: 'right' })
+  await page.locator('[data-slide-menu-item="comment"]').click()
   await expect(page.locator('[data-comment-target]')).toHaveText('Slide 1 › list item "item two"')
-  await page.locator(`${PREVIEW} p >> nth=0`).click()
+  await page.locator(`${PREVIEW} p >> nth=0`).click({ button: 'right' })
+  await page.locator('[data-slide-menu-item="comment"]').click()
   await expect(page.locator('[data-comment-target]')).toHaveText('Slide 1 › paragraph "Some text"')
 })
 
 test('Given a deck, When an image (nothing annotated) is clicked, Then the comment is on the whole slide', async ({ page }) => {
   await openDeck(page, createFakeCritIpc({ session: 'none' }))
-  await page.locator(`${PREVIEW} img`).click()
+  await page.locator(`${PREVIEW} img`).click({ button: 'right' })
+  await page.locator('[data-slide-menu-item="comment"]').click()
   await expect(page.locator('[data-comment-target]')).toHaveText('Slide 1')
 })
 
@@ -78,7 +83,8 @@ test('Given text is being selected by dragging across the preview, Then no comme
 test('Given the comment box is open, When it is cancelled with Escape, Then nothing is filed', async ({ page }) => {
   const crit = createFakeCritIpc({ session: 'none' })
   await openDeck(page, crit)
-  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(`${PREVIEW} h1`).click({ button: 'right' })
+  await page.locator('[data-slide-menu-item="comment"]').click()
   await page.locator(`${BOX} textarea`).fill('never mind')
   await page.keyboard.press('Escape')
   await expect(page.locator(BOX)).toBeHidden()
@@ -156,12 +162,12 @@ test('Given no session, When an agent\'s own crit starts one and waits in it, Th
   crit.agentStartsSession()
 
   await expect(page.locator(CONNECT)).toBeHidden({ timeout: 8_000 })
-  await expect(page.locator('[data-review-status]')).toHaveText('Click anything on a slide and tell me what to change.')
+  await expect(page.locator('[data-review-status]')).toHaveText('Right-click a slide or element and choose Comment to leave feedback.')
 })
 
 test('Given an agent already waiting, Then no card is shown', async ({ page }) => {
   await openDeck(page, createFakeCritIpc())
-  await expect(page.locator('[data-review-status]')).toHaveText('Click anything on a slide and tell me what to change.')
+  await expect(page.locator('[data-review-status]')).toHaveText('Right-click a slide or element and choose Comment to leave feedback.')
   await expect(page.locator(CONNECT)).toBeHidden()
 })
 

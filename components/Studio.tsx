@@ -1,5 +1,7 @@
 'use client'
 
+import { moveImageOrder, type ImageOrderAction } from '../domain/imageOrder'
+
 import { suppressNativeContextMenu } from '../dom/nativeContextMenu'
 import { createSignal, createMemo, createEffect, onMount, onCleanup, untrack } from '@barefootjs/client'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
@@ -10,6 +12,8 @@ import { initialUpdateStatus, canPrepareUpdate, showUpdateNotice, updateBlocksEd
 import { createTauriSettingsIpc } from '../ipc/settingsIpc'
 import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
+import { editorTextChange } from '../domain/editorText'
+import { removeSlideText, imageSlotContent, textEditFor, textEditInsertion, slotTextInsertion, looseBodyEdit, removeImageSlot, type SlideEditTarget, type SlideEditSession } from '../domain/slideEdit'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
   REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentKeyOf, commentTargetOf, layoutClickTarget, layoutTargetLabel, layoutTargetOfComment, lineSelectionOf, newLayoutComment, newReviewComment, pollsForAgent,
@@ -28,7 +32,7 @@ import { PanelToggle } from './PanelToggle'
 import { ReviewPanel } from './ReviewPanel'
 import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
-import { imageParagraphInsertion, insertionRangeAfterWait, replacementInsertion, textBetween } from '../domain/editorText'
+import { replacementInsertion, textBetween } from '../domain/editorText'
 import { fileNameOf, partitionDroppedPaths } from '../domain/images'
 import { previewDevice, scaledDownPercent, viewportCanvas } from '../domain/viewport'
 import { hasFixedCanvas } from '../domain/slideFragment'
@@ -45,7 +49,7 @@ import { type LayoutColumns, type LayoutNameProblem, type StudioMode, initialLay
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
 import { FILE_AUTOSAVE_DELAY_MS, allTabsOpen, autosavePaths, canCloseFile, fileDraft, isFileChangedOnDisk, isFileDirty, leaveBlocker, shouldAutosave, tabsBlocker, type FileEditor } from '../domain/fileEditor'
 import { fileLanguage, fileName, fileTreeRows, layoutFilePaths, layoutOfFile } from '../domain/deckFiles'
-import { layoutDisplayName } from '../domain/standardLayouts'
+import { DEFAULT_LAYOUT, layoutDisplayName } from '../domain/standardLayouts'
 import type { Messages } from '../domain/messages'
 import { type ImageSlotFix, imageLayoutPin, imageSlotFixFor, parseImageSlotError, shownImageSlotFix } from '../domain/imageSlot'
 import { type DeckEvent, decide } from '../domain/deckLifecycle'
@@ -81,6 +85,7 @@ import {
   extractNote,
   extractPageComment,
   buildSlideText,
+  replaceSlideText,
   updatePageComment,
   slugifyTitle,
   uniqueSlideKey,
@@ -608,76 +613,180 @@ export function Studio() {
 
   // Images pasted or dropped into the body: each is saved under the deck's
   // `img/` first (`engine::images` — the draft render reads it from disk),
-  // then its Markdown goes in as its own paragraph, one undo step for the
-  // whole batch. The file stays on disk if that step is undone. The render
-  // that follows reports a deck whose layouts have no image slot, like any
-  // other build error; the text stays so the layouts can be fixed.
+  // then routed Markdown and a slide-specific image canvas are committed
+  // together as one Undo step. Imported files remain available after Undo.
   //
   // Saving takes a moment; if the user left the slide meanwhile (or the
   // deck was re-read), the images are saved but not inserted anywhere.
-  async function importImagesIntoBody(
-    view: NonNullable<typeof bodyEditor>,
-    at: { doc: string; from: number; to: number },
-    count: number,
-    importAll: () => Promise<string[]>,
-    userEvent: 'input.paste' | 'input.drop',
-  ): Promise<void> {
+  async function pasteImages(files: File[]): Promise<void> {
+    await addImagesToPreview(files, null)
+  }
+
+  function startSlideTextEdit(target: SlideEditTarget): SlideEditSession | null {
+    const view = bodyEditor
     const index = editor.selectedIndex()
+    if (!view || index === null || isCodeEditorComposing(view)) return null
+    const before = editor.bodyDraft()
+    const range = splitSlides(render.renderedSource())[index]
+    const renderedBody = range ? extractPageComment(extractNote(range.text).rest).rest : null
+    const recovery = errorMessage()?.includes(`slide ${index + 1} `) && errorMessage()?.includes("missing 'body' slot")
+    if (renderedBody === null || (renderedBody !== before.trim() && !recovery)) return null
+    const rawBody = range ? extractPageComment(extractNote(range.text, true).rest, true).rest : ''
+    const bodyStart = (range?.start ?? 0) + (range?.text.indexOf(rawBody) ?? 0)
+    const edit = target.kind === 'text' ? textEditFor(target, render.renderedSource(), before, bodyStart, rawBody) : recovery ? looseBodyEdit(before, target.slot, target.accepts) : null
+    if (target.kind === 'text' && edit === null) return null
+    let currentBody = before
+    let historyStarted = false
+    const applyBody = (next: string): boolean => {
+      if (bodyEditor !== view || editor.selectedIndex() !== index || editor.bodyDraft() !== currentBody || view.state.doc.toString() !== currentBody || isCodeEditorComposing(view)) return false
+      if (splitSlides(buildSlideText(editor.pageConfig(), next, '')).length !== 1) return false
+      const change = editorTextChange(currentBody, next)
+      if (!change) return true
+      const firstUpdate = !historyStarted
+      historyStarted = true
+      currentBody = next
+      insertIntoCodeEditor(view, { ...change, cursor: change.from + change.insert.length }, 'input.slide', firstUpdate)
+      return true
+    }
+    return {
+      value: edit?.value ?? '',
+      commit: value => {
+        if (target.kind === 'text' && target.slot?.startsWith('studio-text-') && value.trim() === '') {
+          return edit !== null && applyBody(removeSlideText({ ...edit, heading: false }))
+        }
+        const insertion = edit ? textEditInsertion(edit, before, value) : target.kind === 'slot' ? slotTextInsertion(before, target.slot, target.accepts, value) : null
+        if (!insertion) return false
+        return applyBody(before.slice(0, insertion.from) + insertion.insert + before.slice(insertion.to))
+      },
+      cancel: () => applyBody(before),
+      finish: () => { if (historyStarted) isolateCodeEditorHistory(view) },
+    }
+  }
+
+  const [previewImageBusy, setPreviewImageBusy] = createSignal(false)
+
+  async function addImagesToPreview(files: File[], slot: string | null): Promise<void> {
+    if (files.length === 0 || previewImageBusy() || editor.selectedIndex() === null) return
+    const index = editor.selectedIndex()!
     const epoch = slidePositionsEpoch
-    setStatusMessage({ kind: 'importing-images', count })
-    let paths: string[]
+    setPreviewImageBusy(true)
+    setStatusMessage({ kind: 'importing-images', count: files.length })
     try {
-      paths = await importAll()
+      const paths: string[] = []
+      for (const file of files) {
+        const image = await readPastedImage(file, new Date())
+        paths.push(await imageIpc.importImageBytes(image.name, image.bytes))
+      }
+      setStatusMessage({ kind: 'imported-images', count: paths.length })
+      if (editor.selectedIndex() !== index || slidePositionsEpoch !== epoch) return
+      await placePreviewImages(paths, slot, index, epoch)
     } catch (err) {
       setStatusMessage({ kind: 'none' })
       setErrorMessage(settings.messages().imageImportFailed(String(err)))
+    } finally { setPreviewImageBusy(false) }
+  }
+
+  async function placePreviewImages(paths: string[], slot: string | null, index: number, epoch: number): Promise<void> {
+    const before = currentSlideText(index)
+    const fields = extractPageComment(extractNote(before).rest)
+    const base = fields.config.layout ?? render.slideLayouts()[selectedSlideKey() ?? ''] ?? DEFAULT_LAYOUT
+    const source = syncedSource(currentSlideTexts())
+    const count = slot === null ? paths.length : Math.max(0, paths.length - 1)
+    const canvas = count > 0 ? await imageIpc.createImageCanvas(source, base, count, []) : null
+    if (editor.selectedIndex() !== index || slidePositionsEpoch !== epoch || currentSlideText(index) !== before) {
+      setErrorMessage(settings.language() === 'ja' ? '画像の追加中にスライドが変わりました。もう一度追加してください。' : 'The slide changed while adding the image. Please add it again.')
       return
     }
+    const targets = slot === null ? canvas!.slots : [slot, ...(canvas?.slots ?? [])]
+    const additions = paths.map((path, i) => `::: {slot=${targets[i]}}\n\n![](${path})\n\n:::`).join('\n\n')
+    const body = `${fields.rest}\n\n${additions}`
+    const note = extractNote(before).note
+    const text = buildSlideText({ ...fields.config, ...(canvas ? { layout: canvas.layout } : {}) }, body, note)
+    await perform({ kind: 'slides', cmd: { type: 'replace', index, text } })
     setStatusMessage({ kind: 'imported-images', count: paths.length })
-    if (bodyEditor !== view || editor.selectedIndex() !== index || index === null || slidePositionsEpoch !== epoch) return
-    const now = codeEditorSelection(view)
-    const range = insertionRangeAfterWait(at, now)
-    const insertion = imageParagraphInsertion(now.doc, range.from, range.to, paths)
-    if (insertion !== null) insertIntoCodeEditor(view, insertion, userEvent)
   }
 
-  async function pasteImages(files: File[]): Promise<void> {
-    const view = bodyEditor
-    if (!view) return
-    const at = new Date()
-    await importImagesIntoBody(view, codeEditorSelection(view), files.length, async () => {
-      const paths: string[] = []
-      for (const file of files) {
-        const image = await readPastedImage(file, at)
-        paths.push(await imageIpc.importImageBytes(image.name, image.bytes))
-      }
-      return paths
-    }, 'input.paste')
+  async function positionPreviewImage(slot: string, rect: { x: number; y: number; width: number; height: number }): Promise<boolean> {
+    const index = editor.selectedIndex()
+    const base = editor.pageConfig().layout
+    if (index === null || !base || previewImageBusy()) return false
+    const before = currentSlideText(index)
+    const epoch = slidePositionsEpoch
+    setPreviewImageBusy(true)
+    try {
+      const canvas = await imageIpc.createImageCanvas(syncedSource(currentSlideTexts()), base, 0, [{ slot, ...rect }])
+      if (editor.selectedIndex() !== index || slidePositionsEpoch !== epoch || currentSlideText(index) !== before) return false
+      const outcome = await updateSlideConfig(index, { layout: canvas.layout })
+      return outcome === 'done' || outcome === 'unchanged'
+    } catch (err) { setErrorMessage(String(err)); return false }
+    finally { setPreviewImageBusy(false) }
   }
 
-  // Files dropped from Finder, anywhere on the window: only a drop on the
-  // body editor counts, at the text position under the pointer. A drop
+  async function orderPreviewImage(order: string[]): Promise<boolean> {
+    const index = editor.selectedIndex()
+    const base = editor.pageConfig().layout
+    if (index === null || !base || previewImageBusy()) return false
+    const before = currentSlideText(index)
+    const epoch = slidePositionsEpoch
+    setPreviewImageBusy(true)
+    try {
+      const canvas = await imageIpc.createImageCanvas(syncedSource(currentSlideTexts()), base, 0, [], [], undefined, order)
+      if (editor.selectedIndex() !== index || slidePositionsEpoch !== epoch || currentSlideText(index) !== before) return false
+      const outcome = await updateSlideConfig(index, { layout: canvas.layout })
+      return outcome === 'done' || outcome === 'unchanged'
+    } catch (err) { setErrorMessage(String(err)); return false }
+    finally { setPreviewImageBusy(false) }
+  }
+
+  async function removePreviewImage(slot: string): Promise<void> {
+    const index = editor.selectedIndex()
+    const base = editor.pageConfig().layout
+    if (index === null || !base || previewImageBusy()) return
+    const before = currentSlideText(index)
+    const { rest, note } = extractNote(before)
+    const fields = extractPageComment(rest)
+    const body = removeImageSlot(fields.rest, slot)
+    if (body === null) return
+    setPreviewImageBusy(true)
+    try {
+      const canvas = await imageIpc.createImageCanvas(syncedSource(currentSlideTexts()), base, 0, [], [slot])
+      if (editor.selectedIndex() !== index || currentSlideText(index) !== before) return
+      await perform({ kind: 'slides', cmd: { type: 'replace', index, text: buildSlideText({ ...fields.config, layout: canvas.layout }, body, note) } })
+    } catch (err) { setErrorMessage(String(err)) }
+    finally { setPreviewImageBusy(false) }
+  }
+
+  // Files dropped on the body editor or preview create a freely positioned
+  // image without changing the shared layout. A drop
   // holding any file that isn't an image Peitho can show is refused whole,
   // naming those files in the error bar: nothing is written. (Importing the
   // rest would re-render the draft, whose success clears the error bar
   // before the user could read which files were left out.)
   async function dropFiles(drop: FileDrop): Promise<void> {
     const view = bodyEditor
-    if (!view || editor.selectedIndex() === null || settings.panelOpen()) return
-    const pos = codeEditorPositionAt(view, dropPointToCss(drop.position, window.devicePixelRatio, /Mac/.test(navigator.userAgent)))
-    if (pos === null) return
+    if (!view || editor.selectedIndex() === null || settings.panelOpen() || previewImageBusy()) return
+    const at = dropPointToCss(drop.position, window.devicePixelRatio, /Mac/.test(navigator.userAgent))
+    const pos = codeEditorPositionAt(view, at)
+    const preview = document.querySelector('[data-preview-host]')?.getBoundingClientRect()
+    const onPreview = preview && at.x >= preview.left && at.x <= preview.right && at.y >= preview.top && at.y <= preview.bottom && ui.previewOpen()
+    if (pos === null && !onPreview) return
     const { images, rejected } = partitionDroppedPaths(drop.paths)
     if (rejected.length > 0) {
       setErrorMessage(settings.messages().unsupportedImageFiles(rejected.map(fileNameOf).join(', ')))
       return
     }
     if (images.length === 0) return
-    view.focus()
-    await importImagesIntoBody(view, { doc: codeEditorSelection(view).doc, from: pos, to: pos }, images.length, async () => {
+    const index = editor.selectedIndex()!
+    const epoch = slidePositionsEpoch
+    setPreviewImageBusy(true)
+    setStatusMessage({ kind: 'importing-images', count: images.length })
+    try {
       const paths: string[] = []
       for (const path of images) paths.push(await imageIpc.importImageFile(path))
-      return paths
-    }, 'input.drop')
+      setStatusMessage({ kind: 'imported-images', count: paths.length })
+      if (editor.selectedIndex() === index && slidePositionsEpoch === epoch) await placePreviewImages(paths, null, index, epoch)
+    } catch (err) { setErrorMessage(settings.messages().imageImportFailed(String(err))) }
+    finally { setPreviewImageBusy(false) }
   }
 
   function onNoteEditorHost(el: HTMLElement): void {
@@ -1080,7 +1189,7 @@ export function Studio() {
     if (!range || index === null) return null
     const newSlideText = buildSlideText(editor.pageConfig(), editor.bodyDraft(), editor.noteDraft())
     const source = editor.fullSource()
-    return source.slice(0, range.start) + newSlideText + source.slice(range.end)
+    return replaceSlideText(source, range, newSlideText)
   }
 
   // Fast lane: re-renders (in-memory only) a beat after typing stops, so
@@ -1090,7 +1199,13 @@ export function Studio() {
   createEffect(() => {
     editor.bodyDraft()
     editor.noteDraft()
-    if (!editor.isDirty()) return
+    if (!editor.isDirty()) {
+      untrack(() => {
+        const source = editor.fullSource()
+        if (source !== render.renderedSource()) void renderPreview(source)
+      })
+      return
+    }
     const timer = window.setTimeout(() => {
       const draft = currentDraftSource()
       if (draft !== null) void renderPreview(draft)
@@ -1263,6 +1378,117 @@ export function Studio() {
     if (index === null || selectedSlideKey() === null) return
     void checkLayoutFit(index, ui.openSlideContextMenu(index, click.at.x, click.at.y, click))
     void loadLayoutPreviews()
+  }
+
+  const previewMenuImage = createMemo(() => {
+    const menu = ui.contextMenu()
+    return menu.kind === 'on-slide' ? menu.comment?.image ?? null : null
+  })
+
+  const previewElementMenu = createMemo(() => {
+    const menu = ui.contextMenu()
+    return menu.kind === 'on-slide' && Boolean(menu.comment?.image || menu.comment?.hit)
+  })
+
+  const [pasteSerial, setPasteSerial] = createSignal(0)
+  const [elementClipboard, setElementClipboard] = createSignal<{ markdown: string; image: boolean; deckPath: string | null; placement?: { x: number; y: number; width: number; height: number } } | null>(null)
+  const previewCanvasMenu = createMemo(() => {
+    const menu = ui.contextMenu()
+    return menu.kind === 'on-slide' && menu.comment !== null
+  })
+
+  const handledPasteGestures = new WeakSet<object>()
+  async function pasteElementShortcut(gesture: object): Promise<void> {
+    const copied = elementClipboard()
+    const index = editor.selectedIndex()
+    if (!copied || copied.deckPath !== deck.deckPath()) return
+    try {
+      const text = await editorIpc.readClipboardText()
+      if (copied === elementClipboard() && copied.deckPath === deck.deckPath() && index === editor.selectedIndex() && text === copied.markdown) await pasteElement(gesture)
+    } catch (err) { setErrorMessage(String(err)) }
+  }
+
+  function tryPasteElement(text: string, gesture?: object): boolean {
+    const copied = elementClipboard()
+    if (!copied || copied.deckPath !== deck.deckPath() || copied.markdown !== text) return false
+    void pasteElement(gesture)
+    return true
+  }
+
+  async function pasteElement(gesture?: object): Promise<void> {
+    if (gesture && handledPasteGestures.has(gesture)) return
+    const copied = elementClipboard()
+    const index = editor.selectedIndex()
+    if (!copied || index === null || copied.deckPath !== deck.deckPath() || previewImageBusy()) return
+    if (gesture) handledPasteGestures.add(gesture)
+    ui.closeContextMenu()
+    const before = currentSlideText(index)
+    const epoch = slidePositionsEpoch
+    const { rest, note } = extractNote(before)
+    const fields = extractPageComment(rest)
+    const base = fields.config.layout ?? render.slideLayouts()[selectedSlideKey() ?? ''] ?? DEFAULT_LAYOUT
+    setPreviewImageBusy(true)
+    try {
+      const text = await editorIpc.readClipboardText()
+      if (text !== copied.markdown || editor.selectedIndex() !== index || currentSlideText(index) !== before || slidePositionsEpoch !== epoch) return
+      const source = syncedSource(currentSlideTexts())
+      let canvas = await imageIpc.createImageCanvas(source, base, copied.image ? 1 : 0, [], [], undefined, undefined, copied.image ? 0 : 1)
+      if (editor.selectedIndex() !== index || currentSlideText(index) !== before || slidePositionsEpoch !== epoch) return
+      if (copied.placement) {
+        const rect = copied.placement
+        canvas = await imageIpc.createImageCanvas(source, canvas.layout, 0, [{ slot: canvas.slots[0], ...rect, x: Math.min(1 - rect.width, rect.x + .02 * (pasteSerial() + 1)), y: Math.min(1 - rect.height, rect.y + .02 * (pasteSerial() + 1)) }]).then(positioned => ({ ...positioned, slots: canvas.slots }))
+      }
+      if (editor.selectedIndex() !== index || currentSlideText(index) !== before || slidePositionsEpoch !== epoch) return
+      const body = `${fields.rest}\n\n::: {slot=${canvas.slots[0]}}\n\n${copied.markdown}\n\n:::`
+      await perform({ kind: 'slides', cmd: { type: 'replace', index, text: buildSlideText({ ...fields.config, layout: canvas.layout }, body, note) } })
+      setPasteSerial(pasteSerial() + 1)
+    } catch (err) { setErrorMessage(String(err)) }
+    finally { setPreviewImageBusy(false) }
+  }
+
+  async function runElementAction(action: 'cut' | 'copy' | 'delete', target?: PreviewClick): Promise<void> {
+    const menu = ui.contextMenu()
+    const index = editor.selectedIndex()
+    if (index === null || previewImageBusy()) return
+    const click = target ?? (menu.kind === 'on-slide' && menu.index === index ? menu.comment : null)
+    if (!click) return
+    ui.closeContextMenu()
+    const before = currentSlideText(index)
+    const epoch = slidePositionsEpoch
+    const body = editor.bodyDraft()
+    const range = splitSlides(render.renderedSource())[index]
+    const renderedBody = range ? extractPageComment(extractNote(range.text).rest).rest : null
+    if (renderedBody !== body.trim()) return
+    const rawBody = extractPageComment(extractNote(range!.text, true).rest, true).rest
+    const bodyStart = range!.start + range!.text.indexOf(rawBody)
+    const edit = click.image ? null : click.hit?.byteSpan ? textEditFor({ ...click.hit, kind: 'text', byteSpan: click.hit.byteSpan, heading: click.hit.kind === 'heading' }, render.renderedSource(), body, bodyStart, rawBody) : null
+    const copiedDeckPath = deck.deckPath()
+    const previewRoot = document.querySelector('[data-preview-host]')?.shadowRoot
+    const imageElement = click.image ? Array.from(previewRoot?.querySelectorAll<HTMLElement>('[data-studio-image]') ?? []).find(element => element.dataset.studioImage === click.image?.slot) : Array.from(previewRoot?.querySelectorAll<HTMLElement>('[data-peitho-src]') ?? []).find(element => element.getAttribute('data-peitho-md') === click.hit?.quote && element.getAttribute('data-peitho-src') === `${click.hit?.byteSpan?.start}-${click.hit?.byteSpan?.end}`)?.closest<HTMLElement>('[data-studio-text],h1,h2,h3,h4,h5,h6,p,li')
+    const slideRect = imageElement?.closest('.peitho-slide')?.getBoundingClientRect()
+    const imageRect = imageElement?.getBoundingClientRect()
+    const placement = slideRect && imageRect ? { x: (imageRect.x - slideRect.x) / slideRect.width, y: (imageRect.y - slideRect.y) / slideRect.height, width: imageRect.width / slideRect.width, height: imageRect.height / slideRect.height } : undefined
+    const copied = click.image ? imageSlotContent(body, click.image.slot) : edit ? (edit.heading ? '# ' : '') + edit.value : null
+    if (copied === null) return
+    try {
+      if (action !== 'delete') {
+        await editorIpc.writeClipboardText(copied)
+        setPasteSerial(0)
+        setElementClipboard({ markdown: copied, image: Boolean(click.image), deckPath: copiedDeckPath, placement })
+      }
+      if (action === 'copy' || editor.selectedIndex() !== index || slidePositionsEpoch !== epoch || currentSlideText(index) !== before) return
+      if (click.image || click.textSlot) { await removePreviewImage(click.image?.slot ?? click.textSlot!); return }
+      if (edit && bodyEditor) {
+        const change = editorTextChange(body, removeSlideText(edit))
+        if (change) insertIntoCodeEditor(bodyEditor, { ...change, cursor: change.from }, 'delete.cut')
+      }
+    } catch (err) { setErrorMessage(String(err)) }
+  }
+
+  function runImageOrderAction(action: ImageOrderAction): void {
+    const image = previewMenuImage()
+    ui.closeContextMenu()
+    if (image) void orderPreviewImage(moveImageOrder(image.order, image.slot, action))
   }
 
   function editorViewOf(which: MenuEditor): ReturnType<typeof createCodeEditor> | undefined {
@@ -1820,7 +2046,7 @@ export function Studio() {
     const note = editor.noteDraft()
     const newSlideText = buildSlideText(editor.pageConfig(), body, note)
     const source = editor.fullSource()
-    const nextSource = source.slice(0, range.start) + newSlideText + source.slice(range.end)
+    const nextSource = replaceSlideText(source, range, newSlideText)
     // Typed text can itself re-split the deck (a `---` line, an unclosed code
     // fence), shifting the positions every history step addresses slides by.
     const resplits = splitSlides(nextSource).length !== editor.slideRanges().length
@@ -3146,7 +3372,20 @@ export function Studio() {
     return perform({ kind: 'config', index, patch: updates })
   }
 
-  function changeSlideLayout(index: number, layout: string): Promise<SlideChange> {
+  async function changeSlideLayout(index: number, layout: string): Promise<SlideChange> {
+    const from = slideConfigOf(index).layout
+    if (from?.startsWith('studio-canvas-') && from !== layout && !layout.startsWith('studio-canvas-')) {
+      if (previewImageBusy()) return 'unchanged'
+      const before = currentSlideText(index)
+      const epoch = slidePositionsEpoch
+      setPreviewImageBusy(true)
+      try {
+        const canvas = await imageIpc.createImageCanvas(syncedSource(currentSlideTexts()), layout, 0, [], [], from)
+        if (slidePositionsEpoch !== epoch || currentSlideText(index) !== before) return 'unchanged'
+        return await updateSlideConfig(index, { layout: canvas.layout })
+      } catch (err) { setErrorMessage(String(err)); return 'unchanged' }
+      finally { setPreviewImageBusy(false) }
+    }
     return updateSlideConfig(index, { layout })
   }
 
@@ -3448,6 +3687,7 @@ export function Studio() {
         return
       }
       if (isTypingInField()) return
+      if (document.activeElement?.closest('[data-panel="preview"]')) return
       // The slide shortcuts (arrows, Delete, Cmd+X/C/V…) would act on slides
       // out of sight while the layout screen shows.
       if (ui.studioMode() === 'layouts') return
@@ -3455,6 +3695,7 @@ export function Studio() {
       // Edit menu's Undo/Redo accelerators, the one path for both keyboard
       // and mouse (see `onMenuHistory` above).
       const key = event.key.toLowerCase()
+      if ((['Delete', 'Backspace'].includes(event.key) || (event.metaKey || event.ctrlKey) && ['x', 'c', 'v'].includes(key)) && !document.activeElement?.closest('[data-panel="slides"]')) return
       // `slideEntries().length`, not `manifest.slideCount`/`manifest.slides.length`
       // — the latter excludes drafts, which would leave ArrowUp/ArrowDown
       // permanently unable to reach a draft placeholder (or anything past
@@ -3745,6 +3986,15 @@ export function Studio() {
               onCommentClick={openCommentBox}
               onCommentMenu={openSlidePreviewMenu}
               onPinClick={showPinnedThread}
+              onTextEdit={startSlideTextEdit}
+              onAddImages={(files, slot) => { void addImagesToPreview(files, slot) }}
+              onImagePosition={positionPreviewImage}
+              imageBusy={previewImageBusy()}
+              onPasteElement={tryPasteElement}
+              onPasteShortcut={gesture => { void pasteElementShortcut(gesture) }}
+              onTextAction={(target, action) => { void runElementAction(action, { hit: { ...target, kind: target.heading ? 'heading' : 'paragraph' }, textSlot: target.slot, pin: null, at: { x: 0, y: 0 } }) }}
+              onImageClipboard={(slot, action) => { void runElementAction(action, { hit: null, pin: null, at: { x: 0, y: 0 }, image: { slot, order: [] } }) }}
+              onRemoveImage={slot => { void removePreviewImage(slot) }}
             />
           </div>
         </div>
@@ -3945,6 +4195,15 @@ export function Studio() {
         hidden={ui.contextMenu().kind === 'closed'}
         position={contextMenuPositionOf(ui.contextMenu())}
         menuItems={currentMenuItems()}
+        image={previewMenuImage()}
+        elementMenu={previewElementMenu()}
+        canvasMenu={previewCanvasMenu()}
+        canPasteElement={Boolean(elementClipboard() && elementClipboard()?.deckPath === deck.deckPath())}
+        onPasteElement={() => { void pasteElement() }}
+        onAddImage={() => { ui.closeContextMenu(); document.querySelector<HTMLInputElement>('[data-preview-image-input]')?.dispatchEvent(new Event('studio-add-image')) }}
+        onElementAction={action => { void runElementAction(action) }}
+        imageBusy={previewImageBusy()}
+        onImageOrder={runImageOrderAction}
         layoutPickerOpen={isLayoutPickerOpen(ui.contextMenu())}
         layoutPickerView={layoutPickerView()}
         layoutPreviews={ui.layoutPreviews()}

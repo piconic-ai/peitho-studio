@@ -19,6 +19,7 @@ export interface FileDrop {
 }
 
 export interface ImageIpc {
+  createImageCanvas(content: string, baseLayout: string, count: number, placements: ImagePlacement[], removeSlots?: string[], carryLayout?: string, imageOrder?: string[], textCount?: number): Promise<{ layout: string; slots: string[] }>
   /** Copies the image file at `path` into the open deck's `img/` and
    * returns its deck-relative path (`img/photo.png`). Rejects a file that
    * isn't a PNG, JPEG, GIF or WebP image. */
@@ -31,8 +32,11 @@ export interface ImageIpc {
   onFileDrop(callback: (drop: FileDrop) => void): Unsubscribe
 }
 
+export interface ImagePlacement { slot: string; x: number; y: number; width: number; height: number }
+
 export function createTauriImageIpc(): ImageIpc {
   return {
+    createImageCanvas: (content, baseLayout, count, placements, removeSlots = [], carryLayout, imageOrder, textCount = 0) => invoke('create_image_canvas', { content, baseLayout, count, placements, removeSlots, carryLayout: carryLayout ?? null, imageOrder: imageOrder ?? null, textCount }),
     importImageFile: path => invoke('import_deck_image_file', { path }),
     importImageBytes: (name, bytes) => invoke('import_deck_image_bytes', bytes, { headers: { 'x-image-name': name } }),
     onFileDrop: callback => {

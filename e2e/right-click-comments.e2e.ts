@@ -61,25 +61,20 @@ test.describe('the slide preview', () => {
     await expect(page.locator('[data-comment-pin]')).toHaveCount(1)
   })
 
-  test('Given the slide shown, when the preview is right-clicked, then the menu is the slide list\'s for that slide: the same items, enabled the same', async ({ page }) => {
+  test('thumbnail menus own slide actions while preview menus offer element actions', async ({ page }) => {
     await openDeck(page)
     await page.locator('[data-slide-row="1"]').click()
-    await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Second')
-    const shape = () => slideMenuButtons(page).evaluateAll(buttons => buttons.map(button => `${button.textContent?.trim() ?? ''}|${String((button as HTMLButtonElement).disabled)}`))
-
     await page.locator('[data-slide-row="1"]').click({ button: 'right' })
-    const fromList = await shape()
+    await expect(page.locator('[data-slide-menu]').getByRole('button', { name: 'Skip in Present' })).toBeVisible()
     await page.keyboard.press('Escape')
     await rightClick(page.locator(`${PREVIEW} h1`))
-    const fromPreview = await shape()
-
-    expect(fromPreview).toEqual(fromList)
-    expect(fromPreview.map(entry => entry.split('|')[0])).toEqual(expect.arrayContaining(['Cut⌘X', 'Copy⌘C', 'Paste⌘V', 'Delete⌦', 'Change Layout▸', 'Skip in Present']))
+    await expect(page.locator('[data-slide-menu]').getByRole('button', { name: 'Skip in Present' })).toBeHidden()
+    await expect(page.locator('[data-slide-menu]').getByRole('button', { name: 'Add image…' })).toBeVisible()
   })
 
   test('Given the preview\'s menu, when Skip in Present is chosen, then the slide shown is the one marked', async ({ page }) => {
     const deck = await openDeck(page)
-    await rightClick(page.locator(`${PREVIEW} h1`))
+    await rightClick(page.locator('[data-slide-row="0"]'))
     await page.locator(SLIDE_MENU).getByRole('button', { name: 'Skip in Present' }).click()
     await expect.poll(() => deck.source).toContain('<!-- {"key":"hello","skip":true} -->')
     expect(deck.source).toContain('---\n\n# Second')
@@ -91,7 +86,7 @@ test.describe('the slide preview', () => {
     // As low on the slide as it goes: the menu, its picker open, can't fit below.
     const slide = (await page.locator(`${PREVIEW} p >> nth=1`).boundingBox())!
     expect(slide.y).toBeGreaterThan(300)
-    await page.mouse.click(slide.x + 4, slide.y + slide.height / 2, { button: 'right' })
+    await rightClick(page.locator('[data-slide-row="0"]'))
     await page.locator(SLIDE_MENU).getByRole('button', { name: /^Change Layout/ }).click()
     const statement = page.locator('button[data-key="statement"]')
     await expect(statement).toBeVisible()
@@ -102,9 +97,10 @@ test.describe('the slide preview', () => {
     expect(deck.source.indexOf('"layout":"statement"')).toBeLessThan(deck.source.indexOf('# Second'))
   })
 
-  test('Given the preview, when it is left-clicked, then the box still opens at once, no menu', async ({ page }) => {
+  test('Given comment mode, when the preview is left-clicked, then the box opens without a menu', async ({ page }) => {
     await openDeck(page)
-    await page.locator(`${PREVIEW} p >> nth=0`).click()
+    await page.locator(`${PREVIEW} p >> nth=0`).click({ button: 'right' })
+    await page.locator('[data-slide-menu-item="comment"]').click()
     await expect(page.locator('[data-comment-target]')).toHaveText('Slide 1 › paragraph "Some text"')
     await expect(page.locator(SLIDE_MENU)).toBeHidden()
   })
@@ -334,7 +330,7 @@ test.describe('the comment item, the same in every right-click menu', () => {
    * label lines up with its own. */
   async function expectCommentFirst(menu: Locator, label = 'Comment…'): Promise<void> {
     await expect(menu).toBeVisible()
-    const items = menu.locator(':scope > button')
+    const items = menu.locator('button:visible')
     const first = items.first()
     await expect(first).toHaveText(label)
     await expect(first.locator('svg[data-menu-icon="comment"]')).toBeVisible()
