@@ -224,3 +224,37 @@ test('typing Markdown punctuation on the canvas writes literal text safely', asy
   await expect.poll(() => editorText(page)).toBe('# Use \\*literal\\* \\<tag\\>')
   await page.locator(FIELD).press('Meta+Enter')
 })
+
+
+test('a complete canvas session undoes and redoes as one unit across typing, pauses, and caret moves', async ({ page }) => {
+  await open(page)
+  await fillEditor(page, '# Before session')
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Before session')
+  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(FIELD).fill('')
+  await page.locator(FIELD).pressSequentially('First')
+  await page.waitForTimeout(700)
+  await page.locator(FIELD).pressSequentially(' second')
+  await page.locator(FIELD).press('Home')
+  await page.locator(FIELD).pressSequentially('Moved ')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(() => editorText(page)).toBe('# Moved First second')
+  const history = async (direction: 'undo' | 'redo') => {
+    await page.evaluate(direction => (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, label: string) => void }).__mockEmitTauriEvent(`menu:${direction}`, null, 'main'), direction)
+  }
+  await history('undo')
+  await expect.poll(() => editorText(page)).toBe('# Before session')
+  await history('redo')
+  await expect.poll(() => editorText(page)).toBe('# Moved First second')
+  // A later canvas edit must start its own group.
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Moved First second')
+  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(FIELD).fill('Next session')
+  await page.locator(FIELD).press('Meta+Enter')
+  await history('undo')
+  await expect.poll(() => editorText(page)).toBe('# Moved First second')
+  await history('undo')
+  await expect.poll(() => editorText(page)).toBe('# Before session')
+  await history('undo')
+  await expect.poll(() => editorText(page)).toBe('# Title')
+})

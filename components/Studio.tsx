@@ -639,9 +639,10 @@ export function Studio() {
       if (splitSlides(buildSlideText(editor.pageConfig(), next, '')).length !== 1) return false
       const change = editorTextChange(currentBody, next)
       if (!change) return true
-      if (!historyStarted) { isolateCodeEditorHistory(view); historyStarted = true }
+      const firstUpdate = !historyStarted
+      historyStarted = true
       currentBody = next
-      insertIntoCodeEditor(view, { ...change, cursor: change.from + change.insert.length }, 'input.slide', false)
+      insertIntoCodeEditor(view, { ...change, cursor: change.from + change.insert.length }, 'input.slide', firstUpdate)
       return true
     }
     return {

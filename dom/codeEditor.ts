@@ -345,7 +345,11 @@ export function insertIntoCodeEditor(view: EditorView, insertion: TextInsertion,
   view.dispatch({
     changes: { from: insertion.from, to: insertion.to, insert: insertion.insert },
     selection: { anchor: insertion.cursor },
-    userEvent,
+    // CodeMirror's composition continuation explicitly joins the prior
+    // history event even after a pause or non-adjacent edit. Canvas sessions
+    // start with an isolated input.slide event and use this only for their
+    // subsequent updates; ordinary editor typing retains its normal groups.
+    userEvent: userEvent === 'input.slide' && !isolate ? 'input.type.compose' : userEvent,
     scrollIntoView: true,
     annotations: isolate ? isolateHistory.of('full') : [],
   })
