@@ -68,10 +68,15 @@ see every file's status at a glance:
   a test can get past the welcome screen and drive the real frontend
   logic — `domain/slides.ts` run in Node stands in for peitho-core, close
   enough to exercise the app's own reactive/DOM code (this caught and
-  fixed a real bug, see `new-slide.e2e.ts`). What it *can't* catch:
-  anything that depends on peitho-core's actual output or a real WKWebView
-  (rendering fidelity, `adoptedStyleSheets`/`@font-face` support, native
-  right-click, drag). Real e2e that drives an actual Tauri window is still
+  fixed a real bug, see `new-slide.e2e.ts`). Passing `realEngine` from
+  `e2e/helpers/realEngine.ts` instead answers `render_draft`/
+  `create_image_canvas` with peitho-core's actual output (needs
+  `cargo build --example e2e_engine` in `src-tauri/`; specs named
+  `real-engine-*.e2e.ts` skip without it and run in CI's macOS
+  `e2e-real-engine` job) — use it whenever a canvas edit's resulting
+  Markdown must satisfy real slot contracts (arity, routing). What neither
+  can catch: a real WKWebView (rendering fidelity,
+  `adoptedStyleSheets`/`@font-face` support, native right-click, drag). Real e2e that drives an actual Tauri window is still
   queued in `tmp/todo.md` as a Scope1+ concern — **not** via `tauri-driver`
   as originally assumed: it has no macOS support at all (Apple doesn't ship
   a WKWebDriver; confirmed at
