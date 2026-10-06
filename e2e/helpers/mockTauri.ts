@@ -298,7 +298,7 @@ function annotatedFragment(source: string, start: number, text: string): string 
     else if (item) parts.push(`<ul><li ${attrs}>${escapeHtml(content)}</li></ul>`)
     else parts.push(`<p ${attrs}>${escapeHtml(content)}</p>`)
   }
-  return `<section class="peitho-slide" style="width: var(--peitho-canvas-width); height: var(--peitho-canvas-height); padding: 40px; box-sizing: border-box; background: white">${parts.join('')}</section>`
+  return `<section class="peitho-slide" style="width: var(--peitho-canvas-width); height: var(--peitho-canvas-height); padding: 40px; box-sizing: border-box; background: white">${parts.join('').replace(/<\/ul><ul>/g, '')}</section>`
 }
 
 function buildManifest(source: string, fragmentFor: (title: string) => string, canvas: Size, annotate = false): { manifest: Manifest; fragments: Record<string, string> } {
@@ -548,6 +548,12 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
           const from = layoutFileOf(deck, args.carryLayout as string)?.html ?? ''
           const figures = [...from.matchAll(/<(?:figure|div)[^>]*data-studio-(?:image|text)="[^"]+"[\s\S]*?<\/(?:figure|div)>/g)].map(match => match[0]).join('')
           html = html.replace('</section>', `${figures}</section>`)
+        }
+        if (args.textSlot) {
+          const slot = args.textSlot as string
+          const contract = new RegExp(`<slot name="${slot}" accepts="blocks" arity="0\\.\\.\\*"`).test(html)
+          if (contract) return { layout: base, slots: [] }
+          html = html.replace(new RegExp(`<slot name="${slot}"[^>]*>`), `<slot name="${slot}" accepts="blocks" arity="0..*">`)
         }
         html = html.replace(/(<section[^>]*style=")([^"]*)"/, '$1$2;position:relative"')
         for (const slot of (args.removeSlots as string[] | undefined) ?? []) html = html.replace(new RegExp(`<(?:figure|div)[^>]*data-studio-(?:image|text)="${slot}"[\\s\\S]*?<\\/(?:figure|div)>`), '')

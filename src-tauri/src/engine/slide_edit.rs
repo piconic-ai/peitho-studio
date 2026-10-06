@@ -74,22 +74,37 @@ fn image_canvas(deck_path: &std::path::Path, content: &str, base: &str, count: u
 }
 
 pub fn image_canvas_change(deck_path: &std::path::Path, content: &str, base: &str, count: usize, placements: &[ImagePlacement], removed: &[String]) -> Result<ImageCanvas, String> {
-    image_canvas_edit(deck_path, content, base, count, placements, removed, None, None, 0)
+    image_canvas_edit(deck_path, content, base, count, placements, removed, None, None, 0, None)
 }
 
 pub fn rebase_image_canvas(deck_path: &std::path::Path, content: &str, from: &str, base: &str) -> Result<ImageCanvas, String> {
-    image_canvas_edit(deck_path, content, base, 0, &[], &[], Some(from), None, 0)
+    image_canvas_edit(deck_path, content, base, 0, &[], &[], Some(from), None, 0, None)
 }
 
 pub fn order_image_canvas(deck_path: &std::path::Path, content: &str, base: &str, order: &[String]) -> Result<ImageCanvas, String> {
-    image_canvas_edit(deck_path, content, base, 0, &[], &[], None, Some(order), 0)
+    image_canvas_edit(deck_path, content, base, 0, &[], &[], None, Some(order), 0, None)
 }
 
 pub fn text_canvas(deck_path: &std::path::Path, content: &str, base: &str) -> Result<ImageCanvas, String> {
-    image_canvas_edit(deck_path, content, base, 0, &[], &[], None, None, 1)
+    image_canvas_edit(deck_path, content, base, 0, &[], &[], None, None, 1, None)
 }
 
-fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, count: usize, placements: &[ImagePlacement], removed: &[String], from: Option<&str>, order: Option<&[String]>, text_count: usize) -> Result<ImageCanvas, String> {
+/// A text box can contain paragraphs after bullets are removed. Preserve
+/// the template and geometry in an immutable slide-owned variant.
+pub fn list_canvas(deck_path: &std::path::Path, content: &str, base: &str, slot: &str) -> Result<ImageCanvas, String> {
+    let assets = super::pipeline::parse_source(deck_path, content)?.assets;
+    let layout = assets.layouts.get(base).ok_or("layout was not found")?;
+    let contract = layout.slot(slot).ok_or("text slot was not found")?;
+    if contract.accepts == peitho_core::domain::Accepts::Blocks && contract.arity == peitho_core::domain::Arity::ZeroOrMore {
+        return Ok(ImageCanvas { layout: base.to_string(), slots: vec![] });
+    }
+    if !matches!(contract.accepts, peitho_core::domain::Accepts::Blocks | peitho_core::domain::Accepts::List | peitho_core::domain::Accepts::Text) {
+        return Err("slot does not accept editable text blocks".into());
+    }
+    image_canvas_edit(deck_path, content, base, 0, &[], &[], None, None, 0, Some(slot))
+}
+
+fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, count: usize, placements: &[ImagePlacement], removed: &[String], from: Option<&str>, order: Option<&[String]>, text_count: usize, text_slot: Option<&str>) -> Result<ImageCanvas, String> {
     if count > 32 { return Err("add at most 32 images at a time".into()) }
     let assets = super::pipeline::parse_source(deck_path, content)?.assets;
     let layout = assets.layouts.get(base).ok_or_else(|| format!("layout '{base}' was not found"))?;
@@ -110,6 +125,13 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
     let mut front_layer = 0;
     let html = rewrite_str(layout.html(), RewriteStrSettings {
         element_content_handlers: vec![
+            element!("slot", |el| {
+                if text_slot.is_some() && el.get_attribute("name").as_deref() == text_slot {
+                    el.set_attribute("accepts", "blocks")?;
+                    el.set_attribute("arity", "0..*")?;
+                }
+                Ok(())
+            }),
             element!("section", |el| {
                 let existing = el.get_attribute("style").unwrap_or_default();
                 if !existing.contains("isolation:isolate") { el.set_attribute("style", &format!("{existing};position:relative;isolation:isolate;"))?; }
@@ -228,6 +250,27 @@ mod tests {
             assert_eq!(edited.get(layout.name).unwrap().slots(), original.slots());
             assert_eq!(original.html(), layout.html);
         }
+    }
+
+    #[test]
+    fn list_editing_preserves_the_template_and_allows_unlisted_paragraphs() {
+        let (_dir, path, _) = deck();
+        let source = "<!-- {\"key\":\"slide\",\"layout\":\"title-slide\"} -->\n# Title\n\n- One\n- Two\n";
+        let original = std::fs::read_to_string(path.parent().unwrap().join("layouts/title-slide.html")).unwrap();
+        let canvas = list_canvas(&path, source, "title-slide", "body").unwrap();
+        assert!(canvas.layout.starts_with("studio-canvas-"));
+        let edited = source.replace("title-slide", &canvas.layout).replace("- Two", "\nTwo");
+        super::super::pipeline::render_source(&path, &edited).unwrap();
+        assert_eq!(std::fs::read_to_string(path.parent().unwrap().join("layouts/title-slide.html")).unwrap(), original);
+        assert_eq!(list_canvas(&path, &edited, &canvas.layout, "body").unwrap().layout, canvas.layout);
+        assert!(list_canvas(&path, source, "title-slide", "title").is_err());
+    }
+
+    #[test]
+    fn unlimited_text_slots_need_no_new_layout_for_list_editing() {
+        let (_dir, path, source) = deck();
+        let canvas = list_canvas(&path, &source, "two-column", "left").unwrap();
+        assert_eq!(canvas.layout, "two-column");
     }
 
     fn deck() -> (tempfile::TempDir, std::path::PathBuf, String) {

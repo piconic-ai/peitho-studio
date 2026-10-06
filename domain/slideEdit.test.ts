@@ -102,3 +102,14 @@ test('deleting text preserves an unrelated slot example inside fenced code', () 
   const edit = textEditFor({ kind: 'text', quote: 'Remove me', text: 'Remove me', byteSpan: { start: from, end: from + 9 } }, body, body, 0)!
   expect(removeSlideText(edit)).toBe(body.replace('Remove me', ''))
 })
+
+test('list editing covers the whole annotated list including markers, without touching other blocks', () => {
+  const body = '# Title\n\n- One\n- Two\n\nKeep'
+  const items = ['One', 'Two'].map(quote => ({ quote, byteSpan: { start: body.indexOf(quote), end: body.indexOf(quote) + quote.length } }))
+  const edit = textEditFor({ kind: 'text', text: 'One', ...items[0], listItems: items }, body, body, 0)!
+  expect(edit.value).toBe('- One\n- Two')
+  const insertion = textEditInsertion(edit, body, '- One\n- Added\n- Two')!
+  expect(body.slice(0, insertion.from) + insertion.insert + body.slice(insertion.to)).toBe('# Title\n\n- One\n- Added\n- Two\n\nKeep')
+  const unlisted = textEditInsertion(edit, body, '- One\n\nTwo')!
+  expect(body.slice(0, unlisted.from) + unlisted.insert + body.slice(unlisted.to)).toBe('# Title\n\n- One\n\nTwo\n\nKeep')
+})

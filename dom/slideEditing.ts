@@ -25,6 +25,25 @@ const CONTROLS = 'button,input,textarea,select,summary,a,video,audio,[contentedi
 export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCallbacks): void {
   const root = host.shadowRoot
   if (!root) return
+  const getSelection = () => (root as ShadowRoot & { getSelection?: () => Selection | null }).getSelection?.() ?? window.getSelection()
+  const selectionRange = (selection: Selection): Range | null => {
+    const raw = selection.rangeCount ? selection.getRangeAt(0) : null
+    if (raw && root.contains(raw.startContainer)) return raw
+    // Safari's original API takes a ShadowRoot; the current standard takes
+    // an options object. A plain getRangeAt may rescope to the shadow host.
+    const composed = selection as unknown as { getComposedRanges?: (options: { shadowRoots: ShadowRoot[] } | ShadowRoot) => StaticRange[] }
+    for (const options of [{ shadowRoots: [root] }, root]) {
+      try {
+        const span = composed.getComposedRanges?.(options)[0]
+        if (span && root.contains(span.startContainer) && root.contains(span.endContainer)) {
+          const range = document.createRange()
+          range.setStart(span.startContainer, span.startOffset); range.setEnd(span.endContainer, span.endOffset)
+          return range
+        }
+      } catch { /* Try the other API signature. */ }
+    }
+    return raw
+  }
   const existing = watched.get(root)
   if (existing) { existing.callbacks = callbacks; existing.close(); return }
   let box: HTMLElement | null = null
@@ -158,7 +177,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
         selectedText.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, detail: 2 }))
         if (event.key !== 'Enter' && box) {
           const range = document.createRange(); range.selectNodeContents(box)
-          const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+          const selection = getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
           document.execCommand('insertText', false, event.key)
         }
         return
@@ -203,7 +222,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     if (element) {
       const byteSpan = parseSourceSpan(element.getAttribute('data-peitho-src'))
       const quote = element.getAttribute('data-peitho-md')
-      if (byteSpan && quote !== null && !element.closest('pre,code')) editTarget = { kind: 'text', slot: element.closest<HTMLElement>('[data-studio-text]')?.dataset.studioText, byteSpan, quote, text: element.textContent ?? '', heading: Boolean(element.closest('h1,h2,h3,h4,h5,h6')) }
+      if (byteSpan && quote !== null && !element.closest('pre,code')) editTarget = { kind: 'text', slot: element.closest<HTMLElement>('[data-studio-text]')?.dataset.studioText ?? element.closest<HTMLElement>('[data-studio-slot]')?.dataset.studioSlot, byteSpan, quote, text: element.textContent ?? '', heading: Boolean(element.closest('h1,h2,h3,h4,h5,h6')) }
     } else {
       element = target.closest<HTMLElement>('[data-studio-empty]')
       if (element) {
@@ -212,12 +231,32 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       }
     }
     if (!element || !editTarget) { selectedText = null; markEmpty(); return }
+    const selectedElement = element
+    let list = element.closest<HTMLElement>('ul,ol')
+    while (list?.parentElement?.closest<HTMLElement>('ul,ol')) list = list.parentElement.closest<HTMLElement>('ul,ol')
+    if (list && editTarget.kind === 'text') {
+      const listItems = Array.from(list.querySelectorAll<HTMLElement>('[data-peitho-src]')).flatMap(item => {
+        const byteSpan = parseSourceSpan(item.getAttribute('data-peitho-src'))
+        const quote = item.getAttribute('data-peitho-md')
+        return byteSpan && quote !== null ? [{ byteSpan, quote }] : []
+      })
+      if (listItems.length) { editTarget = { ...editTarget, listItems }; element = list }
+    }
     selectedText = element; element.tabIndex = 0; markEmpty()
     const session = state.callbacks.edit(editTarget)
     if (!session) return
     // WKWebView needs the native mouse-down focus action to establish its
     // text input responder; DOM focus alone leaves the first click unable to type.
     if (event.type !== 'mousedown') event.preventDefault()
+    // Use a block editing host around lists. WKWebView exposes an editable
+    // UL through accessibility but does not reliably accept native typing.
+    // Keep the original list and its typography inside the temporary host.
+    let listHost: HTMLElement | null = null
+    if (list) {
+      listHost = document.createElement('div')
+      element.before(listHost); listHost.append(element)
+      element = listHost; element.tabIndex = 0; selectedText = element; markEmpty()
+    }
     // Keep the actual slide element and its inherited typography; no floating field.
     box = element
     host.setAttribute('data-studio-text-editing', '')
@@ -232,6 +271,10 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     restore = () => {
       session.finish()
       field.innerHTML = original
+      if (list) {
+        selectedText = Array.from(field.querySelectorAll<HTMLElement>('[data-peitho-src]')).find(el => el.getAttribute('data-peitho-src') === selectedElement.getAttribute('data-peitho-src')) ?? null
+        if (selectedText) selectedText.tabIndex = 0
+      }
       field.removeAttribute('contenteditable'); field.removeAttribute('role'); field.removeAttribute('aria-label')
       delete field.dataset.studioEdit; delete field.dataset.studioEditError
       field.removeEventListener('input', input)
@@ -239,14 +282,23 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       field.removeEventListener('blur', blur)
       field.removeEventListener('compositionstart', compositionStart)
       field.removeEventListener('compositionend', compositionEnd)
+      if (listHost) listHost.replaceWith(...Array.from(listHost.childNodes))
       markEmpty()
     }
     const markdown = (node: Node): string => {
+      if (node.nodeType === Node.TEXT_NODE && node.parentElement?.matches('ul,ol') && !node.textContent?.trim()) return ''
       if (node.nodeType === Node.TEXT_NODE) return literalSlideText(node.previousSibling instanceof Element && node.previousSibling.tagName === 'BR' ? (node.textContent ?? '').replace(/^\n/, '') : node.textContent ?? '')
       if (!(node instanceof Element)) return ''
       const text = Array.from(node.childNodes).map(markdown).join('')
       switch (node.tagName) {
-        case 'BR': return '\n'
+        case 'LI': {
+          if (node.hasAttribute('data-studio-unlisted')) return `\n\n${text.trim() === '' ? '&#160;' : text}\n\n`
+          const marker = node.parentElement?.tagName === 'OL' ? `${Number(node.parentElement.getAttribute('start') ?? 1) + Array.from(node.parentElement.children).indexOf(node)}. ` : '- '
+          return `\n${marker}${text.trim() === '' ? '&#160;' : text.replace(/^\n/, '').replace(/\n/g, '\n  ')}`
+        }
+        case 'UL': case 'OL': return text
+        case 'BR': return list ? !node.nextSibling ? '' : '  \n' : '\n'
+        case 'INPUT': return node.getAttribute('type') === 'checkbox' ? `[${(node as HTMLInputElement).checked ? 'x' : ' '}] ` : ''
         case 'CODE': return slideInlineCode(node.textContent ?? '')
         case 'STRONG': case 'B': return `**${text}**`
         case 'EM': case 'I': return `*${text}*`
@@ -259,7 +311,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       }
     }
     commit = () => {
-      const value = (!empty && field.innerHTML === original) || (empty && field.textContent === session.value) ? session.value : slideTextLines(Array.from(field.childNodes).map(markdown).join('').replace(/^\n/, ''))
+      const value = (!empty && field.innerHTML === original) || (empty && field.textContent === session.value) ? session.value : list ? Array.from(field.childNodes).map(markdown).join('').replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, '') : slideTextLines(Array.from(field.childNodes).map(markdown).join('').replace(/^\n/, ''))
       if (empty && value.trim() === '') return session.cancel()
       const ok = session.commit(value)
       field.toggleAttribute('data-studio-edit-error', !ok)
@@ -271,7 +323,40 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     const keydown = (e: KeyboardEvent) => {
       e.stopPropagation()
       if (e.isComposing || composing) return
-      if (e.key === 'Escape') { e.preventDefault(); if (session.cancel()) close() }
+      if (list && (e.key === 'Enter' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        const selection = getSelection()
+        if (selection?.rangeCount) {
+          const caret = selectionRange(selection)
+          if (!caret) return
+          let normalizedCaret = false
+          let item = (caret.startContainer instanceof Element ? caret.startContainer : caret.startContainer.parentElement)?.closest<HTMLElement>('li')
+          // WebKit can put the caret on the list container (after its final
+          // formatting newline), rather than inside the last item.
+          if (!item && selection.isCollapsed && field.contains(caret.startContainer)) {
+            const child = caret.startContainer === field ? field.childNodes[Math.max(0, caret.startOffset - 1)] : caret.startContainer
+            item = (child instanceof Element ? child : child?.previousSibling instanceof Element ? child.previousSibling : null)?.closest<HTMLElement>('li') ?? Array.from(list.children).filter((el): el is HTMLElement => el instanceof HTMLElement && el.tagName === 'LI').at(-1) ?? null
+            if (item) { normalizedCaret = true; const atBeginning = caret.startContainer === field && caret.startOffset === 0; caret.selectNodeContents(item); caret.collapse(atBeginning) }
+          }
+          if (item && field.contains(item)) {
+            const before = caret.cloneRange(); before.selectNodeContents(item); before.setEnd(caret.startContainer, caret.startOffset)
+            const atStart = selection.isCollapsed && before.toString() === ''
+            if (!item.hasAttribute('data-studio-unlisted') && ((e.key === 'Backspace' && atStart) || (e.key === 'Enter' && item.textContent?.trim() === ''))) {
+              e.preventDefault()
+              item.setAttribute('data-studio-unlisted', '')
+              item.style.listStyleType = 'none'
+              commit?.()
+              return
+            }
+            if (e.key === 'Enter' && !item.hasAttribute('data-studio-unlisted')) {
+              // Keep the native Enter action: cancelling it or splitting DOM
+              // nodes ourselves prevents WKWebView from accepting further input.
+              if (normalizedCaret) { selection.removeAllRanges(); selection.addRange(caret) }
+              return
+            }
+          }
+        }
+      }
+      if (e.key === 'Escape') { e.preventDefault(); if (session.cancel()) { close(); selectedText?.focus() } }
       if (e.key === 'Enter' && (editTarget?.kind === 'text' && editTarget.heading || e.metaKey || e.ctrlKey)) {
         e.preventDefault(); if (commit?.()) close()
       }
@@ -291,7 +376,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     if (!range || !field.contains(range.startContainer)) {
       range = document.createRange(); range.selectNodeContents(field); range.collapse(false)
     }
-    const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+    const selection = getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
 
   }
   // Make the field editable during the first mouse gesture, before the
@@ -309,7 +394,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     textMouseDown = false
     if (mouseStartedEdit && box && root.activeElement !== box) {
       box.focus()
-      const selection = window.getSelection()
+      const selection = getSelection()
       if (!selection?.rangeCount || !box.contains(selection.getRangeAt(0).startContainer)) {
         const range = document.createRange(); range.selectNodeContents(box); range.collapse(false)
         selection?.removeAllRanges(); selection?.addRange(range)

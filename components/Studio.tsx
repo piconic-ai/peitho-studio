@@ -637,6 +637,13 @@ export function Studio() {
     if (target.kind === 'text' && edit === null) return null
     let currentBody = before
     let historyStarted = false
+    let finished = false
+    let cancelled = false
+    let queuedBody: string | null = null
+    let preparing: Promise<void> | null = null
+    let prepared = false
+    const originalConfig = editor.pageConfig()
+    let preparedLayout: string | null = null
     const applyBody = (next: string): boolean => {
       if (bodyEditor !== view || editor.selectedIndex() !== index || editor.bodyDraft() !== currentBody || view.state.doc.toString() !== currentBody || isCodeEditorComposing(view)) return false
       if (splitSlides(buildSlideText(editor.pageConfig(), next, '')).length !== 1) return false
@@ -656,10 +663,38 @@ export function Studio() {
         }
         const insertion = edit ? textEditInsertion(edit, before, value) : target.kind === 'slot' ? slotTextInsertion(before, target.slot, target.accepts, value) : null
         if (!insertion) return false
-        return applyBody(before.slice(0, insertion.from) + insertion.insert + before.slice(insertion.to))
+        const next = before.slice(0, insertion.from) + insertion.insert + before.slice(insertion.to)
+        if (next === before && preparing) queuedBody = before
+        if (target.kind !== 'text' || !target.listItems?.length || !target.slot || next === before || prepared) return applyBody(next)
+        // Prepare the slot contract before publishing a paragraph/list mix.
+        // Keep the latest keystrokes while IPC creates the immutable variant.
+        queuedBody = next
+        if (!preparing) {
+          const base = originalConfig.layout ?? render.slideLayouts()[selectedSlideKey() ?? ''] ?? DEFAULT_LAYOUT
+          preparing = imageIpc.createImageCanvas(syncedSource(currentSlideTexts()), base, 0, [], [], undefined, undefined, 0, target.slot).then(canvas => {
+            if (cancelled || bodyEditor !== view || editor.selectedIndex() !== index || editor.bodyDraft() !== currentBody) return
+            const session = editor.editorSession()
+            if (session.kind !== 'editing' || session.draft.config !== originalConfig) return
+            prepared = true
+            if (canvas.layout !== base) {
+              preparedLayout = canvas.layout
+              editor.setEditorSession({ ...session, draft: { ...session.draft, config: { ...session.draft.config, layout: canvas.layout } } })
+            }
+            if (queuedBody !== null) applyBody(queuedBody)
+            if (finished && historyStarted) isolateCodeEditorHistory(view)
+          }).catch(err => { setErrorMessage(String(err)) })
+        }
+        return true
       },
-      cancel: () => applyBody(before),
-      finish: () => { if (historyStarted) isolateCodeEditorHistory(view) },
+      cancel: () => {
+        cancelled = true; queuedBody = null
+        const session = editor.editorSession()
+        if (preparedLayout && bodyEditor === view && session.kind === 'editing' && session.index === index && session.draft.config.layout === preparedLayout) {
+          editor.setEditorSession({ ...session, draft: { ...session.draft, config: originalConfig } })
+        }
+        return applyBody(before)
+      },
+      finish: () => { finished = true; if (historyStarted) isolateCodeEditorHistory(view) },
     }
   }
 
