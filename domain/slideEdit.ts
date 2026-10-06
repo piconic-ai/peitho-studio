@@ -136,10 +136,20 @@ export function removeSlideText(edit: SlideTextEdit): string {
   const prefix = edit.body.slice(lineStart, edit.from)
   const from = /^(?:#{1,6}\s+|[ \t]*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?|[ \t]*)$/.test(prefix) ? lineStart : edit.from
   const before = edit.body.slice(0, from)
-  const after = edit.body.slice(edit.to)
+  // A whole removed line takes its own line break with it.
+  const after = from === lineStart ? edit.body.slice(edit.to).replace(/^\n/, '') : edit.body.slice(edit.to)
   const opening = /(?:^|\n)::: \{slot=[a-z][a-z0-9-]*\}\n[\s\u00a0]*$/.exec(before)
-  const closing = /^[\s\u00a0]*\n:::(?=\n|$)/.exec(after)
-  return (opening && closing ? before.slice(0, opening.index) + after.slice(closing[0].length) : before + after).trim()
+  const closing = /^[\s\u00a0]*\n:::(?=\n|$)/.exec(edit.body.slice(edit.to))
+  return (opening && closing ? joinBlocks(before.slice(0, opening.index), edit.body.slice(edit.to + closing[0].length)) : joinBlocks(before, after)).trim()
+}
+
+/** Join what surrounded a removed element with at most one blank line: the
+ * blank lines on both sides of it must not add up. A longer run differs from
+ * the rendered (collapsed) body, which disabled canvas editing. */
+export function joinBlocks(left: string, right: string): string {
+  const trailing = /\n*$/.exec(left)![0].length
+  const leading = /^\n*/.exec(right)![0].length
+  return left + right.slice(Math.min(leading, Math.max(0, trailing + leading - 2)))
 }
 
 /** A canvas text element cleared to nothing is removed, not kept as an NBSP
