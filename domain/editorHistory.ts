@@ -368,8 +368,9 @@ export function stepPinsLayout(step: HistoryStep, layout: string): boolean {
       return (step.cmd.type === 'insert' || step.cmd.type === 'replace') && slideConfigOfText(step.cmd.text).layout === layout
     case 'page-numbers':
     case 'frontmatter':
-    case 'text':
       return false
+    case 'text':
+      return step.layout?.before === layout || step.layout?.after === layout
     default: {
       const _exhaustive: never = step
       throw new Error(`Unhandled HistoryStep: ${JSON.stringify(_exhaustive)}`)

@@ -648,6 +648,16 @@ describe('stepPinsLayout / historyPinsLayout (forgetting history after a layout 
   const ON_QUOTE = '<!-- {"key":"a","layout":"quote"} -->\n# A'
   const PLAIN = '# Plain'
 
+  test('text layout transitions pin both layouts on undo and redo stacks', () => {
+    const text: TextStep = { kind: 'text', index: 0, field: 'body', seq: 1, layout: { before: 'two-column', after: 'studio-canvas-private' } }
+    for (const layout of ['two-column', 'studio-canvas-private']) {
+      expect(historyPinsLayout({ undo: [text], redo: [] }, layout)).toBe(true)
+      expect(historyPinsLayout({ undo: [], redo: [text] }, layout)).toBe(true)
+    }
+    expect(stepPinsLayout(text, 'other')).toBe(false)
+    expect(stepPinsLayout({ ...text, layout: undefined }, 'studio-canvas-private')).toBe(false)
+  })
+
   test('spec: Given each kind of step that writes a layout, When it names the layout, Then it pins it', () => {
     expect(stepPinsLayout({ kind: 'config', index: 0, patch: { layout: 'quote' } }, 'quote')).toBe(true)
     expect(stepPinsLayout({ kind: 'slides', cmd: { type: 'insert', at: 0, text: ON_QUOTE } }, 'quote')).toBe(true)

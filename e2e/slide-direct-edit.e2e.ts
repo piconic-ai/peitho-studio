@@ -624,10 +624,18 @@ test('pasted text uses the selected identical paragraph and grows without clippi
     return child.top >= wrapper.top - 1 && child.bottom <= wrapper.bottom + 1
   })
   expect(await visible()).toBe(true)
+  // The 64px inline style above is a selection probe, not persisted layout
+  // typography. Measure growth against the rendered single-line text.
   await pasted.locator('p').dblclick()
+  await page.locator(FIELD).fill('first')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect(pasted).toContainText('first')
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  const singleLine = (await pasted.boundingBox())!.height
+  await pasted.locator('p').click()
   await page.locator(FIELD).fill('first\nsecond\nthird\nfourth')
   await page.locator(FIELD).press('Meta+Enter')
-  await expect.poll(async () => (await pasted.boundingBox())!.height).toBeGreaterThan(bounds.height)
+  await expect.poll(async () => (await pasted.boundingBox())!.height).toBeGreaterThan(singleLine)
   expect(await visible()).toBe(true)
 })
 
