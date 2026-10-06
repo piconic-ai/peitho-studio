@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.1.4](https://github.com/piconic-ai/peitho-studio/compare/v0.1.3...v0.1.4) - 2026-10-06
+
+- Move Check for Updates to the app menu and its own window by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/169
+- Add in-place slide editing with live Markdown sync by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/170
+- Fix title re-entry after clearing canvas text by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/171
+- Fix in-place list editing and bullet keyboard behavior by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/172
+
 ## [v0.1.3](https://github.com/piconic-ai/peitho-studio/compare/v0.1.2...v0.1.3) - 2026-10-05
 
 - Build new decks with eleven standard layouts and name a layout on every new slide by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/155
