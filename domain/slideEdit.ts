@@ -78,6 +78,13 @@ export function literalSlideText(text: string): string {
   return text.replace(/[\\`*_[\]<>#]/g, char => `\\${char}`)
 }
 
+/** A canvas text element remains one paragraph, including its empty lines.
+ * A non-breaking space keeps an empty visual line from becoming a Markdown
+ * paragraph boundary (and consuming another layout slot item). */
+export function slideTextLines(text: string): string {
+  return text.replace(/\r\n?/g, '\n').split('\n').map(line => /^[ \t]*$/.test(line) ? '\u00a0' : line).join('  \n')
+}
+
 export function slideInlineCode(text: string): string {
   const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map(run => run.length))
   const fence = '`'.repeat(longest + 1)

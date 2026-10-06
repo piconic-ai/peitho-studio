@@ -554,6 +554,25 @@ mod tests {
     }
 
     #[test]
+    fn canvas_blank_lines_render_as_one_title_slide_body_item() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        let layouts = dir.path().join("layouts");
+        std::fs::create_dir(&layouts).unwrap();
+        std::fs::write(layouts.join("title-slide.html"), crate::engine::builtin::STANDARD_LAYOUTS.iter().find(|layout| layout.name == "title-slide").unwrap().html).unwrap();
+        std::fs::create_dir(dir.path().join("css")).unwrap();
+        std::fs::write(dir.path().join("css/base.css"), "").unwrap();
+        let source = "<!-- {\"key\":\"cover\",\"layout\":\"title-slide\"} -->\n# Title\n\nFirst  \n\u{a0}  \nSecond\n";
+        let output = render_source(&deck_path, source).unwrap();
+        let html = &output.fragments["cover"];
+        assert_eq!(html.matches("<p").count(), 1, "{html}");
+        assert_eq!(html.matches("<br").count(), 2, "{html}");
+        assert!(!edit_annotations(html).is_empty(), "{html}");
+        let old = source.replace("\u{a0}  ", "");
+        assert!(render_source(&deck_path, &old).err().unwrap().contains("got 2 item(s)"));
+    }
+
+    #[test]
     fn adversarial_slide_layouts_leaves_out_a_slide_it_cannot_place() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = write_two_layout_deck(dir.path(), "<!-- {\"key\":\"new-slide\"} -->");

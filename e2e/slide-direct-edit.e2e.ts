@@ -147,8 +147,28 @@ test('Enter finishes a title and multiline column text remains in that column', 
   await page.locator(FIELD).press('Enter')
   await page.locator(FIELD).pressSequentially('Second line')
   await page.locator(FIELD).press('Meta+Enter')
-  await expect.poll(() => deck.source).toContain('First line\nSecond line')
+  await expect.poll(() => deck.source).toContain('First line  \nSecond line')
   await expect(page.locator('[data-slide-row]')).toHaveCount(1)
+})
+
+test('with the editor closed, blank lines in a cover text box do not create extra body items', async ({ page }) => {
+  const source = '<!-- {"key":"cover","layout":"title-slide"} -->\n# Title\n\nOriginal\n'
+  const deck: MockDeck = { source, deckPath: '/decks/talk/deck.md', editAnnotations: true, editableLayouts: true, layouts: ['title-slide'], layoutFiles: { 'title-slide': { html: TWO_COLUMN.replace(/<div style="display:flex;gap:40px">[\s\S]*<\/div><\/section>/, '<div><slot name="body" accepts="blocks" arity="0..1"></slot></div></section>'), css: null } } }
+  deck.commandError = (cmd, args) => ['render_draft', 'save_slide'].includes(cmd) && /First\n\nSecond/.test(String(args.content)) ? "slot 'body' got 2 item(s), but layout 'title-slide' allows 0..1" : null
+  await mockTauri(page, deck); await page.goto('/')
+  await page.locator('[data-slide-row="0"]').click()
+  await page.getByRole('button', { name: 'Editor: Close', exact: true }).click()
+  await expect(page.locator('[data-editor="body"]')).toBeHidden()
+  await page.locator(`${PREVIEW} p`).click()
+  await page.locator(FIELD).fill('First')
+  await page.locator(FIELD).press('End')
+  await page.locator(FIELD).press('Enter')
+  await page.locator(FIELD).press('Enter')
+  await page.locator(FIELD).pressSequentially('Second')
+  await expect.poll(() => editorText(page)).toContain('First  \n\u00a0  \nSecond')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(() => deck.source).toContain('First  \n\u00a0  \nSecond')
+  await expect(page.getByText(/got 2 item/)).toHaveCount(0)
 })
 
 

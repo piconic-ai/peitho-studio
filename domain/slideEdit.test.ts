@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { literalSlideText, slideInlineCode, looseBodyEdit, removeImageSlot, slotTextInsertion, textEditFor, textEditInsertion } from './slideEdit'
+import { literalSlideText, slideInlineCode, slideTextLines, looseBodyEdit, removeImageSlot, slotTextInsertion, textEditFor, textEditInsertion } from './slideEdit'
 
 test('Japanese text edits locate the annotated bytes in the selected body and preserve heading syntax', () => {
   const body = '# 売上\n\n本文'
@@ -56,4 +56,12 @@ test('inline code retains its formatting including embedded backticks and bounda
   expect(slideInlineCode('`foo`')).toBe('`` `foo` ``')
   expect(slideInlineCode(' foo ')).toBe('`  foo  `')
   expect(slideInlineCode('a``b')).toBe('```a``b```')
+})
+
+test('canvas blank lines stay inside one Markdown paragraph, including while typing', () => {
+  expect(slideTextLines('First\n\nSecond')).toBe('First  \n\u00a0  \nSecond')
+  expect(slideTextLines('First\n')).toBe('First  \n\u00a0')
+  expect(slideTextLines('First\r\n \t\r\n\r\nSecond')).toBe('First  \n\u00a0  \n\u00a0  \nSecond')
+  expect(slideTextLines('First\nSecond')).toBe('First  \nSecond')
+  expect(slideTextLines('**Bold**\n\n`code`')).toBe('**Bold**  \n\u00a0  \n`code`')
 })

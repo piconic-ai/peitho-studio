@@ -1,7 +1,7 @@
 import type { Language } from '../domain/language'
 import { parseSourceSpan } from '../domain/reviewComment'
 import { flushSlideTextEdit } from './slideCanvas'
-import { literalSlideText, slideInlineCode, type SlideEditTarget, type SlideEditSession } from '../domain/slideEdit'
+import { literalSlideText, slideInlineCode, slideTextLines, type SlideEditTarget, type SlideEditSession } from '../domain/slideEdit'
 
 export interface SlideEditingCallbacks {
   language: () => Language
@@ -176,12 +176,14 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
         case 'EM': case 'I': return `*${text}*`
         case 'S': case 'DEL': return `~~${text}~~`
         case 'A': return `[${text}](${node.getAttribute('href') ?? ''})`
-        case 'DIV': case 'P': return `\n${text}`
+        // An empty browser-created line contains a placeholder BR, which
+        // does not add a second line break of its own.
+        case 'DIV': case 'P': return `\n${node.childNodes.length === 1 && node.firstChild instanceof Element && node.firstChild.tagName === 'BR' ? '' : text}`
         default: return text
       }
     }
     commit = () => {
-      const value = (!empty && field.innerHTML === original) || (empty && field.textContent === session.value) ? session.value : Array.from(field.childNodes).map(markdown).join('').replace(/^\n/, '')
+      const value = (!empty && field.innerHTML === original) || (empty && field.textContent === session.value) ? session.value : slideTextLines(Array.from(field.childNodes).map(markdown).join('').replace(/^\n/, ''))
       if (empty && value.trim() === '') return session.cancel()
       const ok = session.commit(value)
       field.toggleAttribute('data-studio-edit-error', !ok)
