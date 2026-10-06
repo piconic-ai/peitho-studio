@@ -406,12 +406,16 @@ export function Studio() {
   // with the slide it was typed into. The other editor's newest group is
   // closed, so typing there next starts a group above this one instead of
   // joining one below it.
+  let activeTextLayout: { layout: NonNullable<TextStep['layout']>; recorded: (seq: number) => void } | null = null
+
   function recordTextGroup(field: TextField, seq: number): void {
     const index = editor.selectedIndex()
     if (index === null) return
     const other = codeEditorOf(field === 'body' ? 'note' : 'body')
     if (other) isolateCodeEditorHistory(other)
-    history.record({ kind: 'text', index, field, seq })
+    const layout = field === 'body' ? activeTextLayout : null
+    history.record({ kind: 'text', index, field, seq, ...(layout ? { layout: layout.layout } : {}) })
+    layout?.recorded(seq)
   }
 
   // Closes both editors' newest group of typing, for when a slide
@@ -622,6 +626,8 @@ export function Studio() {
     await addImagesToPreview(files, null)
   }
 
+  let pendingSlideTextEdit: Promise<void> | null = null
+
   function startSlideTextEdit(target: SlideEditTarget): SlideEditSession | null {
     const view = bodyEditor
     const index = editor.selectedIndex()
@@ -637,6 +643,14 @@ export function Studio() {
     if (target.kind === 'text' && edit === null) return null
     let currentBody = before
     let historyStarted = false
+    let finished = false
+    let cancelled = false
+    let queuedBody: string | null = null
+    let preparing: Promise<void> | null = null
+    let prepared = false
+    const originalConfig = editor.pageConfig()
+    let preparedLayout: string | null = null
+    let layoutHistorySeq: number | null = null
     const applyBody = (next: string): boolean => {
       if (bodyEditor !== view || editor.selectedIndex() !== index || editor.bodyDraft() !== currentBody || view.state.doc.toString() !== currentBody || isCodeEditorComposing(view)) return false
       if (splitSlides(buildSlideText(editor.pageConfig(), next, '')).length !== 1) return false
@@ -645,7 +659,10 @@ export function Studio() {
       const firstUpdate = !historyStarted
       historyStarted = true
       currentBody = next
-      insertIntoCodeEditor(view, { ...change, cursor: change.from + change.insert.length }, 'input.slide', firstUpdate)
+      const previousLayout = activeTextLayout
+      if (firstUpdate && preparedLayout) activeTextLayout = { layout: { before: originalConfig.layout, after: preparedLayout }, recorded: seq => { layoutHistorySeq = seq } }
+      try { insertIntoCodeEditor(view, { ...change, cursor: change.from + change.insert.length }, 'input.slide', firstUpdate) }
+      finally { activeTextLayout = previousLayout }
       return true
     }
     return {
@@ -656,10 +673,48 @@ export function Studio() {
         }
         const insertion = edit ? textEditInsertion(edit, before, value) : target.kind === 'slot' ? slotTextInsertion(before, target.slot, target.accepts, value) : null
         if (!insertion) return false
-        return applyBody(before.slice(0, insertion.from) + insertion.insert + before.slice(insertion.to))
+        const next = before.slice(0, insertion.from) + insertion.insert + before.slice(insertion.to)
+        if (next === before && preparing) queuedBody = before
+        if (target.kind !== 'text' || !target.listItems?.length || !target.slot || next === before || prepared) return applyBody(next)
+        // Prepare the slot contract before publishing a paragraph/list mix.
+        // Keep the latest keystrokes while IPC creates the immutable variant.
+        queuedBody = next
+        if (!preparing) {
+          const base = originalConfig.layout ?? render.slideLayouts()[selectedSlideKey() ?? ''] ?? DEFAULT_LAYOUT
+          preparing = imageIpc.createImageCanvas(syncedSource(currentSlideTexts()), base, 0, [], [], undefined, undefined, 0, target.slot).then(canvas => {
+            if (cancelled || bodyEditor !== view || editor.selectedIndex() !== index || editor.bodyDraft() !== currentBody) return
+            const session = editor.editorSession()
+            if (session.kind !== 'editing' || session.draft.config !== originalConfig) return
+            prepared = true
+            if (canvas.layout !== base) {
+              preparedLayout = canvas.layout
+              editor.setEditorSession({ ...session, draft: { ...session.draft, config: { ...session.draft.config, layout: canvas.layout } } })
+            }
+            if (queuedBody !== null) applyBody(queuedBody)
+            if (finished && historyStarted) isolateCodeEditorHistory(view)
+          }).catch(err => {
+            // Retain typed content even if the layout cannot be created.
+            prepared = true
+            if (!cancelled && queuedBody !== null) applyBody(queuedBody)
+            setErrorMessage(String(err))
+          })
+          const pending = preparing
+          pendingSlideTextEdit = pending
+          void pending.finally(() => { if (pendingSlideTextEdit === pending) pendingSlideTextEdit = null })
+        }
+        return true
       },
-      cancel: () => applyBody(before),
-      finish: () => { if (historyStarted) isolateCodeEditorHistory(view) },
+      cancel: () => {
+        cancelled = true; queuedBody = null
+        const session = editor.editorSession()
+        if (preparedLayout && bodyEditor === view && session.kind === 'editing' && session.index === index && session.draft.config.layout === preparedLayout) {
+          editor.setEditorSession({ ...session, draft: { ...session.draft, config: originalConfig } })
+        }
+        const restored = applyBody(before)
+        if (restored && layoutHistorySeq !== null) history.clearTextLayout(index, 'body', layoutHistorySeq)
+        return restored
+      },
+      finish: () => { finished = true; if (historyStarted) isolateCodeEditorHistory(view) },
     }
   }
 
@@ -2026,6 +2081,7 @@ export function Studio() {
   // work, never blocking on a dialog the webview won't show.
   async function selectSlide(index: number): Promise<void> {
     if (index === editor.selectedIndex()) return
+    await pendingSlideTextEdit
     if (editor.isDirty() && !await handleSave()) return
     // Edits may have arrived while the save was in flight. Keep that draft
     // in its session instead of replacing it with another slide.
@@ -2039,6 +2095,7 @@ export function Studio() {
   }
 
   async function handleSave(): Promise<boolean> {
+    await pendingSlideTextEdit
     const range = editor.selectedRange()
     const index = editor.selectedIndex()
     if (!range || index === null) return false
@@ -2187,7 +2244,7 @@ export function Studio() {
   // a change that is no longer in the file.
   let structuralQueue: Promise<void> = Promise.resolve()
   function serialized<T>(run: () => Promise<T>): Promise<T> {
-    const next = structuralQueue.then(run)
+    const next = structuralQueue.then(async () => { await pendingSlideTextEdit; return run() })
     structuralQueue = next.then(() => undefined, () => undefined)
     return next
   }
@@ -2325,7 +2382,13 @@ export function Studio() {
     if (epoch !== slidePositionsEpoch) return 'forgotten'
     const view = codeEditorOf(step.field)
     if (view === undefined || editor.selectedIndex() !== step.index) return 'gone'
-    return replayCodeEditorGroup(view, direction, step.seq) ? 'done' : 'gone'
+    if (!replayCodeEditorGroup(view, direction, step.seq)) return 'gone'
+    const session = editor.editorSession()
+    if (step.layout && session.kind === 'editing' && session.index === step.index) {
+      const layout = direction === 'undo' ? step.layout.before : step.layout.after
+      editor.setEditorSession({ ...session, draft: { ...session.draft, config: { ...session.draft.config, layout } } })
+    }
+    return 'done'
   }
 
   // A slide operation's undo/redo opens the slide it changed
@@ -2466,6 +2529,7 @@ export function Studio() {
   // queued without a dirty body, so the queue is drained first; never call
   // it from inside `serialized`, which would wait on itself.
   async function flushDeck(): Promise<boolean> {
+    await pendingSlideTextEdit
     await structuralQueue
     await saves.drain()
     if (editor.isDirty()) await handleSave()

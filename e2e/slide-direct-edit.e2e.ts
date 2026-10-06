@@ -10,13 +10,13 @@ const FIELD = `${PREVIEW} [data-studio-edit]`
 const SOURCE = '<!-- {"key":"s","layout":"two-column"} -->\n# Title\n'
 const TWO_COLUMN = '<section class="peitho-slide" style="width:1280px;height:720px;padding:64px;box-sizing:border-box;background:white"><h1><slot name="title" accepts="inline" arity="1"></slot></h1><div style="display:flex;gap:40px"><div style="width:50%"><slot name="left" accepts="blocks" arity="0..*"></slot></div><div style="width:50%"><slot name="right" accepts="blocks" arity="0..*"></slot></div></div></section>'
 
-async function open(page: Page, source = SOURCE): Promise<MockDeck> {
-  const deck: MockDeck = { source, deckPath: '/decks/talk/deck.md', editAnnotations: true, editableLayouts: true, layouts: ['two-column'], layoutFiles: { 'two-column': { html: TWO_COLUMN, css: null } }, css: '.peitho-slide h1 {font-size:56px}.peitho-slide p {font-size:32px}.peitho-slide img {width:100%;height:100%;object-fit:contain}' }
+async function open(page: Page, source = SOURCE, leftArity = '0..*'): Promise<MockDeck> {
+  const deck: MockDeck = { source, deckPath: '/decks/talk/deck.md', editAnnotations: true, editableLayouts: true, layouts: ['two-column'], layoutFiles: { 'two-column': { html: TWO_COLUMN.replace('name="left" accepts="blocks" arity="0..*"', `name="left" accepts="blocks" arity="${leftArity}"`), css: null } }, css: '.peitho-slide h1 {font-size:56px}.peitho-slide p {font-size:32px}.peitho-slide img {width:100%;height:100%;object-fit:contain}' }
   deck.layouts!.push('title-only')
   deck.layoutFiles!['title-only'] = { html: '<section class="peitho-slide" data-template="title-only" style="width:1280px;height:720px;padding:64px;box-sizing:border-box;background:white"><h1><slot name="title" accepts="inline" arity="1"></slot></h1></section>', css: null }
   deck.layoutVerdicts = () => deck.layouts!.map(layout => ({ layout, fit: { kind: 'fits' } }))
   await mockTauri(page, deck); await page.goto('/')
-  await expect(page.locator('[data-slide-row]')).toHaveCount(1)
+  await expect(page.locator('[data-slide-row]')).toHaveCount(splitSlides(source).length)
   await page.locator('[data-slide-row="0"]').click()
   await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Title')
   return deck
@@ -199,6 +199,42 @@ test('editing stays in the slide with its typography and commits on outside clic
   await page.locator('[data-slide-row="0"]').click()
   await expect.poll(() => deck.source).toContain('# Inline title')
   await expect(page.locator(FIELD)).toHaveCount(0)
+})
+
+test('list editing preserves rendered line spacing and formatting whitespace', async ({ page }) => {
+  await open(page, SOURCE + '\n::: {slot=left}\n\n- First\n- Second\n- Third\n\n:::\n')
+  const list = page.locator(`${PREVIEW} [data-studio-slot="left"] ul`)
+  await list.evaluate(el => {
+    el.style.fontSize = '32px'; el.style.lineHeight = '1.35'
+    el.innerHTML = '\n' + Array.from(el.children).map(li => li.outerHTML).join('\n') + '\n'
+  })
+  const geometry = () => list.evaluate(el => ({
+    height: el.getBoundingClientRect().height,
+    lines: Array.from(el.querySelectorAll('li')).map(li => ({ y: li.getBoundingClientRect().y, height: li.getBoundingClientRect().height, lineHeight: getComputedStyle(li).lineHeight })),
+  }))
+  const before = await geometry()
+  await list.locator('li').first().click()
+  expect(await geometry()).toEqual(before)
+  await page.keyboard.press('Escape')
+  expect(await geometry()).toEqual(before)
+})
+
+test('paragraph editing preserves soft breaks and rendered hard-break line spacing', async ({ page }) => {
+  await open(page, SOURCE + '\n::: {slot=left}\n\nFirst  \nSecond\n\n:::\n')
+  const paragraph = page.locator(`${PREVIEW} [data-studio-slot="left"] p`).first()
+  await paragraph.evaluate(el => {
+    el.innerHTML = 'First<br>\nSecond with\na soft break'
+    el.style.lineHeight = '1.35'
+  })
+  const geometry = () => paragraph.evaluate(el => {
+    const rect = el.getBoundingClientRect(), style = getComputedStyle(el)
+    return { y: rect.y, height: rect.height, lineHeight: style.lineHeight, whiteSpace: style.whiteSpace }
+  })
+  const before = await geometry()
+  await paragraph.click({ position: { x: 5, y: 5 } })
+  expect(await geometry()).toEqual(before)
+  await page.keyboard.press('Escape')
+  expect(await geometry()).toEqual(before)
 })
 
 test('Enter finishes a title and multiline column text remains in that column', async ({ page }) => {
@@ -624,10 +660,23 @@ test('pasted text uses the selected identical paragraph and grows without clippi
     return child.top >= wrapper.top - 1 && child.bottom <= wrapper.bottom + 1
   })
   expect(await visible()).toBe(true)
+  // The 64px inline style above is a selection probe, not persisted layout
+  // typography. Measure growth against the rendered single-line text.
   await pasted.locator('p').dblclick()
-  await page.locator(FIELD).fill('first\nsecond\nthird\nfourth')
+  await page.locator(FIELD).fill('first')
   await page.locator(FIELD).press('Meta+Enter')
-  await expect.poll(async () => (await pasted.boundingBox())!.height).toBeGreaterThan(bounds.height)
+  await expect(pasted).toContainText('first')
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  const singleLine = (await pasted.boundingBox())!.height
+  await pasted.locator('p').click()
+  await page.locator(FIELD).fill('first')
+  await page.locator(FIELD).press('End')
+  for (const line of ['second', 'third', 'fourth']) {
+    await page.keyboard.press('Enter')
+    await page.keyboard.type(line)
+  }
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(async () => (await pasted.boundingBox())!.height).toBeGreaterThan(singleLine)
   expect(await visible()).toBe(true)
 })
 
@@ -653,4 +702,195 @@ test('canvas paste shortcuts work without a native paste event and coalesce a de
     el.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, composed: true, cancelable: true }))
   })
   await expect(page.locator(`${PREVIEW} [data-studio-text]`)).toHaveCount(2)
+})
+
+async function listCaret(page: Page, itemIndex: number, end = false) {
+  await page.locator(FIELD).evaluate((field, args) => {
+    const item = field.querySelectorAll('li')[args.itemIndex]
+    const range = document.createRange(); range.selectNodeContents(item); range.collapse(!args.end)
+    const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+  }, { itemIndex, end })
+}
+
+test('Enter creates new list items, empty Enter and line-start Backspace remove bullets, and Undo restores the list', async ({ page }) => {
+  const deck = await open(page, SOURCE + '\n::: {slot=left}\n\n- One\n- Two\n\n:::\n')
+  await page.locator(`${PREVIEW} li`).first().click()
+  await listCaret(page, 0, true)
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('Added')
+  await expect.poll(() => deck.source).toContain('- One\n- Added\n- Two')
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('Plain')
+  await expect.poll(() => deck.source).toContain('- Added\n\nPlain\n\n- Two')
+  await listCaret(page, 3)
+  await page.keyboard.press('Backspace')
+  await expect.poll(() => deck.source).not.toContain('- Two')
+  await page.keyboard.type('New ')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(() => deck.source).toContain('New Two')
+  await expect(page.locator(`${PREVIEW} li`)).toHaveCount(2)
+  await expect(page.locator(`${PREVIEW} p`)).toHaveText(['Plain', 'New Two'])
+  await expect(page.locator('[data-slide-row]')).toHaveCount(1)
+  await page.evaluate(() => (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, label: string) => void }).__mockEmitTauriEvent('menu:undo', null, 'main'))
+  await expect.poll(() => deck.source).toContain('- One\n- Two')
+})
+
+test('unlisting in a single-block slot uses a private layout and keeps the original template unchanged', async ({ page }) => {
+  const deck = await open(page, SOURCE + '\n::: {slot=left}\n\n- One\n- Two\n\n:::\n', '0..1')
+  const originalSource = deck.source
+  const original = deck.layoutFiles!['two-column'].html
+  deck.commandError = (command, args) => command === 'render_draft' && String(args.content).includes('"layout":"two-column"') && String(args.content).includes('\n\nTwo') ? 'slot capacity exceeded' : null
+  await page.locator(`${PREVIEW} li`).last().click()
+  await listCaret(page, 1)
+  await page.keyboard.press('Backspace')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(() => deck.source).toContain('- One\n\nTwo')
+  await expect.poll(() => deck.source).toContain('"layout":"studio-canvas-')
+  expect(deck.layoutFiles!['two-column'].html).toBe(original)
+  await expect(page.locator(`${PREVIEW} p`)).toHaveText('Two')
+  await expect(page.getByText('slot capacity exceeded')).toHaveCount(0)
+  const changedSource = deck.source
+  await page.evaluate(() => (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, label: string) => void }).__mockEmitTauriEvent('menu:undo', null, 'main'))
+  await expect.poll(() => deck.source).toBe(originalSource)
+  await page.evaluate(() => (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, label: string) => void }).__mockEmitTauriEvent('menu:redo', null, 'main'))
+  await expect.poll(() => deck.source).toBe(changedSource)
+})
+
+test('cancelling a list edit before layout preparation finishes discards pending text', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\n- One\n- Two\n\n:::\n'
+  const deck = await open(page, source, '0..1')
+  await page.evaluate(() => {
+    const w = window as unknown as { __mockInvoke: (cmd: string, args: unknown) => Promise<unknown>; __releaseList?: () => void }
+    const invoke = w.__mockInvoke
+    w.__mockInvoke = async (cmd, args) => {
+      if (cmd === 'create_image_canvas') await new Promise<void>(resolve => { w.__releaseList = resolve })
+      return invoke(cmd, args)
+    }
+  })
+  await page.locator(`${PREVIEW} li`).first().click()
+  await listCaret(page, 0, true)
+  await page.keyboard.type('Discard')
+  await page.waitForFunction(() => Boolean((window as unknown as { __releaseList?: () => void }).__releaseList))
+  await page.locator(FIELD).press('Escape')
+  await page.evaluate(() => (window as unknown as { __releaseList: () => void }).__releaseList())
+  await expect.poll(() => Object.keys(deck.layoutFiles!).length).toBe(3)
+  expect(deck.source).toBe(source)
+  await expect(page.locator(`${PREVIEW} li`).first()).toHaveText('One')
+})
+
+test('an empty final list item remains a bullet in Markdown and Escape keeps object shortcuts available', async ({ page }) => {
+  const deck = await open(page, SOURCE + '\n::: {slot=left}\n\n- One\n\n:::\n')
+  await page.locator(`${PREVIEW} li`).click()
+  await listCaret(page, 0, true)
+  await page.keyboard.press('Enter')
+  await expect.poll(() => deck.source).toContain('- One\n- &#160;')
+  await page.keyboard.type('Two')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(() => deck.source).toContain('- One\n- Two')
+  await page.locator(`${PREVIEW} li`).last().click()
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('Meta+c')
+  await expect.poll(() => deck.clipboardText).toBe('Two')
+  await page.keyboard.press('Delete')
+  await expect.poll(() => deck.source).not.toContain('Two')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(1)
+})
+
+test('Enter at the list container boundary adds a final bullet instead of a plain browser line', async ({ page }) => {
+  const deck = await open(page, SOURCE + '\n::: {slot=left}\n\n- One\n\n:::\n')
+  await page.locator(`${PREVIEW} li`).click()
+  await page.locator(FIELD).evaluate(field => {
+    const root = field.getRootNode() as ShadowRoot
+    Object.defineProperty(root, 'getSelection', { value: undefined })
+    const selectionAPI = window.getSelection() as unknown as { getComposedRanges: (options: { shadowRoots: ShadowRoot[] } | ShadowRoot) => StaticRange[] }
+    const composed = selectionAPI.getComposedRanges.bind(selectionAPI)
+    // Safari's older signature accepts a ShadowRoot directly.
+    selectionAPI.getComposedRanges = options => {
+      if (!(options instanceof ShadowRoot)) throw new TypeError('ShadowRoot required')
+      return composed({ shadowRoots: [options] })
+    }
+    field.append(document.createTextNode('\n'))
+    const range = document.createRange(); range.selectNodeContents(field); range.collapse(false)
+    const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+  })
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('Two')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(() => deck.source).toContain('- One\n- Two')
+  await expect(page.locator(`${PREVIEW} li`)).toHaveCount(2)
+})
+
+test('switching slides waits for pending list preparation and saves the latest input', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\n- One\n\n:::\n\n---\n<!-- {"key":"second","layout":"two-column"} -->\n# Second\n'
+  const deck = await open(page, source, '0..1')
+  await page.evaluate(() => {
+    const w = window as unknown as { __mockInvoke: (cmd: string, args: unknown) => Promise<unknown>; __releaseList?: () => void }
+    const invoke = w.__mockInvoke
+    w.__mockInvoke = async (cmd, args) => {
+      if (cmd === 'create_image_canvas') await new Promise<void>(resolve => { w.__releaseList = resolve })
+      return invoke(cmd, args)
+    }
+  })
+  await page.locator(`${PREVIEW} li`).click()
+  await listCaret(page, 0, true)
+  await page.keyboard.type('Keep')
+  await page.waitForFunction(() => Boolean((window as unknown as { __releaseList?: () => void }).__releaseList))
+  await page.locator('[data-slide-row="1"]').click()
+  await expect.poll(() => editorText(page)).toContain('# Title')
+  await page.evaluate(() => (window as unknown as { __releaseList: () => void }).__releaseList())
+  await expect.poll(() => editorText(page)).toBe('# Second')
+  await expect.poll(() => deck.source).toContain('- OneKeep')
+  await page.locator('[data-slide-row="0"]').click()
+  await expect(page.locator(`${PREVIEW} li`)).toHaveText('OneKeep')
+})
+
+test('a failed list layout preparation still preserves subsequent typing in Markdown', async ({ page }) => {
+  const deck = await open(page, SOURCE + '\n::: {slot=left}\n\n- One\n\n:::\n', '0..1')
+  deck.commandError = command => command === 'create_image_canvas' ? 'Cannot write layout' : null
+  await page.locator(`${PREVIEW} li`).click()
+  await listCaret(page, 0, true)
+  await page.keyboard.type('Keep')
+  await expect.poll(() => editorText(page)).toContain('- OneKeep')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(() => deck.source).toContain('- OneKeep')
+})
+
+test('editing a loose list preserves separate paragraphs within an item', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\n- One\n\n  More\n\n- Two\n\n:::\n'
+  const deck = await open(page, source)
+  // Match the engine's actual loose-list structure, with annotations on
+  // each paragraph rather than the mock's default one-line LI elements.
+  await page.locator(`${PREVIEW} [data-studio-slot="left"]`).evaluate((slot, source) => {
+    const paragraph = (word: string) => {
+      const at = source.indexOf(word)
+      const from = new TextEncoder().encode(source.slice(0, at)).length
+      return `<p data-peitho-src="${from}-${from + word.length}" data-peitho-md="${word}">${word}</p>`
+    }
+    slot.innerHTML = `<ul><li>${paragraph('One')}${paragraph('More')}</li><li>${paragraph('Two')}</li></ul>`
+  }, source)
+  await page.locator(`${PREVIEW} li p`).first().click()
+  await page.locator(FIELD).locator('p').first().evaluate(p => {
+    const range = document.createRange(); range.selectNodeContents(p); range.collapse(false)
+    const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+  })
+  await page.keyboard.type('X')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(() => deck.source).toMatch(/- OneX\n[ \t]*\n  More\n- Two/)
+})
+
+test('cancelling a prepared list edit prevents Redo from reviving its private layout', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\n- One\n- Two\n\n:::\n'
+  const deck = await open(page, source, '0..1')
+  await page.locator(`${PREVIEW} li`).last().click()
+  await listCaret(page, 1)
+  await page.keyboard.press('Backspace')
+  await expect.poll(() => deck.source).toContain('"layout":"studio-canvas-')
+  await page.locator(FIELD).press('Escape')
+  await expect.poll(() => deck.source).toBe(source)
+  for (const event of ['menu:undo', 'menu:redo']) {
+    await page.evaluate(event => (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, label: string) => void }).__mockEmitTauriEvent(event, null, 'main'), event)
+    await expect.poll(() => editorText(page)).toContain('- One\n- Two')
+  }
+  expect(deck.source).toBe(source)
 })

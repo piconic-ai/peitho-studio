@@ -2,7 +2,7 @@ import { annotatedSpan, type CharSpan } from './reviewComment'
 import type { TextInsertion } from './editorText'
 
 export type SlideEditTarget =
-  | { kind: 'text'; byteSpan: CharSpan; quote: string; text: string; heading?: boolean; slot?: string }
+  | { kind: 'text'; byteSpan: CharSpan; quote: string; text: string; heading?: boolean; slot?: string; listItems?: { byteSpan: CharSpan; quote: string }[] }
   | { kind: 'slot'; slot: string; accepts: string }
 
 export interface SlideTextEdit {
@@ -18,6 +18,17 @@ export interface SlideTextEdit {
 /** Locate only inside the selected slide's body; stale/expanded-source
  * annotations must never replace text elsewhere in a deck. */
 export function textEditFor(target: Extract<SlideEditTarget, { kind: 'text' }>, renderedSource: string, body: string, bodyStart: number, rawBody?: string): SlideTextEdit | null {
+  if (target.listItems?.length) {
+    const items = target.listItems.map(item => textEditFor({ ...target, ...item, listItems: undefined }, renderedSource, body, bodyStart, rawBody))
+    if (items.some(item => item === null)) return null
+    const first = Math.min(...items.map(item => item!.from))
+    const from = body.lastIndexOf('\n', first - 1) + 1
+    const to = Math.max(...items.map(item => item!.to))
+    const value = body.slice(from, to)
+    if (!/^[ \t]*(?:[-+*]|\d+[.)])[ \t]+/.test(value)) return null
+    const suffix = /\n+$/.exec(value)?.[0] ?? ''
+    return { body, from, to, value: value.slice(0, value.length - suffix.length), prefix: '', suffix, heading: false }
+  }
   const span = annotatedSpan(renderedSource, target.byteSpan, target.quote)
   if (span === null) return null
   let local = { start: span.start - bodyStart, end: span.end - bodyStart }

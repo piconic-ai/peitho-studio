@@ -1316,10 +1316,12 @@ pub fn create_image_canvas(
     carry_layout: Option<String>,
     image_order: Option<Vec<String>>,
     text_count: Option<usize>,
+    text_slot: Option<String>,
     window: WebviewWindow,
     session: State<PeithoSession>,
 ) -> Result<crate::engine::slide_edit::ImageCanvas, String> {
     let path = session_deck_path(&session, window.label())?;
+    if let Some(slot) = text_slot { return crate::engine::slide_edit::list_canvas(&path, &content, &base_layout, &slot); }
     if let Some(from) = carry_layout {
         return crate::engine::slide_edit::rebase_image_canvas(&path, &content, &from, &base_layout);
     }
