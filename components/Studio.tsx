@@ -636,7 +636,7 @@ export function Studio() {
     const range = splitSlides(render.renderedSource())[index]
     const renderedBody = range ? extractPageComment(extractNote(range.text).rest).rest : null
     const recovery = errorMessage()?.includes(`slide ${index + 1} `) && errorMessage()?.includes("missing 'body' slot")
-    if (renderedBody === null || (renderedBody !== before.trim() && !recovery)) return null
+    if (renderedBody === null || (renderedBody !== before.replace(/\n{3,}/g, '\n\n').trim() && !recovery)) return null
     const rawBody = range ? extractPageComment(extractNote(range.text, true).rest, true).rest : ''
     const bodyStart = (range?.start ?? 0) + (range?.text.indexOf(rawBody) ?? 0)
     const edit = target.kind === 'text' ? textEditFor(target, render.renderedSource(), before, bodyStart, rawBody) : recovery ? looseBodyEdit(before, target.slot, target.accepts) : null

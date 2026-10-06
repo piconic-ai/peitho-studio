@@ -33,9 +33,11 @@ export function textEditFor(target: Extract<SlideEditTarget, { kind: 'text' }>, 
   if (span === null) return null
   let local = { start: span.start - bodyStart, end: span.end - bodyStart }
   if (rawBody !== undefined) {
-    if (local.start < 0 || local.end > rawBody.length || renderedSource.slice(bodyStart, bodyStart + rawBody.length) !== rawBody || rawBody.replace(/\n{3,}/g, '\n\n') !== body.trim() || rawBody.slice(local.start, local.end) !== target.quote) return null
+    // The draft keeps blank-line runs as typed, or collapsed as when read.
+    const collapse = rawBody !== body.trim() ? (text: string) => text.replace(/\n{3,}/g, '\n\n') : (text: string) => text
+    if (local.start < 0 || local.end > rawBody.length || renderedSource.slice(bodyStart, bodyStart + rawBody.length) !== rawBody || collapse(rawBody) !== body.trim() || rawBody.slice(local.start, local.end) !== target.quote) return null
     const leading = body.length - body.trimStart().length
-    local = { start: leading + rawBody.slice(0, local.start).replace(/\n{3,}/g, '\n\n').length, end: leading + rawBody.slice(0, local.end).replace(/\n{3,}/g, '\n\n').length }
+    local = { start: leading + collapse(rawBody.slice(0, local.start)).length, end: leading + collapse(rawBody.slice(0, local.end)).length }
   }
   if (local.start < 0 || body.slice(local.start, local.end) !== target.quote) return null
   const prefix = /^(?:#{1,6}\s+|\s*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?)/.exec(target.quote)?.[0] ?? ''

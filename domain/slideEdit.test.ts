@@ -179,6 +179,19 @@ test('blocks join with at most one blank line between them', () => {
   expect(joinBlocks('', '')).toBe('')
 })
 
+test('a draft keeping typed blank-line runs is still located by the rendered annotations', () => {
+  const raw = '# Title\n\n\n\nPara text'
+  const source = '<!-- {"key":"s"} -->\n' + raw
+  const start = source.indexOf('Para text')
+  const target = { kind: 'text' as const, quote: 'Para text', text: 'Para text', byteSpan: { start, end: start + 9 } }
+  const edit = textEditFor(target, source, raw, source.indexOf(raw), raw)!
+  expect(raw.slice(edit.from, edit.to)).toBe('Para text')
+  const collapsed = raw.replace(/\n{3,}/g, '\n\n')
+  const fromCollapsed = textEditFor(target, source, collapsed, source.indexOf(raw), raw)!
+  expect(collapsed.slice(fromCollapsed.from, fromCollapsed.to)).toBe('Para text')
+  expect(textEditFor(target, source, '# Other\n\nPara text', source.indexOf(raw), raw)).toBeNull()
+})
+
 test('deleting text preserves an unrelated slot example inside fenced code', () => {
   const body = '# Title\n\nRemove me\n\n```markdown\n::: {slot=left}\n\n:::\n```'
   const from = body.indexOf('Remove me')
