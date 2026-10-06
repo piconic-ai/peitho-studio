@@ -141,6 +141,16 @@ export function removeSlideText(edit: SlideTextEdit): string {
   return (opening && closing ? before.slice(0, opening.index) + after.slice(closing[0].length) : before + after).trim()
 }
 
+/** A canvas text element cleared to nothing is removed, not kept as an NBSP
+ * paragraph: that placeholder still counts as a slot item, so typing into
+ * the now visually empty slot overflowed it (title-slide's 0..1 body).
+ * Headings keep their editable placeholder; lists clear item by item. */
+export function clearedSlideText(target: Extract<SlideEditTarget, { kind: 'text' }>, edit: SlideTextEdit, value: string): string | null {
+  const freeText = target.slot?.startsWith('studio-text-') ?? false
+  if (value.trim() !== '' || (!freeText && (edit.heading || Boolean(target.listItems?.length)))) return null
+  return removeSlideText({ ...edit, heading: false })
+}
+
 export function imageSlotContent(body: string, slot: string): string | null {
   if (!/^studio-image-\d+$/.test(slot)) return null
   return new RegExp(`(?:^|\\n)::: \\{slot=${slot}\\}\\n([\\s\\S]*?)\\n:::(?=\\n|$)`).exec(body)?.[1].trim() ?? null

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { removeSlideText, imageSlotContent, literalSlideText, slideHeadingText, slideInlineCode, slideTextLines, looseBodyEdit, removeImageSlot, slotTextInsertion, textEditFor, textEditInsertion } from './slideEdit'
+import { clearedSlideText, removeSlideText, imageSlotContent, literalSlideText, slideHeadingText, slideInlineCode, slideTextLines, looseBodyEdit, removeImageSlot, slotTextInsertion, textEditFor, textEditInsertion } from './slideEdit'
 
 test('Japanese text edits locate the annotated bytes in the selected body and preserve heading syntax', () => {
   const body = '# 売上\n\n本文'
@@ -34,6 +34,32 @@ test('heading text joins every kind of line break with a single space', () => {
   expect(slideHeadingText('\n  \n\u00a0')).toBe('')
   expect(slideHeadingText('a\\\\')).toBe('a\\\\')
   expect(slideHeadingText('**bold**  \n*em*')).toBe('**bold** *em*')
+})
+
+test('clearing a paragraph removes it so the emptied slot can take new text without overflowing', () => {
+  const body = '# aaaaa\n\nStart writing your slides here.'
+  const source = `<!-- {"key":"cover"} -->\n${body}`
+  const quote = 'Start writing your slides here.'
+  const start = source.indexOf(quote)
+  const target = { kind: 'text' as const, slot: 'body', text: quote, quote, byteSpan: { start, end: start + quote.length } }
+  const edit = textEditFor(target, source, body, source.indexOf(body))!
+  const cleared = clearedSlideText(target, edit, slideTextLines(''))
+  expect(cleared).toBe('# aaaaa')
+  const typed = slotTextInsertion(cleared!, 'body', 'blocks', 'fdsafsda')!
+  expect(cleared!.slice(0, typed.from) + typed.insert).toBe('# aaaaa\n\n::: {slot=body}\n\nfdsafsda\n\n:::\n')
+  expect(clearedSlideText(target, edit, 'kept')).toBeNull()
+})
+
+test('only blank paragraphs and free text boxes are cleared away', () => {
+  const body = '# Title\n\n- One\n\n::: {slot=studio-text-1}\n\nFree\n\n:::'
+  const edit = (from: number, to: number, heading = false) => ({ body, from, to, value: body.slice(from, to), prefix: '', suffix: '', heading })
+  const text = (slot?: string, listItems?: { byteSpan: { start: number; end: number }; quote: string }[]) => ({ kind: 'text' as const, slot, text: '', quote: '', byteSpan: { start: 0, end: 0 }, listItems })
+  const title = edit(2, 7, true)
+  expect(clearedSlideText(text('title'), title, '')).toBeNull()
+  expect(clearedSlideText(text('body', [{ byteSpan: { start: 0, end: 0 }, quote: '- One' }]), edit(9, 14), '')).toBeNull()
+  const free = body.indexOf('Free')
+  expect(clearedSlideText(text('studio-text-1'), edit(free, free + 4), ' \u00a0  \n\u00a0')).toBe('# Title\n\n- One')
+  expect(clearedSlideText(text(), edit(free, free + 4), '\u00a0x')).toBeNull()
 })
 
 test('an empty left or right column gets routed content without a body slot', () => {
