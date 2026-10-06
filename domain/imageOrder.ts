@@ -10,3 +10,10 @@ export function moveImageOrder(order: string[], slot: string, action: ImageOrder
   next.splice(target, 0, slot)
   return next
 }
+
+/** The template's text participates in stacking as a content layer. */
+export const CONTENT_LAYER = 'studio-content'
+
+export function canvasImageOrder(images: { slot: string; layer: number }[]): string[] {
+  return [...images.map((image, index) => ({ ...image, layer: image.layer || index + 1 })), { slot: CONTENT_LAYER, layer: 0 }].sort((a, b) => a.layer - b.layer).map(image => image.slot)
+}

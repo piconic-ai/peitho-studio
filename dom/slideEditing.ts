@@ -1,4 +1,3 @@
-import { moveImageOrder, type ImageOrderAction } from '../domain/imageOrder'
 import type { Language } from '../domain/language'
 import { parseSourceSpan } from '../domain/reviewComment'
 import { flushSlideTextEdit } from './slideCanvas'
@@ -11,7 +10,6 @@ export interface SlideEditingCallbacks {
   image: (slot: string | null) => void
   imageGesture: (slot: string, rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>
   pasteImages: (files: File[]) => void
-  imageOrder: (order: string[]) => Promise<boolean>
   removeImage: (slot: string) => void
 }
 
@@ -51,52 +49,14 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
 
   `
   root.append(style)
-  const toolbar = document.createElement('div')
-  toolbar.dataset.studioImageOrder = ''
-  toolbar.setAttribute('role', 'toolbar')
-  toolbar.style.cssText = 'position:absolute;top:8px;left:8px;z-index:2147483647;display:flex;flex-wrap:wrap;gap:4px;padding:6px;background:white;border:1px solid #ccc;border-radius:6px;box-shadow:0 2px 8px #0002;font:12px system-ui;'
-  let ordering = false
-  const actions: ImageOrderAction[] = ['front', 'forward', 'backward', 'back']
-  for (const action of actions) {
-    const button = document.createElement('button')
-    button.type = 'button'; button.dataset.studioOrderAction = action
-    button.style.cssText = 'display:flex;align-items:center;gap:4px;padding:6px;border:0;border-radius:4px;background:#f5f5f5;color:#222;font:inherit;cursor:pointer;'
-    // Overlapping squares with an arrow show the standard layer operation.
-    const forward = action === 'front' || action === 'forward'
-    button.innerHTML = `<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="9" width="12" height="12" fill="white"/><rect x="9" y="3" width="12" height="12" fill="${forward ? '#dbeafe' : 'white'}"/><path d="${forward ? 'M5 14V3m-3 3 3-3 3 3' : 'M19 10v11m-3-3 3 3 3-3'}"/>${action === 'front' || action === 'back' ? `<path d="${forward ? 'M2 1h6' : 'M16 23h6'}"/>` : ''}</svg><span></span>`
-    button.addEventListener('click', async event => {
-      event.stopPropagation()
-      if (ordering || !state.callbacks.enabled() || !selectedImage?.isConnected) return
-      const order = Array.from(root.querySelectorAll<HTMLElement>('[data-studio-image]')).map(image => image.dataset.studioImage!)
-      const next = moveImageOrder(order, selectedImage.dataset.studioImage!, action)
-      if (next.join() === order.join()) return
-      ordering = true; markEmpty()
-      try { await state.callbacks.imageOrder(next) } finally { ordering = false; markEmpty() }
-    })
-    toolbar.append(button)
-  }
-  root.append(toolbar)
   const markEmpty = () => {
     host.toggleAttribute('data-studio-editing', state.callbacks.enabled())
     if (!style.isConnected) root.append(style)
-    if (!toolbar.isConnected) root.append(toolbar)
     if (selectedImage && !selectedImage.isConnected) {
       const sameSlide = selectedImage.closest('.peitho-slide')?.getAttribute('data-slide-key') === root.querySelector('.peitho-slide')?.getAttribute('data-slide-key')
       selectedImage = sameSlide ? Array.from(root.querySelectorAll<HTMLElement>('[data-studio-image]')).find(image => image.dataset.studioImage === selectedImage?.dataset.studioImage) ?? null : null
     }
-    toolbar.style.display = selectedImage && state.callbacks.enabled() ? 'flex' : 'none'
-    toolbar.setAttribute('aria-label', state.callbacks.language() === 'ja' ? '画像の重なり順' : 'Image order')
     const images = Array.from(root.querySelectorAll<HTMLElement>('[data-studio-image]'))
-    for (const button of toolbar.querySelectorAll<HTMLButtonElement>('button')) {
-      const action = button.dataset.studioOrderAction as ImageOrderAction
-      const labels = state.callbacks.language() === 'ja' ? { front: '最前面', forward: '前面', backward: '背面', back: '最背面' } : { front: 'Bring to front', forward: 'Bring forward', backward: 'Send backward', back: 'Send to back' }
-      const label = button.querySelector('span')!
-      if (label.textContent !== labels[action]) label.textContent = labels[action]
-      button.title = labels[action]
-      const index = selectedImage ? images.indexOf(selectedImage) : -1
-      button.disabled = ordering || index < 0 || ((action === 'front' || action === 'forward') ? index === images.length - 1 : index === 0)
-      button.style.opacity = button.disabled ? '.4' : '1'
-    }
     for (const image of images) image.toggleAttribute('data-studio-selected', image === selectedImage)
     for (const image of root.querySelectorAll<HTMLElement>('[data-studio-image]')) {
       if (image.querySelector('[data-studio-handle]')) continue
@@ -120,6 +80,11 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
   host.addEventListener('studio-edit-mode', markEmpty)
   markEmpty()
 
+  root.addEventListener('contextmenu', event => {
+    if (!state.callbacks.enabled() || !(event.target instanceof Element)) return
+    const image = event.target.closest<HTMLElement>('[data-studio-image]')
+    if (image) { selectedImage = image; image.tabIndex = 0; image.focus(); markEmpty() }
+  }, true)
   root.addEventListener('mousedown', event => {
     if (!(event instanceof MouseEvent) || event.button !== 0 || !state.callbacks.enabled()) return
     const target = event.target instanceof Element ? event.target : null

@@ -1,5 +1,6 @@
 'use client'
 
+import { moveImageOrder, type ImageOrderAction } from '../domain/imageOrder'
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
 import { menuItemEnabled, menuItemChecked, type MenuItem } from '../domain/contextMenu'
@@ -14,6 +15,9 @@ export interface SlideContextMenuProps {
   hidden: boolean
   position: { x: number; y: number }
   menuItems: MenuItem[]
+  image?: { slot: string; order: string[] } | null
+  imageBusy?: boolean
+  onImageOrder?: (action: ImageOrderAction) => void
   layoutPickerOpen: boolean
   layoutPickerView: 'loading' | 'empty' | 'ready'
   layoutPreviews: { name: string; fragment: string }[] | null
@@ -80,6 +84,23 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
         className={(props.hidden ? 'hidden ' : '') + 'fixed w-56 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg py-1 z-40 text-sm'}
         style={`left: ${String(props.position.x)}px; top: ${String(props.position.y)}px`}
       >
+        <div hidden={!props.image} data-image-order-menu>
+          {(['front', 'forward', 'backward', 'back'] as ImageOrderAction[]).map(action => (
+            <button key={action} type="button" data-image-order-action={action}
+              disabled={!props.image || props.imageBusy || moveImageOrder(props.image.order, props.image.slot, action).join() === props.image.order.join()}
+              onClick={() => props.onImageOrder?.(action)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent">
+              <svg aria-hidden="true" className="block w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="3" y="9" width="12" height="12" />
+                <rect x="9" y="3" width="12" height="12" fill="var(--popover, white)" />
+                <path d={action === 'front' || action === 'forward' ? 'M5 14V3m-3 3 3-3 3 3' : 'M19 10v11m-3-3 3 3 3-3'} />
+                <path d={action === 'front' ? 'M2 1h6' : action === 'back' ? 'M16 23h6' : ''} />
+              </svg>
+              <span>{({ ja: { front: '最前面', forward: '前面', backward: '背面', back: '最背面' }, en: { front: 'Bring to front', forward: 'Bring forward', backward: 'Send backward', back: 'Send to back' } }[props.language])[action]}</span>
+            </button>
+          ))}
+          <div className="my-1 border-t border-border" />
+        </div>
         {/* The comment every right-click menu opens with
             (`domain/menuComment.ts`), its speech bubble in the gutter the
             other items keep (`pl-9`), as in `ContextMenu.tsx`. */}

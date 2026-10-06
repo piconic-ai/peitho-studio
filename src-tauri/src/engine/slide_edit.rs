@@ -94,15 +94,21 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
         if !slot.starts_with("studio-image-") || layout.slot(slot).is_none() { return Err("this image is not freely positioned".into()) }
     }
     let mut ordered_figures = std::collections::HashMap::new();
+    let mut image_count = 0;
+    let mut front_layer = 0;
     let html = rewrite_str(layout.html(), RewriteStrSettings {
         element_content_handlers: vec![
             element!("section", |el| {
                 let existing = el.get_attribute("style").unwrap_or_default();
-                if !existing.contains("position:relative") { el.set_attribute("style", &format!("{existing};position:relative;"))?; }
+                if !existing.contains("isolation:isolate") { el.set_attribute("style", &format!("{existing};position:relative;isolation:isolate;"))?; }
                 Ok(())
             }),
             element!("[data-studio-image]", |el| {
                 let slot = el.get_attribute("data-studio-image").unwrap_or_default();
+                image_count += 1;
+                let existing_style = el.get_attribute("style").unwrap_or_default();
+                let layer = existing_style.split(';').find_map(|part| part.trim().strip_prefix("z-index:").and_then(|value| value.trim().parse::<isize>().ok())).unwrap_or(0);
+                front_layer = front_layer.max(layer).max(image_count);
                 if order.is_some() {
                     if !slot.starts_with("studio-image-") || layout.slot(&slot).is_none() { return Err("invalid canvas image".into()) }
                     let style = el.get_attribute("style").unwrap_or_default().replace('&', "&amp;").replace('"', "&quot;");
@@ -111,7 +117,9 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
                 }
                 if removed.contains(&slot) { el.remove(); return Ok(()) }
                 if let Some(rect) = placements.iter().find(|rect| rect.slot == slot) {
-                    el.set_attribute("style", &placement_style(rect).expect("validated placement"))?;
+                    let previous = el.get_attribute("style").unwrap_or_default();
+                    let layer = previous.split(';').find(|part| part.trim().starts_with("z-index:")).unwrap_or("");
+                    el.set_attribute("style", &format!("{}{layer};", placement_style(rect).expect("validated placement")))?;
                 }
                 Ok(())
             }),
@@ -120,9 +128,21 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
     }).map_err(|err| err.to_string())?;
     let mut figures = String::new();
     if let Some(order) = order {
-        if order.len() != ordered_figures.len() { return Err("image order must include every canvas image exactly once".into()) }
-        for slot in order {
-            figures.push_str(&ordered_figures.remove(slot).ok_or("image order must include every canvas image exactly once")?);
+        let has_content = order.iter().filter(|slot| slot.as_str() == "studio-content").count();
+        if has_content > 1 || order.len() != ordered_figures.len() + has_content { return Err("image order must include every canvas image exactly once".into()) }
+        let content_index = order.iter().position(|slot| slot == "studio-content").map(|index| index as isize).unwrap_or(-1);
+        for (index, slot) in order.iter().enumerate() {
+            if slot == "studio-content" { continue }
+            let figure = ordered_figures.remove(slot).ok_or("image order must include every canvas image exactly once")?;
+            let figure = rewrite_str(&figure, RewriteStrSettings {
+                element_content_handlers: vec![element!("figure", |el| {
+                    let previous = el.get_attribute("style").unwrap_or_default();
+                    let style = previous.split(';').filter(|part| !part.trim().starts_with("z-index:")).collect::<Vec<_>>().join(";");
+                    el.set_attribute("style", &format!("{style};z-index:{};", index as isize - content_index))?;
+                    Ok(())
+                })], ..RewriteStrSettings::default()
+            }).map_err(|err| err.to_string())?;
+            figures.push_str(&figure);
         }
     }
     let mut slots = Vec::new();
@@ -131,7 +151,7 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
         while layout.slot(&format!("studio-image-{next}")).is_some() { next += 1 }
         let slot = format!("studio-image-{next}"); next += 1;
         let rect = ImagePlacement { slot: slot.clone(), x: 0.15 + (i % 4) as f64 * 0.035, y: 0.25 + (i % 4) as f64 * 0.035, width: 0.55, height: 0.55 };
-        figures.push_str(&format!("<figure class=\"studio-free-image\" data-studio-image=\"{slot}\" style=\"{}\"><slot name=\"{slot}\" accepts=\"image\" arity=\"1\"></slot></figure>", placement_style(&rect)?));
+        figures.push_str(&format!("<figure class=\"studio-free-image\" data-studio-image=\"{slot}\" style=\"{}z-index:{};\"><slot name=\"{slot}\" accepts=\"image\" arity=\"1\"></slot></figure>", placement_style(&rect)?, front_layer + i as isize + 1));
         slots.push(slot);
     }
     let styles = if count > 0 && !html.contains("data-studio-image-styles") {
@@ -235,6 +255,13 @@ mod tests {
         assert_order(&std::fs::read_to_string(dir.path().join(format!("layouts/{}.html", moved.layout))).unwrap());
         let rebased = rebase_image_canvas(&path, &changed, &ordered.layout, "title-only").unwrap();
         assert_order(&std::fs::read_to_string(dir.path().join(format!("layouts/{}.html", rebased.layout))).unwrap());
+        let behind = order_image_canvas(&path, &changed, &ordered.layout, &["studio-image-3".into(), "studio-content".into(), "studio-image-1".into(), "studio-image-2".into()]).unwrap();
+        let html = std::fs::read_to_string(dir.path().join(format!("layouts/{}.html", behind.layout))).unwrap();
+        assert!(html.contains("isolation:isolate"));
+        assert!(html.contains("z-index:-1;"));
+        let rect = ImagePlacement { slot: "studio-image-3".into(), x: 0.1, y: 0.2, width: 0.3, height: 0.4 };
+        let moved = image_canvas(&path, &changed, &behind.layout, 0, &[rect]).unwrap();
+        assert!(std::fs::read_to_string(dir.path().join(format!("layouts/{}.html", moved.layout))).unwrap().contains("z-index:-1;"));
         assert!(order_image_canvas(&path, &changed, &ordered.layout, &order[..2]).is_err());
         assert!(order_image_canvas(&path, &changed, &ordered.layout, &[order[0].clone(), order[0].clone(), order[2].clone()]).is_err());
         assert!(super::super::pipeline::render_source(&path, &source).is_ok());

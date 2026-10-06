@@ -1,5 +1,7 @@
 'use client'
 
+import { moveImageOrder, type ImageOrderAction } from '../domain/imageOrder'
+
 import { suppressNativeContextMenu } from '../dom/nativeContextMenu'
 import { createSignal, createMemo, createEffect, onMount, onCleanup, untrack } from '@barefootjs/client'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
@@ -1366,6 +1368,17 @@ export function Studio() {
     if (index === null || selectedSlideKey() === null) return
     void checkLayoutFit(index, ui.openSlideContextMenu(index, click.at.x, click.at.y, click))
     void loadLayoutPreviews()
+  }
+
+  const previewMenuImage = createMemo(() => {
+    const menu = ui.contextMenu()
+    return menu.kind === 'on-slide' ? menu.comment?.image ?? null : null
+  })
+
+  function runImageOrderAction(action: ImageOrderAction): void {
+    const image = previewMenuImage()
+    ui.closeContextMenu()
+    if (image) void orderPreviewImage(moveImageOrder(image.order, image.slot, action))
   }
 
   function editorViewOf(which: MenuEditor): ReturnType<typeof createCodeEditor> | undefined {
@@ -3864,7 +3877,6 @@ export function Studio() {
               onTextEdit={startSlideTextEdit}
               onAddImages={(files, slot) => { void addImagesToPreview(files, slot) }}
               onImagePosition={positionPreviewImage}
-              onImageOrder={orderPreviewImage}
               imageBusy={previewImageBusy()}
               onRemoveImage={slot => { void removePreviewImage(slot) }}
             />
@@ -4067,6 +4079,9 @@ export function Studio() {
         hidden={ui.contextMenu().kind === 'closed'}
         position={contextMenuPositionOf(ui.contextMenu())}
         menuItems={currentMenuItems()}
+        image={previewMenuImage()}
+        imageBusy={previewImageBusy()}
+        onImageOrder={runImageOrderAction}
         layoutPickerOpen={isLayoutPickerOpen(ui.contextMenu())}
         layoutPickerView={layoutPickerView()}
         layoutPreviews={ui.layoutPreviews()}

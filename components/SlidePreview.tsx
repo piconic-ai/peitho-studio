@@ -54,7 +54,6 @@ export interface SlidePreviewProps {
   onAddImages: (files: File[], slot: string | null) => void
   onImagePosition: (slot: string, rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>
   imageBusy: boolean
-  onImageOrder: (order: string[]) => Promise<boolean>
   onRemoveImage: (slot: string) => void
 }
 
@@ -148,7 +147,6 @@ export function SlidePreview(props: SlidePreviewProps) {
               image: pickImage,
               imageGesture: (slot, rect) => props.onImagePosition(slot, rect),
               pasteImages: files => props.onAddImages(files, null),
-              imageOrder: order => props.onImageOrder(order),
               removeImage: slot => props.onRemoveImage(slot),
             }))
           })

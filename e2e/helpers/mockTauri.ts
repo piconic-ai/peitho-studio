@@ -557,7 +557,10 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         if (args.imageOrder) {
           const figures = new Map([...html.matchAll(/<figure[^>]*data-studio-image="([^"]+)"[\s\S]*?<\/figure>/g)].map(match => [match[1], match[0]]))
           html = html.replace(/<figure[^>]*data-studio-image="[^"]+"[\s\S]*?<\/figure>/g, '')
-          html = html.replace('</section>', `${(args.imageOrder as string[]).map(slot => figures.get(slot)).join('')}</section>`)
+          const order = args.imageOrder as string[]
+          const content = order.indexOf('studio-content')
+          html = html.replace('</section>', `${order.filter(slot => slot !== 'studio-content').map(slot => figures.get(slot)!.replace(/style="([^"]*)"/, (_, style: string) => `style="${style.replace(/z-index:[^;]*;?/g, '')};z-index:${order.indexOf(slot) - content};"`)).join('')}</section>`)
+          html = html.replace(/(<section[^>]*style=")([^"]*)"/, '$1$2;isolation:isolate"')
         }
         const slots: string[] = []
         let i = 1

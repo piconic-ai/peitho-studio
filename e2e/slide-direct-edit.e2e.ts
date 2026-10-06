@@ -280,35 +280,67 @@ test('a complete canvas session undoes and redoes as one unit across typing, pau
 })
 
 
-test('image layer toolbar supports all four actions, boundaries, Undo and failed saves', async ({ page }) => {
+test('image context menu supports all four actions, boundaries, Undo and failed saves', async ({ page }) => {
   const deck = await open(page)
   const photo = (name: string) => ({ name, mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64') })
   await page.locator('[data-preview-image-input]').setInputFiles([photo('one.png'), photo('two.png'), photo('three.png')])
   const images = page.locator(`${PREVIEW} [data-studio-image]`)
   await expect(images).toHaveCount(3)
-  const order = () => images.evaluateAll(nodes => nodes.map(node => node.getAttribute('data-studio-image')))
+  const order = () => images.evaluateAll(nodes => [...nodes.map((node, index) => ({ slot: node.getAttribute('data-studio-image'), layer: Number((node as HTMLElement).style.zIndex) || index + 1 })), { slot: 'studio-content', layer: 0 }].sort((a, b) => a.layer - b.layer).map(node => node.slot))
   const third = page.locator(`${PREVIEW} [data-studio-image="studio-image-3"]`)
-  await third.click({ position: { x: 40, y: 40 } })
-  const toolbar = page.locator(`${PREVIEW} [data-studio-image-order]`)
-  await expect(toolbar).toBeVisible()
-  await page.screenshot({ path: '/tmp/peitho-image-order.png' })
+  const toolbar = page.locator('[data-slide-menu]')
+  let selected = false
+  const showMenu = async () => {
+    await (selected ? page.locator(`${PREVIEW} .peitho-slide`) : third).click({ button: 'right', position: { x: 5, y: 5 } })
+    selected = true
+    await expect(toolbar).toBeVisible()
+  }
+  await showMenu()
+  await expect(page.locator(`${PREVIEW} [data-studio-image-order]`)).toHaveCount(0)
   await expect(toolbar.getByRole('button', { name: 'Bring to front', exact: true })).toBeDisabled()
   await toolbar.getByRole('button', { name: 'Send to back', exact: true }).click()
-  await expect.poll(order).toEqual(['studio-image-3', 'studio-image-1', 'studio-image-2'])
+  await expect.poll(order).toEqual(['studio-image-3', 'studio-content', 'studio-image-1', 'studio-image-2'])
+  await showMenu()
   await expect(toolbar.getByRole('button', { name: 'Send backward', exact: true })).toBeDisabled()
   await toolbar.getByRole('button', { name: 'Bring forward', exact: true }).click()
-  await expect.poll(order).toEqual(['studio-image-1', 'studio-image-3', 'studio-image-2'])
+  await expect.poll(order).toEqual(['studio-content', 'studio-image-3', 'studio-image-1', 'studio-image-2'])
+  await showMenu()
   await toolbar.getByRole('button', { name: 'Bring to front', exact: true }).click()
-  await expect.poll(order).toEqual(['studio-image-1', 'studio-image-2', 'studio-image-3'])
+  await expect.poll(order).toEqual(['studio-content', 'studio-image-1', 'studio-image-2', 'studio-image-3'])
+  await showMenu()
   await toolbar.getByRole('button', { name: 'Send backward', exact: true }).click()
-  await expect.poll(order).toEqual(['studio-image-1', 'studio-image-3', 'studio-image-2'])
+  await expect.poll(order).toEqual(['studio-content', 'studio-image-1', 'studio-image-3', 'studio-image-2'])
   await page.evaluate(() => (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, label: string) => void }).__mockEmitTauriEvent('menu:undo', null, 'main'))
-  await expect.poll(order).toEqual(['studio-image-1', 'studio-image-2', 'studio-image-3'])
+  await expect.poll(order).toEqual(['studio-content', 'studio-image-1', 'studio-image-2', 'studio-image-3'])
+  await showMenu()
   const saved = deck.source
   deck.commandError = command => command === 'create_image_canvas' ? 'order save failed' : null
   await toolbar.getByRole('button', { name: 'Send to back', exact: true }).click()
   await expect(page.getByText('order save failed')).toBeVisible()
   expect(deck.source).toBe(saved)
-  expect(await order()).toEqual(['studio-image-1', 'studio-image-2', 'studio-image-3'])
+  expect(await order()).toEqual(['studio-content', 'studio-image-1', 'studio-image-2', 'studio-image-3'])
+  await showMenu()
   await expect(toolbar.getByRole('button', { name: 'Send to back', exact: true })).toBeEnabled()
+})
+
+
+test('one image moves behind actual slide text and returns to the foreground', async ({ page }) => {
+  const deck = await open(page)
+  deck.layoutFiles!['two-column'].html = TWO_COLUMN.replace('<h1>', '<h1 style="position:absolute;left:15%;top:25%;width:55%;height:55%;margin:0;background:red">')
+  await page.locator('[data-preview-image-input]').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64') })
+  const image = page.locator(`${PREVIEW} [data-studio-image]`)
+  const foreground = () => image.evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    return (element.getRootNode() as ShadowRoot).elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)?.closest('[data-studio-image]') !== null
+  })
+  await expect.poll(foreground).toBe(true)
+  await image.click({ button: 'right', position: { x: 30, y: 30 } })
+  const menu = page.locator('[data-slide-menu]')
+  await expect(menu.getByRole('button', { name: 'Send to back', exact: true })).toBeEnabled()
+  await menu.getByRole('button', { name: 'Send to back', exact: true }).click()
+  await expect.poll(foreground).toBe(false)
+  // Keep the selected image as the menu target when right-clicking its overlying text.
+  await page.locator(`${PREVIEW} h1`).click({ button: 'right', position: { x: 30, y: 30 } })
+  await menu.getByRole('button', { name: 'Bring to front', exact: true }).click()
+  await expect.poll(foreground).toBe(true)
 })
