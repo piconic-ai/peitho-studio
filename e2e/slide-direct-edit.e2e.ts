@@ -35,6 +35,18 @@ test('text edits update Markdown as one undoable edit, and clicks no longer open
   await expect.poll(() => editorText(page)).toBe('# Title')
 })
 
+test('clicking text-slot whitespace edits the nearest text block in one click', async ({ page }) => {
+  const deck = await open(page, SOURCE + '\n::: {slot=left}\n\nFirst paragraph\n\nSecond paragraph\n\n:::\n')
+  const slot = page.locator(`${PREVIEW} [data-studio-slot="left"]`)
+  const frame = slot.locator('..')
+  await frame.evaluate(el => { (el as HTMLElement).style.padding = '20px' })
+  await frame.click({ position: { x: 5, y: 5 } })
+  await expect(page.locator(FIELD)).toHaveText('First paragraph')
+  await page.locator(FIELD).fill('Edited from whitespace')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(() => deck.source).toContain('Edited from whitespace\n\nSecond paragraph')
+})
+
 test('both empty columns accept text without requiring slot syntax', async ({ page }) => {
   const deck = await open(page)
   await expect(page.locator(`${PREVIEW} [data-studio-slot="left"]`)).toHaveAttribute('data-studio-empty', '')

@@ -188,6 +188,16 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     if (!slide) return
     if (box) { if (box.contains(target)) return; if (!composing && commit?.()) close(); return }
     let element = target.closest<HTMLElement>('[data-peitho-src]') ?? target.closest('h1,h2,h3,h4,h5,h6')?.querySelector<HTMLElement>('[data-peitho-src]') ?? null
+    if (!element) {
+      const containedSlots = target === slide ? [] : target.querySelectorAll('[data-studio-slot]')
+      const slot = target.closest('[data-studio-slot], [data-studio-text]') ?? (containedSlots.length === 1 ? containedSlots[0] : null)
+      const candidates = Array.from(slot?.querySelectorAll<HTMLElement>('[data-peitho-src]') ?? []).filter(el => !el.closest('pre,code,[data-studio-image]') && el.tagName !== 'IMG')
+      const distance = (el: HTMLElement) => {
+        const rect = el.getBoundingClientRect()
+        return Math.max(rect.left - event.clientX, 0, event.clientX - rect.right) ** 2 + Math.max(rect.top - event.clientY, 0, event.clientY - rect.bottom) ** 2
+      }
+      element = candidates.sort((a, b) => distance(a) - distance(b))[0] ?? null
+    }
     let editTarget: SlideEditTarget | null = null
     if (element) {
       const byteSpan = parseSourceSpan(element.getAttribute('data-peitho-src'))
