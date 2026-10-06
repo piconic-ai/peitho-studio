@@ -291,12 +291,14 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
   })
   const paste = (event: Event) => {
     if (!state.callbacks.enabled() || !(event instanceof ClipboardEvent) || !box && event.target instanceof Element && event.target.closest(CONTROLS)) return
+    const gesture = pasteGesture
+    pasteGesture = undefined
     const files = Array.from(event.clipboardData?.files ?? []).filter(file => file.type.startsWith('image/'))
     if (files.length === 0) {
       if (box && event.clipboardData) {
         event.preventDefault()
         document.execCommand('insertText', false, event.clipboardData.getData('text/plain'))
-      } else if (state.callbacks.pasteElement(event.clipboardData?.getData('text/plain') ?? '', pasteGesture)) {
+      } else if (state.callbacks.pasteElement(event.clipboardData?.getData('text/plain') ?? '', gesture)) {
         event.preventDefault(); event.stopPropagation()
       }
       return

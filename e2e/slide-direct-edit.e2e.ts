@@ -575,4 +575,11 @@ test('canvas paste shortcuts work without a native paste event and coalesce a de
   })
   await page.waitForTimeout(200)
   await expect(page.locator(`${PREVIEW} [data-studio-text]`)).toHaveCount(1)
+  // A subsequent native menu paste is a separate action, even within the
+  // shortcut's timeout window.
+  await paragraph.evaluate(el => {
+    const clipboardData = new DataTransfer(); clipboardData.setData('text/plain', 'Clipboard text')
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, composed: true, cancelable: true }))
+  })
+  await expect(page.locator(`${PREVIEW} [data-studio-text]`)).toHaveCount(2)
 })
