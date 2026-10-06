@@ -35,6 +35,24 @@ test('text edits update Markdown as one undoable edit, and clicks no longer open
   await expect.poll(() => editorText(page)).toBe('# Title')
 })
 
+test('an emptied title placeholder reuses its heading when text is entered again', async ({ page }) => {
+  const deck = await open(page)
+  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(FIELD).fill('')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(() => deck.source).toMatch(/\n#[ \t\u00a0]*\n/)
+  const title = page.locator(`${PREVIEW} [data-studio-slot="title"]`)
+  // An empty rendered title can have no source annotation, so entry comes
+  // through the slot placeholder rather than the previous text element.
+  await title.evaluate(el => el.replaceChildren())
+  await title.click()
+  await page.keyboard.type('New title')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(() => editorText(page)).toBe('# New title')
+  await expect.poll(() => deck.source).not.toContain('# \u00a0')
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('New title')
+})
+
 test('clicking text-slot whitespace edits the nearest text block in one click', async ({ page }) => {
   const deck = await open(page, SOURCE + '\n::: {slot=left}\n\nFirst paragraph\n\nSecond paragraph\n\n:::\n')
   const slot = page.locator(`${PREVIEW} [data-studio-slot="left"]`)

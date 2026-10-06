@@ -20,6 +20,16 @@ test('an empty left or right column gets routed content without a body slot', ()
   expect(slotTextInsertion(body, 'image', 'image', 'text')).toBeNull()
 })
 
+test('re-entering an empty title replaces its heading without adding a body item', () => {
+  for (const empty of ['#', '# \u00a0', '# ', '#    ', '\n# \u00a0']) {
+    const body = empty + '\n\nExisting body'
+    const insertion = slotTextInsertion(body, 'title', 'inline', 'New title')!
+    const result = body.slice(0, insertion.from) + insertion.insert + body.slice(insertion.to)
+    expect(result).toBe((empty.startsWith('\n') ? '\n' : '') + '# ' + (empty === '#    ' ? '   ' : '') + 'New title\n\nExisting body')
+  }
+  expect(slotTextInsertion('# Existing\n\nBody', 'title', 'inline', 'New')).toBeNull()
+})
+
 test('stale or include-expanded annotations do not replace an unrelated matching quote', () => {
   expect(textEditFor({ kind: 'text', quote: 'same', text: 'same', byteSpan: { start: 0, end: 4 } }, 'different source', '# same', 0)).toBeNull()
 })

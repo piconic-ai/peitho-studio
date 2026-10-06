@@ -48,6 +48,16 @@ export function slotTextInsertion(body: string, slot: string, accepts: string, v
   if (accepts === 'list' && !/^\s*(?:[-+*]|\d+[.)])\s/.test(content)) content = content.split('\n').map(line => `- ${line}`).join('\n')
   if (slot === 'title') content = `# ${value.trim().replace(/\n/g, ' ')}`
   else content = `::: {slot=${slot}}\n\n${content}\n\n:::`
+  if (slot === 'title') {
+    const heading = /^(?:[ \t]*\r?\n)*[ \t]{0,3}#(?:[ \t]+([^\r\n]*)|(?=\r?\n|$))/.exec(body)
+    if (heading) {
+      const previous = heading[1] ?? ''
+      if (previous.trim() !== '') return null
+      const from = heading[0].length - previous.length
+      const insert = (heading[1] === undefined ? ' ' : '') + value.trim().replace(/\n/g, ' ')
+      return { from, to: heading[0].length, insert, cursor: from + insert.length }
+    }
+  }
   const insert = (body.trim() === '' ? '' : '\n\n') + content + '\n'
   return { from: body.length, to: body.length, insert, cursor: body.length + insert.length }
 }
