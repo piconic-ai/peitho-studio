@@ -244,7 +244,7 @@ fn fitting(slide: &peitho_core::phase::ParsedSlide, layouts: &Layouts) -> Result
 /// overwrites a file: nothing is written when any of them exists, and a
 /// write that fails partway removes what it had written. Returns the
 /// deck-relative paths written.
-fn add_layout(deck_path: &Path, content: &str, name: &str, source: &LayoutSource, action: &str) -> Result<Vec<String>, String> {
+pub(super) fn add_layout(deck_path: &Path, content: &str, name: &str, source: &LayoutSource, action: &str) -> Result<Vec<String>, String> {
     let deck_dir = pipeline::deck_dir_of(deck_path);
     let layout = parse_layout(name, &source.html).map_err(|err| err.to_string())?;
     let current = pipeline::parse_source(deck_path, content)?.assets.layouts;

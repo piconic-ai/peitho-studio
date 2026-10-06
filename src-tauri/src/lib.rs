@@ -360,6 +360,7 @@ pub fn run() {
             peitho::preview_layout_draft,
             peitho::check_slide_layouts,
             peitho::add_image_layout,
+            peitho::create_image_canvas,
             peitho::create_layout,
             peitho::duplicate_layout,
             peitho::check_layout_removal,

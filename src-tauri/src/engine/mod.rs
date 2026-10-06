@@ -33,6 +33,7 @@ pub mod layout_fit;
 pub mod layout_preview;
 pub mod pipeline;
 pub mod serve;
+pub mod slide_edit;
 pub mod unsupported;
 
 use std::path::PathBuf;

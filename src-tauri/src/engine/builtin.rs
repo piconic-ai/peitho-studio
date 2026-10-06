@@ -95,6 +95,12 @@ pub const STANDARD_LAYOUTS: &[StandardLayout] = &[
     standard_layout!("blank"),
 ];
 
+/// Standard menu order first; deck-specific layouts follow by name.
+pub fn compare_layout_names(a: &str, b: &str) -> std::cmp::Ordering {
+    let rank = |name: &str| STANDARD_LAYOUTS.iter().position(|layout| layout.name == name).unwrap_or(STANDARD_LAYOUTS.len());
+    rank(a).cmp(&rank(b)).then_with(|| a.cmp(b))
+}
+
 /// Matches `crates/peitho/templates/new/gitignore` in the peitho repo —
 /// `dist/` and `.peitho/` are directories `peitho build`/`preview`/`present`
 /// write into, so a scaffolded deck should ignore them from the start.
@@ -105,6 +111,16 @@ mod tests {
     use super::*;
     use peitho_core::domain::SlotName;
     use peitho_core::{parse_layout, Layouts};
+
+    #[test]
+    fn layout_menu_order_places_standard_layouts_before_custom_layouts() {
+        let mut names: Vec<_> = STANDARD_LAYOUTS.iter().rev().map(|layout| layout.name).collect();
+        names.extend(["z-custom", "a-custom", "title-body-image"]);
+        names.sort_by(|a, b| compare_layout_names(a, b));
+        let mut expected: Vec<_> = STANDARD_LAYOUTS.iter().map(|layout| layout.name).collect();
+        expected.extend(["a-custom", "title-body-image", "z-custom"]);
+        assert_eq!(names, expected);
+    }
 
     /// The selectors of every rule in `css`, comments stripped — enough for
     /// the plain rule lists these files hold (no at-rules, no nesting).

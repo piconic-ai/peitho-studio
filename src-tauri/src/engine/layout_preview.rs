@@ -8,31 +8,54 @@
 
 use peitho_core::domain::{Accepts, SlotContract};
 use peitho_core::Layout;
+use super::pipeline;
+
+// Markdown's image contract accepts raster extensions; the rendered
+// reference is replaced with the embedded SVG before reaching the UI.
+const SAMPLE_IMAGE: &str = "peitho-studio-preview-landscape.png";
+const SAMPLE_SVG: &str = include_str!("builtin/preview-landscape.svg");
+
+/// Render sample images entirely in memory; previews never write sample
+/// files into the user's deck or change its live asset server.
+pub fn render_preview(deck_path: &std::path::Path, layout: &Layout) -> Result<pipeline::RenderOutput, String> {
+    use base64::Engine as _;
+    let parsed = pipeline::parse_source(deck_path, &placeholder_source(layout))?;
+    let image_path = peitho_core::ResolvedImagePath::from_hashed_asset("0000000000000000", SAMPLE_IMAGE)?;
+    let mut output = pipeline::render_parsed_with_images(deck_path, parsed, |_| {
+        Ok(peitho_core::ResolvedImageAsset { source_abs: SAMPLE_IMAGE.into(), dist_rel: image_path.clone() })
+    })?;
+    let data_uri = format!("data:image/svg+xml;base64,{}", base64::engine::general_purpose::STANDARD.encode(SAMPLE_SVG));
+    for fragment in output.fragments.values_mut() {
+        *fragment = fragment.replace(&format!("src=\"{}\"", image_path.as_str()), &format!("src=\"{data_uri}\""));
+    }
+    output.image_assets.remove(image_path.as_str());
+    Ok(output)
+}
 
 /// The slide key the placeholder is rendered under.
 pub const PREVIEW_KEY: &str = "preview";
 
 /// A one-slide deck source pinned to `layout`, with placeholder content in
-/// each of its slots that takes headings, text blocks or a list:
+/// each of its slots that takes headings, text blocks, a list or an image:
 /// - `title` gets a heading, the slot a heading goes to by convention
 /// - a `body` taking blocks gets them as is, as body text is written
 /// - every other slot gets its content in its own `::: {slot=...}` block,
 ///   since only `title`/`body` are reached by convention
 ///
-/// `code`, `image` and `footnotes` slots, and any slot of another kind,
-/// are left empty: their content (a code block, an image file, a footnote)
-/// isn't placeholder text, and a required one makes the layout fail to
-/// preview, as it always did.
+/// Image slots get an embedded landscape illustration. Code, footnotes
+/// and slots of other kinds are left empty; a required one prevents a preview.
 pub fn placeholder_source(layout: &Layout) -> String {
     let slots = layout.slots();
     let has = |name: &str| slots.values().any(|slot| slot.name.as_str() == name);
     let mut parts = vec![format!("<!-- {{\"key\":\"{PREVIEW_KEY}\",\"layout\":\"{}\"}} -->", layout.name())];
     if has("title") {
-        parts.push("# Placeholder title".to_string());
+        parts.push(if layout.name() == "big-number" { "# 75%" } else { "# Placeholder title" }.to_string());
     }
     let mut fenced = Vec::new();
     for slot in slots.values().filter(|slot| !["title", "code", "footnotes"].contains(&slot.name.as_str())) {
-        let Some(content) = placeholder_content(slot) else { continue };
+        let Some(content) = (if layout.name() == "big-number" && slot.name.as_str() == "body" {
+            Some("Completion rate".to_string())
+        } else { placeholder_content(slot) }) else { continue };
         match (slot.name.as_str(), slot.accepts) {
             ("body", Accepts::Blocks) => parts.push(content),
             (name, _) => fenced.push(format!("::: {{slot={name}}}\n\n{content}\n\n:::")),
@@ -52,6 +75,7 @@ fn placeholder_content(slot: &SlotContract) -> Option<String> {
         Accepts::Blocks => Some(format!("Placeholder {name} copy.")),
         Accepts::Inline => Some(format!("## Placeholder {name}")),
         Accepts::List => Some("- First point\n- Second point".to_string()),
+        Accepts::Image => Some(format!("![Mountain landscape]({SAMPLE_IMAGE})")),
         _ => None,
     }
 }
@@ -137,7 +161,19 @@ mod tests {
             let source = placeholder_source(&parse_layout(layout.name, layout.html).unwrap());
             let output = render_source(&deck_path, &source).unwrap_or_else(|err| panic!("{}: {err}\n{source}", layout.name));
             let fragment = &output.fragments[PREVIEW_KEY];
-            assert!(fragment.contains("Placeholder"), "{}: {fragment}", layout.name);
+            if layout.name == "blank" {
+                assert!(parse_layout(layout.name, layout.html).unwrap().slots().is_empty());
+                assert!(!fragment.contains("Placeholder"), "{fragment}");
+                assert!(fragment.contains("layout-blank"), "{fragment}");
+                // Applying blank must not silently discard a slide's text.
+                assert!(render_source(&deck_path, &format!("{source}\nBody text\n")).is_err());
+            } else if layout.name == "big-number" {
+                assert!(fragment.contains("75%"), "{fragment}");
+                assert!(fragment.contains("Completion rate"), "{fragment}");
+                assert!(!fragment.contains("Placeholder"), "{fragment}");
+            } else {
+                assert!(fragment.contains("Placeholder"), "{}: {fragment}", layout.name);
+            }
         }
     }
 
@@ -161,11 +197,20 @@ mod tests {
     }
 
     #[test]
-    fn adversarial_image_code_and_footnote_slots_are_left_empty() {
+    fn image_slots_get_a_self_contained_example_without_writing_deck_assets() {
         let source = placeholder_source(&parse_layout("title-body-image", builtin::IMAGE_LAYOUT_HTML).unwrap());
-        assert!(!source.contains("slot=image"), "{source}");
+        assert!(source.contains("slot=image"), "{source}");
+        let mut layouts: Vec<_> = builtin::STANDARD_LAYOUTS.iter().map(|layout| (layout.name, layout.html)).collect();
+        layouts.push(("title-body-image", builtin::IMAGE_LAYOUT_HTML));
+        let (_dir, deck_path) = deck_with(&layouts, builtin::BASE_CSS);
+        let layout = parse_layout("title-body-image", builtin::IMAGE_LAYOUT_HTML).unwrap();
+        let output = render_preview(&deck_path, &layout).unwrap();
+        let fragment = &output.fragments[PREVIEW_KEY];
+        assert!(fragment.contains("src=\"data:image/svg+xml;base64,"), "{fragment}");
+        assert!(fragment.contains("alt=\"Mountain landscape\""), "{fragment}");
+        assert!(output.image_assets.is_empty());
+        assert!(!deck_path.parent().unwrap().join(SAMPLE_IMAGE).exists());
         assert!(!source.contains("slot=footnotes"), "{source}");
         assert!(!source.contains("slot=code"), "{source}");
-        assert!(!source.contains("!["), "{source}");
     }
 }
