@@ -87,15 +87,16 @@ function clickOf(event: MouseEvent): PreviewClick | null {
 const HEADINGS = 'h1, h2, h3, h4, h5, h6'
 
 function annotatedOf(target: Element): Element | null {
-  return target.closest('[data-peitho-src]') ?? target.closest(HEADINGS)?.querySelector(':scope > [data-peitho-src]') ?? null
+  return target.closest('[data-peitho-src]') ?? target.closest(HEADINGS)?.querySelector('[data-peitho-src]') ?? null
 }
 
 function hitOf(target: Element): PreviewHit | null {
   const annotated = annotatedOf(target)
   if (annotated === null) return null
-  const kind = targetKindOf(annotated.tagName, annotated.parentElement?.tagName ?? null)
+  const heading = annotated.closest(HEADINGS)
+  const kind = heading ? 'heading' : targetKindOf(annotated.tagName, annotated.parentElement?.tagName ?? null)
   if (kind === 'slide') return null
-  const text = (kind === 'heading' && annotated.tagName === 'SPAN' ? annotated.parentElement : annotated)?.textContent ?? ''
+  const text = (heading ?? annotated).textContent ?? ''
   return {
     kind,
     text,

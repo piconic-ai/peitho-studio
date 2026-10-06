@@ -1375,6 +1375,11 @@ export function Studio() {
     return menu.kind === 'on-slide' ? menu.comment?.image ?? null : null
   })
 
+  const previewElementMenu = createMemo(() => {
+    const menu = ui.contextMenu()
+    return menu.kind === 'on-slide' && Boolean(menu.comment?.image || menu.comment?.hit)
+  })
+
   function runImageOrderAction(action: ImageOrderAction): void {
     const image = previewMenuImage()
     ui.closeContextMenu()
@@ -4080,6 +4085,7 @@ export function Studio() {
         position={contextMenuPositionOf(ui.contextMenu())}
         menuItems={currentMenuItems()}
         image={previewMenuImage()}
+        elementMenu={previewElementMenu()}
         imageBusy={previewImageBusy()}
         onImageOrder={runImageOrderAction}
         layoutPickerOpen={isLayoutPickerOpen(ui.contextMenu())}

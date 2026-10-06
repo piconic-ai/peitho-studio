@@ -296,6 +296,9 @@ test('image context menu supports all four actions, boundaries, Undo and failed 
     await expect(toolbar).toBeVisible()
   }
   await showMenu()
+  await expect(toolbar.locator('button:visible')).toHaveCount(5)
+  await expect(toolbar.locator('button:visible').first()).toHaveAttribute('data-slide-menu-item', 'comment')
+  await expect(toolbar.getByRole('button', { name: /^New Slide/ })).toBeHidden()
   await expect(page.locator(`${PREVIEW} [data-studio-image-order]`)).toHaveCount(0)
   await expect(toolbar.getByRole('button', { name: 'Bring to front', exact: true })).toBeDisabled()
   await toolbar.getByRole('button', { name: 'Send to back', exact: true }).click()
@@ -343,4 +346,19 @@ test('one image moves behind actual slide text and returns to the foreground', a
   await page.locator(`${PREVIEW} h1`).click({ button: 'right', position: { x: 30, y: 30 } })
   await menu.getByRole('button', { name: 'Bring to front', exact: true }).click()
   await expect.poll(foreground).toBe(true)
+})
+
+
+test('element context menus hide slide actions while background menus retain them', async ({ page }) => {
+  await open(page)
+  const menu = page.locator('[data-slide-menu]')
+  await page.locator(`${PREVIEW} h1`).click({ button: 'right' })
+  await expect(menu).toBeVisible()
+  await expect(menu.locator('button:visible')).toHaveCount(1)
+  await expect(menu.locator('button:visible').first()).toHaveAttribute('data-slide-menu-item', 'comment')
+  await expect(menu.getByRole('button', { name: /^New Slide/ })).toBeHidden()
+  await page.mouse.click(1, 600)
+  await page.locator(`${PREVIEW} .peitho-slide`).click({ button: 'right', position: { x: 5, y: 5 } })
+  await expect(menu.getByRole('button', { name: /^New Slide/ })).toBeVisible()
+  await expect(menu.locator('button:visible').first()).toHaveAttribute('data-slide-menu-item', 'comment')
 })
