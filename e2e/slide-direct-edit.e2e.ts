@@ -7,8 +7,8 @@ const FIELD = `${PREVIEW} [data-studio-edit]`
 const SOURCE = '<!-- {"key":"s","layout":"two-column"} -->\n# Title\n'
 const TWO_COLUMN = '<section class="peitho-slide" style="width:1280px;height:720px;padding:64px;box-sizing:border-box;background:white"><h1><slot name="title" accepts="inline" arity="1"></slot></h1><div style="display:flex;gap:40px"><div style="width:50%"><slot name="left" accepts="blocks" arity="0..*"></slot></div><div style="width:50%"><slot name="right" accepts="blocks" arity="0..*"></slot></div></div></section>'
 
-async function open(page: Page): Promise<MockDeck> {
-  const deck: MockDeck = { source: SOURCE, deckPath: '/decks/talk/deck.md', editAnnotations: true, editableLayouts: true, layouts: ['two-column'], layoutFiles: { 'two-column': { html: TWO_COLUMN, css: null } }, css: '.peitho-slide h1 {font-size:56px}.peitho-slide p {font-size:32px}.peitho-slide img {width:100%;height:100%;object-fit:contain}' }
+async function open(page: Page, source = SOURCE): Promise<MockDeck> {
+  const deck: MockDeck = { source, deckPath: '/decks/talk/deck.md', editAnnotations: true, editableLayouts: true, layouts: ['two-column'], layoutFiles: { 'two-column': { html: TWO_COLUMN, css: null } }, css: '.peitho-slide h1 {font-size:56px}.peitho-slide p {font-size:32px}.peitho-slide img {width:100%;height:100%;object-fit:contain}' }
   deck.layouts!.push('title-only')
   deck.layoutFiles!['title-only'] = { html: '<section class="peitho-slide" data-template="title-only" style="width:1280px;height:720px;padding:64px;box-sizing:border-box;background:white"><h1><slot name="title" accepts="inline" arity="1"></slot></h1></section>', css: null }
   deck.layoutVerdicts = () => deck.layouts!.map(layout => ({ layout, fit: { kind: 'fits' } }))
@@ -197,4 +197,30 @@ test('IME conversion updates Markdown only after composition ends', async ({ pag
   await expect.poll(() => editorText(page)).toBe('# 変換中')
   await page.locator(FIELD).press('Meta+Enter')
   await expect.poll(() => editorText(page)).toBe('# 変換中')
+})
+
+
+test('direct edits preserve inline code and emphasis and leave untouched Markdown unchanged', async ({ page }) => {
+  const source = `${SOURCE}\n::: {slot=left}\n\nUse \`code\` and **bold**.\n\n:::\n`
+  const deck = await open(page, source)
+  const paragraph = page.locator(`${PREVIEW} [data-studio-slot="left"] p`)
+  // Match the real engine's inline HTML; the fixture mock intentionally renders plain text.
+  await paragraph.evaluate(el => { el.innerHTML = 'Use <code>code</code> and <strong>bold</strong>.' })
+  await paragraph.click({ position: { x: 5, y: 5 } })
+  await page.locator(FIELD).press('Meta+Enter')
+  expect(deck.source).toBe(source)
+  await paragraph.click({ position: { x: 5, y: 5 } })
+  await page.locator(FIELD).press('End')
+  await page.locator(FIELD).pressSequentially('!')
+  await expect.poll(() => editorText(page)).toContain('Use \`code\` and **bold**.!')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(() => deck.source).toContain('Use \`code\` and **bold**.!')
+})
+
+test('typing Markdown punctuation on the canvas writes literal text safely', async ({ page }) => {
+  await open(page)
+  await page.locator(`${PREVIEW} h1`).click()
+  await page.locator(FIELD).fill('Use *literal* <tag>')
+  await expect.poll(() => editorText(page)).toBe('# Use \\*literal\\* \\<tag\\>')
+  await page.locator(FIELD).press('Meta+Enter')
 })

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { looseBodyEdit, removeImageSlot, slotTextInsertion, textEditFor, textEditInsertion } from './slideEdit'
+import { literalSlideText, slideInlineCode, looseBodyEdit, removeImageSlot, slotTextInsertion, textEditFor, textEditInsertion } from './slideEdit'
 
 test('Japanese text edits locate the annotated bytes in the selected body and preserve heading syntax', () => {
   const body = '# 売上\n\n本文'
@@ -41,4 +41,19 @@ test('missing-body list content can be explicitly placed in a column without los
   expect(looseBodyEdit('# Title', 'left', 'blocks')).toBeNull()
   expect(looseBodyEdit('# Title\n\n::: {slot=right}\n\nKeep\n\n:::', 'left', 'blocks')).toBeNull()
   expect(looseBodyEdit(body, 'subtitle', 'inline')).toBeNull()
+})
+
+
+test('canvas text preserves literal Markdown characters rather than introducing syntax', () => {
+  expect(literalSlideText('a * b <tag> [text] # title')).toBe('a \\* b \\<tag\\> \\[text\\] \\# title')
+  expect(literalSlideText('日本語')).toBe('日本語')
+  expect(literalSlideText('')).toBe('')
+  expect(literalSlideText('\\')).toBe('\\\\')
+})
+
+test('inline code retains its formatting including embedded backticks and boundary spaces', () => {
+  expect(slideInlineCode('foo')).toBe('`foo`')
+  expect(slideInlineCode('`foo`')).toBe('`` `foo` ``')
+  expect(slideInlineCode(' foo ')).toBe('`  foo  `')
+  expect(slideInlineCode('a``b')).toBe('```a``b```')
 })

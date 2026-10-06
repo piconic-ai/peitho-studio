@@ -1,7 +1,7 @@
 import type { Language } from '../domain/language'
 import { parseSourceSpan } from '../domain/reviewComment'
 import { flushSlideTextEdit } from './slideCanvas'
-import type { SlideEditTarget, SlideEditSession } from '../domain/slideEdit'
+import { literalSlideText, slideInlineCode, type SlideEditTarget, type SlideEditSession } from '../domain/slideEdit'
 
 export interface SlideEditingCallbacks {
   language: () => Language
@@ -166,11 +166,12 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       markEmpty()
     }
     const markdown = (node: Node): string => {
-      if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? ''
+      if (node.nodeType === Node.TEXT_NODE) return literalSlideText(node.textContent ?? '')
       if (!(node instanceof Element)) return ''
       const text = Array.from(node.childNodes).map(markdown).join('')
       switch (node.tagName) {
         case 'BR': return '\n'
+        case 'CODE': return slideInlineCode(node.textContent ?? '')
         case 'STRONG': case 'B': return `**${text}**`
         case 'EM': case 'I': return `*${text}*`
         case 'S': case 'DEL': return `~~${text}~~`
@@ -180,7 +181,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       }
     }
     commit = () => {
-      const value = Array.from(field.childNodes).map(markdown).join('').replace(/^\n/, '')
+      const value = (!empty && field.innerHTML === original) || (empty && field.textContent === session.value) ? session.value : Array.from(field.childNodes).map(markdown).join('').replace(/^\n/, '')
       if (empty && value.trim() === '') return session.cancel()
       const ok = session.commit(value)
       field.toggleAttribute('data-studio-edit-error', !ok)

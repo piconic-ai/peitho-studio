@@ -71,3 +71,16 @@ export interface SlideEditSession {
   cancel: () => boolean
   finish: () => void
 }
+
+
+/** Plain canvas text stays literal when written back as Markdown. */
+export function literalSlideText(text: string): string {
+  return text.replace(/[\\`*_[\]<>#]/g, char => `\\${char}`)
+}
+
+export function slideInlineCode(text: string): string {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map(run => run.length))
+  const fence = '`'.repeat(longest + 1)
+  const pad = text.startsWith('`') || text.endsWith('`') || (text.startsWith(' ') && text.endsWith(' ') && text.trim() !== '') ? ' ' : ''
+  return `${fence}${pad}${text}${pad}${fence}`
+}
