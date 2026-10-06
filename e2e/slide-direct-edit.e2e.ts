@@ -519,7 +519,10 @@ test('re-editing a rendered hard break does not add a blank line', async ({ page
     el.nextElementSibling?.remove()
   })
   await paragraph.dblclick({ position: { x: 5, y: 5 } })
-  await page.locator(FIELD).press('ControlOrMeta+End')
+  await page.locator(FIELD).evaluate(el => {
+    const range = document.createRange(); range.selectNodeContents(el); range.collapse(false)
+    const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+  })
   await page.locator(FIELD).pressSequentially('!')
   await expect.poll(() => editorText(page)).toContain('First  \nSecond!')
   expect(await editorText(page)).not.toContain('\u00a0')

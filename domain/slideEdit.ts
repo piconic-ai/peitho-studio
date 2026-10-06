@@ -22,7 +22,7 @@ export function textEditFor(target: Extract<SlideEditTarget, { kind: 'text' }>, 
   if (span === null) return null
   let local = { start: span.start - bodyStart, end: span.end - bodyStart }
   if (rawBody !== undefined) {
-    if (rawBody.replace(/\n{3,}/g, '\n\n') !== body.trim() || rawBody.slice(local.start, local.end) !== target.quote) return null
+    if (local.start < 0 || local.end > rawBody.length || renderedSource.slice(bodyStart, bodyStart + rawBody.length) !== rawBody || rawBody.replace(/\n{3,}/g, '\n\n') !== body.trim() || rawBody.slice(local.start, local.end) !== target.quote) return null
     const leading = body.length - body.trimStart().length
     local = { start: leading + rawBody.slice(0, local.start).replace(/\n{3,}/g, '\n\n').length, end: leading + rawBody.slice(0, local.end).replace(/\n{3,}/g, '\n\n').length }
   }
