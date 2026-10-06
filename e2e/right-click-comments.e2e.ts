@@ -102,8 +102,9 @@ test.describe('the slide preview', () => {
     expect(deck.source.indexOf('"layout":"statement"')).toBeLessThan(deck.source.indexOf('# Second'))
   })
 
-  test('Given the preview, when it is left-clicked, then the box still opens at once, no menu', async ({ page }) => {
+  test('Given comment mode, when the preview is left-clicked, then the box opens without a menu', async ({ page }) => {
     await openDeck(page)
+    await page.locator('[data-preview-comment-mode]').click()
     await page.locator(`${PREVIEW} p >> nth=0`).click()
     await expect(page.locator('[data-comment-target]')).toHaveText('Slide 1 › paragraph "Some text"')
     await expect(page.locator(SLIDE_MENU)).toBeHidden()

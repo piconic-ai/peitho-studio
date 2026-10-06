@@ -376,6 +376,15 @@ export function withDurationPart(ms: number, part: DurationPart, value: number):
   return part === 'minutes' ? minutesSecondsToMs(value, seconds) : minutesSecondsToMs(minutes, value)
 }
 
+/** Replace one slide while keeping a blank line before the following
+ * separator. Without it, Markdown reads `paragraph\n---` as a Setext
+ * heading and consumes the next slide's settings as this slide's content. */
+export function replaceSlideText(source: string, range: SlideRange, text: string): string {
+  const after = source.slice(range.end)
+  const replacement = /^---(?:\r?\n|$)/.test(after) ? `${text.trimEnd()}\n\n` : text
+  return source.slice(0, range.start) + replacement + after
+}
+
 /** Rebuilds a deck's full source from an ordered list of slide texts,
  * joined with peitho's own `---` slide separator. `prefix` (YAML
  * frontmatter, if any) and `suffix` (anything after the last slide) are

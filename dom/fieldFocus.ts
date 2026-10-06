@@ -3,8 +3,14 @@
 // slide list is pressed.
 
 /** The focused plain text field (an `<input>` or `<textarea>`), or `null`. */
+function activeElement(): Element | null {
+  let active = document.activeElement
+  while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement
+  return active
+}
+
 function focusedTextField(): HTMLInputElement | HTMLTextAreaElement | null {
-  const active = document.activeElement
+  const active = activeElement()
   return active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement ? active : null
 }
 
@@ -12,7 +18,7 @@ function focusedTextField(): HTMLInputElement | HTMLTextAreaElement | null {
  * `contenteditable` content of a CodeMirror editor (the slide body and
  * notes, `dom/codeEditor.ts`). `null` when focus is elsewhere. */
 function focusedTypingElement(): HTMLElement | null {
-  const active = document.activeElement
+  const active = activeElement()
   if (!(active instanceof HTMLElement)) return null
   return active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active.isContentEditable ? active : null
 }
@@ -20,8 +26,13 @@ function focusedTypingElement(): HTMLElement | null {
 /** Whether keyboard focus is inside an element matching `selector` (the
  * layout screen's HTML/CSS editors, say). */
 export function isFocusWithin(selector: string): boolean {
-  const active = document.activeElement
-  return active instanceof Element && active.closest(selector) !== null
+  let active = activeElement()
+  while (active) {
+    if (active.closest(selector) !== null) return true
+    const root = active.getRootNode()
+    active = root instanceof ShadowRoot ? root.host : null
+  }
+  return false
 }
 
 /** Whether keyboard focus is in a field that takes typing, where a plain
@@ -40,7 +51,7 @@ export function isTypingInField(): boolean {
  * aren't plain fields: their typing is on the app's timeline, which the
  * caller walks when this returns `false`. */
 export function replayFocusedFieldHistory(direction: 'undo' | 'redo'): boolean {
-  if (focusedTextField() === null) return false
+  if (focusedTextField() === null && !(activeElement() instanceof HTMLElement && activeElement()?.hasAttribute('data-studio-edit'))) return false
   // Deprecated, but still the only way a page can reach the browser's own
   // text undo stack; WebKit and Chromium both support it from script.
   document.execCommand(direction)

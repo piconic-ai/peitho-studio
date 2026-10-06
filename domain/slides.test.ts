@@ -15,6 +15,7 @@ import {
   injectNote,
   extractPageComment,
   buildSlideText,
+  replaceSlideText,
   slideFieldStarts,
   updatePageComment,
   slugifyTitle,
@@ -883,5 +884,24 @@ describe('stabilizeByKey', () => {
     const result = stabilizeByKey([a, b], [changedB, a])
     expect(result[0]).toBe(changedB)
     expect(result[1]).toBe(a)
+  })
+})
+
+
+describe('replacing a slide preserves Markdown slide boundaries', () => {
+  test('a paragraph before the next settings stays separated by a blank line', () => {
+    const source = '---\ntime: 1m\n---\n<!-- {"key":"cover"} -->\n# Title\n\nBody\n\n---\n\n<!-- {"key":"next"} -->\n# Next\n'
+    const range = splitSlides(source)[0]
+    const next = replaceSlideText(source, range, buildSlideText({ key: 'cover' }, '# Edited\n\nChanged body', ''))
+    expect(next).toContain('Changed body\n\n---\n\n<!-- {"key":"next"} -->')
+    expect(next.slice(0, range.start)).toBe(source.slice(0, range.start))
+    expect(splitSlides(next)).toHaveLength(2)
+    expect(splitSlides(next)[1].text).toBe(splitSlides(source)[1].text)
+  })
+  test('the final slide and a heading-only replacement do not change adjacent text', () => {
+    const source = '# First\n\n---\n# Last\n'
+    const ranges = splitSlides(source)
+    expect(replaceSlideText(source, ranges[1], '# Changed\n')).toBe('# First\n\n---\n# Changed\n')
+    expect(replaceSlideText(source, ranges[0], '# Changed\n')).toBe('# Changed\n\n---\n# Last\n')
   })
 })

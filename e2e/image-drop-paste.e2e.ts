@@ -31,6 +31,7 @@ async function openDeck(page: Page, deck: MockDeck): Promise<Invocation[]> {
 }
 
 const imports = (invocations: Invocation[]) => invocations.filter(call => call.cmd.startsWith('import_deck_image_'))
+const imageFence = (path: string, n = 1) => `::: {slot=studio-image-${n}}\n\n![](${path})\n\n:::`
 
 /** Pastes into the focused body what a clipboard holding `files` (and
  * optionally `text`) would. */
@@ -81,10 +82,10 @@ test.describe('functional', () => {
     expect(call.args.bytes).toEqual(PNG_BYTES)
     const name = (call.args.headers as Record<string, string>)['x-image-name']
     expect(name).toMatch(/^screenshot-\d{8}-\d{6}\.png$/)
-    await expect.poll(() => editorText(page)).toBe(`# Slide One\n\nSome text\n\n![](img/${name})`)
+    await expect.poll(() => editorText(page)).toBe(`# Slide One\n\nSome text\n\n${imageFence(`img/${name}`)}`)
     // The status bar says "Image added to img/" until the save that
     // follows replaces it with "Saved".
-    await expect.poll(() => deck.source).toContain(`Some text\n\n![](img/${name})`)
+    await expect.poll(() => deck.source).toContain(imageFence(`img/${name}`))
   })
 
   test('Given only text on the clipboard, when it is pasted, then it is pasted as text as before and nothing is imported', async ({ page }) => {
@@ -117,9 +118,9 @@ test.describe('functional', () => {
 
     await drop(page, ['/Users/me/Desktop/photo.png'], await endOfLine(page, 1))
 
-    await expect.poll(() => editorText(page)).toBe('# Slide One\n\n![](img/photo.png)\n\nSome text')
+    await expect.poll(() => editorText(page)).toBe(`# Slide One\n\nSome text\n\n${imageFence('img/photo.png')}`)
     expect(imports(invocations).map(call => call.args)).toEqual([{ path: '/Users/me/Desktop/photo.png' }])
-    await expect.poll(() => deck.source).toContain('# Slide One\n\n![](img/photo.png)\n\nSome text')
+    await expect.poll(() => deck.source).toContain(imageFence('img/photo.png'))
   })
 
   test('Given several image files, when they are dropped together, then each becomes its own paragraph in the order dropped', async ({ page }) => {
@@ -128,7 +129,7 @@ test.describe('functional', () => {
 
     await drop(page, ['/d/b.jpg', '/d/a.png'], await endOfLine(page, 3))
 
-    await expect.poll(() => editorText(page)).toBe('# Slide One\n\nSome text\n\n![](img/b.jpg)\n\n![](img/a.png)')
+    await expect.poll(() => editorText(page)).toBe(`# Slide One\n\nSome text\n\n${imageFence('img/b.jpg')}\n\n${imageFence('img/a.png', 2)}`)
   })
 
   test('Given an SVG or a text file among the dropped files, when dropped on the body, then the error bar names them and nothing is imported or inserted', async ({ page }) => {
@@ -168,33 +169,34 @@ test.describe('functional', () => {
     await expect.poll(() => editorText(page)).toBe('# Slide One\n\nSome text typed')
   })
 
-  test('Given a deck whose layouts have no image slot, when an image is dropped, then the build error is shown and the Markdown stays for the user to fix', async ({ page }) => {
+  test('Given a deck whose layouts have no image slot, when an image is dropped, then a slide-specific layout handles it without a build error', async ({ page }) => {
     const noSlot = "no slot accepts image in layout 'title-body-code'"
     const deck: MockDeck = {
       source: TWO_SLIDES,
-      commandError: (cmd, args) => (cmd === 'render_draft' && String(args.content).includes('![](') ? noSlot : null),
+      commandError: (cmd, args) => (cmd === 'render_draft' && String(args.content).includes('![](') && !String(args.content).includes('slot=studio-image-') ? noSlot : null),
     }
     await openDeck(page, deck)
 
     await drop(page, ['/d/photo.png'], await endOfLine(page, 3))
 
-    await expect(page.getByText(noSlot)).toBeVisible()
-    expect(await editorText(page)).toBe('# Slide One\n\nSome text\n\n![](img/photo.png)')
+    await expect.poll(() => editorText(page)).toContain(imageFence('img/photo.png'))
+    await expect(page.getByText(noSlot)).toHaveCount(0)
+    expect(deck.source).toContain('"layout":"studio-canvas-')
   })
 })
 
 test.describe('functional: on a Retina display', () => {
   test.use({ deviceScaleFactor: 2 })
 
-  test('Given a display scaled 2x, when images are dropped on two different lines one after another, then each lands on the line it was dropped on', async ({ page }) => {
+  test('Given a display scaled 2x, when images are dropped twice, then both get image slots and existing text stays intact', async ({ page }) => {
     const deck: MockDeck = { source: TWO_SLIDES }
     const invocations = await openDeck(page, deck)
 
     await drop(page, ['/d/first.png'], await endOfLine(page, 3))
-    await expect.poll(() => editorText(page)).toBe('# Slide One\n\nSome text\n\n![](img/first.png)')
+    await expect.poll(() => editorText(page)).toBe(`# Slide One\n\nSome text\n\n${imageFence('img/first.png')}`)
     await drop(page, ['/d/second.png'], await endOfLine(page, 1))
 
-    await expect.poll(() => editorText(page)).toBe('# Slide One\n\n![](img/second.png)\n\nSome text\n\n![](img/first.png)')
+    await expect.poll(() => editorText(page)).toBe(`# Slide One\n\nSome text\n\n${imageFence('img/first.png')}\n\n${imageFence('img/second.png', 2)}`)
     expect(imports(invocations).map(call => call.args)).toEqual([{ path: '/d/first.png' }, { path: '/d/second.png' }])
   })
 })
@@ -237,6 +239,6 @@ test.describe('non-functional: errors and timing', () => {
     await paste(page, [{ name: 'image.png', type: 'image/png', bytes: PNG_BYTES }])
     await page.keyboard.type(' more')
 
-    await expect.poll(() => editorText(page)).toMatch(/^# Slide One\n\nSome text more\n\n!\[\]\(img\/screenshot-\d{8}-\d{6}\.png\)$/)
+    await expect.poll(() => editorText(page)).toMatch(/^# Slide One\n\nSome text more\n\n::: \{slot=studio-image-1\}\n\n!\[\]\(img\/screenshot-\d{8}-\d{6}\.png\)\n\n:::$/)
   })
 })

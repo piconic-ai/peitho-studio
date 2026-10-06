@@ -341,13 +341,13 @@ export function codeEditorPositionAt(view: EditorView, point: Point): number | n
  * `userEvent` — so it reaches `onChange` and is one step of its own in the
  * undo history (never merged with typing just before or after), and moves
  * the cursor to `insertion.cursor`. */
-export function insertIntoCodeEditor(view: EditorView, insertion: TextInsertion, userEvent: 'input.paste' | 'input.drop' | 'delete.cut'): void {
+export function insertIntoCodeEditor(view: EditorView, insertion: TextInsertion, userEvent: 'input.paste' | 'input.drop' | 'delete.cut' | 'input.slide', isolate = true): void {
   view.dispatch({
     changes: { from: insertion.from, to: insertion.to, insert: insertion.insert },
     selection: { anchor: insertion.cursor },
     userEvent,
     scrollIntoView: true,
-    annotations: isolateHistory.of('full'),
+    annotations: isolate ? isolateHistory.of('full') : [],
   })
 }
 

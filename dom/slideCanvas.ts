@@ -290,6 +290,7 @@ const linkGuardedRoots = new WeakSet<ShadowRoot>()
  * connects at all. `MAX_MOUNT_RETRIES` caps the resulting retry loop so an
  * abandoned row's closure gets dropped instead of rescheduling forever. */
 export function mountSlideCanvas(host: HTMLElement, sheet: CSSStyleSheet, fragmentHtml: string, canvas: Size, mode: 'thumbnail' | 'interactive'): void {
+  pendingTextEditFragments.delete(host)
   if (!host.isConnected) {
     const attempt = mountRetryCounts.get(host) ?? 0
     if (attempt >= MAX_MOUNT_RETRIES) {
@@ -355,7 +356,18 @@ export function remountSlideCanvases(): void {
  * isn't mounted yet is a safe no-op rather than a duplicated slide. No
  * re-fit is needed after the swap: the scale lives in a custom property on
  * `host`, which the replacement inherits untouched. */
+const pendingTextEditFragments = new WeakMap<HTMLElement, string>()
+
+/** Resume the latest render after in-place typing finishes, so rendering
+ * never replaces the focused element or interrupts an IME composition. */
+export function flushSlideTextEdit(host: HTMLElement): void {
+  const fragment = pendingTextEditFragments.get(host)
+  pendingTextEditFragments.delete(host)
+  if (fragment !== undefined) patchSlideCanvas(host, fragment)
+}
+
 export function patchSlideCanvas(host: HTMLElement, fragmentHtml: string): boolean {
+  if (host.hasAttribute('data-studio-text-editing')) { pendingTextEditFragments.set(host, fragmentHtml); return false }
   if (appliedFragments.get(host) === fragmentHtml) return false
   const shadow = host.shadowRoot
   const current = shadow?.querySelector('.peitho-slide')

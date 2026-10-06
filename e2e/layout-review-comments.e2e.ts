@@ -302,6 +302,7 @@ test('Given an open comment box, When the screen is switched between slides and 
   await expect(page.locator(BOX)).toBeHidden()
   await expect(page.locator('[data-review-row]')).toHaveCount(0)
 
+  await page.locator('[data-preview-comment-mode]').click()
   await page.locator('[data-preview-host] h1').first().click()
   await expect(page.locator(BOX)).toBeVisible()
   await page.locator('[data-studio-mode-option="layouts"]').click()
