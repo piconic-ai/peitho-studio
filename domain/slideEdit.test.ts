@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { literalSlideText, slideInlineCode, slideTextLines, looseBodyEdit, removeImageSlot, slotTextInsertion, textEditFor, textEditInsertion } from './slideEdit'
+import { removeSlideText, imageSlotContent, literalSlideText, slideInlineCode, slideTextLines, looseBodyEdit, removeImageSlot, slotTextInsertion, textEditFor, textEditInsertion } from './slideEdit'
 
 test('Japanese text edits locate the annotated bytes in the selected body and preserve heading syntax', () => {
   const body = '# 売上\n\n本文'
@@ -64,4 +64,14 @@ test('canvas blank lines stay inside one Markdown paragraph, including while typ
   expect(slideTextLines('First\r\n \t\r\n\r\nSecond')).toBe('First  \n\u00a0  \n\u00a0  \nSecond')
   expect(slideTextLines('First\nSecond')).toBe('First  \nSecond')
   expect(slideTextLines('**Bold**\n\n`code`')).toBe('**Bold**  \n\u00a0  \n`code`')
+})
+
+
+test('deleting a text element removes list markers and empty slot fences but keeps headings editable', () => {
+  const locate = (body: string, quote: string, heading = false) => textEditFor({ kind: 'text', text: quote, quote, heading, byteSpan: { start: body.indexOf(quote), end: body.indexOf(quote) + quote.length } }, body, body, 0)!
+  expect(removeSlideText(locate('# Title\n\n- Item\n- Keep', 'Item'))).toBe('# Title\n\n\n- Keep')
+  expect(removeSlideText(locate('# Title\n\n::: {slot=left}\n\nText\n\n:::', 'Text'))).toBe('# Title')
+  expect(removeSlideText(locate('# Title\n\nBody', 'Title', true))).toBe('# \u00a0\n\nBody')
+  expect(imageSlotContent('# Title\n\n::: {slot=studio-image-1}\n\n![Photo](img/a.png)\n\n:::', 'studio-image-1')).toBe('![Photo](img/a.png)')
+  expect(imageSlotContent('# Title', 'studio-image-2')).toBeNull()
 })

@@ -10,6 +10,7 @@ export interface SlideEditingCallbacks {
   image: (slot: string | null) => void
   imageGesture: (slot: string, rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>
   pasteImages: (files: File[]) => void
+  imageClipboard: (slot: string, action: 'cut' | 'copy') => void
   removeImage: (slot: string) => void
 }
 
@@ -125,7 +126,10 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
   })
   root.addEventListener('keydown', event => {
     if (!(event instanceof KeyboardEvent) || !state.callbacks.enabled() || box || !selectedImage?.isConnected || root.activeElement !== selectedImage) return
-    if (event.key === 'Delete' || event.key === 'Backspace') {
+    if ((event.metaKey || event.ctrlKey) && ['c', 'x'].includes(event.key.toLowerCase())) {
+      event.preventDefault(); event.stopPropagation()
+      state.callbacks.imageClipboard(selectedImage.dataset.studioImage ?? '', event.key.toLowerCase() === 'x' ? 'cut' : 'copy')
+    } else if (event.key === 'Delete' || event.key === 'Backspace') {
       event.preventDefault(); event.stopPropagation()
       state.callbacks.removeImage(selectedImage.dataset.studioImage ?? '')
     }

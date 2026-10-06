@@ -13,7 +13,7 @@ import { createTauriSettingsIpc } from '../ipc/settingsIpc'
 import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
 import { editorTextChange } from '../domain/editorText'
-import { textEditFor, textEditInsertion, slotTextInsertion, looseBodyEdit, removeImageSlot, type SlideEditTarget, type SlideEditSession } from '../domain/slideEdit'
+import { removeSlideText, imageSlotContent, textEditFor, textEditInsertion, slotTextInsertion, looseBodyEdit, removeImageSlot, type SlideEditTarget, type SlideEditSession } from '../domain/slideEdit'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
   REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentKeyOf, commentTargetOf, layoutClickTarget, layoutTargetLabel, layoutTargetOfComment, lineSelectionOf, newLayoutComment, newReviewComment, pollsForAgent,
@@ -1379,6 +1379,34 @@ export function Studio() {
     const menu = ui.contextMenu()
     return menu.kind === 'on-slide' && Boolean(menu.comment?.image || menu.comment?.hit)
   })
+
+  async function runElementAction(action: 'cut' | 'copy' | 'delete', target?: PreviewClick): Promise<void> {
+    const menu = ui.contextMenu()
+    const index = editor.selectedIndex()
+    if (index === null || previewImageBusy()) return
+    const click = target ?? (menu.kind === 'on-slide' && menu.index === index ? menu.comment : null)
+    if (!click) return
+    ui.closeContextMenu()
+    const before = currentSlideText(index)
+    const epoch = slidePositionsEpoch
+    const body = editor.bodyDraft()
+    const range = splitSlides(render.renderedSource())[index]
+    const renderedBody = range ? extractPageComment(extractNote(range.text).rest).rest : null
+    if (renderedBody !== body.trim()) return
+    const bodyStart = range!.start + range!.text.indexOf(renderedBody) - (body.length - body.trimStart().length)
+    const edit = click.image ? null : click.hit?.byteSpan ? textEditFor({ ...click.hit, kind: 'text', byteSpan: click.hit.byteSpan, heading: click.hit.kind === 'heading' }, render.renderedSource(), body, bodyStart) : null
+    const copied = click.image ? imageSlotContent(body, click.image.slot) : edit?.value ?? null
+    if (copied === null) return
+    try {
+      if (action !== 'delete') await editorIpc.writeClipboardText(copied)
+      if (action === 'copy' || editor.selectedIndex() !== index || slidePositionsEpoch !== epoch || currentSlideText(index) !== before) return
+      if (click.image) { await removePreviewImage(click.image.slot); return }
+      if (edit && bodyEditor) {
+        const change = editorTextChange(body, removeSlideText(edit))
+        if (change) insertIntoCodeEditor(bodyEditor, { ...change, cursor: change.from }, 'delete.cut')
+      }
+    } catch (err) { setErrorMessage(String(err)) }
+  }
 
   function runImageOrderAction(action: ImageOrderAction): void {
     const image = previewMenuImage()
@@ -3883,6 +3911,7 @@ export function Studio() {
               onAddImages={(files, slot) => { void addImagesToPreview(files, slot) }}
               onImagePosition={positionPreviewImage}
               imageBusy={previewImageBusy()}
+              onImageClipboard={(slot, action) => { void runElementAction(action, { hit: null, pin: null, at: { x: 0, y: 0 }, image: { slot, order: [] } }) }}
               onRemoveImage={slot => { void removePreviewImage(slot) }}
             />
           </div>
@@ -4086,6 +4115,7 @@ export function Studio() {
         menuItems={currentMenuItems()}
         image={previewMenuImage()}
         elementMenu={previewElementMenu()}
+        onElementAction={action => { void runElementAction(action) }}
         imageBusy={previewImageBusy()}
         onImageOrder={runImageOrderAction}
         layoutPickerOpen={isLayoutPickerOpen(ui.contextMenu())}

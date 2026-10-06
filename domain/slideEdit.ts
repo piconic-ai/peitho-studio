@@ -91,3 +91,18 @@ export function slideInlineCode(text: string): string {
   const pad = text.startsWith('`') || text.endsWith('`') || (text.startsWith(' ') && text.endsWith(' ') && text.trim() !== '') ? ' ' : ''
   return `${fence}${pad}${text}${pad}${fence}`
 }
+
+/** Delete the annotated text object, preserving required heading slots as
+ * an empty, editable heading and removing a now-empty explicit slot fence. */
+export function removeSlideText(edit: SlideTextEdit): string {
+  if (edit.heading) return edit.body.slice(0, edit.from) + edit.prefix + '\u00a0' + edit.suffix + edit.body.slice(edit.to)
+  const lineStart = edit.body.lastIndexOf('\n', edit.from - 1) + 1
+  const prefix = edit.body.slice(lineStart, edit.from)
+  const from = /^(?:[ \t]*(?:[-+*]|\d+[.)])\s+(?:\[[ xX]\]\s+)?|[ \t]*)$/.test(prefix) ? lineStart : edit.from
+  return (edit.body.slice(0, from) + edit.body.slice(edit.to)).replace(/::: \{slot=[a-z][a-z0-9-]*\}\n[\s\u00a0]*\n:::/g, '').trim()
+}
+
+export function imageSlotContent(body: string, slot: string): string | null {
+  if (!/^studio-image-\d+$/.test(slot)) return null
+  return new RegExp(`(?:^|\\n)::: \\{slot=${slot}\\}\\n([\\s\\S]*?)\\n:::(?=\\n|$)`).exec(body)?.[1].trim() ?? null
+}

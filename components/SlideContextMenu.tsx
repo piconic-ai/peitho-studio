@@ -16,6 +16,7 @@ export interface SlideContextMenuProps {
   position: { x: number; y: number }
   menuItems: MenuItem[]
   image?: { slot: string; order: string[] } | null
+  onElementAction?: (action: 'cut' | 'copy' | 'delete') => void
   elementMenu?: boolean
   imageBusy?: boolean
   onImageOrder?: (action: ImageOrderAction) => void
@@ -100,7 +101,20 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           </svg>
           <span>{commentItemLabel(messagesFor(props.language))}</span>
         </button>
-        <div hidden={props.elementMenu && !props.image} className="my-1 border-t border-border" />
+        <div className="my-1 border-t border-border" />
+        <div hidden={!props.elementMenu} data-element-menu-controls>
+          <button type="button" disabled={props.imageBusy} onClick={() => props.onElementAction?.('cut')} className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40">
+            <span>{messagesFor(props.language).cut}</span><span className="text-xs text-muted-foreground">⌘X</span>
+          </button>
+          <button type="button" disabled={props.imageBusy} onClick={() => props.onElementAction?.('copy')} className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40">
+            <span>{messagesFor(props.language).copy}</span><span className="text-xs text-muted-foreground">⌘C</span>
+          </button>
+          <div className="my-1 border-t border-border" />
+          <button type="button" disabled={props.imageBusy} onClick={() => props.onElementAction?.('delete')} className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 text-destructive">
+            <span>{messagesFor(props.language).delete}</span><span className="text-xs text-muted-foreground">⌦</span>
+          </button>
+          <div hidden={!props.image} className="my-1 border-t border-border" />
+        </div>
         <div hidden={!props.image} data-image-order-menu>
           {(['front', 'forward', 'backward', 'back'] as ImageOrderAction[]).map(action => (
             <button key={action} type="button" data-image-order-action={action}

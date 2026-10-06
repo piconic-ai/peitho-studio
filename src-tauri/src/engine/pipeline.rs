@@ -568,6 +568,8 @@ mod tests {
         assert_eq!(html.matches("<p").count(), 1, "{html}");
         assert_eq!(html.matches("<br").count(), 2, "{html}");
         assert!(!edit_annotations(html).is_empty(), "{html}");
+        let empty_title = source.replace("# Title", "# \u{a0}");
+        assert!(render_source(&deck_path, &empty_title).is_ok());
         let old = source.replace("\u{a0}  ", "");
         assert!(render_source(&deck_path, &old).err().unwrap().contains("got 2 item(s)"));
     }

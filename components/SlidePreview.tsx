@@ -54,6 +54,7 @@ export interface SlidePreviewProps {
   onAddImages: (files: File[], slot: string | null) => void
   onImagePosition: (slot: string, rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>
   imageBusy: boolean
+  onImageClipboard: (slot: string, action: 'cut' | 'copy') => void
   onRemoveImage: (slot: string) => void
 }
 
@@ -147,6 +148,7 @@ export function SlidePreview(props: SlidePreviewProps) {
               image: pickImage,
               imageGesture: (slot, rect) => props.onImagePosition(slot, rect),
               pasteImages: files => props.onAddImages(files, null),
+              imageClipboard: (slot, action) => props.onImageClipboard(slot, action),
               removeImage: slot => props.onRemoveImage(slot),
             }))
           })
