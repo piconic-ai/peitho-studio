@@ -406,12 +406,16 @@ export function Studio() {
   // with the slide it was typed into. The other editor's newest group is
   // closed, so typing there next starts a group above this one instead of
   // joining one below it.
+  let activeTextLayout: { layout: NonNullable<TextStep['layout']>; recorded: (seq: number) => void } | null = null
+
   function recordTextGroup(field: TextField, seq: number): void {
     const index = editor.selectedIndex()
     if (index === null) return
     const other = codeEditorOf(field === 'body' ? 'note' : 'body')
     if (other) isolateCodeEditorHistory(other)
-    history.record({ kind: 'text', index, field, seq })
+    const layout = field === 'body' ? activeTextLayout : null
+    history.record({ kind: 'text', index, field, seq, ...(layout ? { layout: layout.layout } : {}) })
+    layout?.recorded(seq)
   }
 
   // Closes both editors' newest group of typing, for when a slide
@@ -646,6 +650,7 @@ export function Studio() {
     let prepared = false
     const originalConfig = editor.pageConfig()
     let preparedLayout: string | null = null
+    let layoutHistorySeq: number | null = null
     const applyBody = (next: string): boolean => {
       if (bodyEditor !== view || editor.selectedIndex() !== index || editor.bodyDraft() !== currentBody || view.state.doc.toString() !== currentBody || isCodeEditorComposing(view)) return false
       if (splitSlides(buildSlideText(editor.pageConfig(), next, '')).length !== 1) return false
@@ -654,7 +659,10 @@ export function Studio() {
       const firstUpdate = !historyStarted
       historyStarted = true
       currentBody = next
-      insertIntoCodeEditor(view, { ...change, cursor: change.from + change.insert.length }, 'input.slide', firstUpdate)
+      const previousLayout = activeTextLayout
+      if (firstUpdate && preparedLayout) activeTextLayout = { layout: { before: originalConfig.layout, after: preparedLayout }, recorded: seq => { layoutHistorySeq = seq } }
+      try { insertIntoCodeEditor(view, { ...change, cursor: change.from + change.insert.length }, 'input.slide', firstUpdate) }
+      finally { activeTextLayout = previousLayout }
       return true
     }
     return {
@@ -702,7 +710,9 @@ export function Studio() {
         if (preparedLayout && bodyEditor === view && session.kind === 'editing' && session.index === index && session.draft.config.layout === preparedLayout) {
           editor.setEditorSession({ ...session, draft: { ...session.draft, config: originalConfig } })
         }
-        return applyBody(before)
+        const restored = applyBody(before)
+        if (restored && layoutHistorySeq !== null) history.clearTextLayout(index, 'body', layoutHistorySeq)
+        return restored
       },
       finish: () => { finished = true; if (historyStarted) isolateCodeEditorHistory(view) },
     }
@@ -2372,7 +2382,13 @@ export function Studio() {
     if (epoch !== slidePositionsEpoch) return 'forgotten'
     const view = codeEditorOf(step.field)
     if (view === undefined || editor.selectedIndex() !== step.index) return 'gone'
-    return replayCodeEditorGroup(view, direction, step.seq) ? 'done' : 'gone'
+    if (!replayCodeEditorGroup(view, direction, step.seq)) return 'gone'
+    const session = editor.editorSession()
+    if (step.layout && session.kind === 'editing' && session.index === step.index) {
+      const layout = direction === 'undo' ? step.layout.before : step.layout.after
+      editor.setEditorSession({ ...session, draft: { ...session.draft, config: { ...session.draft.config, layout } } })
+    }
+    return 'done'
   }
 
   // A slide operation's undo/redo opens the slide it changed

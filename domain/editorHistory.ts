@@ -27,8 +27,8 @@ export type TextField = 'body' | 'note'
 /** A marker for one group of typing in a slide's body or notes editor, so
  * Undo reaches text and slide operations in the order they happened.
  *
- * It holds only the group's number (`domain/textHistory.ts`); the text
- * itself stays in that editor's own CodeMirror history, which undoes it —
+ * It holds the group's number (`domain/textHistory.ts`) and any layout
+ * field changed by the same canvas edit. The text itself stays in that editor's own CodeMirror history, which undoes it —
  * so the same marker serves both undo and redo. `index` is the slide's
  * position when the typing happened: by the time Undo reaches the marker,
  * every later operation has been undone, so the slides are back in that
@@ -38,6 +38,9 @@ export interface TextStep {
   index: number
   field: TextField
   seq: number
+  /** A canvas text edit may need an immutable layout variant. Replay the
+   * layout field with its text group, keeping other page settings intact. */
+  layout?: { before: string | undefined; after: string }
 }
 
 /** The deck's page-number setting and every slide's own `page_number`, set

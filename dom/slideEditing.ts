@@ -292,9 +292,21 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       const text = Array.from(node.childNodes).map(markdown).join('')
       switch (node.tagName) {
         case 'LI': {
-          if (node.hasAttribute('data-studio-unlisted')) return `\n\n${text.trim() === '' ? '&#160;' : text}\n\n`
+          const blocks: string[] = []
+          let inline = ''
+          const flush = () => { if (inline !== '') { blocks.push(inline); inline = '' } }
+          for (const child of node.childNodes) {
+            if (child instanceof Element && ['P', 'DIV', 'UL', 'OL'].includes(child.tagName)) {
+              flush()
+              blocks.push(child.matches('p,div') ? Array.from(child.childNodes).map(markdown).join('') : markdown(child).replace(/^\n+|\n+$/g, ''))
+            } else if (!(child.nodeType === Node.TEXT_NODE && child.textContent?.trim() === '' && child.textContent.includes('\n'))) inline += markdown(child)
+          }
+          flush()
+          const content = blocks.join('\n\n')
+          if (node.hasAttribute('data-studio-unlisted')) return `\n\n${content.trim() === '' ? '&#160;' : content}\n\n`
           const marker = node.parentElement?.tagName === 'OL' ? `${Number(node.parentElement.getAttribute('start') ?? 1) + Array.from(node.parentElement.children).indexOf(node)}. ` : '- '
-          return `\n${marker}${text.trim() === '' ? '&#160;' : text.replace(/^\n/, '').replace(/\n/g, '\n  ')}`
+          const indentation = ' '.repeat(marker.length)
+          return `\n${marker}${content.trim() === '' ? '&#160;' : content.replace(/\n/g, `\n${indentation}`)}`
         }
         case 'UL': case 'OL': return text
         case 'BR': return list ? !node.nextSibling ? '' : '  \n' : '\n'

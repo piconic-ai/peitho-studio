@@ -264,6 +264,12 @@ mod tests {
         assert_eq!(std::fs::read_to_string(path.parent().unwrap().join("layouts/title-slide.html")).unwrap(), original);
         assert_eq!(list_canvas(&path, &edited, &canvas.layout, "body").unwrap().layout, canvas.layout);
         assert!(list_canvas(&path, source, "title-slide", "title").is_err());
+        let loose = source.replace("- One\n- Two", "- OneX\n  \n  More\n- Two");
+        let output = super::super::pipeline::render_source(&path, &loose).unwrap();
+        let html = output.fragments.values().next().unwrap();
+        let first_item = html.split_once("<li").unwrap().1.split_once("</li>").unwrap().0;
+        assert_eq!(first_item.matches("<p").count(), 2);
+        assert!(first_item.contains("More"));
     }
 
     #[test]

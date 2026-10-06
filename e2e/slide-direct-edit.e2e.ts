@@ -689,6 +689,7 @@ test('Enter creates new list items, empty Enter and line-start Backspace remove 
 
 test('unlisting in a single-block slot uses a private layout and keeps the original template unchanged', async ({ page }) => {
   const deck = await open(page, SOURCE + '\n::: {slot=left}\n\n- One\n- Two\n\n:::\n', '0..1')
+  const originalSource = deck.source
   const original = deck.layoutFiles!['two-column'].html
   deck.commandError = (command, args) => command === 'render_draft' && String(args.content).includes('"layout":"two-column"') && String(args.content).includes('\n\nTwo') ? 'slot capacity exceeded' : null
   await page.locator(`${PREVIEW} li`).last().click()
@@ -700,6 +701,11 @@ test('unlisting in a single-block slot uses a private layout and keeps the origi
   expect(deck.layoutFiles!['two-column'].html).toBe(original)
   await expect(page.locator(`${PREVIEW} p`)).toHaveText('Two')
   await expect(page.getByText('slot capacity exceeded')).toHaveCount(0)
+  const changedSource = deck.source
+  await page.evaluate(() => (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, label: string) => void }).__mockEmitTauriEvent('menu:undo', null, 'main'))
+  await expect.poll(() => deck.source).toBe(originalSource)
+  await page.evaluate(() => (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, label: string) => void }).__mockEmitTauriEvent('menu:redo', null, 'main'))
+  await expect.poll(() => deck.source).toBe(changedSource)
 })
 
 test('cancelling a list edit before layout preparation finishes discards pending text', async ({ page }) => {
@@ -799,4 +805,43 @@ test('a failed list layout preparation still preserves subsequent typing in Mark
   await expect.poll(() => editorText(page)).toContain('- OneKeep')
   await page.locator(FIELD).press('Meta+Enter')
   await expect.poll(() => deck.source).toContain('- OneKeep')
+})
+
+test('editing a loose list preserves separate paragraphs within an item', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\n- One\n\n  More\n\n- Two\n\n:::\n'
+  const deck = await open(page, source)
+  // Match the engine's actual loose-list structure, with annotations on
+  // each paragraph rather than the mock's default one-line LI elements.
+  await page.locator(`${PREVIEW} [data-studio-slot="left"]`).evaluate((slot, source) => {
+    const paragraph = (word: string) => {
+      const at = source.indexOf(word)
+      const from = new TextEncoder().encode(source.slice(0, at)).length
+      return `<p data-peitho-src="${from}-${from + word.length}" data-peitho-md="${word}">${word}</p>`
+    }
+    slot.innerHTML = `<ul><li>${paragraph('One')}${paragraph('More')}</li><li>${paragraph('Two')}</li></ul>`
+  }, source)
+  await page.locator(`${PREVIEW} li p`).first().click()
+  await page.locator(FIELD).locator('p').first().evaluate(p => {
+    const range = document.createRange(); range.selectNodeContents(p); range.collapse(false)
+    const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+  })
+  await page.keyboard.type('X')
+  await page.locator(FIELD).press('Meta+Enter')
+  await expect.poll(() => deck.source).toMatch(/- OneX\n[ \t]*\n  More\n- Two/)
+})
+
+test('cancelling a prepared list edit prevents Redo from reviving its private layout', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\n- One\n- Two\n\n:::\n'
+  const deck = await open(page, source, '0..1')
+  await page.locator(`${PREVIEW} li`).last().click()
+  await listCaret(page, 1)
+  await page.keyboard.press('Backspace')
+  await expect.poll(() => deck.source).toContain('"layout":"studio-canvas-')
+  await page.locator(FIELD).press('Escape')
+  await expect.poll(() => deck.source).toBe(source)
+  for (const event of ['menu:undo', 'menu:redo']) {
+    await page.evaluate(event => (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, label: string) => void }).__mockEmitTauriEvent(event, null, 'main'), event)
+    await expect.poll(() => editorText(page)).toContain('- One\n- Two')
+  }
+  expect(deck.source).toBe(source)
 })

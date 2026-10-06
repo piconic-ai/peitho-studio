@@ -27,6 +27,11 @@ export function createHistoryStore() {
     record(undoStep: HistoryStep): void {
       setHistory(h => record(h, undoStep))
     },
+    /** Cancellation returns the body/config to their original state. */
+    clearTextLayout(index: number, field: TextStep['field'], seq: number): void {
+      const clear = (step: HistoryStep): HistoryStep => step.kind === 'text' && step.index === index && step.field === field && step.seq === seq ? { ...step, layout: undefined } : step
+      setHistory(h => ({ undo: h.undo.map(clear), redo: h.redo.map(clear) }))
+    },
     /** Takes the newest undo (or redo) step that can still run, dropping
      * the text markers above it that `isLive` says can't (`takeLive`). */
     take(direction: 'undo' | 'redo', isLive: (step: TextStep) => boolean = () => true): HistoryStep | null {
