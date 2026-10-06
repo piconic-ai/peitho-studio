@@ -546,7 +546,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         let html = layoutFileOf(deck, base)?.html ?? '<section class="peitho-slide" style="position:relative"><h1><slot name="title" accepts="inline" arity="1"></slot></h1></section>'
         if (args.carryLayout) {
           const from = layoutFileOf(deck, args.carryLayout as string)?.html ?? ''
-          const figures = [...from.matchAll(/<figure[^>]*data-studio-image="[^"]+"[\s\S]*?<\/figure>/g)].map(match => match[0]).join('')
+          const figures = [...from.matchAll(/<(?:figure|div)[^>]*data-studio-(?:image|text)="[^"]+"[\s\S]*?<\/(?:figure|div)>/g)].map(match => match[0]).join('')
           html = html.replace('</section>', `${figures}</section>`)
         }
         html = html.replace(/(<section[^>]*style=")([^"]*)"/, '$1$2;position:relative"')
@@ -555,8 +555,8 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
           html = html.replace(new RegExp(`(data-studio-image="${rect.slot}" style=")[^"]*"`), `$1position:absolute;left:${rect.x * 100}%;top:${rect.y * 100}%;width:${rect.width * 100}%;height:${rect.height * 100}%;margin:0"`)
         }
         if (args.imageOrder) {
-          const figures = new Map([...html.matchAll(/<figure[^>]*data-studio-image="([^"]+)"[\s\S]*?<\/figure>/g)].map(match => [match[1], match[0]]))
-          html = html.replace(/<figure[^>]*data-studio-image="[^"]+"[\s\S]*?<\/figure>/g, '')
+          const figures = new Map([...html.matchAll(/<(?:figure|div)[^>]*data-studio-(?:image|text)="([^"]+)"[\s\S]*?<\/(?:figure|div)>/g)].map(match => [match[1], match[0]]))
+          html = html.replace(/<(?:figure|div)[^>]*data-studio-(?:image|text)="[^"]+"[\s\S]*?<\/(?:figure|div)>/g, '')
           const order = args.imageOrder as string[]
           const content = order.indexOf('studio-content')
           html = html.replace('</section>', `${order.filter(slot => slot !== 'studio-content').map(slot => figures.get(slot)!.replace(/style="([^"]*)"/, (_, style: string) => `style="${style.replace(/z-index:[^;]*;?/g, '')};z-index:${order.indexOf(slot) - content};"`)).join('')}</section>`)
@@ -567,9 +567,16 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         for (let n = 0; n < Number(args.count); n++) {
           while (html.includes(`name="studio-image-${i}"`)) i++
           const slot = `studio-image-${i++}`; slots.push(slot)
-          html = html.replace('</section>', `<figure data-studio-image="${slot}" style="position:absolute;left:15%;top:25%;width:55%;height:55%;margin:0"><slot name="${slot}" accepts="image" arity="1"></slot></figure></section>`)
+          const layer = Math.max(0, ...[...html.matchAll(/z-index:(-?\d+)/g)].map(match => Number(match[1]))) + 1
+          html = html.replace('</section>', `<figure data-studio-image="${slot}" style="position:absolute;left:15%;top:25%;width:55%;height:55%;margin:0;z-index:${layer}"><slot name="${slot}" accepts="image" arity="1"></slot></figure></section>`)
         }
         ;(deck.layouts ??= []).push(name)
+        if (args.textCount) {
+          let next = 1
+          while (html.includes(`name="studio-text-${next}"`)) next++
+          const slot = `studio-text-${next}`; slots.push(slot)
+          html = html.replace('</section>', `<div data-studio-text="${slot}" style="position:absolute;left:20%;top:30%;width:55%;z-index:10"><slot name="${slot}" accepts="blocks" arity="0..*"></slot></div></section>`)
+        }
         ;(deck.layoutFiles ??= {})[name] = { html, css: null }
         return { layout: name, slots }
       }

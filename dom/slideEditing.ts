@@ -10,6 +10,7 @@ export interface SlideEditingCallbacks {
   image: (slot: string | null) => void
   imageGesture: (slot: string, rect: { x: number; y: number; width: number; height: number }) => Promise<boolean>
   pasteImages: (files: File[]) => void
+  pasteElement: (text: string) => boolean
   imageClipboard: (slot: string, action: 'cut' | 'copy') => void
   removeImage: (slot: string) => void
 }
@@ -125,7 +126,11 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     document.addEventListener('mousemove', move); document.addEventListener('mouseup', up)
   })
   root.addEventListener('keydown', event => {
-    if (!(event instanceof KeyboardEvent) || !state.callbacks.enabled() || box || !selectedImage?.isConnected || root.activeElement !== selectedImage) return
+    if (!(event instanceof KeyboardEvent) || !state.callbacks.enabled() || box) return
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
+      event.stopPropagation(); return
+    }
+    if (!selectedImage?.isConnected || root.activeElement !== selectedImage) return
     if ((event.metaKey || event.ctrlKey) && ['c', 'x'].includes(event.key.toLowerCase())) {
       event.preventDefault(); event.stopPropagation()
       state.callbacks.imageClipboard(selectedImage.dataset.studioImage ?? '', event.key.toLowerCase() === 'x' ? 'cut' : 'copy')
@@ -139,6 +144,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     const target = event.target instanceof Element ? event.target : null
     if (!target || target.closest(CONTROLS) || target.closest('[data-studio-image]')) return
     selectedImage = null; markEmpty()
+    if (target.closest('.peitho-slide') && !target.closest('[data-peitho-src], [data-studio-slot]')) { host.tabIndex = 0; host.focus() }
     const slide = target.closest('.peitho-slide')
     if (!slide) return
     if (box) { if (!composing && commit?.()) close(); return }
@@ -234,18 +240,28 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     }
 
   })
-  root.addEventListener('paste', event => {
+  host.addEventListener('keydown', event => {
+    if (event.target !== host || host.shadowRoot?.activeElement || box || !state.callbacks.enabled()) return
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
+      event.stopPropagation()
+    }
+  })
+  const paste = (event: Event) => {
     if (!state.callbacks.enabled() || !(event instanceof ClipboardEvent)) return
     const files = Array.from(event.clipboardData?.files ?? []).filter(file => file.type.startsWith('image/'))
     if (files.length === 0) {
       if (box && event.clipboardData) {
         event.preventDefault()
         document.execCommand('insertText', false, event.clipboardData.getData('text/plain'))
+      } else if (state.callbacks.pasteElement(event.clipboardData?.getData('text/plain') ?? '')) {
+        event.preventDefault(); event.stopPropagation()
       }
       return
     }
-    event.preventDefault()
+    event.preventDefault(); event.stopPropagation()
     if (box) { if (composing || !commit?.()) return; close() }
     state.callbacks.pasteImages(files)
-  })
+  }
+  root.addEventListener('paste', paste)
+  host.addEventListener('paste', event => { if (event.target === host && !event.defaultPrevented) paste(event) })
 }

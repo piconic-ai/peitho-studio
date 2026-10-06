@@ -5,6 +5,14 @@ use peitho_core::{parse_layout, Layouts};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+fn canvas_object(slot: &str, style: &str) -> String {
+    if slot.starts_with("studio-text-") {
+        format!("<div class=\"studio-free-text\" data-studio-text=\"{slot}\" style=\"{style}\"><slot name=\"{slot}\" accepts=\"blocks\" arity=\"0..*\"></slot></div>")
+    } else {
+        format!("<figure class=\"studio-free-image\" data-studio-image=\"{slot}\" style=\"{style}\"><slot name=\"{slot}\" accepts=\"image\" arity=\"1\"></slot></figure>")
+    }
+}
+
 const IMAGE_STYLES: &str = "<style data-studio-image-styles>.studio-free-image > div,.studio-free-image [class^=slot-] {width:100%;height:100%;} .studio-free-image img {width:100%;height:100%;object-fit:contain;}</style>";
 
 /// Carry slide-owned image objects onto a new base template, for both the
@@ -13,11 +21,11 @@ const IMAGE_STYLES: &str = "<style data-studio-image-styles>.studio-free-image >
 pub fn with_canvas_images(base: &peitho_core::Layout, from: &peitho_core::Layout) -> Result<peitho_core::Layout, String> {
     let mut figures = String::new();
     rewrite_str(from.html(), RewriteStrSettings {
-        element_content_handlers: vec![element!("[data-studio-image]", |el| {
-            let slot = el.get_attribute("data-studio-image").unwrap_or_default();
-            if slot.starts_with("studio-image-") && from.slot(&slot).is_some() && base.slot(&slot).is_none() {
+        element_content_handlers: vec![element!("[data-studio-image], [data-studio-text]", |el| {
+            let slot = el.get_attribute("data-studio-image").or_else(|| el.get_attribute("data-studio-text")).unwrap_or_default();
+            if (slot.starts_with("studio-image-") || slot.starts_with("studio-text-")) && from.slot(&slot).is_some() && base.slot(&slot).is_none() {
                 let style = el.get_attribute("style").unwrap_or_default().replace('&', "&amp;").replace('"', "&quot;");
-                figures.push_str(&format!("<figure class=\"studio-free-image\" data-studio-image=\"{slot}\" style=\"{style}\"><slot name=\"{slot}\" accepts=\"image\" arity=\"1\"></slot></figure>"));
+                figures.push_str(&canvas_object(&slot, &style));
             }
             Ok(())
         })],
@@ -66,18 +74,22 @@ fn image_canvas(deck_path: &std::path::Path, content: &str, base: &str, count: u
 }
 
 pub fn image_canvas_change(deck_path: &std::path::Path, content: &str, base: &str, count: usize, placements: &[ImagePlacement], removed: &[String]) -> Result<ImageCanvas, String> {
-    image_canvas_edit(deck_path, content, base, count, placements, removed, None, None)
+    image_canvas_edit(deck_path, content, base, count, placements, removed, None, None, 0)
 }
 
 pub fn rebase_image_canvas(deck_path: &std::path::Path, content: &str, from: &str, base: &str) -> Result<ImageCanvas, String> {
-    image_canvas_edit(deck_path, content, base, 0, &[], &[], Some(from), None)
+    image_canvas_edit(deck_path, content, base, 0, &[], &[], Some(from), None, 0)
 }
 
 pub fn order_image_canvas(deck_path: &std::path::Path, content: &str, base: &str, order: &[String]) -> Result<ImageCanvas, String> {
-    image_canvas_edit(deck_path, content, base, 0, &[], &[], None, Some(order))
+    image_canvas_edit(deck_path, content, base, 0, &[], &[], None, Some(order), 0)
 }
 
-fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, count: usize, placements: &[ImagePlacement], removed: &[String], from: Option<&str>, order: Option<&[String]>) -> Result<ImageCanvas, String> {
+pub fn text_canvas(deck_path: &std::path::Path, content: &str, base: &str) -> Result<ImageCanvas, String> {
+    image_canvas_edit(deck_path, content, base, 0, &[], &[], None, None, 1)
+}
+
+fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, count: usize, placements: &[ImagePlacement], removed: &[String], from: Option<&str>, order: Option<&[String]>, text_count: usize) -> Result<ImageCanvas, String> {
     if count > 32 { return Err("add at most 32 images at a time".into()) }
     let assets = super::pipeline::parse_source(deck_path, content)?.assets;
     let layout = assets.layouts.get(base).ok_or_else(|| format!("layout '{base}' was not found"))?;
@@ -91,7 +103,7 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
         placement_style(rect)?;
     }
     for slot in removed {
-        if !slot.starts_with("studio-image-") || layout.slot(slot).is_none() { return Err("this image is not freely positioned".into()) }
+        if !(slot.starts_with("studio-image-") || slot.starts_with("studio-text-")) || layout.slot(slot).is_none() { return Err("this image is not freely positioned".into()) }
     }
     let mut ordered_figures = std::collections::HashMap::new();
     let mut image_count = 0;
@@ -103,16 +115,16 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
                 if !existing.contains("isolation:isolate") { el.set_attribute("style", &format!("{existing};position:relative;isolation:isolate;"))?; }
                 Ok(())
             }),
-            element!("[data-studio-image]", |el| {
-                let slot = el.get_attribute("data-studio-image").unwrap_or_default();
+            element!("[data-studio-image], [data-studio-text]", |el| {
+                let slot = el.get_attribute("data-studio-image").or_else(|| el.get_attribute("data-studio-text")).unwrap_or_default();
                 image_count += 1;
                 let existing_style = el.get_attribute("style").unwrap_or_default();
                 let layer = existing_style.split(';').find_map(|part| part.trim().strip_prefix("z-index:").and_then(|value| value.trim().parse::<isize>().ok())).unwrap_or(0);
                 front_layer = front_layer.max(layer).max(image_count);
                 if order.is_some() {
-                    if !slot.starts_with("studio-image-") || layout.slot(&slot).is_none() { return Err("invalid canvas image".into()) }
+                    if !(slot.starts_with("studio-image-") || slot.starts_with("studio-text-")) || layout.slot(&slot).is_none() { return Err("invalid canvas image".into()) }
                     let style = el.get_attribute("style").unwrap_or_default().replace('&', "&amp;").replace('"', "&quot;");
-                    ordered_figures.insert(slot.clone(), format!("<figure class=\"studio-free-image\" data-studio-image=\"{slot}\" style=\"{style}\"><slot name=\"{slot}\" accepts=\"image\" arity=\"1\"></slot></figure>"));
+                    ordered_figures.insert(slot.clone(), canvas_object(&slot, &style));
                     el.remove(); return Ok(())
                 }
                 if removed.contains(&slot) { el.remove(); return Ok(()) }
@@ -135,7 +147,7 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
             if slot == "studio-content" { continue }
             let figure = ordered_figures.remove(slot).ok_or("image order must include every canvas image exactly once")?;
             let figure = rewrite_str(&figure, RewriteStrSettings {
-                element_content_handlers: vec![element!("figure", |el| {
+                element_content_handlers: vec![element!("[data-studio-image], [data-studio-text]", |el| {
                     let previous = el.get_attribute("style").unwrap_or_default();
                     let style = previous.split(';').filter(|part| !part.trim().starts_with("z-index:")).collect::<Vec<_>>().join(";");
                     el.set_attribute("style", &format!("{style};z-index:{};", index as isize - content_index))?;
@@ -152,6 +164,13 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
         let slot = format!("studio-image-{next}"); next += 1;
         let rect = ImagePlacement { slot: slot.clone(), x: 0.15 + (i % 4) as f64 * 0.035, y: 0.25 + (i % 4) as f64 * 0.035, width: 0.55, height: 0.55 };
         figures.push_str(&format!("<figure class=\"studio-free-image\" data-studio-image=\"{slot}\" style=\"{}z-index:{};\"><slot name=\"{slot}\" accepts=\"image\" arity=\"1\"></slot></figure>", placement_style(&rect)?, front_layer + i as isize + 1));
+        slots.push(slot);
+    }
+    if text_count > 0 {
+        let mut next_text = 1;
+        while layout.slot(&format!("studio-text-{next_text}")).is_some() { next_text += 1 }
+        let slot = format!("studio-text-{next_text}");
+        figures.push_str(&canvas_object(&slot, &format!("position:absolute;left:20%;top:30%;width:55%;margin:0;z-index:{};", front_layer + 1)));
         slots.push(slot);
     }
     let styles = if count > 0 && !html.contains("data-studio-image-styles") {
@@ -233,6 +252,21 @@ mod tests {
         let output = super::super::pipeline::render_source(&path, &source).unwrap();
         assert!(output.fragments["slide"].contains("左の文章"));
         assert!(output.fragments["slide"].contains("項目"));
+    }
+
+    #[test]
+    fn pasted_text_objects_accept_formatted_paragraphs_and_headings_without_body_capacity_errors() {
+        let (_dir, path, source) = deck();
+        for content in ["Keep **formatting**", "# Title"] {
+            let canvas = text_canvas(&path, &source, "title-slide").unwrap();
+            let source = source.replace("\"two-column\"", &format!("\"{}\"", canvas.layout));
+            let source = format!("{source}\n::: {{slot={}}}\n\n{content}\n\n:::\n", canvas.slots[0]);
+            let output = super::super::pipeline::render_source(&path, &source).unwrap();
+            assert!(output.fragments["slide"].contains("data-studio-text=\"studio-text-1\""));
+            let rebased = rebase_image_canvas(&path, &source, &canvas.layout, "two-column").unwrap();
+            let source = source.replace(&canvas.layout, &rebased.layout);
+            assert!(super::super::pipeline::render_source(&path, &source).is_ok());
+        }
     }
 
     #[test]

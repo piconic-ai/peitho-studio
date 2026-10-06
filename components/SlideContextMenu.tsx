@@ -17,6 +17,9 @@ export interface SlideContextMenuProps {
   menuItems: MenuItem[]
   image?: { slot: string; order: string[] } | null
   onElementAction?: (action: 'cut' | 'copy' | 'delete') => void
+  canvasMenu?: boolean
+  canPasteElement?: boolean
+  onPasteElement?: () => void
   elementMenu?: boolean
   imageBusy?: boolean
   onImageOrder?: (action: ImageOrderAction) => void
@@ -109,6 +112,9 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           <button type="button" disabled={props.imageBusy} onClick={() => props.onElementAction?.('copy')} className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40">
             <span>{messagesFor(props.language).copy}</span><span className="text-xs text-muted-foreground">⌘C</span>
           </button>
+          <button type="button" disabled={!props.canPasteElement || props.imageBusy} onClick={() => props.onPasteElement?.()} className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40">
+            <span>{messagesFor(props.language).paste}</span><span className="text-xs text-muted-foreground">⌘V</span>
+          </button>
           <div className="my-1 border-t border-border" />
           <button type="button" disabled={props.imageBusy} onClick={() => props.onElementAction?.('delete')} className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 text-destructive">
             <span>{messagesFor(props.language).delete}</span><span className="text-xs text-muted-foreground">⌦</span>
@@ -131,7 +137,12 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
             </button>
           ))}
         </div>
-        <div hidden={props.elementMenu} data-slide-menu-controls>
+        <div hidden={!props.canvasMenu || props.elementMenu}>
+          <button type="button" disabled={!props.canPasteElement || props.imageBusy} onClick={() => props.onPasteElement?.()} className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40">
+            <span>{messagesFor(props.language).paste}</span><span className="text-xs text-muted-foreground">⌘V</span>
+          </button>
+        </div>
+        <div hidden={props.canvasMenu} data-slide-menu-controls>
         <button
           type="button"
           onClick={() => props.onNewSlide()}

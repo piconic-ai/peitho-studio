@@ -1380,6 +1380,47 @@ export function Studio() {
     return menu.kind === 'on-slide' && Boolean(menu.comment?.image || menu.comment?.hit)
   })
 
+  const [elementClipboard, setElementClipboard] = createSignal<{ markdown: string; image: boolean; deckPath: string | null; placement?: { x: number; y: number; width: number; height: number } } | null>(null)
+  const previewCanvasMenu = createMemo(() => {
+    const menu = ui.contextMenu()
+    return menu.kind === 'on-slide' && menu.comment !== null
+  })
+
+  function tryPasteElement(text: string): boolean {
+    const copied = elementClipboard()
+    if (!copied || copied.deckPath !== deck.deckPath() || copied.markdown !== text) return false
+    void pasteElement()
+    return true
+  }
+
+  async function pasteElement(): Promise<void> {
+    const copied = elementClipboard()
+    const index = editor.selectedIndex()
+    if (!copied || index === null || copied.deckPath !== deck.deckPath() || previewImageBusy()) return
+    ui.closeContextMenu()
+    const before = currentSlideText(index)
+    const epoch = slidePositionsEpoch
+    const { rest, note } = extractNote(before)
+    const fields = extractPageComment(rest)
+    const base = fields.config.layout ?? render.slideLayouts()[selectedSlideKey() ?? ''] ?? DEFAULT_LAYOUT
+    setPreviewImageBusy(true)
+    try {
+      const text = await editorIpc.readClipboardText()
+      if (text !== copied.markdown || editor.selectedIndex() !== index || currentSlideText(index) !== before || slidePositionsEpoch !== epoch) return
+      const source = syncedSource(currentSlideTexts())
+      let canvas = await imageIpc.createImageCanvas(source, base, copied.image ? 1 : 0, [], [], undefined, undefined, copied.image ? 0 : 1)
+      if (editor.selectedIndex() !== index || currentSlideText(index) !== before || slidePositionsEpoch !== epoch) return
+      if (copied.image && copied.placement) {
+        const rect = copied.placement
+        canvas = await imageIpc.createImageCanvas(source, canvas.layout, 0, [{ slot: canvas.slots[0], ...rect, x: Math.min(1 - rect.width, rect.x + .02), y: Math.min(1 - rect.height, rect.y + .02) }]).then(positioned => ({ ...positioned, slots: canvas.slots }))
+      }
+      if (editor.selectedIndex() !== index || currentSlideText(index) !== before || slidePositionsEpoch !== epoch) return
+      const body = `${fields.rest}\n\n::: {slot=${canvas.slots[0]}}\n\n${copied.markdown}\n\n:::`
+      await perform({ kind: 'slides', cmd: { type: 'replace', index, text: buildSlideText({ ...fields.config, layout: canvas.layout }, body, note) } })
+    } catch (err) { setErrorMessage(String(err)) }
+    finally { setPreviewImageBusy(false) }
+  }
+
   async function runElementAction(action: 'cut' | 'copy' | 'delete', target?: PreviewClick): Promise<void> {
     const menu = ui.contextMenu()
     const index = editor.selectedIndex()
@@ -1395,10 +1436,18 @@ export function Studio() {
     if (renderedBody !== body.trim()) return
     const bodyStart = range!.start + range!.text.indexOf(renderedBody) - (body.length - body.trimStart().length)
     const edit = click.image ? null : click.hit?.byteSpan ? textEditFor({ ...click.hit, kind: 'text', byteSpan: click.hit.byteSpan, heading: click.hit.kind === 'heading' }, render.renderedSource(), body, bodyStart) : null
-    const copied = click.image ? imageSlotContent(body, click.image.slot) : edit?.value ?? null
+    const copiedDeckPath = deck.deckPath()
+    const imageElement = click.image ? Array.from(document.querySelector('[data-preview-host]')?.shadowRoot?.querySelectorAll<HTMLElement>('[data-studio-image]') ?? []).find(element => element.dataset.studioImage === click.image?.slot) : null
+    const slideRect = imageElement?.closest('.peitho-slide')?.getBoundingClientRect()
+    const imageRect = imageElement?.getBoundingClientRect()
+    const placement = slideRect && imageRect ? { x: (imageRect.x - slideRect.x) / slideRect.width, y: (imageRect.y - slideRect.y) / slideRect.height, width: imageRect.width / slideRect.width, height: imageRect.height / slideRect.height } : undefined
+    const copied = click.image ? imageSlotContent(body, click.image.slot) : edit ? (edit.heading ? '# ' : '') + edit.value : null
     if (copied === null) return
     try {
-      if (action !== 'delete') await editorIpc.writeClipboardText(copied)
+      if (action !== 'delete') {
+        await editorIpc.writeClipboardText(copied)
+        setElementClipboard({ markdown: copied, image: Boolean(click.image), deckPath: copiedDeckPath, placement })
+      }
       if (action === 'copy' || editor.selectedIndex() !== index || slidePositionsEpoch !== epoch || currentSlideText(index) !== before) return
       if (click.image) { await removePreviewImage(click.image.slot); return }
       if (edit && bodyEditor) {
@@ -3911,6 +3960,7 @@ export function Studio() {
               onAddImages={(files, slot) => { void addImagesToPreview(files, slot) }}
               onImagePosition={positionPreviewImage}
               imageBusy={previewImageBusy()}
+              onPasteElement={tryPasteElement}
               onImageClipboard={(slot, action) => { void runElementAction(action, { hit: null, pin: null, at: { x: 0, y: 0 }, image: { slot, order: [] } }) }}
               onRemoveImage={slot => { void removePreviewImage(slot) }}
             />
@@ -4115,6 +4165,9 @@ export function Studio() {
         menuItems={currentMenuItems()}
         image={previewMenuImage()}
         elementMenu={previewElementMenu()}
+        canvasMenu={previewCanvasMenu()}
+        canPasteElement={Boolean(elementClipboard() && elementClipboard()?.deckPath === deck.deckPath())}
+        onPasteElement={() => { void pasteElement() }}
         onElementAction={action => { void runElementAction(action) }}
         imageBusy={previewImageBusy()}
         onImageOrder={runImageOrderAction}
