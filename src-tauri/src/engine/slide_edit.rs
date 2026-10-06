@@ -66,14 +66,18 @@ fn image_canvas(deck_path: &std::path::Path, content: &str, base: &str, count: u
 }
 
 pub fn image_canvas_change(deck_path: &std::path::Path, content: &str, base: &str, count: usize, placements: &[ImagePlacement], removed: &[String]) -> Result<ImageCanvas, String> {
-    image_canvas_edit(deck_path, content, base, count, placements, removed, None)
+    image_canvas_edit(deck_path, content, base, count, placements, removed, None, None)
 }
 
 pub fn rebase_image_canvas(deck_path: &std::path::Path, content: &str, from: &str, base: &str) -> Result<ImageCanvas, String> {
-    image_canvas_edit(deck_path, content, base, 0, &[], &[], Some(from))
+    image_canvas_edit(deck_path, content, base, 0, &[], &[], Some(from), None)
 }
 
-fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, count: usize, placements: &[ImagePlacement], removed: &[String], from: Option<&str>) -> Result<ImageCanvas, String> {
+pub fn order_image_canvas(deck_path: &std::path::Path, content: &str, base: &str, order: &[String]) -> Result<ImageCanvas, String> {
+    image_canvas_edit(deck_path, content, base, 0, &[], &[], None, Some(order))
+}
+
+fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, count: usize, placements: &[ImagePlacement], removed: &[String], from: Option<&str>, order: Option<&[String]>) -> Result<ImageCanvas, String> {
     if count > 32 { return Err("add at most 32 images at a time".into()) }
     let assets = super::pipeline::parse_source(deck_path, content)?.assets;
     let layout = assets.layouts.get(base).ok_or_else(|| format!("layout '{base}' was not found"))?;
@@ -89,6 +93,7 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
     for slot in removed {
         if !slot.starts_with("studio-image-") || layout.slot(slot).is_none() { return Err("this image is not freely positioned".into()) }
     }
+    let mut ordered_figures = std::collections::HashMap::new();
     let html = rewrite_str(layout.html(), RewriteStrSettings {
         element_content_handlers: vec![
             element!("section", |el| {
@@ -98,6 +103,12 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
             }),
             element!("[data-studio-image]", |el| {
                 let slot = el.get_attribute("data-studio-image").unwrap_or_default();
+                if order.is_some() {
+                    if !slot.starts_with("studio-image-") || layout.slot(&slot).is_none() { return Err("invalid canvas image".into()) }
+                    let style = el.get_attribute("style").unwrap_or_default().replace('&', "&amp;").replace('"', "&quot;");
+                    ordered_figures.insert(slot.clone(), format!("<figure class=\"studio-free-image\" data-studio-image=\"{slot}\" style=\"{style}\"><slot name=\"{slot}\" accepts=\"image\" arity=\"1\"></slot></figure>"));
+                    el.remove(); return Ok(())
+                }
                 if removed.contains(&slot) { el.remove(); return Ok(()) }
                 if let Some(rect) = placements.iter().find(|rect| rect.slot == slot) {
                     el.set_attribute("style", &placement_style(rect).expect("validated placement"))?;
@@ -108,6 +119,12 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
         ..RewriteStrSettings::default()
     }).map_err(|err| err.to_string())?;
     let mut figures = String::new();
+    if let Some(order) = order {
+        if order.len() != ordered_figures.len() { return Err("image order must include every canvas image exactly once".into()) }
+        for slot in order {
+            figures.push_str(&ordered_figures.remove(slot).ok_or("image order must include every canvas image exactly once")?);
+        }
+    }
     let mut slots = Vec::new();
     let mut next = 1;
     for i in 0..count {
@@ -196,6 +213,31 @@ mod tests {
         let output = super::super::pipeline::render_source(&path, &source).unwrap();
         assert!(output.fragments["slide"].contains("左の文章"));
         assert!(output.fragments["slide"].contains("項目"));
+    }
+
+    #[test]
+    fn image_order_is_exported_and_survives_moves_and_template_changes() {
+        let (dir, path, source) = deck();
+        let canvas = image_canvas(&path, &source, "two-column", 3, &[]).unwrap();
+        let source = source.replace("\"two-column\"", &format!("\"{}\"", canvas.layout));
+        let source = format!("{source}{}", canvas.slots.iter().map(|slot| format!("\n::: {{slot={slot}}}\n\n![](img/photo.png)\n\n:::\n")).collect::<String>());
+        let order = vec!["studio-image-3".to_string(), "studio-image-1".to_string(), "studio-image-2".to_string()];
+        let ordered = order_image_canvas(&path, &source, &canvas.layout, &order).unwrap();
+        let changed = source.replace(&canvas.layout, &ordered.layout);
+        let output = super::super::pipeline::render_source(&path, &changed).unwrap();
+        let assert_order = |html: &str| {
+            let positions: Vec<_> = order.iter().map(|slot| html.find(&format!("data-studio-image=\"{slot}\"")).unwrap()).collect();
+            assert!(positions.windows(2).all(|pair| pair[0] < pair[1]), "{html}");
+        };
+        assert_order(&output.fragments["slide"]);
+        let rect = ImagePlacement { slot: "studio-image-3".into(), x: 0.1, y: 0.2, width: 0.3, height: 0.4 };
+        let moved = image_canvas(&path, &changed, &ordered.layout, 0, &[rect]).unwrap();
+        assert_order(&std::fs::read_to_string(dir.path().join(format!("layouts/{}.html", moved.layout))).unwrap());
+        let rebased = rebase_image_canvas(&path, &changed, &ordered.layout, "title-only").unwrap();
+        assert_order(&std::fs::read_to_string(dir.path().join(format!("layouts/{}.html", rebased.layout))).unwrap());
+        assert!(order_image_canvas(&path, &changed, &ordered.layout, &order[..2]).is_err());
+        assert!(order_image_canvas(&path, &changed, &ordered.layout, &[order[0].clone(), order[0].clone(), order[2].clone()]).is_err());
+        assert!(super::super::pipeline::render_source(&path, &source).is_ok());
     }
 
     #[test]

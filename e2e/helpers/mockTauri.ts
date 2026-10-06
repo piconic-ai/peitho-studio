@@ -554,6 +554,11 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         for (const rect of args.placements as { slot: string; x: number; y: number; width: number; height: number }[]) {
           html = html.replace(new RegExp(`(data-studio-image="${rect.slot}" style=")[^"]*"`), `$1position:absolute;left:${rect.x * 100}%;top:${rect.y * 100}%;width:${rect.width * 100}%;height:${rect.height * 100}%;margin:0"`)
         }
+        if (args.imageOrder) {
+          const figures = new Map([...html.matchAll(/<figure[^>]*data-studio-image="([^"]+)"[\s\S]*?<\/figure>/g)].map(match => [match[1], match[0]]))
+          html = html.replace(/<figure[^>]*data-studio-image="[^"]+"[\s\S]*?<\/figure>/g, '')
+          html = html.replace('</section>', `${(args.imageOrder as string[]).map(slot => figures.get(slot)).join('')}</section>`)
+        }
         const slots: string[] = []
         let i = 1
         for (let n = 0; n < Number(args.count); n++) {

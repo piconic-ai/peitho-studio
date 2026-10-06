@@ -1314,6 +1314,7 @@ pub fn create_image_canvas(
     placements: Vec<crate::engine::slide_edit::ImagePlacement>,
     remove_slots: Option<Vec<String>>,
     carry_layout: Option<String>,
+    image_order: Option<Vec<String>>,
     window: WebviewWindow,
     session: State<PeithoSession>,
 ) -> Result<crate::engine::slide_edit::ImageCanvas, String> {
@@ -1321,6 +1322,7 @@ pub fn create_image_canvas(
     if let Some(from) = carry_layout {
         return crate::engine::slide_edit::rebase_image_canvas(&path, &content, &from, &base_layout);
     }
+    if let Some(order) = image_order { return crate::engine::slide_edit::order_image_canvas(&path, &content, &base_layout, &order); }
     crate::engine::slide_edit::image_canvas_change(&path, &content, &base_layout, count, &placements, &remove_slots.unwrap_or_default())
 }
 

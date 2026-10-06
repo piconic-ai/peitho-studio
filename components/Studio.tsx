@@ -716,6 +716,22 @@ export function Studio() {
     finally { setPreviewImageBusy(false) }
   }
 
+  async function orderPreviewImage(order: string[]): Promise<boolean> {
+    const index = editor.selectedIndex()
+    const base = editor.pageConfig().layout
+    if (index === null || !base || previewImageBusy()) return false
+    const before = currentSlideText(index)
+    const epoch = slidePositionsEpoch
+    setPreviewImageBusy(true)
+    try {
+      const canvas = await imageIpc.createImageCanvas(syncedSource(currentSlideTexts()), base, 0, [], [], undefined, order)
+      if (editor.selectedIndex() !== index || slidePositionsEpoch !== epoch || currentSlideText(index) !== before) return false
+      const outcome = await updateSlideConfig(index, { layout: canvas.layout })
+      return outcome === 'done' || outcome === 'unchanged'
+    } catch (err) { setErrorMessage(String(err)); return false }
+    finally { setPreviewImageBusy(false) }
+  }
+
   async function removePreviewImage(slot: string): Promise<void> {
     const index = editor.selectedIndex()
     const base = editor.pageConfig().layout
@@ -3848,6 +3864,7 @@ export function Studio() {
               onTextEdit={startSlideTextEdit}
               onAddImages={(files, slot) => { void addImagesToPreview(files, slot) }}
               onImagePosition={positionPreviewImage}
+              onImageOrder={orderPreviewImage}
               imageBusy={previewImageBusy()}
               onRemoveImage={slot => { void removePreviewImage(slot) }}
             />
