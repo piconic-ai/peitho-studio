@@ -59,7 +59,8 @@ export function slotTextInsertion(body: string, slot: string, accepts: string, v
   if (accepts === 'inline') content = `## ${content.replace(/\n/g, ' ')}`
   if (accepts === 'list' && !/^\s*(?:[-+*]|\d+[.)])\s/.test(content)) content = content.split('\n').map(line => `- ${line}`).join('\n')
   if (slot === 'title') content = `# ${value.trim().replace(/\n/g, ' ')}`
-  else content = `::: {slot=${slot}}\n\n${content}\n\n:::`
+  // Loose blocks after the heading already route to `body`.
+  else if (slot !== 'body') content = `::: {slot=${slot}}\n\n${content}\n\n:::`
   if (slot === 'title') {
     const heading = /^(?:[ \t]*\r?\n)*[ \t]{0,3}#(?:[ \t]+([^\r\n]*)|(?=\r?\n|$))/.exec(body)
     if (heading) {
@@ -139,6 +140,16 @@ export function removeSlideText(edit: SlideTextEdit): string {
   const opening = /(?:^|\n)::: \{slot=[a-z][a-z0-9-]*\}\n[\s\u00a0]*$/.exec(before)
   const closing = /^[\s\u00a0]*\n:::(?=\n|$)/.exec(after)
   return (opening && closing ? before.slice(0, opening.index) + after.slice(closing[0].length) : before + after).trim()
+}
+
+/** A canvas text element cleared to nothing is removed, not kept as an NBSP
+ * paragraph: that placeholder still counts as a slot item, so typing into
+ * the now visually empty slot overflowed it (title-slide's 0..1 body).
+ * Headings keep their editable placeholder; lists clear item by item. */
+export function clearedSlideText(target: Extract<SlideEditTarget, { kind: 'text' }>, edit: SlideTextEdit, value: string): string | null {
+  const freeText = target.slot?.startsWith('studio-text-') ?? false
+  if (value.trim() !== '' || (!freeText && (edit.heading || Boolean(target.listItems?.length)))) return null
+  return removeSlideText({ ...edit, heading: false })
 }
 
 export function imageSlotContent(body: string, slot: string): string | null {

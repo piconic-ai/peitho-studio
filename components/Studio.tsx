@@ -13,7 +13,7 @@ import { createTauriSettingsIpc } from '../ipc/settingsIpc'
 import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
 import { editorTextChange } from '../domain/editorText'
-import { removeSlideText, imageSlotContent, textEditFor, textEditInsertion, slotTextInsertion, looseBodyEdit, removeImageSlot, type SlideEditTarget, type SlideEditSession } from '../domain/slideEdit'
+import { clearedSlideText, removeSlideText, imageSlotContent, textEditFor, textEditInsertion, slotTextInsertion, looseBodyEdit, removeImageSlot, type SlideEditTarget, type SlideEditSession } from '../domain/slideEdit'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
   REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentKeyOf, commentTargetOf, layoutClickTarget, layoutTargetLabel, layoutTargetOfComment, lineSelectionOf, newLayoutComment, newReviewComment, pollsForAgent,
@@ -668,9 +668,8 @@ export function Studio() {
     return {
       value: edit?.value ?? '',
       commit: value => {
-        if (target.kind === 'text' && target.slot?.startsWith('studio-text-') && value.trim() === '') {
-          return edit !== null && applyBody(removeSlideText({ ...edit, heading: false }))
-        }
+        const cleared = target.kind === 'text' && edit ? clearedSlideText(target, edit, value) : null
+        if (cleared !== null) return applyBody(cleared)
         const insertion = edit ? textEditInsertion(edit, before, value) : target.kind === 'slot' ? slotTextInsertion(before, target.slot, target.accepts, value) : null
         if (!insertion) return false
         const next = before.slice(0, insertion.from) + insertion.insert + before.slice(insertion.to)
