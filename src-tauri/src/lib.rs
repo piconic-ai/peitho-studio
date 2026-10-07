@@ -20,6 +20,9 @@ mod update_window;
 pub use peitho::invoke_for_e2e;
 
 use i18n::{Language, MenuLabels};
+
+/// The app's own Quit item (`on_menu_event` calls `app.exit(0)` for it).
+const QUIT_MENU_ID: &str = "quit";
 use peitho::{DeckMenuState, PeithoSession, PendingDecks};
 use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, Manager};
@@ -75,6 +78,13 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
     let about_item = MenuItem::with_id(app, about::MENU_ID, labels.about(app_name), true, None::<&str>)?;
     // Opens `update_window`'s window; sits right after About, wherever About is.
     let check_updates_item = MenuItem::with_id(app, update_window::MENU_ID, labels.check_updates, true, None::<&str>)?;
+    // Not `PredefinedMenuItem::quit`: on macOS that item sends `terminate:`
+    // straight to NSApp, and tao has no `applicationShouldTerminate:`, so
+    // the process ends with `RunEvent::Exit` only — `RunEvent::ExitRequested`
+    // never fires and `updates::intercept_exit` can't hold the quit to
+    // install a prepared update. `app.exit(0)` from `on_menu_event` goes
+    // through the exit request instead.
+    let quit_item = MenuItem::with_id(app, QUIT_MENU_ID, labels.quit(app_name), true, Some("CmdOrCtrl+Q"))?;
 
     let new_deck = MenuItem::with_id(app, "new_deck", labels.new_deck, true, Some("CmdOrCtrl+N"))?;
     let open_deck = MenuItem::with_id(app, "open_deck", labels.open_deck, true, Some("CmdOrCtrl+O"))?;
@@ -96,7 +106,7 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::close_window(app, Some(labels.close_window))?,
             #[cfg(not(target_os = "macos"))]
-            &PredefinedMenuItem::quit(app, Some(&labels.quit(app_name)))?,
+            &quit_item,
         ],
     )?;
 
@@ -171,7 +181,7 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
                     &PredefinedMenuItem::hide(app, Some(&labels.hide(app_name)))?,
                     &PredefinedMenuItem::hide_others(app, Some(labels.hide_others))?,
                     &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::quit(app, Some(&labels.quit(app_name)))?,
+                    &quit_item,
                 ],
             )?,
             &file_menu,
@@ -254,6 +264,10 @@ pub fn run() {
                 if let Err(err) = about::open_window(app_handle) {
                     log::error!("failed to open the About window: {err}");
                 }
+            } else if id == QUIT_MENU_ID {
+                // Raises `RunEvent::ExitRequested`, where a prepared update
+                // is installed first (see `quit_item` in the menu builder).
+                app_handle.exit(0);
             } else if id == "new_deck" {
                 // Needs the in-app name-entry modal, so it's routed back
                 // through the frontend rather than handled here.

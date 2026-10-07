@@ -220,6 +220,15 @@ don't bundle everything into one giant commit.
   window is created — which the window then pulls out exactly once at
   startup — is simpler and more robust than embedding it in the URL query
   string (see `PendingDecks`/`take_pending_deck`).
+- `PredefinedMenuItem::quit` never raises `RunEvent::ExitRequested` on
+  macOS: muda implements it as `terminate:` sent straight to NSApp, and tao
+  has no `applicationShouldTerminate:`, so the process ends with
+  `RunEvent::Exit` only and `api.prevent_exit()` never gets a chance (the
+  prepared update was skipped on every Cmd+Q). `ExitRequested` fires only
+  for `app.exit()`/`request_exit` and for the last window closing. Quit is
+  therefore a plain `MenuItem` (`QUIT_MENU_ID`, `CmdOrCtrl+Q`) whose
+  handler calls `app_handle.exit(0)`. Dock "Quit", logout and shutdown
+  still go through `terminate:` and can't be held.
 
 ## Pitfalls hit with BarefootJS
 
