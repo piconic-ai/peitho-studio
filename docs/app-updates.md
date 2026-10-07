@@ -43,7 +43,10 @@ GitHub リポジトリに次を設定する。
 CI は鍵が未設定なら配布を失敗させる。
 署名鍵を変更すると既存アプリは新しい署名を検証できないので、鍵の切り替えは別途移行が必要。
 
-CI は署名・公証済み DMG に加えて `.app.tar.gz` と `.sig` を公開する。
+CI は署名・公証済み DMG に加えて updater 用の `.app.tar.gz` と `.sig` を公開する。
+updater アーカイブは `Peitho-Studio_<version>_aarch64.app.tar.gz` という空白なしの名前で
+アップロードする（GitHub はスペースを含む asset 名をドットに書き換えるため、
+ローカルのファイル名から組み立てた URL は 404 になる）。
 安定版では `latest.json` を生成し、そのファイル自体も `tauri signer sign` で署名し、
 `latest.json` と `latest.json.sig` を成果物のアップロード後に公開する。
 RC の成果物は生成するが、安定版更新 manifest は公開しない。
