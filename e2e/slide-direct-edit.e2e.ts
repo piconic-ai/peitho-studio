@@ -667,7 +667,9 @@ test('pasted text uses the selected identical paragraph and grows without clippi
   await page.locator(FIELD).press('Meta+Enter')
   await expect(pasted).toContainText('first')
   await expect(page.locator(FIELD)).toHaveCount(0)
-  const singleLine = (await pasted.boundingBox())!.height
+  const height = async () => (await pasted.boundingBox())?.height ?? 0
+  await expect.poll(height).toBeGreaterThan(0)
+  const singleLine = await height()
   await pasted.locator('p').click()
   await page.locator(FIELD).fill('first')
   await page.locator(FIELD).press('End')
@@ -676,7 +678,8 @@ test('pasted text uses the selected identical paragraph and grows without clippi
     await page.keyboard.type(line)
   }
   await page.locator(FIELD).press('Meta+Enter')
-  await expect.poll(async () => (await pasted.boundingBox())!.height).toBeGreaterThan(singleLine)
+  // A re-render briefly detaches the box (no bounding box): keep polling.
+  await expect.poll(height).toBeGreaterThan(singleLine)
   expect(await visible()).toBe(true)
 })
 
