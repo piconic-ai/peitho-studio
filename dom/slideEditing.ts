@@ -112,7 +112,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       element.toggleAttribute('data-studio-empty', Boolean(empty) && state.callbacks.enabled())
       const freeText = element.closest<HTMLElement>('[data-studio-text]')
       if (freeText) freeText.hidden = Boolean(empty) && !freeText.querySelector('[data-studio-edit]')
-      if (state.callbacks.enabled() && (empty || element.matches('[data-studio-edit], :has([data-studio-edit])'))) revealHiddenAncestors(element)
+      if (state.callbacks.enabled() && !freeText?.hidden && (empty || element.matches('[data-studio-edit], :has([data-studio-edit])'))) revealHiddenAncestors(element)
       const ja = state.callbacks.language() === 'ja'
       const labels: Record<string, string> = ja ? { title: 'タイトルを入力', body: '本文を入力', left: '左の文章を入力', right: '右の文章を入力', subtitle: 'サブタイトルを入力', footnotes: '脚注を追加' } : { title: 'Add a title', body: 'Add text', left: 'Add left column text', right: 'Add right column text', subtitle: 'Add a subtitle', footnotes: 'Add a footnote' }
       element.dataset.studioPlaceholder = accepts === 'image' ? (ja ? '画像を追加' : 'Add an image') : (labels[element.dataset.studioSlot ?? ''] ?? (ja ? 'クリックして入力' : 'Click to add text'))
