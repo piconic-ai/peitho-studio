@@ -5,10 +5,10 @@ export const meta = {
   phases: [
     { title: 'Reproduce', detail: 'fresh worktree, real engine built, reported error reproduced, root cause named' },
     { title: 'Sweep', detail: 'the reported operation as a matrix: standard layouts × elements × input variants, real-engine e2e' },
-    { title: 'Triage', detail: 'group failures by cause, then try to refute each: app bug / test artifact / design question / pre-existing flake' },
+    { title: 'Triage', detail: 'group failures by cause, then try to refute each in turn: app bug / test artifact / design question / pre-existing flake' },
     { title: 'Fix', detail: 'one commit per confirmed cause, each with unit + e2e regressions that fail without it' },
     { title: 'Verify', detail: 'rerun everything; a completeness critic names uncovered variants, swept once more if any' },
-    { title: 'PR', detail: 'only with args.pr: open the PR and loop until Pullfrog has no unresolved finding on the latest head' },
+    { title: 'PR', detail: 'only with args.pr, all green and nothing left uncovered: open the PR and loop until Pullfrog has no unresolved finding on the latest head' },
   ],
 }
 
@@ -19,8 +19,9 @@ const report = args.report
 const deck = args.deck ?? null
 const openPr = args.pr === true
 
-// Each stage runs e2e in turn, never two at once, but other worktrees may be
-// running theirs: keep clear of 3013 (default) and 3014-3019 (by hand).
+// Every agent that may run e2e runs alone (they share one worktree's build
+// and server), but other worktrees may be running theirs: keep clear of 3013
+// (default) and 3014-3019 (by hand).
 const E2E_PORT = 3021
 
 const CONTEXT_SCHEMA = {
@@ -294,11 +295,14 @@ for (let round = 1; round <= 2; round++) {
 
   if (sweep.failures.length > 0) {
     phase('Triage')
-    // Clustering needs every failure at once; refuting each cluster does not.
     const { clusters } = await agent(clusterPrompt(context, sweep), { label: `cluster:round${round}`, phase: 'Triage', schema: CLUSTERS_SCHEMA })
-    const judged = (await parallel(clusters.map((cluster, i) => () =>
-      agent(refutePrompt(context, cluster, sweep.failures), { label: `refute:${round}.${i + 1}`, phase: 'Triage', schema: VERDICT_SCHEMA })
-        .then(verdict => verdict && { ...cluster, verdict })))).filter(Boolean)
+    // One at a time: refuters run stress e2e in the same worktree, and two
+    // at once would race its build and server instead of judging the bug.
+    const judged = []
+    for (const [i, cluster] of clusters.entries()) {
+      const verdict = await agent(refutePrompt(context, cluster, sweep.failures), { label: `refute:${round}.${i + 1}`, phase: 'Triage', schema: VERDICT_SCHEMA })
+      if (verdict) judged.push({ ...cluster, verdict })
+    }
     const unjudged = clusters.length - judged.length
     if (unjudged > 0) log(`${unjudged}件の原因が未判定のまま残りました（検証エージェントが結果を返さなかった）`)
 
@@ -330,15 +334,18 @@ const summary = [
   `テスト側・フレークとして直したもの: ${artifacts.map(c => c.cause).join(' / ') || 'なし'}`,
   `ユーザーに判断を仰ぐ点: ${designQuestions.map(c => c.verdict.fix).join(' / ') || 'なし'}`,
   `検証結果: ${critique.results}`,
+  `網羅しきれなかったもの: ${critique.uncovered.join(' / ') || 'なし'}`,
   '実機の WKWebView では未確認（IME は Chrome の composition イベントでの再現のみ）。',
 ].join('\n')
 
+// A sweep that still knows of uncovered variants isn't finished: leave the
+// call on those to the user rather than publishing the fix as swept.
 let pr = null
-if (openPr && critique.green) {
+if (openPr && critique.green && critique.uncovered.length === 0) {
   phase('PR')
   pr = await agent(prPrompt(context, summary), { label: 'pr', phase: 'PR', schema: PR_SCHEMA })
 } else if (openPr) {
-  log('テストがグリーンではないため PR は作成しませんでした。')
+  log(critique.green ? '網羅しきれなかったものが残っているため PR は作成しませんでした。' : 'テストがグリーンではないため PR は作成しませんでした。')
 }
 
 return {
@@ -351,5 +358,6 @@ return {
   green: critique.green,
   results: critique.results,
   uncovered: critique.uncovered,
+  summary,
   pr,
 }
