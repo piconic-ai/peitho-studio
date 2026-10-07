@@ -306,3 +306,20 @@ test.describe('robustness', () => {
     expect(deck.source).toContain('# Slide Split')
   })
 })
+
+// An Undo that lands while the typed text's render is still in flight takes
+// the body back to what the preview last showed: the late render must not
+// put the undone text back on screen.
+test('Undo before the typed text finishes rendering keeps the preview on the undone text', async ({ page }) => {
+  await openDeck(page, { source: TWO_SLIDES, renderDraftDelayMs: 400 })
+  const preview = page.locator('[data-preview-host]')
+  await expect(preview).toContainText('Slide One')
+  await moveToEditorEnd(page, 'body')
+  await page.keyboard.insertText(' typed')
+  await page.waitForTimeout(150)
+  await menu(page, 'undo')
+  await expect.poll(() => editorText(page)).toBe('# Slide One')
+  await page.waitForTimeout(800)
+  await expect(preview).toContainText('Slide One')
+  await expect(preview).not.toContainText('typed')
+})
