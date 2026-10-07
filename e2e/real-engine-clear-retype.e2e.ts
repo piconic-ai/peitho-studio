@@ -121,13 +121,28 @@ for (const c of CASES) {
     const engine = await open(page, c)
     try {
       const slot = await slotOf(page, c)
+      const heading = await target(page, c).evaluate(el => el.closest('h1,h2,h3,h4,h5,h6') !== null)
       await target(page, c).click()
       await clearField(page)
-      await page.keyboard.type(FRESH)
-      await page.keyboard.press('Enter'); await page.keyboard.press('Enter')
-      await page.keyboard.type('second line')
+      if (heading) {
+        // Enter commits a heading edit and closes its field (dom/
+        // slideEditing.ts), so a line break only ever reaches a heading as
+        // a BR — pasted, or inserted as text here. (Pressing Enter instead
+        // committed, re-opened on the next Enter, and raced the commit's
+        // render: when it landed first it replaced the selected heading,
+        // the rest of the typing went to the page, and Cmd+Enter added a
+        // slide. Flaked on CI as "New Slide" in the title.)
+        await page.keyboard.insertText(`${FRESH}\nsecond line`)
+      } else {
+        await page.keyboard.type(FRESH)
+        await page.keyboard.press('Enter'); await page.keyboard.press('Enter')
+        await page.keyboard.type('second line')
+      }
       await page.keyboard.press('ControlOrMeta+Enter')
       await expectWrittenInto(page, slot)
+      // An ATX heading ends at a line break; the break must become a space
+      // rather than push "second line" out into a body block.
+      if (heading) expect(await editorText(page)).toContain(`# ${FRESH} second line`)
     } finally { engine.stop() }
   })
 
