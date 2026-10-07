@@ -105,6 +105,17 @@ ordinary DevTools — there's no dedicated log panel.
 - **`peitho build`'s distribution viewer**: a plain static page; open it
   in any browser like `peitho present`.
 
+## Fixing a reported bug
+
+Studio is a GUI, so an error should almost never reach the user. When a
+bug report names one failing operation, don't stop at fixing that case:
+run the `bug-sweep` workflow (`.claude/workflows/bug-sweep.js`, args
+`{ report, deck?, pr? }`). It reproduces the report against the real
+engine, sweeps the same kind of operation across every standard layout,
+element and input variant, triages each failure (app bug / test artifact
+/ design question / pre-existing flake), and fixes the confirmed ones with
+regressions. Design questions it raises go back to the user, not into code.
+
 ## Commit granularity
 
 Commit by semantic unit. "Wrote the design rules," "extracted this logic
