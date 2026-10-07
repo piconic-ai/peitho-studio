@@ -1,6 +1,12 @@
 # tagpr config: https://github.com/Songmu/tagpr
 # tagpr may rewrite parts of this file on its first run (e.g. it can
 # auto-detect settings) — that's expected, not a sign this seed is wrong.
+#
+# release = draft: the Release is created as a draft, so
+# `releases/latest/download/latest.json` keeps pointing at the previous
+# version until release-build.yml has uploaded every asset and publishes
+# it. Published right away, the in-app updater of anyone checking during
+# the ~5 minute build got a 404 for the manifest (seen on v0.1.5).
 [tagpr]
 	vPrefix = true
 	releaseBranch = "main"
@@ -8,3 +14,4 @@
 	changelog = true
 	changelogFile = "CHANGELOG.md"
 	postVersionCommand = "bash scripts/sync-tauri-version.sh"
+	release = draft

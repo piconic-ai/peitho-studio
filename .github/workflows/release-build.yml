@@ -1,11 +1,14 @@
 # Builds the macOS .dmg for a release tag and attaches it to that tag's
 # GitHub Release.
 #
-# Called from tagpr.yml once tagpr has tagged (and created the Release),
-# rather than triggered by `release: published`: tagpr creates the Release
-# with GITHUB_TOKEN, and events caused by GITHUB_TOKEN never start other
-# workflows. `workflow_dispatch` re-runs it by hand for an existing tag
-# (e.g. a prerelease cut to try this workflow out).
+# Called from tagpr.yml once tagpr has tagged (and created the Release as
+# a draft, see .tagpr), rather than triggered by `release: published`:
+# tagpr creates the Release with GITHUB_TOKEN, and events caused by
+# GITHUB_TOKEN never start other workflows. The draft is published here
+# only after every asset is uploaded, so `releases/latest` never points at
+# a Release whose `latest.json` is still missing. `workflow_dispatch`
+# re-runs it by hand for an existing tag (e.g. a prerelease cut to try
+# this workflow out); publishing an already published Release is a no-op.
 #
 # Signed with a Developer ID Application certificate and notarized with an
 # App Store Connect API key, so Gatekeeper opens the app without asking the
@@ -190,6 +193,14 @@ jobs:
           bun run scripts/create-update-manifest.ts "$version" "$archive" release-notes.txt latest.json
           bunx tauri signer sign latest.json
           gh release upload "$TAG" latest.json latest.json.sig --clobber --repo "$GITHUB_REPOSITORY"
+
+      # Only now does `releases/latest` resolve to this tag. Publishing is
+      # what makes the assets downloadable without a token, so
+      # homebrew-cask.yml (which refuses drafts) must run after this.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
 
   update-homebrew-cask:
     needs: build-macos
