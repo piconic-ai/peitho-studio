@@ -1257,6 +1257,9 @@ export function Studio() {
       untrack(() => {
         const source = editor.fullSource()
         if (source !== render.renderedSource()) void renderPreview(source)
+        // Back to what's on screen (an Undo before the typed text rendered):
+        // a render still in flight is now stale and must not land.
+        else previewGeneration++
       })
       return
     }
