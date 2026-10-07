@@ -12,6 +12,12 @@ export function makeUpdateManifest(version: string, signature: string, url: stri
   if (download.protocol !== 'https:' || download.hostname !== 'github.com' || !download.pathname.startsWith('/piconic-ai/peitho-studio/releases/download/')) {
     throw new Error('Unexpected update download URL')
   }
+  // GitHub stores a release asset under a rewritten name when the uploaded
+  // one has a space or other special character ("Peitho Studio.app.tar.gz"
+  // became "Peitho.Studio.app.tar.gz"), so a URL built from the local file
+  // name 404s. Only accept names GitHub keeps as they are.
+  const asset = decodeURIComponent(download.pathname.split('/').at(-1) ?? '')
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(asset)) throw new Error(`Release asset name would be rewritten by GitHub: ${asset}`)
   for (const advisory of security) {
     if (typeof advisory.affectedFrom !== 'string' || typeof advisory.fixedIn !== 'string' || typeof advisory.reason !== 'string' || !advisory.reason.trim()) {
       throw new Error('Invalid security advisory')
