@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.1.6](https://github.com/piconic-ai/peitho-studio/compare/v0.1.5...v0.1.6) - 2026-10-07
+
+- Upload the updater archive under a name GitHub keeps as-is by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/181
+- Stop the heading line-break e2e racing its own commit render by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/183
+- Publish the GitHub Release only after its assets are uploaded by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/180
+- Quit through the app's own menu item so a prepared update installs by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/184
+
 ## [v0.1.5](https://github.com/piconic-ai/peitho-studio/compare/v0.1.4...v0.1.5) - 2026-10-07
 
 - Keep line breaks typed into a heading inside that heading by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/173
