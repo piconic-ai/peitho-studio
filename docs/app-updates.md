@@ -49,6 +49,9 @@ updater アーカイブは `Peitho-Studio_<version>_aarch64.app.tar.gz` とい�
 ローカルのファイル名から組み立てた URL は 404 になる）。
 安定版では `latest.json` を生成し、そのファイル自体も `tauri signer sign` で署名し、
 `latest.json` と `latest.json.sig` を成果物のアップロード後に公開する。
+tagpr は GitHub Release を draft で作り（`.tagpr` の `release = draft`）、CI がすべての成果物を
+アップロードしてから公開する。公開前は `releases/latest` が前の版を指し続けるので、
+ビルド中に更新確認したアプリが manifest の 404 を受け取ることはない。
 RC の成果物は生成するが、安定版更新 manifest は公開しない。
 初回の更新対応版は、既存の更新機能がないアプリから手動でインストールする必要がある。
 公開前に2つの署名・公証済みアプリ間で実機の更新検証を行う。
