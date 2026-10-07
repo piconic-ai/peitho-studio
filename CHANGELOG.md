@@ -1,5 +1,14 @@
 # Changelog
 
+## [v0.1.5](https://github.com/piconic-ai/peitho-studio/compare/v0.1.4...v0.1.5) - 2026-10-07
+
+- Keep line breaks typed into a heading inside that heading by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/173
+- Remove a cleared canvas paragraph instead of leaving an NBSP by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/175
+- Fix canvas edits that left a slide uneditable, and check them against the real engine by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/176
+- Add the bug-sweep workflow for reported bugs by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/177
+- Let a cleared footnote be written again from the canvas by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/178
+- Keep the preview on the undone text when Undo beats a render by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/179
+
 ## [v0.1.4](https://github.com/piconic-ai/peitho-studio/compare/v0.1.3...v0.1.4) - 2026-10-06
 
 - Move Check for Updates to the app menu and its own window by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/169
