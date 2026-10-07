@@ -64,10 +64,10 @@ async function clearField(page: Page): Promise<void> {
 }
 
 /** The slot left empty for writing into again, or `null` when other blocks
- * remain in it, or it is `footnotes` (which shows no empty placeholder). */
+ * remain in it. */
 async function emptiedSlot(page: Page, slot: string) {
   const emptied = page.locator(PREVIEW).locator(`[data-studio-slot="${slot}"]`)
-  if (slot === 'footnotes' || await emptied.evaluate(el => el.textContent?.trim() !== '')) return null
+  if (await emptied.evaluate(el => el.textContent?.trim() !== '')) return null
   await expect(emptied).toHaveAttribute('data-studio-empty', '')
   return emptied
 }
@@ -212,6 +212,35 @@ for (const c of CASES) {
     } finally { engine.stop() }
   })
 }
+
+for (const c of [
+  { layout: 'title-body', body: '# No notes\n\nMain text', target: 'Main text' },
+  { layout: 'two-column', body: '# No notes\n\n::: {slot=left}\n\nMain text\n\n:::', target: 'Main text' },
+]) {
+  test(`${c.layout}: add a footnote to a slide that has none`, async ({ page }) => {
+    const engine = await open(page, c)
+    try {
+      const footnotes = page.locator(PREVIEW).locator('[data-studio-slot="footnotes"]')
+      await expect(footnotes).toHaveAttribute('data-studio-empty', '')
+      await expect(footnotes).toBeVisible()
+      await footnotes.click()
+      await page.keyboard.type(FRESH)
+      await expect(footnotes).toBeVisible()
+      await page.keyboard.press('ControlOrMeta+Enter')
+      await expectWrittenInto(page, 'footnotes')
+      expect(await editorText(page)).toContain(`::: {slot=footnotes}\n\n${FRESH}\n\n:::`)
+    } finally { engine.stop() }
+  })
+}
+
+test('the footnote placeholder stays out of slide thumbnails', async ({ page }) => {
+  const c: Case = { layout: 'title-body', body: '# No notes\n\nMain text', target: 'Main text' }
+  const engine = await open(page, c)
+  try {
+    await expect(page.locator(PREVIEW).locator('[data-studio-slot="footnotes"]')).toBeVisible()
+    await expect(page.locator('[data-slide-row="0"]').locator('[data-studio-slot="footnotes"]')).toBeHidden()
+  } finally { engine.stop() }
+})
 
 test('blank lines typed in the Markdown editor keep the canvas text editable', async ({ page }) => {
   const c: Case = { layout: 'title-body', body: '# Title\n\nPara text', target: 'Para text' }
