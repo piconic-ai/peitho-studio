@@ -16,6 +16,9 @@ mod peitho;
 mod settings;
 mod update_window;
 
+#[doc(hidden)]
+pub use peitho::invoke_for_e2e;
+
 use i18n::{Language, MenuLabels};
 use peitho::{DeckMenuState, PeithoSession, PendingDecks};
 use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};

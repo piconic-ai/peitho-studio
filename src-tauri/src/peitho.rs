@@ -318,6 +318,37 @@ pub struct RenderPayload {
     css: String,
 }
 
+/// Answers the deck-path-only commands as their `#[tauri::command]`s would,
+/// without a window or session: lets e2e drive the real frontend against
+/// peitho-core's actual output. `args` is the command's camelCase JSON.
+pub fn invoke_for_e2e(deck_path: &Path, cmd: &str, args: serde_json::Value) -> Result<serde_json::Value, String> {
+    let string = |key: &str| args[key].as_str().map(str::to_string).ok_or_else(|| format!("missing {key}"));
+    let strings = |key: &str| serde_json::from_value::<Option<Vec<String>>>(args[key].clone()).map_err(|err| err.to_string());
+    let json = |value: Result<crate::engine::slide_edit::ImageCanvas, String>| value.and_then(|v| serde_json::to_value(v).map_err(|err| err.to_string()));
+    match cmd {
+        "render_draft" => {
+            let payload = to_payload(pipeline::render_source(deck_path, &string("content")?)?, String::new())?;
+            serde_json::to_value(payload).map_err(|err| err.to_string())
+        }
+        "create_image_canvas" => {
+            let (content, base) = (string("content")?, string("baseLayout")?);
+            if let Some(slot) = args["textSlot"].as_str() { return json(crate::engine::slide_edit::list_canvas(deck_path, &content, &base, slot)); }
+            if let Some(from) = args["carryLayout"].as_str() { return json(crate::engine::slide_edit::rebase_image_canvas(deck_path, &content, from, &base)); }
+            if args["textCount"].as_u64().unwrap_or(0) > 0 { return json(crate::engine::slide_edit::text_canvas(deck_path, &content, &base)); }
+            if let Some(order) = strings("imageOrder")? { return json(crate::engine::slide_edit::order_image_canvas(deck_path, &content, &base, &order)); }
+            let placements: Vec<crate::engine::slide_edit::ImagePlacement> = serde_json::from_value(args["placements"].clone()).map_err(|err| err.to_string())?;
+            let count = args["count"].as_u64().unwrap_or(0) as usize;
+            json(crate::engine::slide_edit::image_canvas_change(deck_path, &content, &base, count, &placements, &strings("removeSlots")?.unwrap_or_default()))
+        }
+        // `deck_path` is unused: this makes the deck (`create_deck`'s files).
+        "create_deck" => {
+            let settings = NewDeckSettings::parse(args["aspectRatio"].as_str(), args["lang"].as_str())?;
+            Ok(scaffold_deck(&string("parentDir")?, &string("name")?, settings)?.display().to_string().into())
+        }
+        _ => Err(format!("{cmd} is not available to e2e")),
+    }
+}
+
 fn to_payload(output: RenderOutput, asset_base_url: String) -> Result<RenderPayload, String> {
     let manifest = serde_json::from_str(&output.manifest_json).map_err(|err| err.to_string())?;
     Ok(RenderPayload {
@@ -2874,6 +2905,39 @@ Start writing your slides here.\n";
             fonts_dir: None,
             deck_dir: PathBuf::new(),
         }
+    }
+
+    // --- invoke_for_e2e ---
+
+    #[test]
+    fn invoke_for_e2e_spec_render_draft_answers_the_payload_render_draft_would() {
+        let deck_path = crate::engine::fixtures::example_deck("minimal");
+        let source = std::fs::read_to_string(&deck_path).unwrap();
+        let payload = invoke_for_e2e(&deck_path, "render_draft", serde_json::json!({ "content": source })).unwrap();
+        assert_eq!(payload["manifest"]["slideCount"], 3);
+        assert_eq!(payload["fragments"].as_object().unwrap().len(), 3);
+        assert!(payload["slideLayouts"].is_object() && payload["headingLayouts"].is_array());
+    }
+
+    #[test]
+    fn invoke_for_e2e_adversarial_build_errors_and_bad_requests_are_errors() {
+        let deck_path = crate::engine::fixtures::example_deck("minimal");
+        let broken = "# a\n\nx\n<!-- {\"layout\":\"title-slide\"} -->";
+        assert!(invoke_for_e2e(&deck_path, "render_draft", serde_json::json!({ "content": broken })).is_err());
+        assert_eq!(invoke_for_e2e(&deck_path, "render_draft", serde_json::json!({})).unwrap_err(), "missing content");
+        assert_eq!(invoke_for_e2e(&deck_path, "create_image_canvas", serde_json::json!({ "content": "" })).unwrap_err(), "missing baseLayout");
+        assert!(invoke_for_e2e(&deck_path, "save_deck_source", serde_json::json!({ "content": "" })).unwrap_err().contains("not available"));
+    }
+
+    #[test]
+    fn invoke_for_e2e_spec_create_deck_scaffolds_a_new_deck_that_renders() {
+        let parent = tempfile::tempdir().unwrap();
+        let created = invoke_for_e2e(Path::new(""), "create_deck", serde_json::json!({ "parentDir": parent.path(), "name": "talk" })).unwrap();
+        let deck_path = PathBuf::from(created.as_str().unwrap());
+        assert_eq!(deck_path, parent.path().join("talk").join("deck.md"));
+        let source = std::fs::read_to_string(&deck_path).unwrap();
+        assert!(invoke_for_e2e(&deck_path, "render_draft", serde_json::json!({ "content": source })).is_ok());
+        assert!(invoke_for_e2e(Path::new(""), "create_deck", serde_json::json!({ "parentDir": parent.path(), "name": "talk" })).unwrap_err().contains("already exists"));
     }
 
     #[test]

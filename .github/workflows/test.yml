@@ -5,6 +5,9 @@
 #   webkit2gtk etc. to install and the same toolchain as the release build.
 # - e2e: the browser-mocked Playwright suite under e2e/. Not required yet
 #   (continue-on-error) until it has proven stable on CI.
+# - e2e-real-engine: the e2e/real-engine-*.e2e.ts specs, whose drafts the
+#   real engine renders (`cargo build --example e2e_engine`). On macOS, as
+#   building the app crate needs its platform; skipped by the e2e job.
 #
 # Skipped entirely for changes that only touch docs (todo/, docs/, skills,
 # README/CLAUDE.md). Listed by location rather than as `**/*.md`, since a
@@ -96,5 +99,28 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-test-results
+          path: test-results/
+          retention-days: 7
+
+  e2e-real-engine:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun install --frozen-lockfile
+      - run: bun run crit:fetch
+      - run: cargo build --manifest-path src-tauri/Cargo.toml --example e2e_engine
+      - run: bun run test:e2e e2e/real-engine-
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-real-engine-test-results
           path: test-results/
           retention-days: 7

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { clearedSlideText, removeSlideText, imageSlotContent, literalSlideText, slideHeadingText, slideInlineCode, slideTextLines, looseBodyEdit, removeImageSlot, slotTextInsertion, textEditFor, textEditInsertion } from './slideEdit'
+import { clearedSlideText, joinBlocks, removeSlideText, imageSlotContent, literalSlideText, slideHeadingText, slideInlineCode, slideTextLines, looseBodyEdit, removeImageSlot, slotTextInsertion, textEditFor, textEditInsertion } from './slideEdit'
 
 test('Japanese text edits locate the annotated bytes in the selected body and preserve heading syntax', () => {
   const body = '# 売上\n\n本文'
@@ -137,7 +137,7 @@ test('canvas blank lines stay inside one Markdown paragraph, including while typ
 
 test('deleting a text element removes list markers and empty slot fences but keeps headings editable', () => {
   const locate = (body: string, quote: string, heading = false) => textEditFor({ kind: 'text', text: quote, quote, heading, byteSpan: { start: body.indexOf(quote), end: body.indexOf(quote) + quote.length } }, body, body, 0)!
-  expect(removeSlideText(locate('# Title\n\n- Item\n- Keep', 'Item'))).toBe('# Title\n\n\n- Keep')
+  expect(removeSlideText(locate('# Title\n\n- Item\n- Keep', 'Item'))).toBe('# Title\n\n- Keep')
   expect(removeSlideText(locate('# Title\n\n::: {slot=left}\n\nText\n\n:::', 'Text'))).toBe('# Title')
   expect(removeSlideText(locate('# Title\n\nBody', 'Title', true))).toBe('# \u00a0\n\nBody')
   expect(imageSlotContent('# Title\n\n::: {slot=studio-image-1}\n\n![Photo](img/a.png)\n\n:::', 'studio-image-1')).toBe('![Photo](img/a.png)')
@@ -154,11 +154,49 @@ test('source annotations map through normalized blank lines without selecting an
   expect(textEditInsertion(edit, body, 'updated')!.insert).toBe('updated')
 })
 
+test('deleting a text element never leaves more than one blank line where it was', () => {
+  const locate = (body: string, quote: string) => textEditFor({ kind: 'text', text: quote, quote, byteSpan: { start: body.indexOf(quote), end: body.indexOf(quote) + quote.length } }, body, body, 0)!
+  const columns = '# Columns\n\n::: {slot=left}\n\nLeft text\n\n:::\n\n::: {slot=right}\n\nRight text\n\n:::'
+  expect(removeSlideText(locate(columns, 'Left text'))).toBe('# Columns\n\n::: {slot=right}\n\nRight text\n\n:::')
+  expect(removeSlideText(locate(columns, 'Right text'))).toBe('# Columns\n\n::: {slot=left}\n\nLeft text\n\n:::')
+  expect(removeSlideText(locate('# T\n\nOne\n\nTwo\n\nThree', 'Two'))).toBe('# T\n\nOne\n\nThree')
+  // A tight list stays tight (one line break between the remaining items).
+  expect(removeSlideText(locate('# T\n\n- A\n- B\n- C', 'B'))).toBe('# T\n\n- A\n- C')
+  expect(removeSlideText(locate('# T\n\n- A\n- B', 'B'))).toBe('# T\n\n- A')
+  expect(removeSlideText(locate('Only', 'Only'))).toBe('')
+  // Text inside a line keeps the rest of that line.
+  expect(removeSlideText(locate('# T\n\nKeep **cut** keep', '**cut**'))).toBe('# T\n\nKeep  keep')
+})
+
+test('blocks join with at most one blank line between them', () => {
+  expect(joinBlocks('a\n\n', '\n\nb')).toBe('a\n\nb')
+  expect(joinBlocks('a\n', '\nb')).toBe('a\n\nb')
+  expect(joinBlocks('a\n', 'b')).toBe('a\nb')
+  expect(joinBlocks('a', 'b')).toBe('ab')
+  expect(joinBlocks('a\n\n\n\n', 'b')).toBe('a\n\n\n\nb')
+  expect(joinBlocks('', '\n\n\nb')).toBe('\n\nb')
+  expect(joinBlocks('a\n\n', '')).toBe('a\n\n')
+  expect(joinBlocks('', '')).toBe('')
+})
+
+test('a draft keeping typed blank-line runs is still located by the rendered annotations', () => {
+  const raw = '# Title\n\n\n\nPara text'
+  const source = '<!-- {"key":"s"} -->\n' + raw
+  const start = source.indexOf('Para text')
+  const target = { kind: 'text' as const, quote: 'Para text', text: 'Para text', byteSpan: { start, end: start + 9 } }
+  const edit = textEditFor(target, source, raw, source.indexOf(raw), raw)!
+  expect(raw.slice(edit.from, edit.to)).toBe('Para text')
+  const collapsed = raw.replace(/\n{3,}/g, '\n\n')
+  const fromCollapsed = textEditFor(target, source, collapsed, source.indexOf(raw), raw)!
+  expect(collapsed.slice(fromCollapsed.from, fromCollapsed.to)).toBe('Para text')
+  expect(textEditFor(target, source, '# Other\n\nPara text', source.indexOf(raw), raw)).toBeNull()
+})
+
 test('deleting text preserves an unrelated slot example inside fenced code', () => {
   const body = '# Title\n\nRemove me\n\n```markdown\n::: {slot=left}\n\n:::\n```'
   const from = body.indexOf('Remove me')
   const edit = textEditFor({ kind: 'text', quote: 'Remove me', text: 'Remove me', byteSpan: { start: from, end: from + 9 } }, body, body, 0)!
-  expect(removeSlideText(edit)).toBe(body.replace('Remove me', ''))
+  expect(removeSlideText(edit)).toBe(body.replace('Remove me\n\n', ''))
 })
 
 test('list editing covers the whole annotated list including markers, without touching other blocks', () => {
