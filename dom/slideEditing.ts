@@ -74,6 +74,9 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     [data-studio-edit] { outline: 2px solid #2563eb; outline-offset: 5px; cursor: text; min-width: 1em; }
     [data-studio-slot][data-studio-edit] { display: block !important; }
     [data-studio-edit][data-studio-empty]::before { content: none; }
+    [data-studio-slot="footnotes"][data-studio-empty] { min-height: 0; padding: 8px 16px; }
+    [data-studio-slot="footnotes"][data-studio-empty]::before { font-size: 18px; }
+    [data-studio-reveal] { display: block !important; }
     [data-studio-edit-error] { outline-color: #dc2626; }
     :host([data-studio-editing]) [data-studio-image] { cursor: move; outline-offset: 3px; }
     :host([data-studio-editing]) [data-studio-image]:hover,:host([data-studio-editing]) [data-studio-image]:focus { outline: 2px solid #2563eb; }
@@ -102,15 +105,25 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
         image.append(handle)
       }
     }
+    for (const element of root.querySelectorAll<HTMLElement>('[data-studio-reveal]')) element.removeAttribute('data-studio-reveal')
     for (const element of root.querySelectorAll<HTMLElement>('[data-studio-slot]')) {
       const accepts = element.dataset.studioAccepts ?? ''
-      const empty = ['inline', 'blocks', 'list', 'image'].includes(accepts) && element.dataset.studioSlot !== 'footnotes' && element.textContent?.trim() === '' && !element.querySelector('img,svg,video,canvas')
+      const empty = ['inline', 'blocks', 'list', 'image'].includes(accepts) && element.textContent?.trim() === '' && !element.querySelector('img,svg,video,canvas')
       element.toggleAttribute('data-studio-empty', Boolean(empty) && state.callbacks.enabled())
       const freeText = element.closest<HTMLElement>('[data-studio-text]')
       if (freeText) freeText.hidden = Boolean(empty) && !freeText.querySelector('[data-studio-edit]')
+      if (state.callbacks.enabled() && !freeText?.hidden && (empty || element.matches('[data-studio-edit], :has([data-studio-edit])'))) revealHiddenAncestors(element)
       const ja = state.callbacks.language() === 'ja'
-      const labels: Record<string, string> = ja ? { title: 'タイトルを入力', body: '本文を入力', left: '左の文章を入力', right: '右の文章を入力', subtitle: 'サブタイトルを入力' } : { title: 'Add a title', body: 'Add text', left: 'Add left column text', right: 'Add right column text', subtitle: 'Add a subtitle' }
+      const labels: Record<string, string> = ja ? { title: 'タイトルを入力', body: '本文を入力', left: '左の文章を入力', right: '右の文章を入力', subtitle: 'サブタイトルを入力', footnotes: '脚注を追加' } : { title: 'Add a title', body: 'Add text', left: 'Add left column text', right: 'Add right column text', subtitle: 'Add a subtitle', footnotes: 'Add a footnote' }
       element.dataset.studioPlaceholder = accepts === 'image' ? (ja ? '画像を追加' : 'Add an image') : (labels[element.dataset.studioSlot ?? ''] ?? (ja ? 'クリックして入力' : 'Click to add text'))
+    }
+  }
+  // A layout may hide a slot's wrapper while the slot is empty (base.css
+  // hides `.footnotes` via `data-empty-slots`), which would hide its
+  // placeholder too; while editing, show that wrapper.
+  const revealHiddenAncestors = (element: HTMLElement) => {
+    for (let node = element.parentElement; node && !node.classList.contains('peitho-slide'); node = node.parentElement) {
+      if (getComputedStyle(node).display === 'none') node.setAttribute('data-studio-reveal', '')
     }
   }
   new MutationObserver(markEmpty).observe(root, { childList: true, subtree: true })

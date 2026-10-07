@@ -579,6 +579,15 @@ test('one click edits text, Escape selects the object, and empty canvas never de
   await expect(page.locator('[data-preview-add-image-menu]')).toBeVisible()
 })
 
+test('an emptied free-text object stays hidden while a hidden footnotes wrapper is revealed', async ({ page }) => {
+  const html = '<section class="peitho-slide" data-empty-slots="footnotes studio-text-1" style="width:1280px;height:720px;padding:64px;box-sizing:border-box;background:white"><h1><slot name="title" accepts="inline" arity="1"></slot></h1><div data-studio-text="studio-text-1" style="position:absolute;left:20%;top:30%;width:55%"><slot name="studio-text-1" accepts="blocks" arity="0..*"></slot></div><footer class="footnotes" style="display:none"><div><slot name="footnotes" accepts="blocks" arity="0..*"></slot></div></footer></section>'
+  const deck: MockDeck = { source: '<!-- {"key":"s","layout":"canvas"} -->\n# Title\n', deckPath: '/decks/talk/deck.md', editAnnotations: true, editableLayouts: true, layouts: ['canvas'], layoutFiles: { canvas: { html, css: null } } }
+  await mockTauri(page, deck); await page.goto('/')
+  await page.locator('[data-slide-row="0"]').click()
+  await expect(page.locator(`${PREVIEW} [data-studio-slot="footnotes"]`)).toBeVisible()
+  await expect(page.locator(`${PREVIEW} [data-studio-text="studio-text-1"]`)).toBeHidden()
+})
+
 const reproDirectory = process.env.PEITHO_REPRO_DECK_DIR
 
 test('real deck text removed from Markdown disappears and cannot keep an unsynchronized editing field', async ({ page }) => {
