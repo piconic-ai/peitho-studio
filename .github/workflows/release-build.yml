@@ -174,9 +174,15 @@ jobs:
             echo "Expected one signed updater archive" >&2
             exit 1
           fi
-          archive="${archives[0]}"
-          gh release upload "$TAG" "$archive" "$archive.sig" --clobber --repo "$GITHUB_REPOSITORY"
           version="${TAG#v}"
+          # GitHub rewrites an asset name containing a space ("Peitho
+          # Studio.app.tar.gz" was stored as "Peitho.Studio.app.tar.gz"), and
+          # the manifest URL must match the stored name exactly, so upload
+          # under a fixed, space-free name like the dmg.
+          archive="Peitho-Studio_${version}_aarch64.app.tar.gz"
+          cp "${archives[0]}" "$archive"
+          cp "${archives[0]}.sig" "$archive.sig"
+          gh release upload "$TAG" "$archive" "$archive.sig" --clobber --repo "$GITHUB_REPOSITORY"
           if [[ "$version" == *-* ]]; then
             exit 0
           fi
