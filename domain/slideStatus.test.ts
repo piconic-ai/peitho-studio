@@ -3,7 +3,7 @@ import { isExhaustivelyAccountedFor } from './spec'
 import type { ManifestSlide } from './render'
 import { slideEntryBadge, slideStatusBadge, type SlideStatusFlags } from './slideStatus'
 import { slideStatusBadgeExamples } from './slideStatus.examples'
-import type { PlaceholderSlideEntry, SlideListEntry } from './slideList'
+import type { PlaceholderSlideEntry } from './slideList'
 import type { RenderErrorPayload } from './render'
 
 const brokenError: RenderErrorPayload = {
@@ -14,7 +14,9 @@ const brokenError: RenderErrorPayload = {
   slide: { number: 2, key: 'two' },
 }
 
-function placeholder(overrides: Partial<PlaceholderSlideEntry> = {}): PlaceholderSlideEntry {
+type PlaceholderFlags = Omit<PlaceholderSlideEntry, 'badge'>
+
+function placeholder(overrides: Partial<PlaceholderFlags> = {}): PlaceholderFlags {
   return { kind: 'placeholder', sourceIndex: 1, title: 'Two', draft: false, error: null, key: 'placeholder:1', lastRenderedKey: null, ...overrides }
 }
 
@@ -33,7 +35,7 @@ describe('slideEntryBadge', () => {
       index: 0, key: 'intro', src: '# Intro', hasNotes: false, skip: true, revealSteps: 1,
       text: { title: 'Intro', body: '', code: '' },
     }
-    const rendered: SlideListEntry = { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide }
+    const rendered = { kind: 'rendered' as const, sourceIndex: 0, manifestIndex: 0, slide }
     expect(slideEntryBadge(rendered)).toBe('skip')
     expect(slideEntryBadge({ ...rendered, slide: { ...slide, skip: false } })).toBeNull()
   })

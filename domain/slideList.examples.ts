@@ -47,8 +47,8 @@ export const buildSlideListExamples = defineExamples<BuildSlideListState, SlideL
       },
       event: 'slide-list-built',
       expect: [
-        { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
-        { kind: 'rendered', sourceIndex: 1, manifestIndex: 1, slide: slide(1, 'two', 'Two') },
+        { kind: 'rendered', badge: null, sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
+        { kind: 'rendered', badge: null, sourceIndex: 1, manifestIndex: 1, slide: slide(1, 'two', 'Two') },
       ],
     },
     {
@@ -62,9 +62,9 @@ export const buildSlideListExamples = defineExamples<BuildSlideListState, SlideL
       },
       event: 'slide-list-built',
       expect: [
-        { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
-        { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: null, error: null },
-        { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'three', 'Three') },
+        { kind: 'rendered', badge: null, sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
+        { kind: 'placeholder', badge: 'draft', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: null, error: null },
+        { kind: 'rendered', badge: null, sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'three', 'Three') },
       ],
     },
     {
@@ -78,8 +78,8 @@ export const buildSlideListExamples = defineExamples<BuildSlideListState, SlideL
       },
       event: 'slide-list-built',
       expect: [
-        { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
-        { kind: 'placeholder', sourceIndex: 1, title: 'Two', draft: false, key: 'placeholder:1', lastRenderedKey: null, error: null },
+        { kind: 'rendered', badge: null, sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
+        { kind: 'placeholder', badge: null, sourceIndex: 1, title: 'Two', draft: false, key: 'placeholder:1', lastRenderedKey: null, error: null },
       ],
     },
     {
@@ -93,7 +93,7 @@ export const buildSlideListExamples = defineExamples<BuildSlideListState, SlideL
       },
       event: 'slide-list-built',
       expect: [
-        { kind: 'placeholder', sourceIndex: 0, title: 'Cover', draft: true, key: 'placeholder:0', lastRenderedKey: 'cover', error: null },
+        { kind: 'placeholder', badge: 'draft', sourceIndex: 0, title: 'Cover', draft: true, key: 'placeholder:0', lastRenderedKey: 'cover', error: null },
       ],
     },
     {
@@ -108,9 +108,9 @@ export const buildSlideListExamples = defineExamples<BuildSlideListState, SlideL
       },
       event: 'slide-list-built',
       expect: [
-        { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
-        { kind: 'placeholder', sourceIndex: 1, title: 'Two', draft: false, key: 'placeholder:1', lastRenderedKey: 'two', error: brokenError },
-        { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'three', 'Three') },
+        { kind: 'rendered', badge: null, sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
+        { kind: 'placeholder', badge: 'error', sourceIndex: 1, title: 'Two', draft: false, key: 'placeholder:1', lastRenderedKey: 'two', error: brokenError },
+        { kind: 'rendered', badge: null, sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'three', 'Three') },
       ],
     },
   ],

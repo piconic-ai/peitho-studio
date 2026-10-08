@@ -2,7 +2,7 @@
 // decision only; `components/SlideList.tsx` just renders whatever this
 // returns as an overlay on top of the (still visible) thumbnail.
 import type { PageConfig } from './pageConfig'
-import type { SlideListEntry } from './slideList'
+import type { RenderErrorPayload } from './render'
 
 /** `error`: the slide doesn't build and was isolated from the render
  * (`domain/brokenSlides.ts`); `draft`/`skip`: its PageComment flags. */
@@ -26,15 +26,23 @@ export function slideStatusBadge(flags: SlideStatusFlags): SlideStatusBadge | nu
   return null
 }
 
-/** The badge a slide list row wears. A rendered slide follows
- * `slideStatusBadge` on its manifest flags (`skip`; a draft never
- * renders). A placeholder wears ERROR when it was isolated for not
- * building — the strongest statement, over a `draft` mark it may also
- * carry — else DRAFT exactly when `entry.draft` says so, and never SKIP:
- * peitho-core rejects a slide marked both draft and skip, so a placeholder
- * (which exists because it IS a draft, was isolated, or the manifest
- * hasn't caught up yet) is never meaningfully "skipped" too. */
-export function slideEntryBadge(entry: SlideListEntry): SlideStatusBadge | null {
+/** What of a slide list entry (`domain/slideList.ts`) its badge is
+ * decided from. */
+export type SlideEntryFlags =
+  | { kind: 'rendered'; slide: SlideStatusFlags }
+  | { kind: 'placeholder'; draft: boolean; error: RenderErrorPayload | null }
+
+/** The badge a slide list row wears — decided once, as `buildSlideList`
+ * makes the entry (`entry.badge`), not by every binding that draws it. A
+ * rendered slide follows `slideStatusBadge` on its manifest flags
+ * (`skip`; a draft never renders). A placeholder wears ERROR when it was
+ * isolated for not building — the strongest statement, over a `draft`
+ * mark it may also carry — else DRAFT exactly when `entry.draft` says
+ * so, and never SKIP: peitho-core rejects a slide marked both draft and
+ * skip, so a placeholder (which exists because it IS a draft, was
+ * isolated, or the manifest hasn't caught up yet) is never meaningfully
+ * "skipped" too. */
+export function slideEntryBadge(entry: SlideEntryFlags): SlideStatusBadge | null {
   if (entry.kind === 'rendered') return slideStatusBadge(entry.slide)
   if (entry.error !== null) return 'error'
   return entry.draft ? 'draft' : null

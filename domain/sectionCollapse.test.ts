@@ -5,11 +5,11 @@ import { collapseKeyAt, collapsedSectionContaining, collapsedSectionStarts, last
 
 function rendered(sourceIndex: number, manifestIndex: number, key: string): SlideListEntry {
   const slide: ManifestSlide = { index: manifestIndex, key, src: '', hasNotes: false, skip: false, revealSteps: 1, text: { title: key, body: '', code: '' } }
-  return { kind: 'rendered', sourceIndex, manifestIndex, slide }
+  return { kind: 'rendered', badge: null, sourceIndex, manifestIndex, slide }
 }
 
 function placeholder(sourceIndex: number): SlideListEntry {
-  return { kind: 'placeholder', sourceIndex, title: '', draft: true, key: `placeholder:${String(sourceIndex)}`, lastRenderedKey: null, error: null }
+  return { kind: 'placeholder', badge: 'draft', sourceIndex, title: '', draft: true, key: `placeholder:${String(sourceIndex)}`, lastRenderedKey: null, error: null }
 }
 
 function section(name: string, startIndex: number, endIndex: number): ManifestSection {

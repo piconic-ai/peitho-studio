@@ -3,7 +3,6 @@
 import { type ManifestSection, type SectionDraft } from '../domain/render'
 import { type DurationPart, formatDurationMs, msToMinutesSeconds } from '../domain/slides'
 import { type SlideListEntry } from '../domain/slideList'
-import { slideEntryBadge } from '../domain/slideStatus'
 import { type RowVisibility } from '../domain/sectionCollapse'
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
@@ -337,10 +336,10 @@ export function SlideList(props: SlideListProps) {
                       {/* Laid over the thumbnail (canvas or placeholder)
                           rather than replacing it, so the slide stays
                           recognizable underneath (`domain/slideStatus.ts`'s
-                          `slideEntryBadge` decides which badge). */}
-                      {slideEntryBadge(entry) !== null ? (
+                          `slideEntryBadge` decided which, as `entry.badge`). */}
+                      {entry.badge !== null ? (
                         <span
-                          data-slide-status={slideEntryBadge(entry)}
+                          data-slide-status={entry.badge}
                           className="absolute top-0 right-0 bottom-0 left-0 flex items-start justify-end p-1 bg-black/40 pointer-events-none"
                         >
                           {/* DRAFT and SKIP share the same subdued, dark
@@ -351,8 +350,8 @@ export function SlideList(props: SlideListProps) {
                               ERROR is exactly that alert — the slide was
                               left out of the render for not building — so
                               it alone takes the destructive color. */}
-                          <span className={(slideEntryBadge(entry) === 'error' ? 'bg-destructive text-destructive-foreground' : 'bg-muted text-foreground') + ' rounded-sm px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide'}>
-                            {messagesFor(props.language)[slideEntryBadge(entry) === 'error' ? 'errorBadge' : slideEntryBadge(entry) === 'draft' ? 'draftBadge' : 'skipBadge']}
+                          <span className={(entry.badge === 'error' ? 'bg-destructive text-destructive-foreground' : 'bg-muted text-foreground') + ' rounded-sm px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide'}>
+                            {messagesFor(props.language)[entry.badge === 'error' ? 'errorBadge' : entry.badge === 'draft' ? 'draftBadge' : 'skipBadge']}
                           </span>
                         </span>
                       ) : null}

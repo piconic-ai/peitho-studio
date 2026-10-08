@@ -14,6 +14,7 @@
 import { type ManifestSection, type ManifestSlide, type RenderErrorPayload } from './render'
 import { type BrokenSlides, NO_BROKEN_SLIDES } from './brokenSlides'
 import { splitSlides, extractPageComment, extractHeadingText } from './slides'
+import { type SlideStatusBadge, slideEntryBadge } from './slideStatus'
 
 /** A slide the manifest actually rendered — peitho-core has real fragment
  * HTML for it, and `slide.index` is this entry's position within
@@ -24,6 +25,8 @@ export interface RenderedSlideEntry {
   sourceIndex: number
   manifestIndex: number
   slide: ManifestSlide
+  /** The row's status badge (`slideEntryBadge`), decided here once. */
+  badge: SlideStatusBadge | null
 }
 
 /** A slide the manifest has nothing current to say about: it's marked
@@ -76,6 +79,8 @@ export interface PlaceholderSlideEntry {
   error: RenderErrorPayload | null
   key: string
   lastRenderedKey: string | null
+  /** The row's status badge (`slideEntryBadge`), decided here once. */
+  badge: SlideStatusBadge | null
 }
 
 export type SlideListEntry = RenderedSlideEntry | PlaceholderSlideEntry
@@ -107,19 +112,21 @@ export function buildSlideList(fullSource: string, manifestSlides: readonly Mani
     if (config.draft !== true && error === null) {
       const slide = manifestSlides[manifestIndex]
       if (slide) {
-        entries.push({ kind: 'rendered', sourceIndex, manifestIndex, slide })
+        entries.push({ kind: 'rendered', sourceIndex, manifestIndex, slide, badge: slideEntryBadge({ kind: 'rendered', slide }) })
         manifestIndex++
         continue
       }
     }
+    const draft = config.draft === true
     entries.push({
       kind: 'placeholder',
       sourceIndex,
       title: extractHeadingText(rest) ?? '',
-      draft: config.draft === true,
+      draft,
       error,
       key: `placeholder:${String(sourceIndex)}`,
       lastRenderedKey: config.key ?? null,
+      badge: slideEntryBadge({ kind: 'placeholder', draft, error }),
     })
   }
   return entries
