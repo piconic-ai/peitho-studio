@@ -88,12 +88,15 @@ export interface ReviewRowsInput {
 }
 
 /** A sent comment's text split back into the label Studio put in front of
- * it (`[Slide 2 › heading "Hi"] Make it bigger`, `[Layout cover (…)] …`)
- * and the text itself. The slide key a label may carry, and the files a
- * layout label names, are for the agent, so the target leaves them out. */
+ * it (`[Slide 2 › heading "Hi"] Make it bigger`, `[Layout cover (…)] …`,
+ * `[Build error] …` for one Studio reported on its own) and the text
+ * itself. The slide key a label may carry, and the files a layout label
+ * names, are for the agent, so the target leaves them out. */
 export function splitCommentLabel(body: string): { target: string | null; text: string } {
   const match = /^\[(Slide \d+)(?: \(key: [A-Za-z0-9_-]+\))?([^\n]*?)\] ([\s\S]*)$/.exec(body)
   if (match) return { target: match[1] + match[2], text: match[3] }
+  const reported = /^\[(Build error)\] ([\s\S]*)$/.exec(body)
+  if (reported) return { target: reported[1], text: reported[2] }
   const layout = splitLayoutLabel(body)
   return layout ? { target: layoutTargetLabel(layout.target), text: layout.text } : { target: null, text: body }
 }

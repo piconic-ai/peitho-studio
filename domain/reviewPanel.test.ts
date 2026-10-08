@@ -30,6 +30,10 @@ describe('splitCommentLabel', () => {
     expect(splitCommentLabel('[All layouts (layouts/, css/)] Calmer')).toEqual({ target: 'All layouts', text: 'Calmer' })
   })
 
+  test('spec: Given a build error Studio reported on its own, Then the target says so and the text is the error', () => {
+    expect(splitCommentLabel('[Build error] slide 2, line 8: slot \'body\' got 2 item(s)\n= help: remove one')).toEqual({ target: 'Build error', text: 'slide 2, line 8: slot \'body\' got 2 item(s)\n= help: remove one' })
+  })
+
   test('adversarial: Given text with no label, a bracket that is not a slide label, or an empty string, Then the text stays whole', () => {
     expect(splitCommentLabel('Make it bigger')).toEqual({ target: null, text: 'Make it bigger' })
     expect(splitCommentLabel('[note] fix')).toEqual({ target: null, text: '[note] fix' })
