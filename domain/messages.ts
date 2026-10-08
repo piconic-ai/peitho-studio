@@ -71,6 +71,12 @@ export interface Messages {
   slideFallbackTitle: (position: number) => string
   draftBadge: string
   skipBadge: string
+  /** The badge of a slide isolated from the render for not building
+   * (`domain/brokenSlides.ts`). */
+  errorBadge: string
+  /** The error bar while slides are isolated: how many, then the first
+   * one's own error (peitho-core's headline). */
+  slidesDoNotBuild: (count: number, headline: string) => string
 
   // Slide context menu
   newSlide: string
@@ -167,6 +173,10 @@ export interface Messages {
    * the deck on disk doesn't build — and the way out, below it. */
   deckDoesNotBuild: string
   fixSourceToPreview: string
+  /** The same pair for one slide isolated from the render, shown while it
+   * is the selected slide. */
+  slideDoesNotBuild: string
+  fixSlideToPreview: string
 
   // Review comments to the Coding Agent (the preview's pins, the comment
   // box and the comments panel under the preview)
@@ -309,6 +319,8 @@ const en: Messages = {
   slideFallbackTitle: position => `Slide ${String(position)}`,
   draftBadge: 'Draft',
   skipBadge: 'Skip',
+  errorBadge: 'Error',
+  slidesDoNotBuild: (count, headline) => `${String(count)} ${count === 1 ? 'slide doesn\'t' : 'slides don\'t'} build: ${headline}`,
 
   newSlide: 'New Slide',
   cut: 'Cut',
@@ -385,6 +397,8 @@ const en: Messages = {
   openDeckToPreview: 'Open a deck to preview it.',
   deckDoesNotBuild: 'This deck doesn\'t build yet, so there is nothing to preview.',
   fixSourceToPreview: 'Fix the source in the editor and save; the preview comes back once the deck builds.',
+  slideDoesNotBuild: 'This slide doesn\'t build, so it was left out of the deck\'s preview.',
+  fixSlideToPreview: 'Fix it in the editor and save; its preview comes back once it builds.',
 
   reviewComments: 'Comments for the agent',
   connectAgentTitle: 'First, connect me',
@@ -517,6 +531,8 @@ const ja: Messages = {
   slideFallbackTitle: position => `スライド ${String(position)}`,
   draftBadge: '下書き',
   skipBadge: 'スキップ',
+  errorBadge: 'エラー',
+  slidesDoNotBuild: (count, headline) => `${String(count)}枚のスライドがビルドできません: ${headline}`,
 
   newSlide: '新規スライド',
   cut: 'カット',
@@ -593,6 +609,8 @@ const ja: Messages = {
   openDeckToPreview: 'デッキを開くとプレビューが表示されます。',
   deckDoesNotBuild: 'このデッキはまだビルドできないため、プレビューがありません。',
   fixSourceToPreview: 'エディタでソースを直して保存すると、ビルドが通った時点でプレビューが戻ります。',
+  slideDoesNotBuild: 'このスライドはビルドできないため、デッキのプレビューから外しています。',
+  fixSlideToPreview: 'エディタで直して保存すると、ビルドが通った時点でこのスライドのプレビューが戻ります。',
 
   reviewComments: 'エージェントへのコメント',
   connectAgentTitle: 'まず、私を接続してください',

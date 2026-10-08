@@ -16,11 +16,16 @@ export interface SlidePreviewProps {
   language: Language
   selectedSlideKey: string | null
   hasDeck: boolean
-  /** peitho-core's refusal of the deck on disk (`renderFailureMessage`),
-   * shown in place of the "select a slide" hint while nothing is selected
-   * — a deck that opened broken has no slide to select, since every row
-   * is a placeholder. `null` while the deck builds. */
+  /** peitho-core's refusal (`renderFailureMessage`) of the deck on disk,
+   * or of the selected slide alone when it was isolated from the render
+   * (`buildErrorScope` tells which), shown in place of the "select a
+   * slide" hint while nothing is rendered for the selection — a deck that
+   * opened broken has no slide to select, since every row is a
+   * placeholder, and an isolated slide is a placeholder too. `null` while
+   * the deck and the selected slide build. */
   buildError: string | null
+  /** What `buildError` is about: the whole deck, or the selected slide. */
+  buildErrorScope: 'deck' | 'slide'
   /** Which toggle segment is lit; the canvas size for it arrives as
    * `canvasWidth`/`canvasHeight`. */
   viewportMode: ViewportMode
@@ -188,17 +193,21 @@ export function SlidePreview(props: SlidePreviewProps) {
         {props.hasDeck ? messagesFor(props.language).selectSlideToPreview : messagesFor(props.language).openDeckToPreview}
       </div>
       {/* Permanently mounted like its siblings (see above): the deck on
-          disk doesn't build, and there is no slide to show — peitho-core's
-          error, as the error bar has it, stays readable here. */}
+          disk doesn't build, or the selected slide was isolated for not
+          building, and there is no slide to show — peitho-core's error, as
+          the error bar has it, stays readable here. Each text is picked
+          by one expression indexing the messages, not a `? :` between two
+          children (see CLAUDE.md's BarefootJS pitfalls). */}
       <div
         data-preview-build-error
+        data-preview-build-error-scope={props.buildErrorScope}
         className={(props.selectedSlideKey === null && props.buildError !== null ? '' : 'hidden ') + 'flex-1 min-h-0 overflow-auto flex flex-col justify-center gap-3 p-6 text-sm'}
       >
-        <p className="text-destructive font-medium">{messagesFor(props.language).deckDoesNotBuild}</p>
+        <p className="text-destructive font-medium">{messagesFor(props.language)[props.buildErrorScope === 'slide' ? 'slideDoesNotBuild' : 'deckDoesNotBuild']}</p>
         {/* Not `bg-destructive/10`: that class is how the e2e suite finds
             the error bar (`StatusBar.tsx`), one element at a time. */}
         <pre className="font-mono text-xs whitespace-pre-wrap select-text text-destructive bg-muted rounded p-3">{props.buildError ?? ''}</pre>
-        <p className="text-muted-foreground">{messagesFor(props.language).fixSourceToPreview}</p>
+        <p className="text-muted-foreground">{messagesFor(props.language)[props.buildErrorScope === 'slide' ? 'fixSlideToPreview' : 'fixSourceToPreview']}</p>
       </div>
     </div>
   )

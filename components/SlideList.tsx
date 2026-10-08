@@ -3,6 +3,7 @@
 import { type ManifestSection, type SectionDraft } from '../domain/render'
 import { type DurationPart, formatDurationMs, msToMinutesSeconds } from '../domain/slides'
 import { type SlideListEntry } from '../domain/slideList'
+import { slideEntryBadge } from '../domain/slideStatus'
 import { type RowVisibility } from '../domain/sectionCollapse'
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
@@ -82,18 +83,6 @@ export interface SlideListProps {
   /** Collapses, or expands again, the section whose header sits on row
    * `index`. */
   onToggleSectionCollapse: (index: number) => void
-}
-
-/** This row's status badge, if any — `draft` wins over `skip` for a
- * rendered slide (mirroring `domain/slideStatus.ts`'s own rule), and a
- * placeholder wears DRAFT exactly when `entry.draft` says so (it never
- * wears SKIP: peitho-core rejects a slide marked both draft and skip, so a
- * placeholder — which only exists because it IS a draft, or because the
- * manifest hasn't caught up yet — is never meaningfully "skipped" too). */
-function badgeFor(entry: SlideListEntry): 'draft' | 'skip' | null {
-  if (entry.kind === 'placeholder') return entry.draft ? 'draft' : null
-  if (entry.slide.skip) return 'skip'
-  return null
 }
 
 /** What this row's thumbnail should show: a live canvas keyed off a real
@@ -347,19 +336,23 @@ export function SlideList(props: SlideListProps) {
                       )}
                       {/* Laid over the thumbnail (canvas or placeholder)
                           rather than replacing it, so the slide stays
-                          recognizable underneath. */}
-                      {badgeFor(entry) !== null ? (
+                          recognizable underneath (`domain/slideStatus.ts`'s
+                          `slideEntryBadge` decides which badge). */}
+                      {slideEntryBadge(entry) !== null ? (
                         <span
-                          data-slide-status={badgeFor(entry)}
+                          data-slide-status={slideEntryBadge(entry)}
                           className="absolute top-0 right-0 bottom-0 left-0 flex items-start justify-end p-1 bg-black/40 pointer-events-none"
                         >
-                          {/* Both badges share the same subdued, dark
+                          {/* DRAFT and SKIP share the same subdued, dark
                               treatment — SKIP used to be a solid destructive
                               red, which read as an error/alert rather than
                               an ordinary editorial state, easily the most
-                              eye-catching thing on the whole slide list. */}
-                          <span className="rounded-sm px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide bg-muted text-foreground">
-                            {badgeFor(entry) === 'draft' ? messagesFor(props.language).draftBadge : messagesFor(props.language).skipBadge}
+                              eye-catching thing on the whole slide list.
+                              ERROR is exactly that alert — the slide was
+                              left out of the render for not building — so
+                              it alone takes the destructive color. */}
+                          <span className={(slideEntryBadge(entry) === 'error' ? 'bg-destructive text-destructive-foreground' : 'bg-muted text-foreground') + ' rounded-sm px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide'}>
+                            {messagesFor(props.language)[slideEntryBadge(entry) === 'error' ? 'errorBadge' : slideEntryBadge(entry) === 'draft' ? 'draftBadge' : 'skipBadge']}
                           </span>
                         </span>
                       ) : null}
