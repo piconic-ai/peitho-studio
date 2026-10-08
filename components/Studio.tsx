@@ -1418,13 +1418,31 @@ export function Studio() {
   // build (`renderIsolating`, any slide), so one broken slide shows as an
   // ERROR row instead of blanking the whole deck; a draft being typed
   // isn't (its failure is the editor's, shown in the error bar only).
+  //
+  // A persisted render costs up to `MAX_ISOLATIONS + 1` renders, and the
+  // same source is asked for from several places at once when a deck
+  // opens broken (`runOpen`, and the typing effect below as the selection
+  // settles): a persisted render already in flight for the same source is
+  // shared, and a source known not to build (`persistedFailedSource`)
+  // isn't rendered again until it changes.
   let previewGeneration = 0
-  async function renderPreview(content: string, { persisted = false }: { persisted?: boolean } = {}): Promise<void> {
+  let persistedRender: { content: string; done: Promise<void> } | null = null
+  let persistedFailedSource: string | null = null
+  function renderPreview(content: string, { persisted = false }: { persisted?: boolean } = {}): Promise<void> {
+    if (!persisted) return runRenderPreview(content, false)
+    if (persistedRender?.content === content) return persistedRender.done
+    const done = runRenderPreview(content, true)
+    persistedRender = { content, done }
+    void done.finally(() => { if (persistedRender?.done === done) persistedRender = null })
+    return done
+  }
+  async function runRenderPreview(content: string, persisted: boolean): Promise<void> {
     const generation = ++previewGeneration
     try {
       const result = await renderIsolating(content, () => persisted)
       if (generation !== previewGeneration) return
       if (result.kind === 'rendered') {
+        persistedFailedSource = null
         render.applyRenderPayload(result.payload, content, result.broken)
         setErrorMessage(null)
         return
@@ -1436,6 +1454,7 @@ export function Studio() {
         // The deck on disk doesn't build: `render.outcome()` carries its
         // error (the error bar and the preview pane show it from there),
         // and an earlier draft's error — about text that is gone — goes.
+        persistedFailedSource = content
         render.markRenderFailed(result.error)
         setErrorMessage(null)
       } else {
@@ -1490,7 +1509,7 @@ export function Studio() {
     if (!editor.isDirty()) {
       untrack(() => {
         const source = editor.fullSource()
-        if (source !== render.renderedSource()) void renderPreview(source, { persisted: true })
+        if (source !== render.renderedSource() && source !== persistedFailedSource) void renderPreview(source, { persisted: true })
         // Back to what's on screen (an Undo before the typed text rendered):
         // a render still in flight is now stale and must not land.
         else previewGeneration++
