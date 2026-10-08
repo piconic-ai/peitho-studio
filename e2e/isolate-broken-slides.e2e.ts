@@ -10,6 +10,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { emitLayoutFilesChanged, mockTauri, slotErrorAt, type MockDeck } from './helpers/mockTauri'
 import { editorText, fillEditor, moveToEditorEnd } from './helpers/codeEditor'
+import type { RenderErrorPayload } from '../domain/render'
 
 const ERROR_BAR = '.bg-destructive\\/10'
 const PREVIEW_ERROR = '[data-preview-build-error]'
@@ -329,3 +330,36 @@ test('Given a keyless slide 3 is isolated, when a `---` typed into slide 1 split
   await expect(page.locator(THUMBNAIL_CANVAS)).toHaveCount(3)
 })
 
+test('Given slide 2 was isolated while the deck source editor was open, when the editor\'s typing elsewhere is saved, then the save goes through around slide 2', async ({ page }) => {
+  const frontmatterError: RenderErrorPayload = {
+    kind: 'Parse', line: 2, originFile: null,
+    message: 'invalid deck frontmatter: unknown field `fontss`',
+    help: 'use only the supported deck frontmatter keys',
+    headline: 'line 2: invalid deck frontmatter: unknown field `fontss`',
+    slide: null,
+  }
+  const deck = await open(page, brokenDeck({
+    source: '---\nfontss: x\n---\n\n' + SOURCE,
+    renderError: content => (content.includes('fontss') ? frontmatterError : slotErrorAt('BROKEN')(content)),
+  }))
+  await page.locator('[data-source-toggle]').click()
+  await expect(page.locator('[data-editor="source"]')).toBeVisible()
+
+  // The agent fixes the frontmatter on disk: the editor, with nothing
+  // typed, follows it, and slide 2 — refused now that the deck parses —
+  // is isolated.
+  deck.source = SOURCE
+  await page.evaluate(() => {
+    (window as unknown as { __mockEmitTauriEvent?: (event: string, payload: unknown) => void }).__mockEmitTauriEvent?.('deck-file-changed', null)
+  })
+  await expect(page.locator('[data-slide-row="1"]').locator(ERROR_BADGE)).toBeVisible()
+  await expect.poll(() => editorText(page, 'source')).toBe(SOURCE)
+
+  await fillEditor(page, SOURCE.replace('# Three', '# Three edited'), 'source')
+
+  await expect.poll(() => deck.source).toContain('# Three edited')
+  expect(deck.source).toContain('# Two\n\nBROKEN')
+  expect(deck.source).not.toContain('draft')
+  await expect(page.locator('[data-slide-row="1"]').locator(ERROR_BADGE)).toBeVisible()
+  await expect(page.locator(ERROR_BAR)).toContainText("1 slide doesn't build")
+})

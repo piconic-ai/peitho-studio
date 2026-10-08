@@ -31,7 +31,7 @@ import { CommentBox } from './CommentBox'
 import { PanelToggle } from './PanelToggle'
 import { ReviewPanel } from './ReviewPanel'
 import { type ManifestSlide, type RenderErrorPayload, type RenderPayload, type SectionDraft, brokenSlideIndex, renderFailureMessage } from '../domain/render'
-import { type BrokenSlides, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesAfterEdit, brokenSlidesSummary, isolateSlide, restoreEditAnnotations, saveDecision, startIsolation } from '../domain/brokenSlides'
+import { type BrokenSlides, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesAfterEdit, brokenSlidesSummary, isolateSlide, restoreEditAnnotations, saveDecision, sourceSaveDecision, startIsolation } from '../domain/brokenSlides'
 import { RenderFailure } from '../ipc/renderOutcome'
 import { SOURCE_EDITING_CLOSED, openSourceEditing, slideIndexAfterSourceSave, sourceEditorOffered, sourceReadFromDisk, sourceSaved, typeInSource } from '../domain/sourceEditing'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
@@ -523,8 +523,15 @@ export function Studio() {
     setErrorMessage(null)
     setSourceSavesInFlight(n => n + 1)
     try {
-      const payload = await deckIpc.renderDraft(text)
-      render.applyRenderPayload(payload, text)
+      // Rendered without a slide already known broken that the text keeps
+      // word for word (`sourceSaveDecision`): the editor's own typing is
+      // never saved broken, but a slide it didn't touch doesn't hold its
+      // save back either.
+      const known = render.brokenSlides()
+      const from = render.renderedSource()
+      const result = await renderIsolating(text, error => sourceSaveDecision(error, known, from, text) === 'isolate')
+      if (result.kind === 'failed') throw new RenderFailure(result.error)
+      render.applyRenderPayload(result.payload, text, result.broken)
       await deckIpc.saveDeckSource(text)
       // From disk, as after an external change: the slide session, its
       // drafts and every kept position are rebuilt for the new source.

@@ -239,6 +239,24 @@ export function brokenSlidesAfterEdit(known: BrokenSlides, editedIndex: number |
   return shifted
 }
 
+/** `saveDecision` for the whole-deck source editor, whose text can move
+ * any slide, so a position alone says nothing: the slide `error` names
+ * in `to` (the text being saved) is isolated when it is, word for word,
+ * one `known` names in `from` (the source `known` is keyed to) — the
+ * slide was known broken and the user didn't touch it, wherever it now
+ * sits. A slide they changed is their own typing, never saved broken. */
+export function sourceSaveDecision(error: RenderErrorPayload, known: BrokenSlides, from: string, to: string): 'isolate' | 'block' {
+  const toRanges = splitSlides(to)
+  const index = brokenSlideIndex(error, toRanges.length)
+  if (index === null) return 'block'
+  const fromRanges = splitSlides(from)
+  const text = toRanges[index].text.trim()
+  for (const knownIndex of known.keys()) {
+    if (fromRanges[knownIndex]?.text.trim() === text) return 'isolate'
+  }
+  return 'block'
+}
+
 /** `known` re-keyed to where its slides sit once `cmd` has run (see
  * `indexAfterCommand`) — a deleted slide is forgotten. */
 export function brokenSlidesAfterCommand(known: BrokenSlides, cmd: SlideCommand): BrokenSlides {

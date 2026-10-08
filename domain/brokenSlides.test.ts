@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  MAX_ISOLATIONS, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesAfterEdit, brokenSlidesSummary, isolateSlide, originalByteOffset, restoreEditAnnotations, saveDecision, startIsolation, withSlidesDrafted,
+  MAX_ISOLATIONS, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesAfterEdit, brokenSlidesSummary, isolateSlide, originalByteOffset, restoreEditAnnotations, saveDecision, sourceSaveDecision, startIsolation, withSlidesDrafted,
   type BrokenSlides, type SourceEdit,
 } from './brokenSlides'
 
@@ -488,3 +488,45 @@ describe('brokenSlidesAfterEdit', () => {
   })
 })
 
+describe('sourceSaveDecision', () => {
+  const known: BrokenSlides = new Map([[1, slideError(2, 'two')]])
+
+  test('spec: Given slide 2 known broken, when the source editor\'s text fails on it unchanged, then it is isolated', () => {
+    const to = DECK.replace('# Three', '# Three edited')
+    expect(sourceSaveDecision(slideError(2, 'two'), known, DECK, to)).toBe('isolate')
+  })
+
+  test('spec: Given the typing moved the known slide down, when the error names its new position, then it is still isolated', () => {
+    const to = '# Zero\n\n---\n\n' + DECK
+    expect(sourceSaveDecision(slideError(3, 'two'), known, DECK, to)).toBe('isolate')
+  })
+
+  test('spec: Given the user changed the known slide and it still does not build, then the save is blocked — their typing is not saved broken', () => {
+    const to = DECK.replace('BROKEN', 'BROKEN still')
+    expect(sourceSaveDecision(slideError(2, 'two'), known, DECK, to)).toBe('block')
+  })
+
+  test('spec: Given the error names a slide not known broken, then blocked', () => {
+    expect(sourceSaveDecision(slideError(3), known, DECK, DECK)).toBe('block')
+    expect(sourceSaveDecision(slideError(2, 'two'), NO_BROKEN_SLIDES, DECK, DECK)).toBe('block')
+  })
+
+  test('spec: blank lines around the slide do not make it another slide', () => {
+    const to = DECK.replace('\n\n<!-- {"key":"two"} -->', '\n\n\n<!-- {"key":"two"} -->').replace('BROKEN\n\n---', 'BROKEN\n\n\n---')
+    expect(sourceSaveDecision(slideError(2, 'two'), known, DECK, to)).toBe('isolate')
+  })
+
+  test('adversarial: an error about no slide, or a slide past the text being saved, is blocked', () => {
+    expect(sourceSaveDecision(slideError(2, null, { slide: null }), known, DECK, DECK)).toBe('block')
+    expect(sourceSaveDecision(slideError(9), known, DECK, DECK)).toBe('block')
+  })
+
+  test('adversarial: a known position the old source does not have matches nothing', () => {
+    expect(sourceSaveDecision(slideError(2, 'two'), new Map([[7, slideError(8)]]), DECK, DECK)).toBe('block')
+  })
+
+  test('adversarial: empty sources on either side are blocked, not thrown', () => {
+    expect(sourceSaveDecision(slideError(1), known, '', DECK)).toBe('block')
+    expect(sourceSaveDecision(slideError(1), known, DECK, '')).toBe('block')
+  })
+})
