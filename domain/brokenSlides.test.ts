@@ -1,8 +1,17 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  MAX_ISOLATIONS, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesSummary, isolateSlide, saveDecision, startIsolation, withSlidesDrafted,
-  type BrokenSlides,
+  MAX_ISOLATIONS, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesSummary, isolateSlide, originalByteOffset, restoreEditAnnotations, saveDecision, startIsolation, withSlidesDrafted,
+  type BrokenSlides, type SourceEdit,
 } from './brokenSlides'
+
+/** The attempt `withSlidesDrafted` builds, or `null` when it gives up. */
+function drafted(source: string, indexes: number[]): string | null {
+  return withSlidesDrafted(source, new Set(indexes))?.attempt ?? null
+}
+
+function utf8(text: string): number {
+  return new TextEncoder().encode(text).length
+}
 import type { RenderErrorPayload } from './render'
 import { extractPageComment, splitSlides } from './slides'
 import { readFrontmatterKey } from './frontmatter'
@@ -30,41 +39,41 @@ function drafts(source: string): boolean[] {
 
 describe('withSlidesDrafted', () => {
   test('spec: Given a three-slide deck, when the middle slide is drafted, then only it carries "draft":true and the rest of the text is untouched', () => {
-    const attempt = withSlidesDrafted(DECK, new Set([1]))
+    const attempt = drafted(DECK, [1])
     expect(attempt).not.toBeNull()
     expect(drafts(attempt ?? '')).toEqual([false, true, false])
     expect(attempt).toBe('# One\n\n---\n\n<!-- {"key":"two","draft":true} -->\n# Two\n\nBROKEN\n\n---\n\n# Three\n')
   })
 
   test('spec: Given a slide with no PageComment, when it is drafted, then the comment takes the blank line that opened it so later line numbers stay the file\'s own', () => {
-    const attempt = withSlidesDrafted(DECK, new Set([2])) ?? ''
+    const attempt = drafted(DECK, [2]) ?? ''
     expect(attempt).toBe('# One\n\n---\n\n<!-- {"key":"two"} -->\n# Two\n\nBROKEN\n\n---\n<!-- {"draft":true} -->\n# Three\n')
     expect(attempt.split('\n').length).toBe(DECK.split('\n').length)
   })
 
   test('spec: Given the first slide at the very top of the file, when it is drafted, then the comment is put on a line of its own above it', () => {
-    expect(withSlidesDrafted(DECK, new Set([0]))).toBe('<!-- {"draft":true} -->\n# One\n\n---\n\n<!-- {"key":"two"} -->\n# Two\n\nBROKEN\n\n---\n\n# Three\n')
+    expect(drafted(DECK, [0])).toBe('<!-- {"draft":true} -->\n# One\n\n---\n\n<!-- {"key":"two"} -->\n# Two\n\nBROKEN\n\n---\n\n# Three\n')
   })
 
   test('spec: Given a first slide after frontmatter, when it is drafted, then the frontmatter is left alone', () => {
     const source = '---\ntitle: Deck\n---\n\n# One\n\n---\n\n# Two\n'
-    expect(withSlidesDrafted(source, new Set([0]))).toBe('---\ntitle: Deck\n---\n<!-- {"draft":true} -->\n# One\n\n---\n\n# Two\n')
+    expect(drafted(source, [0])).toBe('---\ntitle: Deck\n---\n<!-- {"draft":true} -->\n# One\n\n---\n\n# Two\n')
   })
 
   test('spec: Given two broken slides, when both are drafted, then both carry the mark and every other slide does not', () => {
-    const attempt = withSlidesDrafted(DECK, new Set([0, 2]))
+    const attempt = drafted(DECK, [0, 2])
     expect(drafts(attempt ?? '')).toEqual([true, false, true])
   })
 
   test('spec: Given a skipped slide, when it is drafted, then skip goes — peitho-core refuses a slide that is both', () => {
     const source = '# One\n\n---\n\n<!-- {"skip":true,"page_number":false,"key":"two"} -->\n# Two\n'
-    const attempt = withSlidesDrafted(source, new Set([1])) ?? ''
+    const attempt = drafted(source, [1]) ?? ''
     expect(extractPageComment(splitSlides(attempt)[1].text).config).toEqual({ key: 'two', draft: true })
   })
 
   test('spec: Given a slide that starts a section, when it is drafted, then its section marker goes and the frontmatter time is resynced to the sections left', () => {
     const source = '---\ntime: 3m\n---\n<!-- {"section":"A","time":"1m"} -->\n# One\n\n---\n\n<!-- {"section":"B","time":"2m"} -->\n# Two\n\n---\n\n# Three\n'
-    const attempt = withSlidesDrafted(source, new Set([0])) ?? ''
+    const attempt = drafted(source, [0]) ?? ''
     expect(extractPageComment(splitSlides(attempt)[0].text).config).toEqual({ draft: true })
     expect(readFrontmatterKey(attempt, 'time')).toBe('2m')
     expect(attempt.split('\n').length).toBe(source.split('\n').length)
@@ -72,53 +81,164 @@ describe('withSlidesDrafted', () => {
 
   test('spec: Given the only section is on the drafted slide, when it is drafted, then the frontmatter time is left as it is (a deck with no sections may keep one)', () => {
     const source = '---\ntime: 1m\n---\n<!-- {"section":"A","time":"1m"} -->\n# One\n\n---\n\n# Two\n'
-    expect(readFrontmatterKey(withSlidesDrafted(source, new Set([0])) ?? '', 'time')).toBe('1m')
+    expect(readFrontmatterKey(drafted(source, [0]) ?? '', 'time')).toBe('1m')
   })
 
   test('spec: Given a deck whose frontmatter has no time, when a section slide is drafted, then no time is added', () => {
     const source = '---\ntitle: T\n---\n<!-- {"section":"A","time":"1m"} -->\n# One\n\n---\n\n<!-- {"section":"B","time":"2m"} -->\n# Two\n'
-    expect(readFrontmatterKey(withSlidesDrafted(source, new Set([0])) ?? '', 'time')).toBeNull()
+    expect(readFrontmatterKey(drafted(source, [0]) ?? '', 'time')).toBeNull()
   })
 
   test('spec: a drafted slide keeps its draft siblings as they were', () => {
     const source = '<!-- {"draft":true} -->\n# One\n\n---\n\n# Two\n\n---\n\n# Three\n'
-    expect(drafts(withSlidesDrafted(source, new Set([1])) ?? '')).toEqual([true, true, false])
+    expect(drafts(drafted(source, [1]) ?? '')).toEqual([true, true, false])
   })
 
   test('adversarial: Given a slide that is a draft already, when it is asked for, then null — marking it changes nothing', () => {
     const source = '# One\n\n---\n\n<!-- {"draft":true} -->\n# Two\n'
-    expect(withSlidesDrafted(source, new Set([1]))).toBeNull()
+    expect(drafted(source, [1])).toBeNull()
   })
 
   test('adversarial: Given every slide, then null — peitho-core refuses an all-draft deck', () => {
-    expect(withSlidesDrafted(DECK, new Set([0, 1, 2]))).toBeNull()
+    expect(drafted(DECK, [0, 1, 2])).toBeNull()
   })
 
   test('adversarial: Given the only non-draft slide of a deck with drafts, then null', () => {
     const source = '<!-- {"draft":true} -->\n# One\n\n---\n\n# Two\n'
-    expect(withSlidesDrafted(source, new Set([1]))).toBeNull()
+    expect(drafted(source, [1])).toBeNull()
   })
 
   test('adversarial: an empty source has nothing to draft', () => {
-    expect(withSlidesDrafted('', new Set([0]))).toBeNull()
-    expect(withSlidesDrafted('', new Set())).toBeNull()
+    expect(drafted('', [0])).toBeNull()
+    expect(drafted('', [])).toBeNull()
   })
 
   test('adversarial: an index past the end drafts nothing and leaves the source as it is', () => {
-    expect(withSlidesDrafted(DECK, new Set([3]))).toBe(DECK)
-    expect(withSlidesDrafted(DECK, new Set([-1]))).toBe(DECK)
+    expect(drafted(DECK, [3])).toBe(DECK)
+    expect(drafted(DECK, [-1])).toBe(DECK)
   })
 
   test('adversarial: a slide whose PageComment is malformed gets a fresh comment rather than a crash', () => {
     const source = '# One\n\n---\n\n<!-- {not json} -->\n# Two\n'
-    const attempt = withSlidesDrafted(source, new Set([1])) ?? ''
+    const attempt = drafted(source, [1]) ?? ''
     expect(attempt).toContain('<!-- {"draft":true} -->')
     expect(attempt).toContain('<!-- {not json} -->')
   })
 
   test('adversarial: a `---` inside a code fence is not a slide boundary, so the drafted slide is the one asked for', () => {
     const source = '# One\n\n```\n---\n```\n\n---\n\n# Two\n'
-    expect(drafts(withSlidesDrafted(source, new Set([1])) ?? '')).toEqual([false, true])
+    expect(drafts(drafted(source, [1]) ?? '')).toEqual([false, true])
+  })
+})
+
+describe('withSlidesDrafted: edits', () => {
+  test('spec: Given a slide with a PageComment, when it is drafted, then the one edit is the comment rewritten in place, in bytes', () => {
+    const { edits } = withSlidesDrafted(DECK, new Set([1])) ?? { edits: [] }
+    const at = utf8('# One\n\n---\n\n<!-- {"key":"two"')
+    expect(edits).toEqual([{ at, removed: 0, inserted: utf8(',"draft":true') }])
+  })
+
+  test('spec: Given a slide without a PageComment, when it is drafted, then the edit is the comment inserted, nothing removed', () => {
+    const { edits } = withSlidesDrafted(DECK, new Set([2])) ?? { edits: [] }
+    expect(edits).toEqual([{ at: utf8('# One\n\n---\n\n<!-- {"key":"two"} -->\n# Two\n\nBROKEN\n\n---\n'), removed: 0, inserted: utf8('<!-- {"draft":true} -->') }])
+  })
+
+  test('spec: Given two drafted slides and a frontmatter time resync, then the edits come in source order, the frontmatter\'s first', () => {
+    const source = '---\ntime: 3m\n---\n<!-- {"section":"A","time":"1m"} -->\n# One\n\n---\n\n<!-- {"section":"B","time":"2m"} -->\n# Two\n\n---\n\n# Three\n'
+    const { attempt, edits } = withSlidesDrafted(source, new Set([0, 2])) ?? { attempt: '', edits: [] }
+    // The second edit starts past the `"` both comments open their first
+    // key with: the common prefix is as long as it can be.
+    expect(edits.map(edit => edit.at)).toEqual([utf8('---\ntime: '), utf8('---\ntime: 3m\n---\n<!-- {"'), utf8(source.slice(0, source.indexOf('# Three') - 1))])
+    // `3m` to `2m`: only the digit differs.
+    expect(edits[0]).toEqual({ at: utf8('---\ntime: '), removed: 1, inserted: 1 })
+    // Each edit replays onto the source to give the attempt.
+    let rebuilt = source
+    for (const edit of [...edits].reverse()) {
+      const before = new TextEncoder().encode(rebuilt)
+      const after = new TextEncoder().encode(attempt)
+      const shift = edits.filter(other => other.at < edit.at).reduce((sum, other) => sum + other.inserted - other.removed, 0)
+      rebuilt = new TextDecoder().decode(new Uint8Array([...before.slice(0, edit.at), ...after.slice(edit.at + shift, edit.at + shift + edit.inserted), ...before.slice(edit.at + edit.removed)]))
+    }
+    expect(rebuilt).toBe(attempt)
+  })
+
+  test('spec: bytes, not characters — text before the slide that is multibyte counts as UTF-8', () => {
+    const source = '# 日本語\n\n---\n\n# Two\n\nBROKEN\n'
+    const { edits } = withSlidesDrafted(source, new Set([1])) ?? { edits: [] }
+    expect(edits[0].at).toBe(utf8('# 日本語\n\n---\n'))
+    expect(edits[0].at).not.toBe('# 日本語\n\n---\n'.length)
+  })
+
+  test('adversarial: nothing drafted means no edits', () => {
+    expect(withSlidesDrafted(DECK, new Set([7]))?.edits).toEqual([])
+  })
+})
+
+describe('originalByteOffset', () => {
+  const edits: SourceEdit[] = [{ at: 10, removed: 2, inserted: 5 }, { at: 30, removed: 0, inserted: 20 }]
+
+  test('spec: an offset before every edit is its own', () => {
+    expect(originalByteOffset(0, edits)).toBe(0)
+    expect(originalByteOffset(10, edits)).toBe(10)
+  })
+
+  test('spec: an offset after an edit moves back by what the edit grew', () => {
+    expect(originalByteOffset(15, edits)).toBe(12)
+    expect(originalByteOffset(20, edits)).toBe(17)
+  })
+
+  test('spec: edits accumulate — an offset after both moves back by both', () => {
+    // The second edit sits at 30 + 3 = 33 in the attempt, 20 bytes long.
+    expect(originalByteOffset(53, edits)).toBe(30)
+    expect(originalByteOffset(60, edits)).toBe(37)
+  })
+
+  test('spec: an offset at either end of an edit is where the edit sits — a span ending where a drafted slide starts keeps its end', () => {
+    expect(originalByteOffset(15, edits)).toBe(12)
+    expect(originalByteOffset(33, edits)).toBe(30)
+    expect(originalByteOffset(53, edits)).toBe(30)
+  })
+
+  test('adversarial: an offset strictly inside an edit has no place in the source', () => {
+    expect(originalByteOffset(11, edits)).toBeNull()
+    expect(originalByteOffset(14, edits)).toBeNull()
+    expect(originalByteOffset(34, edits)).toBeNull()
+    expect(originalByteOffset(52, edits)).toBeNull()
+  })
+
+  test('adversarial: no edits is the identity', () => {
+    expect(originalByteOffset(42, [])).toBe(42)
+  })
+})
+
+describe('restoreEditAnnotations', () => {
+  test('spec: Given fragments rendered from an attempt, then each annotation after the drafted slide points into the source as written', () => {
+    // Slide Three's heading: in the source it starts after
+    // `# One\n\n---\n\n<!-- {"key":"two"} -->\n# Two\n\nBROKEN\n\n---\n\n# `;
+    // the attempt grew by `,"draft":true` (13 bytes) before it.
+    const { edits } = withSlidesDrafted(DECK, new Set([1])) ?? { edits: [] }
+    const start = utf8('# One\n\n---\n\n<!-- {"key":"two"} -->\n# Two\n\nBROKEN\n\n---\n\n# ')
+    const fragments = {
+      one: '<h1><span data-peitho-src="2-5" data-peitho-md="One">One</span></h1>',
+      three: `<h1><span data-peitho-src="${String(start + 13)}-${String(start + 13 + 5)}" data-peitho-md="Three">Three</span></h1>`,
+    }
+    expect(restoreEditAnnotations(fragments, edits)).toEqual({
+      one: '<h1><span data-peitho-src="2-5" data-peitho-md="One">One</span></h1>',
+      three: `<h1><span data-peitho-src="${String(start)}-${String(start + 5)}" data-peitho-md="Three">Three</span></h1>`,
+    })
+    expect(DECK.slice(start, start + 5)).toBe('Three')
+  })
+
+  test('adversarial: an annotation inside an edit is dropped rather than pointed somewhere wrong', () => {
+    const edits: SourceEdit[] = [{ at: 4, removed: 0, inserted: 10 }]
+    expect(restoreEditAnnotations({ k: '<p data-peitho-src="6-8" data-peitho-md="x">x</p>' }, edits)).toEqual({ k: '<p>x</p>' })
+  })
+
+  test('adversarial: no edits hands the fragments back as they are, as a copy', () => {
+    const fragments = { k: '<p data-peitho-src="6-8" data-peitho-md="x">x</p>' }
+    const restored = restoreEditAnnotations(fragments, [])
+    expect(restored).toEqual(fragments)
+    expect(restored).not.toBe(fragments)
   })
 })
 

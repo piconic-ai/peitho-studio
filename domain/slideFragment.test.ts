@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import fc from 'fast-check'
-import { absolutizeFragmentUrls, hasFixedCanvas, stripEditAnnotations } from './slideFragment'
+import { absolutizeFragmentUrls, hasFixedCanvas, mapEditAnnotations, stripEditAnnotations } from './slideFragment'
 import { fixedCanvasExamples } from './slideFragment.examples'
 import { isExhaustivelyAccountedFor } from './spec'
 
@@ -291,6 +291,30 @@ describe('hasFixedCanvas', () => {
         expect(hasFixedCanvas(`<!--${body}-->${slide}`)).toBe(hasFixedCanvas(slide))
       },
     ))
+  })
+})
+
+describe('mapEditAnnotations', () => {
+  test('spec: Given annotated elements, Then each span is rewritten and the Markdown kept', () => {
+    const html = '<h1><span data-peitho-src="4-9" data-peitho-md="Hello">Hello</span></h1><p data-peitho-src="11-30" data-peitho-md="a &quot;b&quot;">a "b"</p>'
+    expect(mapEditAnnotations(html, span => ({ start: span.start + 100, end: span.end + 100 })))
+      .toBe('<h1><span data-peitho-src="104-109" data-peitho-md="Hello">Hello</span></h1><p data-peitho-src="111-130" data-peitho-md="a &quot;b&quot;">a "b"</p>')
+  })
+
+  test('spec: an annotation mapped to null is removed, as stripEditAnnotations removes them', () => {
+    const html = '<p data-peitho-src="11-30" data-peitho-md="x">x</p>'
+    expect(mapEditAnnotations(html, () => null)).toBe(stripEditAnnotations(html))
+  })
+
+  test('adversarial: a <script> body is left alone', () => {
+    const html = '<script>const s = \' data-peitho-src="1-2" data-peitho-md="x"\'</script><p data-peitho-src="1-2" data-peitho-md="x">x</p>'
+    expect(mapEditAnnotations(html, span => ({ start: span.start + 1, end: span.end + 1 })))
+      .toBe('<script>const s = \' data-peitho-src="1-2" data-peitho-md="x"\'</script><p data-peitho-src="2-3" data-peitho-md="x">x</p>')
+  })
+
+  test('adversarial: markup with no annotation comes back unchanged', () => {
+    expect(mapEditAnnotations('<p>plain</p>', () => null)).toBe('<p>plain</p>')
+    expect(mapEditAnnotations('', () => null)).toBe('')
   })
 })
 
