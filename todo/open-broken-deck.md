@@ -229,7 +229,10 @@ tags: [engine, rust-command, editor, error-handling]
   右クリックメニュー(`openEditorMenu`はbody/note/layoutのみ)は未対応。
   未保存のドラフトを抱えたままのウィンドウクローズ確認は、Pullfrogの指摘を
   受けて対応済み(`reportLayoutDraft`に`isSourceDirty`/保存中を報告し、
-  `closeAfterLayoutFlush`が`flushSourceEditor`を先に走らせる)。ビルドが
+  `closeAfterLayoutFlush`が`flushSourceEditor`を先に走らせ、保存できない
+  ときはエラーバーに理由と「もう一度閉じると破棄」を出す)。スライド行を
+  クリックしてエディタを閉じるとき、保存でスライドが動いていればクリック
+  したスライドを本文で探し直す(`slideIndexAfterSourceSave`)。ビルドが
   通ったデッキでも常時使えるようにするかは未決。
 - 壊れたデッキを開いた直後、まだ一度も描画が通っていない間は
   `render.assetBaseUrl()`がnullのため、レビュー(コメント)パネルとその
