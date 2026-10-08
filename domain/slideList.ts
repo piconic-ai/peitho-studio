@@ -11,7 +11,8 @@
 // row index equal `domain/slides.ts`'s `splitSlides` index (the same index
 // `Studio.tsx`'s `editor.slideRanges()`/`currentSlideText`/`selectSlide`
 // already key everything else by), so that mismatch can't recur.
-import { type ManifestSection, type ManifestSlide } from './render'
+import { type ManifestSection, type ManifestSlide, type RenderErrorPayload } from './render'
+import { type BrokenSlides, NO_BROKEN_SLIDES } from './brokenSlides'
 import { splitSlides, extractPageComment, extractHeadingText } from './slides'
 
 /** A slide the manifest actually rendered — peitho-core has real fragment
@@ -25,12 +26,15 @@ export interface RenderedSlideEntry {
   slide: ManifestSlide
 }
 
-/** A slide the manifest has nothing current to say about: either it's
- * marked draft (peitho-core excludes it from the build on purpose), or the
- * manifest simply hasn't caught up with the source yet (a `render_draft`
- * in flight after an edit added a slide) — `draft` tells the slide list
- * which of the two it is, since only the first one wears a DRAFT badge.
- * `title` is pulled directly out of the raw Markdown (no build required).
+/** A slide the manifest has nothing current to say about: it's marked
+ * draft (peitho-core excludes it from the build on purpose), it didn't
+ * build and was isolated from the render (`error` is peitho-core's
+ * refusal of it — see `domain/brokenSlides.ts`; the row wears an ERROR
+ * badge), or the manifest simply hasn't caught up with the source yet (a
+ * `render_draft` in flight after an edit added a slide) — `draft` and
+ * `error` tell the slide list which it is, since only the first two wear
+ * a badge. `title` is pulled directly out of the raw Markdown (no build
+ * required).
  *
  * `key` is this row's `.map()` key: always `placeholder:<sourceIndex>`,
  * deliberately *never* the slide's own PageComment `key` (even when it set
@@ -69,6 +73,7 @@ export interface PlaceholderSlideEntry {
   sourceIndex: number
   title: string
   draft: boolean
+  error: RenderErrorPayload | null
   key: string
   lastRenderedKey: string | null
 }
@@ -85,14 +90,21 @@ export type SlideListEntry = RenderedSlideEntry | PlaceholderSlideEntry
  * throwing, since that's a real, if short-lived, state (see
  * `PlaceholderSlideEntry`). Only a strict JSON `true` counts as draft,
  * matching `domain/slideStatus.ts`'s own rule for the same PageComment
- * field. */
-export function buildSlideList(fullSource: string, manifestSlides: readonly ManifestSlide[]): SlideListEntry[] {
+ * field.
+ *
+ * `broken` names the source positions the render isolated (rendered as
+ * drafts, though the source doesn't mark them — `domain/brokenSlides.ts`):
+ * such a slide claims no manifest entry either, so the slides after it
+ * still pair up with their own, and becomes a placeholder carrying its
+ * error. */
+export function buildSlideList(fullSource: string, manifestSlides: readonly ManifestSlide[], broken: BrokenSlides = NO_BROKEN_SLIDES): SlideListEntry[] {
   const ranges = splitSlides(fullSource)
   const entries: SlideListEntry[] = []
   let manifestIndex = 0
   for (let sourceIndex = 0; sourceIndex < ranges.length; sourceIndex++) {
     const { rest, config } = extractPageComment(ranges[sourceIndex].text)
-    if (config.draft !== true) {
+    const error = broken.get(sourceIndex) ?? null
+    if (config.draft !== true && error === null) {
       const slide = manifestSlides[manifestIndex]
       if (slide) {
         entries.push({ kind: 'rendered', sourceIndex, manifestIndex, slide })
@@ -105,6 +117,7 @@ export function buildSlideList(fullSource: string, manifestSlides: readonly Mani
       sourceIndex,
       title: extractHeadingText(rest) ?? '',
       draft: config.draft === true,
+      error,
       key: `placeholder:${String(sourceIndex)}`,
       lastRenderedKey: config.key ?? null,
     })

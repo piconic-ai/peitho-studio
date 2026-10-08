@@ -9,7 +9,7 @@ function rendered(sourceIndex: number, manifestIndex: number, key: string): Slid
 }
 
 function placeholder(sourceIndex: number): SlideListEntry {
-  return { kind: 'placeholder', sourceIndex, title: '', draft: true, key: `placeholder:${String(sourceIndex)}`, lastRenderedKey: null }
+  return { kind: 'placeholder', sourceIndex, title: '', draft: true, key: `placeholder:${String(sourceIndex)}`, lastRenderedKey: null, error: null }
 }
 
 function section(name: string, startIndex: number, endIndex: number): ManifestSection {

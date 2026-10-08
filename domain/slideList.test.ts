@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { isExhaustivelyAccountedFor } from './spec'
-import type { ManifestSection, ManifestSlide } from './render'
+import type { ManifestSection, ManifestSlide, RenderErrorPayload } from './render'
 import {
   buildSlideList, lastRenderedLayoutOf, manifestIndexAt, manifestIndexToSourceIndex, recordByManifestIndex, renderedLayoutAt, sectionStartBySourceIndex,
   type SlideListEntry,
@@ -11,13 +11,51 @@ function slide(index: number, key: string, title: string, skip = false): Manifes
   return { index, key, src: '', hasNotes: false, skip, revealSteps: 1, text: { title, body: '', code: '' } }
 }
 
+/** peitho-core's refusal of slide `number` (1-based). */
+function renderError(number: number): RenderErrorPayload {
+  return {
+    kind: 'Arity', line: 1, originFile: null,
+    message: "slot 'body' got 2 item(s), but layout 'title-slide' allows 0..1",
+    help: 'use a layout with a body slot or remove one paragraph',
+    headline: `slide ${String(number)}, line 1: slot 'body' got 2 item(s), but layout 'title-slide' allows 0..1`,
+    slide: { number, key: null },
+  }
+}
+
 describe('buildSlideList', () => {
   test.each(buildSlideListExamples.automated.map(e => [`${e.id}: Given ${e.given}, when ${e.when}, then ${e.then}`, e] as const))(
     'example: %s',
     (_title, example) => {
-      expect(buildSlideList(example.state.fullSource, example.state.manifestSlides)).toEqual(example.expect)
+      expect(buildSlideList(example.state.fullSource, example.state.manifestSlides, example.state.broken)).toEqual(example.expect)
     },
   )
+
+  test('spec: Given two isolated slides around a real draft, when the list is built, then each slide after them still gets its own manifest entry', () => {
+    const source = '# One\n\n---\n\n# Two\n\n---\n\n<!-- {"draft":true} -->\n# Three\n\n---\n\n# Four\n\n---\n\n# Five\n'
+    const error = renderError(2)
+    const entries = buildSlideList(source, [slide(0, 'one', 'One'), slide(1, 'five', 'Five')], new Map([[1, error], [3, renderError(4)]]))
+    expect(entries.map(e => e.kind)).toEqual(['rendered', 'placeholder', 'placeholder', 'placeholder', 'rendered'])
+    expect(entries[4]).toEqual({ kind: 'rendered', sourceIndex: 4, manifestIndex: 1, slide: slide(1, 'five', 'Five') })
+    expect(entries[1]).toEqual({ kind: 'placeholder', sourceIndex: 1, title: 'Two', draft: false, key: 'placeholder:1', lastRenderedKey: null, error })
+    expect(entries[2]).toEqual({ kind: 'placeholder', sourceIndex: 2, title: 'Three', draft: true, key: 'placeholder:2', lastRenderedKey: null, error: null })
+  })
+
+  test('adversarial: an isolated position past the end of the source changes nothing', () => {
+    const source = '# One\n\n---\n\n# Two\n'
+    const manifest = [slide(0, 'one', 'One'), slide(1, 'two', 'Two')]
+    expect(buildSlideList(source, manifest, new Map([[5, renderError(6)]]))).toEqual(buildSlideList(source, manifest))
+  })
+
+  test('adversarial: an isolated slide that is also a draft in the source stays a placeholder with both its draft flag and its error', () => {
+    const error = renderError(1)
+    const entries = buildSlideList('<!-- {"draft":true} -->\n# One\n', [], new Map([[0, error]]))
+    expect(entries).toEqual([{ kind: 'placeholder', sourceIndex: 0, title: 'One', draft: true, key: 'placeholder:0', lastRenderedKey: null, error }])
+  })
+
+  test('adversarial: an isolated slide never claims a manifest entry, even when the manifest has one to spare', () => {
+    const entries = buildSlideList('# One\n\n---\n\n# Two\n', [slide(0, 'one', 'One'), slide(1, 'stray', 'Stray')], new Map([[1, renderError(2)]]))
+    expect(entries[1].kind).toBe('placeholder')
+  })
 
   test('spec: every example is either automated or carries a manual reason', () => {
     expect(isExhaustivelyAccountedFor(buildSlideListExamples)).toBe(true)
@@ -44,17 +82,17 @@ describe('buildSlideList', () => {
 
   test('adversarial: a title-less draft slide gets an empty placeholder title, not a crash', () => {
     const entries = buildSlideList('<!-- {"draft":true} -->\nJust a paragraph, no heading.\n', [])
-    expect(entries).toEqual([{ kind: 'placeholder', sourceIndex: 0, title: '', draft: true, key: 'placeholder:0', lastRenderedKey: null }])
+    expect(entries).toEqual([{ kind: 'placeholder', sourceIndex: 0, title: '', draft: true, key: 'placeholder:0', lastRenderedKey: null, error: null }])
   })
 
   test('spec: a placeholder carries its slide\'s own explicit key separately, as lastRenderedKey', () => {
     const entries = buildSlideList('<!-- {"draft":true,"key":"cover"} -->\n# Cover\n', [])
-    expect(entries).toEqual([{ kind: 'placeholder', sourceIndex: 0, title: 'Cover', draft: true, key: 'placeholder:0', lastRenderedKey: 'cover' }])
+    expect(entries).toEqual([{ kind: 'placeholder', sourceIndex: 0, title: 'Cover', draft: true, key: 'placeholder:0', lastRenderedKey: 'cover', error: null }])
   })
 
   test('adversarial: a placeholder with no explicit key has a null lastRenderedKey, not a guessed one', () => {
     const entries = buildSlideList('<!-- {"draft":true} -->\n# No Key\n', [])
-    expect(entries).toEqual([{ kind: 'placeholder', sourceIndex: 0, title: 'No Key', draft: true, key: 'placeholder:0', lastRenderedKey: null }])
+    expect(entries).toEqual([{ kind: 'placeholder', sourceIndex: 0, title: 'No Key', draft: true, key: 'placeholder:0', lastRenderedKey: null, error: null }])
   })
 
   test('adversarial: a placeholder never reuses the slide\'s own explicit key, even across a draft toggle', () => {
@@ -77,7 +115,7 @@ describe('buildSlideList', () => {
 describe('manifestIndexAt / manifestIndexToSourceIndex', () => {
   const entries: SlideListEntry[] = [
     { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'a', 'A') },
-    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: null },
+    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: null, error: null },
     { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'c', 'C') },
   ]
 
@@ -104,7 +142,7 @@ describe('manifestIndexAt / manifestIndexToSourceIndex', () => {
 describe('renderedLayoutAt', () => {
   const entries: SlideListEntry[] = [
     { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'cover', 'Cover') },
-    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: 'hidden' },
+    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: 'hidden', error: null },
     { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'points', 'Points') },
   ]
   const layouts = { cover: 'title-slide', points: 'title-body', hidden: 'blank' }
@@ -156,7 +194,7 @@ describe('renderedLayoutAt', () => {
 describe('recordByManifestIndex', () => {
   const entries: SlideListEntry[] = [
     { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'a', 'A') },
-    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: null },
+    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: null, error: null },
     { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'c', 'C') },
   ]
 
@@ -177,7 +215,7 @@ describe('recordByManifestIndex', () => {
 describe('sectionStartBySourceIndex', () => {
   const entries: SlideListEntry[] = [
     { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'a', 'A') },
-    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: null },
+    { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: null, error: null },
     { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'c', 'C') },
   ]
 
