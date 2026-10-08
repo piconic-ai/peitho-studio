@@ -31,7 +31,7 @@ import { CommentBox } from './CommentBox'
 import { PanelToggle } from './PanelToggle'
 import { ReviewPanel } from './ReviewPanel'
 import { type ManifestSlide, type RenderErrorPayload, type RenderPayload, type SectionDraft, brokenSlideIndex, renderFailureMessage } from '../domain/render'
-import { type BrokenSlides, brokenSlidesAfterCommand, brokenSlidesSummary, isolateSlide, restoreEditAnnotations, saveDecision, startIsolation } from '../domain/brokenSlides'
+import { type BrokenSlides, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesAfterEdit, brokenSlidesSummary, isolateSlide, restoreEditAnnotations, saveDecision, startIsolation } from '../domain/brokenSlides'
 import { RenderFailure } from '../ipc/renderOutcome'
 import { SOURCE_EDITING_CLOSED, openSourceEditing, slideIndexAfterSourceSave, sourceEditorOffered, sourceReadFromDisk, sourceSaved, typeInSource } from '../domain/sourceEditing'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
@@ -1361,7 +1361,7 @@ export function Studio() {
       ui.setLayoutPreviews(null)
       if (pin !== null) await updateSlideConfig(index, pin)
       else if (editor.isDirty()) await handleSave()
-      else await renderPreview(editor.fullSource())
+      else await renderAfterLayoutChange()
       // After the save above, whose own "Saved" would otherwise hide it.
       setStatusMessage({ kind: 'image-layout-added' })
     } finally {
@@ -1416,8 +1416,12 @@ export function Studio() {
   // error bar from clearing itself and puts the error in the preview pane.
   // A persisted source is also rendered without the slides that don't
   // build (`renderIsolating`, any slide), so one broken slide shows as an
-  // ERROR row instead of blanking the whole deck; a draft being typed
-  // isn't (its failure is the editor's, shown in the error bar only).
+  // ERROR row instead of blanking the whole deck. A draft being typed is
+  // rendered once, without the slides the last render isolated
+  // (`draftSeed`), so the preview follows the typing around them; a slide
+  // is never newly isolated on a draft's account — its failure is the
+  // editor's, shown in the error bar only, and a save decides
+  // (`commitChange`).
   //
   // A persisted render costs up to `MAX_ISOLATIONS + 1` renders, and the
   // same source is asked for from several places at once when a deck
@@ -1439,7 +1443,7 @@ export function Studio() {
   async function runRenderPreview(content: string, persisted: boolean): Promise<void> {
     const generation = ++previewGeneration
     try {
-      const result = await renderIsolating(content, () => persisted)
+      const result = await renderIsolating(content, () => persisted, persisted ? NO_BROKEN_SLIDES : draftSeed(content))
       if (generation !== previewGeneration) return
       if (result.kind === 'rendered') {
         persistedFailedSource = null
@@ -1473,10 +1477,12 @@ export function Studio() {
   // `domain/brokenSlides.ts`). Resolves with the payload and the slides it
   // was rendered without, or with the error that stopped it; rejects only
   // for a failure other than peitho-core's refusal (the deck not open).
-  async function renderIsolating(content: string, allow: (error: RenderErrorPayload) => boolean): Promise<
+  // `known` are slides rendered without from the start (see
+  // `startIsolation`), keyed to `content`'s positions.
+  async function renderIsolating(content: string, allow: (error: RenderErrorPayload) => boolean, known: BrokenSlides = NO_BROKEN_SLIDES): Promise<
     { kind: 'rendered'; payload: RenderPayload; broken: BrokenSlides } | { kind: 'failed'; error: RenderErrorPayload }
   > {
-    let isolation = startIsolation(content)
+    let isolation = startIsolation(content, known)
     for (;;) {
       try {
         const payload = await deckIpc.renderDraft(isolation.attempt)
@@ -1491,6 +1497,30 @@ export function Studio() {
         isolation = next
       }
     }
+  }
+
+  // The slides a draft is rendered without from the start: the ones the
+  // last render isolated, where they sit in `content`
+  // (`render.brokenSlides()` is keyed to `renderedSource()`, which the
+  // typing may have re-split — `brokenSlidesAfterEdit`), the open slide's
+  // own typing excepted: the preview shows it the moment it builds, and
+  // its ERROR badge goes with that render.
+  function draftSeed(content: string): BrokenSlides {
+    const known = render.brokenSlides()
+    if (known.size === 0) return known
+    const editedIndex = editor.isDirty() ? editor.selectedIndex() : null
+    return brokenSlidesAfterEdit(known, editedIndex, splitSlides(render.renderedSource()).length, splitSlides(content).length)
+  }
+
+  // The slides rendered again once the deck's layout files changed, as
+  // the user sees them (`liveSource`): the deck on disk when nothing is
+  // being typed — persisted, so a slide the change fixed or broke is
+  // isolated afresh or not at all — else the typing in front, around the
+  // slides known broken. A render still in flight read the old files and
+  // must not land.
+  function renderAfterLayoutChange(): Promise<void> {
+    previewGeneration++
+    return renderPreview(liveSource(), { persisted: !editor.isDirty() })
   }
 
   function currentDraftSource(): string | null {
@@ -3023,7 +3053,7 @@ export function Studio() {
     if (!layoutFilesChanged(previous, stamp)) return false
     await Promise.all([
       reloadLayoutPreviews().then(showSavedLayoutPreview),
-      renderPreview(liveSource()),
+      renderAfterLayoutChange(),
       refreshDeckFiles(),
     ])
     const name = shownLayout(layouts.selectedLayout(), layoutNames())
@@ -3269,7 +3299,7 @@ export function Studio() {
     void noteLayoutFiles()
     ui.setLayoutPreviews(null)
     await Promise.all([loadLayoutPreviews(), refreshDeckFiles()])
-    await renderPreview(liveSource())
+    await renderAfterLayoutChange()
     const name = shownLayout(select ?? layouts.selectedLayout(), layoutNames())
     if (name !== layouts.selectedLayout()) await openLayout(name)
     await pullOpenFiles()
@@ -3583,7 +3613,7 @@ export function Studio() {
     const layout = layoutOfFile(path, layoutNames())
     setStatusMessage(layout === null ? { kind: 'file-saved', path } : { kind: 'layout-saved', layout })
     void reloadLayoutPreviews().then(showSavedLayoutPreview)
-    void renderPreview(liveSource())
+    void renderAfterLayoutChange()
     void refreshDeckFiles()
   }
 

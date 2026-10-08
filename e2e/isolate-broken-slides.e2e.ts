@@ -8,7 +8,7 @@
 // a draft slide); the same flow against the real engine is
 // `real-engine-isolate-broken-slides.e2e.ts`.
 import { test, expect, type Page } from '@playwright/test'
-import { mockTauri, slotErrorAt, type MockDeck } from './helpers/mockTauri'
+import { emitLayoutFilesChanged, mockTauri, slotErrorAt, type MockDeck } from './helpers/mockTauri'
 import { editorText, fillEditor } from './helpers/codeEditor'
 
 const ERROR_BAR = '.bg-destructive\\/10'
@@ -242,3 +242,61 @@ test('Given slide 2 is isolated, when the file changes on disk with slide 2 fixe
   await expect(page.locator(ERROR_BADGE)).toHaveCount(0)
   await expect(page.locator(ERROR_BAR)).toBeHidden()
 })
+
+// --- Renders other than a save's while a slide is isolated ---
+
+const SLIDE_TWO_HELP = 'use a layout with a body slot'
+
+function renders(deck: MockDeck): number {
+  return (deck.invokedCommands ?? []).filter(cmd => cmd === 'render_draft').length
+}
+
+test('Given slide 2 is isolated, when slide 3 is typed in, then the preview follows the typing around slide 2 before any save, with no error flashed for slide 2', async ({ page }) => {
+  await open(page, brokenDeck())
+  await page.locator('[data-slide-row="2"]').click()
+  await expect.poll(() => editorText(page)).toBe('# Three')
+
+  await fillEditor(page, '# Three typed')
+  // The fast lane renders a beat after typing (80ms); the save, which
+  // would render too, waits 600ms. Well before it, the preview shows the
+  // typing — rendered without slide 2 from the start — and the error bar
+  // never showed slide 2's refusal of the draft.
+  await expect(page.locator('[data-preview-host] h1')).toHaveText('Three typed', { timeout: 400 })
+  await expect(page.locator(ERROR_BAR)).not.toContainText(SLIDE_TWO_HELP)
+  await expect(page.locator('[data-slide-row="1"]').locator(ERROR_BADGE)).toBeVisible()
+  await expect(page.locator(ERROR_BAR)).toContainText("1 slide doesn't build")
+})
+
+test('Given slide 2 is isolated, when a layout file changes on disk, then the deck renders again around it, with no error flashed for slide 2', async ({ page }) => {
+  const deck = await open(page, brokenDeck({ layoutFilesStamp: 'v1', invokedCommands: [] }))
+  await expect(page.locator(THUMBNAIL_CANVAS)).toHaveCount(2)
+  const before = renders(deck)
+
+  deck.layoutFilesStamp = 'v2'
+  await emitLayoutFilesChanged(page)
+
+  await expect.poll(() => renders(deck)).toBeGreaterThan(before)
+  await page.waitForTimeout(500)
+  await expect(page.locator(THUMBNAIL_CANVAS)).toHaveCount(2)
+  await expect(page.locator('[data-slide-row="1"]').locator(ERROR_BADGE)).toBeVisible()
+  await expect(page.locator(ERROR_BAR)).toContainText("1 slide doesn't build")
+  await expect(page.locator(ERROR_BAR)).not.toContainText(SLIDE_TWO_HELP)
+})
+
+test('Given slide 2 is isolated, when a layout file changes so that it builds, then it renders and its badge goes', async ({ page }) => {
+  let refuses = true
+  const deck = await open(page, brokenDeck({
+    layoutFilesStamp: 'v1',
+    renderError: content => (refuses ? slotErrorAt('BROKEN')(content) : null),
+  }))
+  await expect(page.locator(ERROR_BADGE)).toHaveCount(1)
+
+  refuses = false
+  deck.layoutFilesStamp = 'v2'
+  await emitLayoutFilesChanged(page)
+
+  await expect(page.locator(THUMBNAIL_CANVAS)).toHaveCount(3, { timeout: 5_000 })
+  await expect(page.locator(ERROR_BADGE)).toHaveCount(0)
+  await expect(page.locator(ERROR_BAR)).toBeHidden()
+})
+

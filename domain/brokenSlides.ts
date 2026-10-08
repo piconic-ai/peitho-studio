@@ -48,8 +48,21 @@ export interface Isolation {
   readonly broken: BrokenSlides
 }
 
-export function startIsolation(source: string): Isolation {
-  return { source, attempt: source, edits: [], broken: NO_BROKEN_SLIDES }
+/** A fresh isolation of `source` — or, given `known` (the slides an
+ * earlier render isolated, keyed to `source`'s positions; see
+ * `brokenSlidesAfterEdit`), one that starts with those slides drafted,
+ * so a draft being typed renders in one go without them. A known slide
+ * `source` no longer has, or marks draft itself, is left out; when none
+ * could be drafted (none left, or nothing would be left to build), the
+ * isolation starts fresh instead. */
+export function startIsolation(source: string, known: BrokenSlides = NO_BROKEN_SLIDES): Isolation {
+  const fresh: Isolation = { source, attempt: source, edits: [], broken: NO_BROKEN_SLIDES }
+  if (known.size === 0) return fresh
+  const ranges = splitSlides(source)
+  const broken: BrokenSlides = new Map([...known].filter(([index]) => index < ranges.length && extractPageComment(ranges[index].text).config.draft !== true))
+  if (broken.size === 0) return fresh
+  const drafted = withSlidesDrafted(source, broken)
+  return drafted === null ? fresh : { source, attempt: drafted.attempt, edits: drafted.edits, broken }
 }
 
 /** The isolation after `error` failed `isolation.attempt`: the slide it
@@ -200,6 +213,30 @@ export function saveDecision(error: RenderErrorPayload, known: BrokenSlides, edi
   const key = error.slide?.key ?? null
   if (key !== null && [...known.values()].some(knownError => knownError.slide?.key === key)) return 'isolate'
   return 'block'
+}
+
+/** `known` re-keyed to where its slides sit once the slide at
+ * `editedIndex` was retyped: typed text can re-split a slide (a `---`
+ * line, an unclosed code fence swallowing the separators after it), so the
+ * deck of `countBefore` slides `known` is keyed to has `countAfter` once
+ * the typing is in, and every slide after the edited one moves by the
+ * difference. The edited slide itself is forgotten — whether it builds
+ * now is for the render to say — and so is a slide the typing swallowed.
+ * With no slide edited (`null`), `known` as it is. */
+export function brokenSlidesAfterEdit(known: BrokenSlides, editedIndex: number | null, countBefore: number, countAfter: number): BrokenSlides {
+  if (editedIndex === null) return known
+  const delta = countAfter - countBefore
+  const shifted = new Map<number, RenderErrorPayload>()
+  for (const [index, error] of known) {
+    if (index < editedIndex) {
+      shifted.set(index, error)
+      continue
+    }
+    if (index === editedIndex) continue
+    const next = index + delta
+    if (next > editedIndex && next < countAfter) shifted.set(next, error)
+  }
+  return shifted
 }
 
 /** `known` re-keyed to where its slides sit once `cmd` has run (see

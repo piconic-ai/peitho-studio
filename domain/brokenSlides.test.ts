@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  MAX_ISOLATIONS, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesSummary, isolateSlide, originalByteOffset, restoreEditAnnotations, saveDecision, startIsolation, withSlidesDrafted,
+  MAX_ISOLATIONS, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesAfterEdit, brokenSlidesSummary, isolateSlide, originalByteOffset, restoreEditAnnotations, saveDecision, startIsolation, withSlidesDrafted,
   type BrokenSlides, type SourceEdit,
 } from './brokenSlides'
 
@@ -401,3 +401,90 @@ describe('brokenSlidesSummary', () => {
     expect(brokenSlidesSummary(NO_BROKEN_SLIDES)).toBeNull()
   })
 })
+
+describe('startIsolation with known slides', () => {
+  const known: BrokenSlides = new Map([[1, slideError(2, 'two')]])
+
+  test('spec: Given slide 2 known broken, when a draft of the deck is isolated from it, then the attempt renders without slide 2 and the isolation carries it', () => {
+    const isolation = startIsolation(DECK, known)
+    expect(drafts(isolation.attempt)).toEqual([false, true, false])
+    expect(isolation.broken).toEqual(known)
+    expect(isolation.source).toBe(DECK)
+    expect(isolation.edits).toHaveLength(1)
+  })
+
+  test('spec: Given no known slides, then the isolation is fresh — the attempt is the source itself', () => {
+    expect(startIsolation(DECK)).toEqual({ source: DECK, attempt: DECK, edits: [], broken: NO_BROKEN_SLIDES })
+    expect(startIsolation(DECK, NO_BROKEN_SLIDES).attempt).toBe(DECK)
+  })
+
+  test('spec: a known slide may still be isolated further — the next failing slide joins it', () => {
+    const next = isolateSlide(startIsolation(DECK, known), slideError(3))
+    expect(next).not.toBeNull()
+    expect([...(next?.broken.keys() ?? [])]).toEqual([1, 2])
+    expect(drafts(next?.attempt ?? '')).toEqual([false, true, true])
+  })
+
+  test('adversarial: a known slide the source no longer has is left out', () => {
+    const isolation = startIsolation('# One\n', known)
+    expect(isolation.attempt).toBe('# One\n')
+    expect(isolation.broken.size).toBe(0)
+  })
+
+  test('adversarial: a known slide the source marks draft itself is left out, the others still drafted', () => {
+    const source = '# One\n\n---\n\n<!-- {"draft":true} -->\n# Two\n\n---\n\n# Three\n'
+    const isolation = startIsolation(source, new Map([[1, slideError(2)], [2, slideError(3)]]))
+    expect([...isolation.broken.keys()]).toEqual([2])
+    expect(drafts(isolation.attempt)).toEqual([false, true, true])
+  })
+
+  test('adversarial: Given every slide is known broken, then nothing would be left to build and the isolation starts fresh', () => {
+    const isolation = startIsolation('# One\n\n---\n\n# Two\n', new Map([[0, slideError(1)], [1, slideError(2)]]))
+    expect(isolation.broken.size).toBe(0)
+    expect(drafts(isolation.attempt)).toEqual([false, false])
+  })
+
+  test('adversarial: an empty source with known slides starts fresh', () => {
+    expect(startIsolation('', known).broken.size).toBe(0)
+  })
+})
+
+describe('brokenSlidesAfterEdit', () => {
+  const known: BrokenSlides = new Map([[0, slideError(1)], [2, slideError(3)], [4, slideError(5)]])
+
+  test('spec: Given the typing did not re-split the deck, then the known slides stay where they are, the edited one forgotten', () => {
+    expect([...brokenSlidesAfterEdit(known, 2, 5, 5).keys()]).toEqual([0, 4])
+    expect([...brokenSlidesAfterEdit(known, 1, 5, 5).keys()]).toEqual([0, 2, 4])
+  })
+
+  test('spec: Given a `---` typed into slide 2, when the deck has one slide more, then the known slides after it move down by one', () => {
+    const after = brokenSlidesAfterEdit(known, 1, 5, 6)
+    expect([...after.keys()]).toEqual([0, 3, 5])
+    expect(after.get(3)).toBe(known.get(2))
+  })
+
+  test('spec: Given an unclosed code fence in slide 2 swallowed the next slide, then that slide is forgotten and the ones after move up', () => {
+    expect([...brokenSlidesAfterEdit(known, 1, 5, 4).keys()]).toEqual([0, 3])
+  })
+
+  test('spec: with no slide edited, known as it is', () => {
+    expect(brokenSlidesAfterEdit(known, null, 5, 7)).toBe(known)
+  })
+
+  test('adversarial: Given the fence swallowed two slides, then both are forgotten and the one after them moves up by two', () => {
+    const after = brokenSlidesAfterEdit(known, 1, 5, 3)
+    expect([...after.keys()]).toEqual([0, 2])
+    expect(after.get(2)).toBe(known.get(4))
+  })
+
+  test('adversarial: nothing known stays nothing', () => {
+    expect(brokenSlidesAfterEdit(NO_BROKEN_SLIDES, 1, 5, 6).size).toBe(0)
+  })
+
+  test('purity: the map handed in is not changed', () => {
+    const before = new Map(known)
+    brokenSlidesAfterEdit(known, 1, 5, 6)
+    expect(known).toEqual(before)
+  })
+})
+
