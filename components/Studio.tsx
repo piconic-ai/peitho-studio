@@ -496,10 +496,12 @@ export function Studio() {
     sourceAutosaveTimer = setTimeout(() => { void queueSourceSave() }, FILE_AUTOSAVE_DELAY_MS)
   }
   // Saves run one after another, each reading the draft when its turn
-  // comes, so an older save can't land after a newer one.
+  // comes, so an older save can't land after a newer one. The chain never
+  // holds a rejection: `commitSource` reports its failures as `false`,
+  // and one that threw anyway must not skip every save queued after it.
   function queueSourceSave(): Promise<boolean> {
     const run = sourceSaveQueue.then(commitSource)
-    sourceSaveQueue = run
+    sourceSaveQueue = run.catch(() => {})
     return run
   }
   // How many source saves are between reading the draft and landing on
