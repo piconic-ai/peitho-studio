@@ -30,7 +30,8 @@ import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
 import { PanelToggle } from './PanelToggle'
 import { ReviewPanel } from './ReviewPanel'
-import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
+import { type ManifestSlide, type RenderPayload, type SectionDraft, brokenSlideIndex, renderFailureMessage } from '../domain/render'
+import { RenderFailure } from '../ipc/renderOutcome'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
 import { replacementInsertion, textBetween } from '../domain/editorText'
 import { fileNameOf, partitionDroppedPaths } from '../domain/images'
@@ -169,7 +170,18 @@ export function Studio() {
       // Before any slide mounts, so none of them goes in with the wrong trust.
       setSlideScriptsTrusted(info.trusted)
       setScriptTrust(scriptTrustOnOpen(info.trusted))
-      await refreshSource(false, info.render)
+      // A deck peitho-core refused opens all the same (see `open_deck` in
+      // peitho.rs): the editor works from the source alone — every row a
+      // placeholder (`slideEntries`) — with the refusal in the error bar
+      // and the preview pane, and the slide it names selected, until a
+      // fixed source renders.
+      await refreshSource(false, info.render.kind === 'rendered' ? info.render : undefined)
+      if (info.render.kind === 'failed') {
+        render.markRenderFailed(info.render.error)
+        setErrorMessage(renderFailureMessage(info.render.error))
+        const broken = brokenSlideIndex(info.render.error, editor.slideRanges().length)
+        if (broken !== null) await selectSlide(broken)
+      }
       setStatusMessage({ kind: 'opened', deckPath: info.deckPath })
       await dispatch({ type: 'opened', deckPath: info.deckPath })
       // Only once `open`: a variant picked while still `opening` would be
@@ -881,7 +893,13 @@ export function Studio() {
   // comment for the exact scenario this fixes), and pairing `manifest()`
   // with anything other than the source that actually produced it is
   // exactly what corrupted a thumbnail's canvas permanently.
-  const slideEntries = createMemo(() => buildSlideList(render.renderedSource(), render.manifest()?.slides ?? []))
+  // With no render at all (a deck that opened broken — `runOpen`), there
+  // is no manifest to pair with anything: every slide of the source as the
+  // editor has it is a placeholder, which that pairing can't get wrong.
+  const slideEntries = createMemo(() => {
+    const manifest = render.manifest()
+    return manifest === null ? buildSlideList(editor.fullSource(), []) : buildSlideList(render.renderedSource(), manifest.slides)
+  })
   const sectionStarts = createMemo(() => sectionStartBySourceIndex(render.manifest()?.sections ?? [], slideEntries()))
   // The slide list's section folding (`domain/sectionCollapse.ts`): each
   // section's rows, which of them are collapsed, and from that how every
@@ -952,6 +970,13 @@ export function Studio() {
   // what lets the preview pane (below) depend on "which slide is
   // selected" without also depending on "has its content changed".
   const selectedSlideKey = createMemo<string | null>(() => selectedSlide()?.key ?? null)
+  // peitho-core's refusal of the deck on disk, for the preview pane — as
+  // one string, so the pane isn't notified for an error object that reads
+  // the same.
+  const buildError = createMemo<string | null>(() => {
+    const outcome = render.outcome()
+    return outcome.kind === 'failed' ? renderFailureMessage(outcome.error) : null
+  })
   // The preview's header (and the phone shape menu in it) is hidden while no
   // slide is selected — a draft placeholder or no slide at all — so an open
   // menu goes with it instead of reappearing already open on the next
@@ -1201,8 +1226,11 @@ export function Studio() {
   // still unread.
   // Also skipped while the error bar offers a fix: the error stays until
   // it's acted on or goes away by itself (the next successful render).
+  // And skipped while the deck on disk doesn't build (`render.outcome()`):
+  // that error is the one thing to act on, and it clears itself the
+  // moment a render goes through (`renderPreview`/`commitChange`).
   createEffect(() => {
-    if (errorMessage() === null || deck.newDeckModalOpen() || shownFix().kind !== 'none') return
+    if (errorMessage() === null || deck.newDeckModalOpen() || shownFix().kind !== 'none' || render.outcome().kind === 'failed') return
     const timer = window.setTimeout(() => setErrorMessage(null), 6000)
     return () => window.clearTimeout(timer)
   })
@@ -1220,8 +1248,12 @@ export function Studio() {
   // older, slower-to-resolve render landing after a newer one — with
   // peitho-core embedded directly this is on the order of tens of ms, but
   // IPC calls can still resolve out of order under load.
+  // `persisted`: `content` is what deck.md holds (not a draft being typed),
+  // so its failure to build is the deck's state, not the editor's — recorded
+  // in `render.outcome()` (see `state/renderStore.ts`), which keeps the
+  // error bar from clearing itself and puts the error in the preview pane.
   let previewGeneration = 0
-  async function renderPreview(content: string): Promise<void> {
+  async function renderPreview(content: string, { persisted = false }: { persisted?: boolean } = {}): Promise<void> {
     const generation = ++previewGeneration
     try {
       const payload = await deckIpc.renderDraft(content)
@@ -1234,6 +1266,7 @@ export function Studio() {
       // the build error (e.g. a mid-edit unclosed code fence) — a draft
       // that doesn't build yet shouldn't blank the preview.
       setErrorMessage(String(err))
+      if (persisted && err instanceof RenderFailure) render.markRenderFailed(err.error)
     }
   }
 
@@ -1256,7 +1289,7 @@ export function Studio() {
     if (!editor.isDirty()) {
       untrack(() => {
         const source = editor.fullSource()
-        if (source !== render.renderedSource()) void renderPreview(source)
+        if (source !== render.renderedSource()) void renderPreview(source, { persisted: true })
         // Back to what's on screen (an Undo before the typed text rendered):
         // a render still in flight is now stale and must not land.
         else previewGeneration++
@@ -3506,13 +3539,13 @@ export function Studio() {
           const { rest, config } = extractPageComment(withoutNote)
           editor.setEditorSession(session => withRefreshedSaved(session, { body: rest, note, config }))
         }
-        await renderPreview(source)
+        await renderPreview(source, { persisted: true })
         setStatusMessage({ kind: 'merged-external-change' })
         return
       }
     }
     await refreshSource(true)
-    await renderPreview(editor.fullSource())
+    await renderPreview(editor.fullSource(), { persisted: true })
     setStatusMessage({ kind: 'reloaded-external-change' })
   }
 
@@ -3968,7 +4001,7 @@ export function Studio() {
           <div id="panel-slides" className={ui.slidesOpen() ? 'panel-content' : 'hidden'}>
             <SlideList
               language={settings.language()}
-              manifest={render.manifest()}
+              deckOpen={deck.deckPath() !== null}
               entries={slideEntries()}
               slideListWidth={ui.slideListWidth()}
               draggedIndex={ui.draggedIndex()}
@@ -4034,6 +4067,7 @@ export function Studio() {
               language={settings.language()}
               selectedSlideKey={selectedSlideKey()}
               hasDeck={Boolean(render.assetBaseUrl())}
+              buildError={buildError()}
               canvasFragmentOf={render.previewFragmentOf}
               slideStylesheet={getSlideStylesheet}
               viewportMode={ui.viewportMode()}

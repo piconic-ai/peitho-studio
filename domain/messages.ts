@@ -156,6 +156,10 @@ export interface Messages {
   previewScaledDownDetail: string
   selectSlideToPreview: string
   openDeckToPreview: string
+  /** Shown in the preview pane, above peitho-core's own error text, while
+   * the deck on disk doesn't build — and the way out, below it. */
+  deckDoesNotBuild: string
+  fixSourceToPreview: string
 
   // Review comments to the Coding Agent (the preview's pins, the comment
   // box and the comments panel under the preview)
@@ -368,6 +372,8 @@ const en: Messages = {
   previewScaledDownDetail: 'The device doesn\'t fit this panel at real size, so it is shown smaller',
   selectSlideToPreview: 'Select a slide to preview it.',
   openDeckToPreview: 'Open a deck to preview it.',
+  deckDoesNotBuild: 'This deck doesn\'t build yet, so there is nothing to preview.',
+  fixSourceToPreview: 'Fix the source in the editor and save; the preview comes back once the deck builds.',
 
   reviewComments: 'Comments for the agent',
   connectAgentTitle: 'First, connect me',
@@ -570,6 +576,8 @@ const ja: Messages = {
   previewScaledDownDetail: '実寸ではこのパネルに収まらないため、縮小して表示しています',
   selectSlideToPreview: 'プレビューするスライドを選んでください。',
   openDeckToPreview: 'デッキを開くとプレビューが表示されます。',
+  deckDoesNotBuild: 'このデッキはまだビルドできないため、プレビューがありません。',
+  fixSourceToPreview: 'エディタでソースを直して保存すると、ビルドが通った時点でプレビューが戻ります。',
 
   reviewComments: 'エージェントへのコメント',
   connectAgentTitle: 'まず、私を接続してください',

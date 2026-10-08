@@ -1,6 +1,6 @@
 'use client'
 
-import { type Manifest, type ManifestSection, type SectionDraft } from '../domain/render'
+import { type ManifestSection, type SectionDraft } from '../domain/render'
 import { type DurationPart, formatDurationMs, msToMinutesSeconds } from '../domain/slides'
 import { type SlideListEntry } from '../domain/slideList'
 import { type RowVisibility } from '../domain/sectionCollapse'
@@ -25,7 +25,10 @@ import { isFocusMovingWithinSectionHeader, showCanonicalValue } from '../dom/sec
 export interface SlideListProps {
   /** The UI language every label here is shown in. */
   language: Language
-  manifest: Manifest | null
+  /** Whether a deck is open at all — the rows show for one that is, even
+   * when it doesn't build yet (then every row is a placeholder, see
+   * `domain/slideList.ts`); without one, a hint to open a deck. */
+  deckOpen: boolean
   /** One row per slide in the deck's own source — drafts included, unlike
    * `manifest.slides` (see `domain/slideList.ts`'s `buildSlideList`). Every
    * index-taking callback below (`onSelectSlide`, `onContextMenu`, ...) is
@@ -138,7 +141,7 @@ export function SlideList(props: SlideListProps) {
           props.onContextMenu(null, e)
         }}
       >
-        {props.manifest === null ? (
+        {!props.deckOpen ? (
           <p className="text-sm text-muted-foreground">{messagesFor(props.language).openDeckToSeeSlides}</p>
         ) : (
           // The `.map()` callback below must stay an expression body (a
