@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: peitho-coreがビルドを拒むデッキ(構文違反)でも、ソースだけでエディタを開けるようにし、エラーの行と内容を見ながら直して保存できるようにする
 tags: [engine, rust-command, editor, error-handling]
 ---
@@ -193,10 +193,10 @@ tags: [engine, rust-command, editor, error-handling]
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `cargo test` グリーン(`src-tauri/`)
-- [ ] `bun run test:e2e` グリーン(新規specを含む)
-- [ ] `cargo build --example e2e_engine`後の`real-engine-*`specがグリーン
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `cargo test` グリーン(`src-tauri/`)
+- [x] `bun run test:e2e` グリーン(新規specを含む)
+- [x] `cargo build --example e2e_engine`後の`real-engine-*`specがグリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] 実機での見た目/挙動確認(ユーザー自身に依頼する — 自動化していた
@@ -213,3 +213,17 @@ tags: [engine, rust-command, editor, error-handling]
   に置き換える(本件のついでに直さない。別todoにする価値あり)。
 - `peitho build`相当の「警告」(エラーではないが怪しい)をStudioで出す話は
   peitho-core側にその概念があるか未確認。
+- `components/SlideList.tsx`の「デッキを開くとスライドが表示されます」分岐
+  (`deckOpen`が偽のとき)は、SlideListが`deck.deckPath() !== null`のときしか
+  マウントされないため到達しない。分岐ごと消して`.map()`を直接置く方が
+  素直だが、`.map()`の委譲リスナーの構造が変わる(CLAUDE.mdの#2930)ので
+  本件では触らず、別途。
+- 描画なしの状態(`manifest() === null`)で New Slide を押すと、
+  `existingSlideKeys()`がmanifestから鍵を集めるため、ソース上の既存鍵と
+  衝突する鍵(`new-slide`)を選びうる。どのみちデッキが壊れていると保存は
+  ブロックされるので実害は出ないが、鍵の収集をソース(`slideRanges`の
+  PageComment)から行えば描画の有無に依存しなくなる。
+- 壊れたデッキを開いた直後、まだ一度も描画が通っていない間は
+  `render.assetBaseUrl()`がnullのため、レビュー(コメント)パネルとその
+  レールのトグルが隠れる。描画が通れば出る。コメント対象の描画がないので
+  妥当だが、意図した設計として明文化はしていない。
