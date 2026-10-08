@@ -60,13 +60,17 @@ export function buildErrorIdentity(error: RenderErrorPayload): string {
 
 /** Where the report stands since the deck on disk last built: nothing to
  * report (`idle`); errors to send once an agent waits and no other send is
- * in flight (`waiting-for-agent`); or every error known sent (`sent`).
- * `reported` lists the identities (`buildErrorIdentity`) sent since the
- * deck last built, so an error still there after the agent's next edit —
- * or after it fixed another one — isn't sent again. */
+ * in flight (`waiting-for-agent`); errors whose send failed, kept for the
+ * deck's next render on disk or the agent's next round — not for the
+ * failed send merely ending, which would retry at once, forever
+ * (`send-failed`); or every error known sent (`sent`). `reported` lists
+ * the identities (`buildErrorIdentity`) sent since the deck last built, so
+ * an error still there after the agent's next edit — or after it fixed
+ * another one — isn't sent again. */
 export type BuildErrorReport =
   | { kind: 'idle' }
   | { kind: 'waiting-for-agent'; errors: readonly RenderErrorPayload[]; source: string; reported: readonly string[] }
+  | { kind: 'send-failed'; errors: readonly RenderErrorPayload[]; source: string; reported: readonly string[] }
   | { kind: 'sent'; reported: readonly string[] }
 
 export type BuildErrorReportEvent =
@@ -75,11 +79,16 @@ export type BuildErrorReportEvent =
   | { type: 'disk-render-failed'; errors: readonly RenderErrorPayload[]; source: string }
   /** The deck on disk built. */
   | { type: 'disk-render-ok' }
-  /** An agent waits in the session and nothing else is being sent. */
+  /** An agent waits in the session and nothing else is being sent —
+   * because one came, or because the send in the way ended. */
   | { type: 'agent-waiting' }
+  /** An agent came to wait that wasn't waiting before: its next round, or
+   * its first. Not raised by a send ending. */
+  | { type: 'agent-arrived' }
   /** The errors with these identities reached crit and the round was finished. */
   | { type: 'sent'; identities: readonly string[] }
-  /** The send failed (nothing retried until the next event). */
+  /** The send failed: its errors are kept, and retried on the deck's next
+   * render on disk or the agent's next round — never at once. */
   | { type: 'send-failed' }
 
 export interface BuildErrorReportDecision {
@@ -130,20 +139,29 @@ export function decideBuildErrorReport(state: BuildErrorReport, event: BuildErro
       // Built once: whatever breaks it next is news again.
       return { next: { kind: 'idle' } }
     case 'agent-waiting':
+      // A failed send's errors stay held: this is raised by that send
+      // ending too, and would retry it at once.
       if (state.kind !== 'waiting-for-agent' || !agentReady) return { next: state }
       return { next: state, effect: { kind: 'send', errors: state.errors, source: state.source } }
+    case 'agent-arrived': {
+      // The agent's next round: what a failed send held goes again.
+      if (state.kind !== 'send-failed') return { next: state }
+      const next: BuildErrorReport = { kind: 'waiting-for-agent', errors: state.errors, source: state.source, reported: state.reported }
+      return agentReady ? { next, effect: { kind: 'send', errors: state.errors, source: state.source } } : { next }
+    }
     case 'sent': {
       if (state.kind === 'idle') return { next: state }
       const reported = [...new Set([...state.reported, ...event.identities])]
       if (state.kind === 'sent') return { next: { kind: 'sent', reported } }
       // The deck changed under the send: what it added stays to be sent.
       const errors = unreported(state.errors, reported)
-      return { next: errors.length === 0 ? { kind: 'sent', reported } : { ...state, errors, reported } }
+      return { next: errors.length === 0 ? { kind: 'sent', reported } : { ...state, kind: 'waiting-for-agent', errors, reported } }
     }
     case 'send-failed':
-      // Dropped, not retried on a timer: the next change to the deck or
-      // the agent's next round brings the errors back as an event.
-      return { next: state.kind === 'waiting-for-agent' ? settled(state.reported) : state }
+      // Kept, not dropped and not retried on a timer: the deck's next
+      // render on disk (`disk-render-failed`, with the errors as they are
+      // then) or the agent's next round (`agent-arrived`) sends them.
+      return { next: state.kind === 'waiting-for-agent' ? { ...state, kind: 'send-failed' } : state }
     default: {
       const _exhaustive: never = event
       throw new Error(`Unhandled BuildErrorReportEvent: ${JSON.stringify(_exhaustive)}`)

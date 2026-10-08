@@ -182,18 +182,65 @@ describe('decideBuildErrorReport', () => {
       expect(decideBuildErrorReport(built.next, failed(SLIDE_TWO), true).effect).toEqual({ kind: 'send', errors: [SLIDE_TWO], source: SOURCE })
     })
 
-    test('spec: Given the send failed, Then nothing is retried until the deck changes or the agent comes again — which brings the error back', () => {
-      const dropped = decideBuildErrorReport(waiting, { type: 'send-failed' }, true)
-      expect(dropped).toEqual({ next: idle })
-      expect(decideBuildErrorReport(dropped.next, { type: 'agent-waiting' }, true)).toEqual({ next: idle })
-      expect(decideBuildErrorReport(dropped.next, failed(SLIDE_TWO), true).effect).toEqual({ kind: 'send', errors: [SLIDE_TWO], source: SOURCE })
+    test('spec: Given the send failed, Then its errors are held, and the agent waiting on (the send ending) retries nothing', () => {
+      const held: BuildErrorReport = { kind: 'send-failed', errors: [SLIDE_TWO], source: SOURCE, reported: [] }
+      expect(decideBuildErrorReport(waiting, { type: 'send-failed' }, true)).toEqual({ next: held })
+      expect(decideBuildErrorReport(held, { type: 'agent-waiting' }, true)).toEqual({ next: held })
     })
 
-    test('adversarial: Given a send failed after an earlier one succeeded, Then what was sent stays known and what failed is sent next time', () => {
+    test('spec: Given a send failed, When the deck renders on disk again with the same error (its line moved or not), Then it is sent again, where it is now', () => {
+      const held: BuildErrorReport = { kind: 'send-failed', errors: [SLIDE_TWO], source: SOURCE, reported: [] }
+      expect(decideBuildErrorReport(held, failed(SLIDE_TWO), true)).toEqual({
+        next: { kind: 'waiting-for-agent', errors: [SLIDE_TWO], source: SOURCE, reported: [] },
+        effect: { kind: 'send', errors: [SLIDE_TWO], source: SOURCE },
+      })
+      const moved = { ...SLIDE_TWO, line: 10, headline: "slide 2 ('two'), line 10: ..." }
+      expect(decideBuildErrorReport(held, { type: 'disk-render-failed', errors: [moved], source: 'moved' }, true).effect).toEqual({ kind: 'send', errors: [moved], source: 'moved' })
+    })
+
+    test('spec: Given a send failed, When the agent comes to wait again (its next round), Then the held errors are sent — or wait, with a send in flight', () => {
+      const held: BuildErrorReport = { kind: 'send-failed', errors: [SLIDE_TWO], source: SOURCE, reported: [] }
+      expect(decideBuildErrorReport(held, { type: 'agent-arrived' }, true)).toEqual({
+        next: { kind: 'waiting-for-agent', errors: [SLIDE_TWO], source: SOURCE, reported: [] },
+        effect: { kind: 'send', errors: [SLIDE_TWO], source: SOURCE },
+      })
+      const busy = decideBuildErrorReport(held, { type: 'agent-arrived' }, false)
+      expect(busy).toEqual({ next: { kind: 'waiting-for-agent', errors: [SLIDE_TWO], source: SOURCE, reported: [] } })
+      expect(decideBuildErrorReport(busy.next, { type: 'agent-waiting' }, true).effect).toEqual({ kind: 'send', errors: [SLIDE_TWO], source: SOURCE })
+    })
+
+    test('spec: Given a send failed, When the deck builds on disk, Then the held errors are forgotten', () => {
+      const held: BuildErrorReport = { kind: 'send-failed', errors: [SLIDE_TWO], source: SOURCE, reported: [] }
+      expect(decideBuildErrorReport(held, { type: 'disk-render-ok' }, true)).toEqual({ next: idle })
+    })
+
+    test('adversarial: Given a send failed after an earlier one succeeded, Then what was sent stays known and only what failed is sent next time', () => {
       const partly: BuildErrorReport = { kind: 'waiting-for-agent', errors: [SLIDE_FOUR], source: SOURCE, reported: [id(SLIDE_TWO)] }
-      const dropped = decideBuildErrorReport(partly, { type: 'send-failed' }, true)
-      expect(dropped).toEqual({ next: { kind: 'sent', reported: [id(SLIDE_TWO)] } })
-      expect(decideBuildErrorReport(dropped.next, failed(SLIDE_TWO, SLIDE_FOUR), true).effect).toEqual({ kind: 'send', errors: [SLIDE_FOUR], source: SOURCE })
+      const held = decideBuildErrorReport(partly, { type: 'send-failed' }, true)
+      expect(held).toEqual({ next: { kind: 'send-failed', errors: [SLIDE_FOUR], source: SOURCE, reported: [id(SLIDE_TWO)] } })
+      expect(decideBuildErrorReport(held.next, failed(SLIDE_TWO, SLIDE_FOUR), true).effect).toEqual({ kind: 'send', errors: [SLIDE_FOUR], source: SOURCE })
+      expect(decideBuildErrorReport(held.next, { type: 'agent-arrived' }, true).effect).toEqual({ kind: 'send', errors: [SLIDE_FOUR], source: SOURCE })
+    })
+
+    test('adversarial: Given a send failed, When the deck renders on disk with that error fixed and another broken, Then only the other is sent and the held one is forgotten', () => {
+      const held: BuildErrorReport = { kind: 'send-failed', errors: [SLIDE_TWO], source: SOURCE, reported: [] }
+      expect(decideBuildErrorReport(held, failed(SLIDE_FOUR), true)).toEqual({
+        next: { kind: 'waiting-for-agent', errors: [SLIDE_FOUR], source: SOURCE, reported: [] },
+        effect: { kind: 'send', errors: [SLIDE_FOUR], source: SOURCE },
+      })
+    })
+
+    test('adversarial: Given the agent arrives in idle, waiting-for-agent or sent, Then nothing changes (agent-waiting is what sends)', () => {
+      const sent: BuildErrorReport = { kind: 'sent', reported: [id(SLIDE_TWO)] }
+      expect(decideBuildErrorReport(idle, { type: 'agent-arrived' }, true)).toEqual({ next: idle })
+      expect(decideBuildErrorReport(waiting, { type: 'agent-arrived' }, true)).toEqual({ next: waiting })
+      expect(decideBuildErrorReport(sent, { type: 'agent-arrived' }, true)).toEqual({ next: sent })
+    })
+
+    test('adversarial: Given a send failed twice over, Then the held errors are held still, and a sent event for them settles as sent', () => {
+      const held: BuildErrorReport = { kind: 'send-failed', errors: [SLIDE_TWO], source: SOURCE, reported: [] }
+      expect(decideBuildErrorReport(held, { type: 'send-failed' }, true)).toEqual({ next: held })
+      expect(decideBuildErrorReport(held, { type: 'sent', identities: [id(SLIDE_TWO)] }, false)).toEqual({ next: { kind: 'sent', reported: [id(SLIDE_TWO)] } })
     })
 
     test('adversarial: Given the deck changed while the send ran, Then what it added waits to be sent and what it fixed is forgotten', () => {

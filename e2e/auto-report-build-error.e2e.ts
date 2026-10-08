@@ -241,6 +241,54 @@ test('Given the user wrote a comment but did not send it, when the agent comes t
   await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
 })
 
+test('Given crit refused the comment once, when the deck changes on disk with the same error, then the error is sent then', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  let refusals = 0
+  const invoked: string[] = []
+  const deck = await open(page, brokenDeck(crit, { invokedCommands: invoked, commandError: cmd => (cmd === 'crit_add_comments' && refusals++ === 0 ? 'the review file is locked' : null) }))
+  await expect(page.locator('[data-review-error]')).toContainText('the review file is locked')
+  await page.waitForTimeout(300)
+  expect(invoked.filter(cmd => cmd === 'crit_add_comments')).toHaveLength(1)
+  expect(methods(crit)).not.toContain('finish')
+
+  // A blank line at the end: the same error, on the same line.
+  await changeOnDisk(page, deck, `${SOURCE}\n`)
+
+  await expect.poll(() => methods(crit)).toContain('finish')
+  expect(sentComments(crit)).toEqual([SLIDE_TWO_COMMENT])
+  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the agent.')
+  await expect(page.locator('[data-review-error]')).toBeHidden()
+})
+
+test('Given crit refused the comment once, when the agent comes to wait again after the user\'s own round, then the error is sent then', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  let refusals = 0
+  const invoked: string[] = []
+  await open(page, brokenDeck(crit, { invokedCommands: invoked, commandError: cmd => (cmd === 'crit_add_comments' && refusals++ === 0 ? 'the review file is locked' : null) }))
+  await expect(page.locator('[data-review-error]')).toContainText('the review file is locked')
+  await page.waitForTimeout(300)
+  expect(invoked.filter(cmd => cmd === 'crit_add_comments')).toHaveLength(1)
+
+  // The user's own comment goes, finishing the round — which is not the
+  // agent coming again: the held error isn't sent with it.
+  await page.locator('[data-slide-row="0"]').click()
+  await expect(page.locator(`${PREVIEW} h1`)).toHaveText('One')
+  await page.locator(`${PREVIEW} h1`).click({ button: 'right' })
+  await page.locator('[data-slide-menu-item="comment"]').click()
+  await page.locator('[data-comment-box] textarea').fill('Make it bigger')
+  await page.locator('[data-comment-add]').click()
+  await page.locator('[data-review-send]').click()
+  await expect.poll(() => methods(crit)).toContain('finish')
+  await expect(page.locator('[data-review-send]')).toHaveAttribute('data-review-send-state', 'thinking')
+  expect(sentComments(crit).map(comment => comment.body)).toEqual(['[Slide 1 › heading "One"] Make it bigger'])
+
+  crit.agentConnects()
+
+  await expect.poll(() => methods(crit).filter(method => method === 'finish')).toHaveLength(2)
+  expect(sentComments(crit).map(comment => comment.body)).toEqual(['[Slide 1 › heading "One"] Make it bigger', SLIDE_TWO_COMMENT.body])
+  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the agent.')
+})
+
 test('Given crit refuses the comment, then the review panel shows the failure, the round is not finished, and nothing is retried on its own', async ({ page }) => {
   const crit = createFakeCritIpc()
   const invoked: string[] = []

@@ -2114,6 +2114,20 @@ export function Studio() {
     if (!agentReadyForReport()) return
     untrack(() => dispatchBuildErrorReport({ type: 'agent-waiting' }))
   })
+  // The agent came to wait after not waiting — its next round (or the
+  // first seen): told apart from the effect above, which a send ending
+  // raises too, so that a failed send is retried on a new round and not
+  // the moment it lets go of `busy`. `review.setSession` leaves the signal
+  // alone when nothing changed, so this runs on a change of session, not
+  // on every poll.
+  let agentWaitedBefore = false
+  createEffect(() => {
+    const session = review.session()
+    const waiting = session?.kind === 'found' && session.agentWaiting
+    const arrived = waiting && !agentWaitedBefore
+    agentWaitedBefore = waiting
+    if (arrived) untrack(() => dispatchBuildErrorReport({ type: 'agent-arrived' }))
+  })
   // The `send` effect: the errors as comments on their lines of `source`
   // (what they count lines into), then the round — like `sendReview`, but
   // without the user's unsent comments, which go with their own Send.
