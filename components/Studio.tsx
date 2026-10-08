@@ -21,6 +21,7 @@ import {
   type CommentTarget, type LayoutCommentTarget, type PreviewPin,
 } from '../domain/reviewComment'
 import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, connectTargetOf, showsConnectGuide } from '../domain/agentConnect'
+import { type BuildErrorReportEvent, type DiskBuild, buildErrorComment, buildErrorIdentity, decideBuildErrorReport, diskBuildOf } from '../domain/buildErrorReport'
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
 import { layoutThumbnailClickOf, layoutThumbnailContextClickOf, noteLayoutRowPress } from '../dom/layoutComments'
 import { keepShownPopupsInWindow } from '../dom/popupFit'
@@ -167,6 +168,11 @@ export function Studio() {
   // regardless of which event started the chain.
   async function runOpen(path: string): Promise<void> {
     setErrorMessage(null)
+    // Before the render lands, not after: a deck that opens broken reports
+    // its build errors to the agent (`dispatchBuildErrorReport`) as soon
+    // as `markRenderFailed` below records them, and a reset after that
+    // would forget them.
+    review.reset()
     try {
       const info = await deckIpc.openDeck(path)
       // Before any slide mounts, so none of them goes in with the wrong trust.
@@ -196,7 +202,6 @@ export function Studio() {
       // Only once `open`: a variant picked while still `opening` would be
       // rejected by `decide` as busy, silently doing nothing.
       void refreshDeckVariants()
-      review.reset()
       void refreshReview()
       void noteLayoutFiles()
     } catch (err) {
@@ -2060,6 +2065,69 @@ export function Studio() {
       review.markSent(pending, comments.map(comment => comment.body), sendable, layoutPending)
     } catch (err) {
       review.setError(settings.messages().reviewFailed(String(err)))
+    } finally {
+      review.setBusy('idle')
+    }
+    await refreshReview()
+  }
+
+  // Reports the deck's build errors to the agent on its own
+  // (todo/auto-report-build-error.md, `domain/buildErrorReport.ts`): while
+  // the deck on disk doesn't build — opened broken, or broken by an edit
+  // from outside (the agent's own, most often: `handleExternalChange`) —
+  // each error goes to the agent waiting in crit as a comment on its line,
+  // and the round is finished. Every transition goes through
+  // `decideBuildErrorReport`; this only feeds it what changed and runs the
+  // send it asks for. A draft being typed never reaches this: its failure
+  // isn't the disk's (`render.outcome()`), and the agent can't fix what
+  // isn't written.
+  function agentReadyForReport(): boolean {
+    const session = review.session()
+    return session?.kind === 'found' && session.agentWaiting && review.busy() === 'idle'
+  }
+  function dispatchBuildErrorReport(event: BuildErrorReportEvent): void {
+    const decision = decideBuildErrorReport(review.report(), event, agentReadyForReport())
+    review.setReport(decision.next)
+    if (decision.effect?.kind === 'send') void sendBuildErrors(decision.effect.errors, decision.effect.source)
+  }
+  // What the deck on disk builds to, from the render state: the deck's
+  // refusal, or the slides the last render isolated. A memo of the
+  // errors' identities too, so a render that isolates the same slides
+  // again (every save around them) doesn't re-run the effect for nothing.
+  const diskBuild = createMemo<DiskBuild | null>(() => diskBuildOf(render.outcome(), render.brokenSlides(), render.renderedSource()))
+  const diskBuildKey = createMemo<string | null>(() => {
+    const build = diskBuild()
+    return build === null ? null : build.kind === 'ok' ? 'ok' : build.errors.map(buildErrorIdentity).join('\n')
+  })
+  createEffect(() => {
+    if (diskBuildKey() === null) return
+    untrack(() => {
+      const build = diskBuild()
+      if (build === null) return
+      dispatchBuildErrorReport(build.kind === 'ok' ? { type: 'disk-render-ok' } : { type: 'disk-render-failed', errors: build.errors, source: build.source })
+    })
+  })
+  // The agent came to wait (the session poll or crit's event saw it), or
+  // the send that was in the way finished: whatever waited to be reported
+  // goes now.
+  createEffect(() => {
+    if (!agentReadyForReport()) return
+    untrack(() => dispatchBuildErrorReport({ type: 'agent-waiting' }))
+  })
+  // The `send` effect: the errors as comments on their lines of `source`
+  // (what they count lines into), then the round — like `sendReview`, but
+  // without the user's unsent comments, which go with their own Send.
+  async function sendBuildErrors(errors: readonly RenderErrorPayload[], source: string): Promise<void> {
+    review.setBusy('sending')
+    review.setError(null)
+    try {
+      await critIpc.addComments(errors.map(error => buildErrorComment(error, source)))
+      await critIpc.finish()
+      dispatchBuildErrorReport({ type: 'sent', identities: errors.map(buildErrorIdentity) })
+      setStatusMessage({ kind: 'build-error-reported' })
+    } catch (err) {
+      review.setError(settings.messages().reviewFailed(String(err)))
+      dispatchBuildErrorReport({ type: 'send-failed' })
     } finally {
       review.setBusy('idle')
     }
