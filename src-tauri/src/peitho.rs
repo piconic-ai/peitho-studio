@@ -39,7 +39,7 @@ use crate::engine::images;
 use crate::engine::layout_files;
 use crate::engine::layout_fit::{self, LayoutVerdict};
 use crate::engine::layout_preview;
-use crate::engine::pipeline::{self, RenderOutput};
+use crate::engine::pipeline::{self, RenderError, RenderErrorPayload, RenderOutput};
 use crate::engine::serve::AssetServer;
 
 /// Event name the frontend listens for (see Studio.tsx) to reload the deck
@@ -318,6 +318,34 @@ pub struct RenderPayload {
     css: String,
 }
 
+/// What a render of the deck came to, as `open_deck` and `render_draft`
+/// answer it: the deck rendered, or peitho-core refused it (the frontend's
+/// `RenderOutcome` in `domain/render.ts`). A refusal is an answer, not a
+/// command failure — `open_deck` still opens the deck's session on it, so
+/// the source can be fixed in the editor, and a command's `Err` is left to
+/// what keeps it from rendering at all (no session, a poisoned lock).
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum RenderOutcome {
+    Rendered(RenderPayload),
+    Failed { error: RenderErrorPayload },
+}
+
+/// `open_deck`/`render_draft`'s answer for a render: a rendered deck is
+/// handed to `serve` (the window's `AssetServer`) before its payload is
+/// built, a refused one becomes `Failed` and `serve` never runs — so the
+/// server keeps serving the last deck that rendered. State-independent:
+/// the only effect is the one injected.
+fn render_outcome(result: Result<RenderOutput, RenderError>, asset_base_url: String, serve: impl FnOnce(&RenderOutput)) -> Result<RenderOutcome, String> {
+    match result {
+        Ok(output) => {
+            serve(&output);
+            Ok(RenderOutcome::Rendered(to_payload(output, asset_base_url)?))
+        }
+        Err(err) => Ok(RenderOutcome::Failed { error: err.into_payload() }),
+    }
+}
+
 /// Answers the deck-path-only commands as their `#[tauri::command]`s would,
 /// without a window or session: lets e2e drive the real frontend against
 /// peitho-core's actual output. `args` is the command's camelCase JSON.
@@ -327,8 +355,8 @@ pub fn invoke_for_e2e(deck_path: &Path, cmd: &str, args: serde_json::Value) -> R
     let json = |value: Result<crate::engine::slide_edit::ImageCanvas, String>| value.and_then(|v| serde_json::to_value(v).map_err(|err| err.to_string()));
     match cmd {
         "render_draft" => {
-            let payload = to_payload(pipeline::render_source(deck_path, &string("content")?)?, String::new())?;
-            serde_json::to_value(payload).map_err(|err| err.to_string())
+            let outcome = render_outcome(pipeline::render_source(deck_path, &string("content")?), String::new(), |_| {})?;
+            serde_json::to_value(outcome).map_err(|err| err.to_string())
         }
         "create_image_canvas" => {
             let (content, base) = (string("content")?, string("baseLayout")?);
@@ -369,7 +397,9 @@ pub struct DeckSessionInfo {
     /// Whether the deck's folder is trusted to run scripts — decided once
     /// here; afterwards only `trust_open_deck` changes it.
     trusted: bool,
-    render: RenderPayload,
+    /// The deck as rendered on open — or why it wasn't, the session open
+    /// all the same (see `RenderOutcome`).
+    render: RenderOutcome,
 }
 
 /// Resolve the `peitho` binary — still needed for `present_deck`. GUI apps
@@ -1063,12 +1093,13 @@ pub fn open_deck(
     let deck_dir = deck_dir_of(&deck_path);
 
     let source = std::fs::read_to_string(&deck_path).map_err(|err| err.to_string())?;
-    let output = pipeline::render_source(&deck_path, &source)?;
-
+    // A deck peitho-core refuses still opens: the session, the asset
+    // server and the watchers are set up as for any other deck, and the
+    // refusal goes to the frontend as the render's outcome, so the source
+    // can be fixed in the editor (see todo/open-broken-deck.md). Only the
+    // asset server has nothing to serve until a render goes through.
     let asset_server = AssetServer::start().map_err(|err| err.to_string())?;
-    asset_server.update(&output);
-    let asset_base_url = asset_server.base_url.clone();
-    let render = to_payload(output, asset_base_url)?;
+    let render = render_outcome(pipeline::render_source(&deck_path, &source), asset_server.base_url.clone(), |output| asset_server.update(output))?;
 
     let watcher = watch_deck_file(window.clone(), &deck_path)
         .map_err(|err| format!("failed to watch {}: {err}", deck_path.display()))?;
@@ -1101,23 +1132,23 @@ pub fn open_deck(
 /// Renders `content` as if it were the deck at the currently open path,
 /// without touching disk — the live-typing path. Same pipeline as
 /// `open_deck`/a real `peitho build`, just fed an in-memory string, so a
-/// draft too broken to build cleanly surfaces as an `Err` here rather than
-/// ever reaching disk.
+/// draft too broken to build cleanly surfaces as a `Failed` outcome here
+/// rather than ever reaching disk (`ipc/deckIpc.ts` throws it as a
+/// `RenderFailure`, so the frontend's callers still see a rejection).
 #[tauri::command]
-pub fn render_draft(content: String, window: WebviewWindow, session: State<PeithoSession>) -> Result<RenderPayload, String> {
+pub fn render_draft(content: String, window: WebviewWindow, session: State<PeithoSession>) -> Result<RenderOutcome, String> {
     let (deck_path, asset_base_url) = {
         let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
         let state = guard.get(window.label()).ok_or_else(|| "no deck is open".to_string())?;
         (state.deck_path.clone(), state.asset_server.base_url.clone())
     };
-    let output = pipeline::render_source(&deck_path, &content)?;
-    {
-        let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+    let result = pipeline::render_source(&deck_path, &content);
+    let guard = session.0.lock().map_err(|_| "session lock poisoned".to_string())?;
+    render_outcome(result, asset_base_url, |output| {
         if let Some(state) = guard.get(window.label()) {
-            state.asset_server.update(&output);
+            state.asset_server.update(output);
         }
-    }
-    to_payload(output, asset_base_url)
+    })
 }
 
 #[tauri::command]
@@ -2914,16 +2945,30 @@ Start writing your slides here.\n";
         let deck_path = crate::engine::fixtures::example_deck("minimal");
         let source = std::fs::read_to_string(&deck_path).unwrap();
         let payload = invoke_for_e2e(&deck_path, "render_draft", serde_json::json!({ "content": source })).unwrap();
+        assert_eq!(payload["kind"], "rendered");
         assert_eq!(payload["manifest"]["slideCount"], 3);
         assert_eq!(payload["fragments"].as_object().unwrap().len(), 3);
         assert!(payload["slideLayouts"].is_object() && payload["headingLayouts"].is_array());
     }
 
     #[test]
-    fn invoke_for_e2e_adversarial_build_errors_and_bad_requests_are_errors() {
+    fn invoke_for_e2e_spec_a_deck_peitho_refuses_is_a_failed_outcome_not_an_error() {
+        // Given a draft peitho-core refuses (a page comment after content),
         let deck_path = crate::engine::fixtures::example_deck("minimal");
         let broken = "# a\n\nx\n<!-- {\"layout\":\"title-slide\"} -->";
-        assert!(invoke_for_e2e(&deck_path, "render_draft", serde_json::json!({ "content": broken })).is_err());
+        // When e2e renders it as the app's `render_draft` would,
+        let outcome = invoke_for_e2e(&deck_path, "render_draft", serde_json::json!({ "content": broken })).unwrap();
+        // Then the answer is the structured refusal the frontend unwraps —
+        // a `failed` outcome with peitho-core's error — not a command error.
+        assert_eq!(outcome["kind"], "failed");
+        assert!(outcome["error"]["headline"].as_str().unwrap().contains("page settings comment"), "{outcome}");
+        assert!(outcome["error"]["help"].is_string(), "{outcome}");
+        assert_eq!(outcome["error"]["slide"]["number"], 1);
+    }
+
+    #[test]
+    fn invoke_for_e2e_adversarial_bad_requests_are_errors() {
+        let deck_path = crate::engine::fixtures::example_deck("minimal");
         assert_eq!(invoke_for_e2e(&deck_path, "render_draft", serde_json::json!({})).unwrap_err(), "missing content");
         assert_eq!(invoke_for_e2e(&deck_path, "create_image_canvas", serde_json::json!({ "content": "" })).unwrap_err(), "missing baseLayout");
         assert!(invoke_for_e2e(&deck_path, "save_deck_source", serde_json::json!({ "content": "" })).unwrap_err().contains("not available"));
@@ -2972,5 +3017,78 @@ Start writing your slides here.\n";
     #[test]
     fn to_payload_adversarial_rejects_invalid_manifest_json() {
         assert!(to_payload(render_output("not json", ""), String::new()).is_err());
+    }
+
+    // --- render_outcome: what open_deck/render_draft answer ---
+
+    fn build_error(slide: Option<usize>) -> RenderError {
+        let mut err = peitho_core::BuildError::new(peitho_core::error::ErrorKind::Arity, Some(12), "slot 'code' got 2 item(s)", "remove one code block");
+        if let Some(number) = slide {
+            err = err.with_slide(number, Some("arch"));
+        }
+        err.into()
+    }
+
+    #[test]
+    fn render_outcome_spec_a_rendered_deck_is_served_then_answered_with_its_asset_base_url() {
+        // Given a deck that rendered,
+        let output = render_output(r#"{"title":"Deck","slideCount":1,"canvasWidth":1280,"canvasHeight":720,"sections":[],"slides":[]}"#, ".peitho-slide {}");
+        let mut served = Vec::new();
+        // When it becomes the command's answer,
+        let outcome = render_outcome(Ok(output), "http://127.0.0.1:1234/".to_string(), |output| served.push(output.css.clone())).unwrap();
+        // Then the asset server got the output first, and the frontend gets
+        // the rendered payload — `kind: "rendered"` beside the payload's
+        // own fields.
+        assert_eq!(served, [".peitho-slide {}"]);
+        let json = serde_json::to_value(&outcome).unwrap();
+        assert_eq!(json["kind"], "rendered");
+        assert_eq!(json["manifest"]["title"], "Deck");
+        assert_eq!(json["assetBaseUrl"], "http://127.0.0.1:1234/");
+        assert_eq!(json["fragments"]["slide-1"], "<section>one</section>");
+    }
+
+    #[test]
+    fn render_outcome_spec_a_build_error_is_a_failed_answer_and_serves_nothing() {
+        // Given peitho-core refused the deck,
+        let mut served = 0;
+        // When it becomes the command's answer,
+        let outcome = render_outcome(Err(build_error(Some(2))), "http://127.0.0.1:1234/".to_string(), |_| served += 1).unwrap();
+        // Then nothing reaches the asset server (it keeps the last render)
+        // and the frontend gets the structured error under `error`.
+        assert_eq!(served, 0);
+        let json = serde_json::to_value(&outcome).unwrap();
+        assert_eq!(json["kind"], "failed");
+        assert_eq!(json["error"]["kind"], "Arity");
+        assert_eq!(json["error"]["line"], 12);
+        assert_eq!(json["error"]["slide"], serde_json::json!({ "number": 2, "key": "arch" }));
+        assert_eq!(json["error"]["headline"], "slide 2 ('arch'), line 12: slot 'code' got 2 item(s)");
+        assert_eq!(json["error"]["help"], "remove one code block");
+        assert!(json.get("manifest").is_none(), "{json}");
+    }
+
+    #[test]
+    fn render_outcome_spec_an_engine_error_outside_peitho_core_is_failed_too() {
+        let outcome = render_outcome(Err(RenderError::Other("layouts/x.html: no <section>".into())), String::new(), |_| {}).unwrap();
+        let json = serde_json::to_value(&outcome).unwrap();
+        assert_eq!(json["kind"], "failed");
+        assert_eq!(json["error"]["kind"], "Other");
+        assert_eq!(json["error"]["headline"], "layouts/x.html: no <section>");
+        assert_eq!(json["error"]["help"], "");
+        assert_eq!(json["error"]["slide"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn render_outcome_adversarial_a_build_error_with_no_slide_keeps_slide_null() {
+        let outcome = render_outcome(Err(build_error(None)), String::new(), |_| {}).unwrap();
+        let json = serde_json::to_value(&outcome).unwrap();
+        assert_eq!(json["error"]["slide"], serde_json::Value::Null);
+        assert_eq!(json["error"]["headline"], "line 12: slot 'code' got 2 item(s)");
+    }
+
+    #[test]
+    fn render_outcome_adversarial_an_output_with_bad_manifest_json_is_still_a_command_error() {
+        // The payload can't be built, which is the engine's own bug, not a
+        // deck the user can fix — so it stays a command failure.
+        assert!(render_outcome(Ok(render_output("not json", "")), String::new(), |_| {}).is_err());
     }
 }
