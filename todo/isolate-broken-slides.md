@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: ビルドが失敗するスライドだけをメモリ上でdraft扱いにして残りを描画し、壊れたスライドはERRORバッジ付きのプレースホルダーとして一覧に出す
 tags: [editor, error-handling, slide-list]
 ---
@@ -73,8 +73,27 @@ tags: [editor, error-handling, slide-list]
   保存も落ちる — 隔離を見せる以上、ここを変えないと「直ったように見えて
   何も保存できない」になる。
 - **`todo/archive/layout-picker-mismatch-error.md`**に、レイアウト不一致
-  エラーの扱いの経緯がある(未読。隔離した結果の見せ方と矛盾しないか
-  実装前に一読する)。
+  エラーの扱いの経緯がある(実装前に読んだ: レイアウトピッカーは選択前に
+  `check_slide_layouts`で候補を事前検証する方式(B)。隔離の見せ方とは
+  独立で矛盾しない。ただし下記「先送り事項」の通り、壊れたスライドが
+  残っている間はこの事前検証が全体ビルドに巻き込まれて失敗しうる)。
+- 実装時に分かったこと(peitho v1.34.0 `parser.rs`): draftの除外は
+  `parse_slide`(各スライドのパース)と`validate_unique_keys`の**後**。
+  つまりパース段のエラー(重複キー、壊れた脚注、不正なPageComment)は
+  draft印を付けても同じスライドで再発する → `isolateSlide`は「同じ番号の
+  再発=進展なし」で諦め、`todo/open-broken-deck.md`の描画なし状態になる。
+  隔離が効くのはmapping/check段(スロット個数違反、レイアウト不一致)。
+  また draft は `skip`/`page_number:false`/`section` と同居できない
+  (それぞれparse_page_commentが拒む)ので、隔離用のdraft印はそれらを外し、
+  外したsectionの時間ぶんだけfrontmatterの`time:`を描画用ソース内で
+  再同期する(`withSlidesDrafted`)。
+- `open_deck`は1回しか描画しないので、隔離はフロントの
+  `renderPreview(source, { persisted: true })`が回す。同じソースへの
+  persisted描画は同時に3箇所(`runOpen`、選択が落ち着くまでのタイピング
+  effect)から要求されるので、in-flightの共有と「ビルドできないと分かった
+  ソースは変わるまで再描画しない」(`persistedFailedSource`)で、壊れた
+  スライド1枚の open が`render_draft` 2回に収まるようにした(e2eの
+  non-functionalテストで固定)。
 
 ## 方針
 
@@ -142,9 +161,9 @@ tags: [editor, error-handling, slide-list]
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `bun run test:e2e` グリーン(新規specを含む)
-- [ ] `real-engine-*` specグリーン
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `bun run test:e2e` グリーン(新規specを含む)
+- [x] `real-engine-*` specグリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] **設計判断**: 壊れたスライドが残ったまま別スライドの保存を通す
@@ -157,5 +176,24 @@ tags: [editor, error-handling, slide-list]
 
 - 隔離の上限5を設定にするか(たぶん不要)。
 - 隔離中のスライドをプレビューに「最後に成功したときの描画」で出す案
-  (`lastRenderedKey`の仕組みで一部は既に出るはず — 出るなら
-  バッジだけで足りる)。
+  (サムネイルは`lastRenderedKey`の仕組みで最後の描画が残る。プレビュー欄
+  は選択中の壊れたスライドのエラーを出す実装にした — 描画は出さない)。
+- **タイプ中のドラフトの隔離**(本ファイルの「やらないこと」): 壊れた
+  スライドが残っている間、別スライドをタイプしても`renderPreview`(draft)
+  は既知の壊れたスライドで失敗し、プレビューは保存(600msの自動保存→
+  `commitChange`が隔離する)まで更新されない。既知の`brokenSlides`を
+  ドラフトにも適用するだけなら再試行なしの1回描画で済むので、次の改善
+  候補として大きい。
+- 壊れたスライドが残っている間、`checkSlideLayouts`/`addImageLayout`/
+  `createLayout`などデッキ全体のソースをエンジンに渡す操作は、
+  `editor.fullSource()`(壊れたまま)を渡すので失敗しうる(エラーバーに
+  出るだけで壊れはしない)。描画に使った`Isolation.attempt`相当を渡す
+  形にすれば通る。
+- `commitChange`の既知判定は位置(`brokenSlidesAfterCommand`で構造変更を
+  追従)とpeitho-coreが報告するキー(導出キー含む)で行う。キーのない
+  スライドのタイトルを変えつつ別スライドの保存で位置もずれる、という
+  重なりでは未知扱い→保存ブロックになる(安全側)。
+- `todo/open-broken-deck.md`の「先送り事項」にある`existingSlideKeys()`
+  (manifestから鍵を集める)は、隔離中のスライドの鍵がmanifestに無いため
+  New Slideが既存の鍵と衝突する鍵を選びうる点で本件にも当てはまる
+  (衝突すれば重複キーのparseエラーで保存がブロックされ、実害はない)。
