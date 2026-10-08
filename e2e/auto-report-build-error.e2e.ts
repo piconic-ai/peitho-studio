@@ -9,6 +9,7 @@
 // here: the bundled crit itself, and an agent actually fixing the deck.
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, slotErrorAt, type MockDeck } from './helpers/mockTauri'
+import { editorText, fillEditor } from './helpers/codeEditor'
 import { createFakeCritIpc, type FakeCritIpc } from '../ipc/fakeCritIpc'
 import type { NewReviewComment } from '../domain/critReview'
 import type { RenderErrorPayload } from '../domain/render'
@@ -26,6 +27,7 @@ const SLIDE_TWO_COMMENT: NewReviewComment = {
 const STATUS = 'footer'
 const ERROR_BADGE = '[data-slide-status="error"]'
 const PREVIEW = '[data-preview-host]'
+const ERROR_BAR = '.bg-destructive\\/10'
 
 function brokenDeck(crit: FakeCritIpc, overrides: Partial<MockDeck> = {}): MockDeck {
   return { source: SOURCE, deckPath: '/decks/broken/deck.md', renderError: slotErrorAt('BROKEN'), editAnnotations: true, crit, ...overrides }
@@ -177,6 +179,24 @@ test('Given an error was sent and the deck then built, when it breaks the same w
   await expect(page.locator(ERROR_BADGE)).toHaveCount(1)
   await expect.poll(() => methods(crit).filter(method => method === 'finish')).toHaveLength(2)
   expect(sentComments(crit)).toEqual([SLIDE_TWO_COMMENT, SLIDE_TWO_COMMENT])
+})
+
+test('Given the agent is at work, when the broken slide is fixed in the editor but the save fails, then the error on disk still goes when the agent comes to wait', async ({ page }) => {
+  const crit = createFakeCritIpc({ session: 'working' })
+  const deck = await open(page, brokenDeck(crit, { commandError: cmd => (cmd === 'save_deck_source' ? 'disk full' : null) }))
+  await expect(page.locator(ERROR_BADGE)).toHaveCount(1)
+  await expect.poll(() => editorText(page)).toBe('# Two\n\nBROKEN')
+
+  // The draft renders — every slide, no ERROR row — but never lands.
+  await fillEditor(page, '# Two\n\nFixed')
+  await expect(page.locator(ERROR_BADGE)).toHaveCount(0)
+  await expect(page.locator(ERROR_BAR)).toContainText('disk full')
+  expect(deck.source).toBe(SOURCE)
+
+  crit.agentConnects()
+
+  await expect.poll(() => methods(crit)).toContain('finish')
+  expect(sentComments(crit)).toEqual([SLIDE_TWO_COMMENT])
 })
 
 test('Given the user wrote a comment but did not send it, when the agent comes to wait, then the build error goes alone and the comment stays unsent', async ({ page }) => {

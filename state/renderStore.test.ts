@@ -423,3 +423,69 @@ describe('brokenSlides', () => {
     })
   })
 })
+
+describe('diskRender', () => {
+  const error = { kind: 'Arity', line: 12, originFile: null, message: 'm', help: 'h', headline: "slide 2 ('arch'), line 12: m", slide: { number: 2, key: 'arch' } }
+
+  test('spec: Given no render yet, Then nothing is known of the disk', () => {
+    createRoot(() => {
+      expect(createRenderStore().diskRender()).toEqual({ kind: 'none' })
+    })
+  })
+
+  test('spec: Given the disk\'s source rendered (markDiskRendered), Then the disk is rendered with the slides isolated from it', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.markDiskRendered('# ok')
+      expect(store.diskRender()).toEqual({ kind: 'rendered', source: '# ok', broken: new Map() })
+      const broken = new Map([[1, error]])
+      store.markDiskRendered('# partly', broken)
+      expect(store.diskRender()).toEqual({ kind: 'rendered', source: '# partly', broken })
+    })
+  })
+
+  test('spec: Given the disk\'s source failed (markRenderFailed), Then the disk is failed with that error, as the outcome is', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.markDiskRendered('# ok')
+      store.markRenderFailed(error, '# broken')
+      expect(store.diskRender()).toEqual({ kind: 'failed', error, source: '# broken' })
+      expect(store.outcome()).toEqual({ kind: 'failed', error, source: '# broken' })
+    })
+  })
+
+  test('adversarial: Given the disk is broken, When a draft renders (applyRenderPayload), Then the outcome turns rendered but the disk stays broken', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.markRenderFailed(error, '# broken')
+      store.applyRenderPayload(payload(), '# fixed in memory')
+      expect(store.outcome()).toEqual({ kind: 'rendered' })
+      expect(store.diskRender()).toEqual({ kind: 'failed', error, source: '# broken' })
+      store.markDiskRendered('# fixed in memory')
+      expect(store.diskRender()).toEqual({ kind: 'rendered', source: '# fixed in memory', broken: new Map() })
+    })
+  })
+
+  test('adversarial: Given the disk rendered with isolated slides, When a draft renders them all, Then brokenSlides clears but the disk keeps its isolated slides', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      const broken = new Map([[1, error]])
+      store.applyRenderPayload(payload(), '# partly', broken)
+      store.markDiskRendered('# partly', broken)
+      store.applyRenderPayload(payload(), '# all fixed in memory')
+      expect(store.brokenSlides().size).toBe(0)
+      expect(store.diskRender()).toEqual({ kind: 'rendered', source: '# partly', broken })
+    })
+  })
+
+  test('adversarial: markRenderFailed notifies a reader of outcome and diskRender once, not twice', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      let runs = 0
+      createEffect(() => { store.outcome(); store.diskRender(); runs++ })
+      const before = runs
+      store.markRenderFailed(error, '# broken')
+      expect(runs).toBe(before + 1)
+    })
+  })
+})

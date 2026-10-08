@@ -4,6 +4,7 @@
 // not a detail of that boundary; ipc/deckIpc.ts imports these types
 // rather than the other way around, per docs/architecture.md's `ipc/ ->
 // domain/` dependency direction.
+import type { BrokenSlides } from './brokenSlides'
 
 export interface ManifestSlide {
   index: number
@@ -110,6 +111,20 @@ export type RenderOutcome =
 export type RenderOutcomeState =
   | { kind: 'none' }
   | { kind: 'rendered' }
+  | { kind: 'failed'; error: RenderErrorPayload; source: string }
+
+/** What the deck on disk last rendered to, for what must follow the
+ * file's state and not the editor's (`domain/buildErrorReport.ts`): none
+ * yet; `rendered`, with the slides isolated from it (`domain/
+ * brokenSlides.ts`, by position in `source`); or `failed` with the error
+ * `source` was refused with. Unlike `RenderOutcomeState`, never touched
+ * by a draft: a draft that renders says nothing about the file (the save
+ * after it can fail), so `state/renderStore.ts` records a render here
+ * only for a source known to be on disk — `open_deck`'s, an external
+ * change's, or a save's once it landed. */
+export type DiskRenderState =
+  | { kind: 'none' }
+  | { kind: 'rendered'; source: string; broken: BrokenSlides }
   | { kind: 'failed'; error: RenderErrorPayload; source: string }
 
 /** The error as one block of text — peitho-core's own `Display`: the

@@ -538,6 +538,7 @@ export function Studio() {
       if (result.kind === 'failed') throw new RenderFailure(result.error)
       render.applyRenderPayload(result.payload, text, result.broken)
       await deckIpc.saveDeckSource(text)
+      render.markDiskRendered(text, result.broken)
       // From disk, as after an external change: the slide session, its
       // drafts and every kept position are rebuilt for the new source.
       await refreshSource(true)
@@ -1462,6 +1463,7 @@ export function Studio() {
       if (result.kind === 'rendered') {
         persistedFailedSource = null
         render.applyRenderPayload(result.payload, content, result.broken)
+        if (persisted) render.markDiskRendered(content, result.broken)
         setErrorMessage(null)
         return
       }
@@ -2078,9 +2080,9 @@ export function Studio() {
   // each error goes to the agent waiting in crit as a comment on its line,
   // and the round is finished. Every transition goes through
   // `decideBuildErrorReport`; this only feeds it what changed and runs the
-  // send it asks for. A draft being typed never reaches this: its failure
-  // isn't the disk's (`render.outcome()`), and the agent can't fix what
-  // isn't written.
+  // send it asks for. A draft being typed never reaches this: neither its
+  // failure nor its success is the disk's (`render.diskRender()`), and the
+  // agent can't fix what isn't written.
   function agentReadyForReport(): boolean {
     const session = review.session()
     return session?.kind === 'found' && session.agentWaiting && review.busy() === 'idle'
@@ -2090,11 +2092,12 @@ export function Studio() {
     review.setReport(decision.next)
     if (decision.effect?.kind === 'send') void sendBuildErrors(decision.effect.errors, decision.effect.source)
   }
-  // What the deck on disk builds to, from the render state: the deck's
-  // refusal, or the slides the last render isolated. A memo of the
-  // errors' identities too, so a render that isolates the same slides
-  // again (every save around them) doesn't re-run the effect for nothing.
-  const diskBuild = createMemo<DiskBuild | null>(() => diskBuildOf(render.outcome(), render.brokenSlides(), render.renderedSource()))
+  // What the deck on disk builds to, from the disk's render state (never
+  // a draft's — see `render.diskRender`): the deck's refusal, or the
+  // slides its render isolated. A memo of the errors' identities too, so
+  // a render that isolates the same slides again (every save around them)
+  // doesn't re-run the effect for nothing.
+  const diskBuild = createMemo<DiskBuild | null>(() => diskBuildOf(render.diskRender()))
   const diskBuildKey = createMemo<string | null>(() => {
     const build = diskBuild()
     return build === null ? null : build.kind === 'ok' ? 'ok' : build.errors.map(buildErrorIdentity).join('\n')
@@ -2276,7 +2279,12 @@ export function Studio() {
     // A deck read fresh from disk (a newly opened deck, an external edit)
     // may not match any position kept so far.
     forgetSlidePositions()
-    if (renderPayload) render.applyRenderPayload(renderPayload, source)
+    // A payload given here is the disk's render (`open_deck`'s), of the
+    // very source just read.
+    if (renderPayload) {
+      render.applyRenderPayload(renderPayload, source)
+      render.markDiskRendered(source)
+    }
     editor.setFullSource(source)
     const ranges = splitSlides(source)
     editor.setSlideRanges(ranges)
@@ -2397,6 +2405,9 @@ export function Studio() {
       if (result.kind === 'failed') throw new RenderFailure(result.error)
       render.applyRenderPayload(result.payload, nextSource, result.broken)
       await deckIpc.saveDeckSource(nextSource)
+      // Only now is the render the disk's: a write that fails leaves the
+      // file as it was, however well the draft rendered.
+      render.markDiskRendered(nextSource, result.broken)
       editor.setFullSource(nextSource)
       const ranges = splitSlides(nextSource)
       editor.setSlideRanges(ranges)

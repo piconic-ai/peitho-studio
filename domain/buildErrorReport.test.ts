@@ -44,31 +44,31 @@ describe('isReportable', () => {
 })
 
 describe('diskBuildOf', () => {
-  test('spec: Given no render was tried, Then nothing is known', () => {
-    expect(diskBuildOf({ kind: 'none' }, new Map(), '')).toBeNull()
+  test('spec: Given no render of the disk was tried, Then nothing is known', () => {
+    expect(diskBuildOf({ kind: 'none' })).toBeNull()
   })
 
-  test('spec: Given the deck built as written, Then it is ok', () => {
-    expect(diskBuildOf({ kind: 'rendered' }, new Map(), SOURCE)).toEqual({ kind: 'ok' })
+  test('spec: Given the deck on disk built as written, Then it is ok', () => {
+    expect(diskBuildOf({ kind: 'rendered', source: SOURCE, broken: new Map() })).toEqual({ kind: 'ok' })
   })
 
   test('spec: Given the deck itself was refused, Then its one error counts into the source that failed', () => {
-    expect(diskBuildOf({ kind: 'failed', error: FRONTMATTER, source: '---\nfontss: x\n---\n' }, new Map(), SOURCE))
+    expect(diskBuildOf({ kind: 'failed', error: FRONTMATTER, source: '---\nfontss: x\n---\n' }))
       .toEqual({ kind: 'failed', errors: [FRONTMATTER], source: '---\nfontss: x\n---\n' })
   })
 
-  test('spec: Given slides were isolated from the render, Then their errors come in source order with the rendered source', () => {
-    expect(diskBuildOf({ kind: 'rendered' }, new Map([[3, SLIDE_FOUR], [1, SLIDE_TWO]]), SOURCE))
+  test('spec: Given slides were isolated from the disk\'s render, Then their errors come in source order with the source rendered', () => {
+    expect(diskBuildOf({ kind: 'rendered', source: SOURCE, broken: new Map([[3, SLIDE_FOUR], [1, SLIDE_TWO]]) }))
       .toEqual({ kind: 'failed', errors: [SLIDE_TWO, SLIDE_FOUR], source: SOURCE })
   })
 
-  test('adversarial: Given the deck was refused after a render that isolated slides, Then only the refusal is reported (the render is stale)', () => {
-    expect(diskBuildOf({ kind: 'failed', error: FRONTMATTER, source: 'x' }, new Map([[1, SLIDE_TWO]]), SOURCE))
-      .toEqual({ kind: 'failed', errors: [FRONTMATTER], source: 'x' })
+  test('adversarial: Given only an Other failure, refused or isolated, Then the build is failed with nothing to report', () => {
+    expect(diskBuildOf({ kind: 'failed', error: OTHER, source: 'x' })).toEqual({ kind: 'failed', errors: [], source: 'x' })
+    expect(diskBuildOf({ kind: 'rendered', source: SOURCE, broken: new Map([[1, OTHER]]) })).toEqual({ kind: 'failed', errors: [], source: SOURCE })
   })
 
-  test('adversarial: Given only an Other failure, Then the build is failed with nothing to report', () => {
-    expect(diskBuildOf({ kind: 'failed', error: OTHER, source: 'x' }, new Map(), '')).toEqual({ kind: 'failed', errors: [], source: 'x' })
+  test('adversarial: Given an empty source refused, Then the build is failed with that empty source', () => {
+    expect(diskBuildOf({ kind: 'failed', error: FRONTMATTER, source: '' })).toEqual({ kind: 'failed', errors: [FRONTMATTER], source: '' })
   })
 })
 

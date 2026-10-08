@@ -8,9 +8,8 @@
 // already and so isn't sent again, and the comment each error becomes.
 // Talking to crit (`ipc/critIpc.ts`) is `components/Studio.tsx`'s, which
 // only runs the `effect` a decision names, like `deckLifecycle.ts`'s.
-import type { BrokenSlides } from './brokenSlides'
 import type { NewReviewComment } from './critReview'
-import type { RenderErrorPayload, RenderOutcomeState } from './render'
+import type { DiskRenderState, RenderErrorPayload } from './render'
 import { REVIEW_AUTHOR, agentCommentBody } from './reviewComment'
 
 /** The label in front of a reported error's comment (`agentCommentBody`). */
@@ -19,8 +18,8 @@ export const BUILD_ERROR_LABEL = 'Build error'
 /** What the comment asks of the agent, after the error itself. */
 export const BUILD_ERROR_INSTRUCTION = 'Fix the deck so `peitho build` passes, then reply.'
 
-/** What the deck on disk builds to, as the render state says: every
- * error — the deck's own refusal, or the slides the last render isolated
+/** What the deck on disk builds to, as the disk's render state says:
+ * every error — the deck's own refusal, or the slides its render isolated
  * (`domain/brokenSlides.ts`) — with the source they count lines into, or
  * `ok` for a deck that built as written. */
 export type DiskBuild =
@@ -34,17 +33,16 @@ export function isReportable(error: RenderErrorPayload): boolean {
   return error.kind !== 'Other'
 }
 
-/** The deck on disk's build as `outcome` and `broken` (the slides the last
- * render isolated, by position in `renderedSource`) describe it, or `null`
- * before any render was tried. The deck's own refusal wins over the last
- * render's isolated slides: with it set, that render is stale. The errors
- * come in source order. */
-export function diskBuildOf(outcome: RenderOutcomeState, broken: BrokenSlides, renderedSource: string): DiskBuild | null {
-  if (outcome.kind === 'none') return null
-  if (outcome.kind === 'failed') return { kind: 'failed', errors: [outcome.error].filter(isReportable), source: outcome.source }
-  if (broken.size === 0) return { kind: 'ok' }
-  const errors = [...broken.entries()].sort(([a], [b]) => a - b).map(([, error]) => error).filter(isReportable)
-  return { kind: 'failed', errors, source: renderedSource }
+/** The deck on disk's build as its render state (`state/renderStore.ts`'s
+ * `diskRender`, never a draft's) describes it, or `null` before any render
+ * of the disk was tried. A rendered deck is `ok` unless slides were
+ * isolated from it; their errors come in source order. */
+export function diskBuildOf(disk: DiskRenderState): DiskBuild | null {
+  if (disk.kind === 'none') return null
+  if (disk.kind === 'failed') return { kind: 'failed', errors: [disk.error].filter(isReportable), source: disk.source }
+  if (disk.broken.size === 0) return { kind: 'ok' }
+  const errors = [...disk.broken.entries()].sort(([a], [b]) => a - b).map(([, error]) => error).filter(isReportable)
+  return { kind: 'failed', errors, source: disk.source }
 }
 
 /** What makes two build errors the same error, for not reporting one
