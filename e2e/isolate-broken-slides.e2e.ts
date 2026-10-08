@@ -158,6 +158,64 @@ test('Given slide 2 is isolated, when its edit still does not build, then nothin
   await expect(page.locator('[data-slide-row="1"]').locator(ERROR_BADGE)).toBeVisible()
 })
 
+test('Given slide 2 was edited into text that still does not build, when New Slide is chosen on another row, then nothing is saved — the refused typing is not written by the way', async ({ page }) => {
+  const deck = await open(page, brokenDeck())
+  await expect.poll(() => editorText(page)).toBe('# Two\n\nBROKEN')
+  await fillEditor(page, '# Two\n\nNew invalid BROKEN content')
+  await expect(page.locator(ERROR_BAR)).toContainText("slide 2 ('two'), line 8", { timeout: 5_000 })
+  await page.waitForTimeout(1_000)
+  expect(deck.source).toBe(SOURCE)
+
+  await page.locator('[data-slide-row="0"]').click({ button: 'right' })
+  await page.getByText('New Slide', { exact: true }).click()
+
+  // The insertion carries slide 2's typing, which doesn't build: refused
+  // as a whole, with the error naming slide 2 at its new row.
+  await expect(page.locator(ERROR_BAR)).toContainText("slide 3 ('two')", { timeout: 5_000 })
+  await page.waitForTimeout(1_000)
+  expect(deck.source).toBe(SOURCE)
+  await expect(page.locator('[data-slide-row]')).toHaveCount(3)
+})
+
+test('Given slide 2 is isolated, when a heading of slide 3 is edited on the canvas, then the edit lands in slide 3\'s own text', async ({ page }) => {
+  const deck = await open(page, brokenDeck({ editAnnotations: true }))
+  await page.locator('[data-slide-row="2"]').click()
+  await expect(page.locator('[data-preview-host] h1')).toHaveText('Three')
+
+  // The annotations were rendered from a copy with slide 2 marked draft;
+  // they still point at slide 3's text in the deck as written.
+  await page.locator('[data-preview-host] h1').dblclick()
+  const field = page.locator('[data-preview-host] [data-studio-edit]')
+  await expect(field).toHaveText('Three')
+  await field.fill('Third')
+  await field.press('Meta+Enter')
+
+  await expect.poll(() => editorText(page)).toBe('# Third')
+  await expect.poll(() => deck.source).toContain('# Third\n')
+  expect(deck.source).toContain('<!-- {"key":"two"} -->\n# Two\n\nBROKEN\n')
+  expect(deck.source).not.toContain('draft')
+})
+
+test('Given slide 2 is isolated after multibyte text and a section it starts, when a heading of slide 3 is edited on the canvas, then the edit still lands in slide 3', async ({ page }) => {
+  const source = '---\ntime: 3m\n---\n# 日本語の一枚目\n\n---\n\n<!-- {"key":"two","section":"壊れた節","time":"1m"} -->\n# Two\n\nBROKEN\n\n---\n\n<!-- {"section":"B","time":"2m"} -->\n# Three\n'
+  const deck = await open(page, brokenDeck({ source, editAnnotations: true }))
+  await expect(page.locator('[data-slide-row="1"]').locator(ERROR_BADGE)).toBeVisible()
+  await page.locator('[data-slide-row="2"]').click()
+  await expect(page.locator('[data-preview-host] h1')).toHaveText('Three')
+
+  await page.locator('[data-preview-host] h1').dblclick()
+  const field = page.locator('[data-preview-host] [data-studio-edit]')
+  await expect(field).toHaveText('Three')
+  await field.fill('三枚目')
+  await field.press('Meta+Enter')
+
+  await expect.poll(() => editorText(page)).toBe('# 三枚目')
+  await expect.poll(() => deck.source).toContain('# 三枚目\n')
+  expect(deck.source).toContain('time: 3m')
+  expect(deck.source).toContain('"section":"壊れた節","time":"1m"')
+  expect(deck.source).not.toContain('draft')
+})
+
 test('Given slide 2 is isolated, when a slide is inserted above it, then the save goes through and the ERROR row follows the slide', async ({ page }) => {
   const deck = await open(page, brokenDeck())
   await page.locator('[data-slide-row="0"]').click({ button: 'right' })
