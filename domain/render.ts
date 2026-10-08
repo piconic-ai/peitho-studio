@@ -98,6 +98,20 @@ export type RenderOutcome =
   | ({ kind: 'rendered' } & RenderPayload)
   | { kind: 'failed'; error: RenderErrorPayload }
 
+/** How the deck's last render went, as `state/renderStore.ts` holds it:
+ * `none` before any render was tried (no deck open), `rendered` once a
+ * render succeeded, `failed` while the source on disk doesn't build — set
+ * by `open_deck`'s refusal and by a failed render of what's on disk, never
+ * by a draft failing mid-typing (the disk's state and the editor's aren't
+ * mixed — a draft's failure is the error bar's alone). `source` is the
+ * text that failed, which `error.line` counts into. Drives what the error
+ * bar's timer leaves alone, what the preview pane shows in place of a
+ * slide, and what is reported to the agent (`domain/buildErrorReport.ts`). */
+export type RenderOutcomeState =
+  | { kind: 'none' }
+  | { kind: 'rendered' }
+  | { kind: 'failed'; error: RenderErrorPayload; source: string }
+
 /** The error as one block of text — peitho-core's own `Display`: the
  * headline, then `  = help: ...` on a second line when there is help.
  * What the error bar shows and what `ipc/renderOutcome.ts`'s

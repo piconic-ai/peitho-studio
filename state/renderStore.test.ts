@@ -322,8 +322,8 @@ describe('outcome', () => {
   test('spec: Given a deck that opened broken (markRenderFailed), Then the outcome is failed with that error and nothing is rendered', () => {
     createRoot(() => {
       const store = createRenderStore()
-      store.markRenderFailed(error)
-      expect(store.outcome()).toEqual({ kind: 'failed', error })
+      store.markRenderFailed(error, '# broken')
+      expect(store.outcome()).toEqual({ kind: 'failed', error, source: '# broken' })
       expect(store.manifest()).toBeNull()
       expect(store.assetBaseUrl()).toBeNull()
     })
@@ -332,7 +332,7 @@ describe('outcome', () => {
   test('spec: Given the source was fixed and rendered, Then the outcome goes back to rendered', () => {
     createRoot(() => {
       const store = createRenderStore()
-      store.markRenderFailed(error)
+      store.markRenderFailed(error, '# broken')
       store.applyRenderPayload(payload(), '# fixed')
       expect(store.outcome()).toEqual({ kind: 'rendered' })
       expect(store.manifest()?.title).toBe('Deck')
@@ -343,8 +343,8 @@ describe('outcome', () => {
     createRoot(() => {
       const store = createRenderStore()
       store.applyRenderPayload(payload(), '# ok')
-      store.markRenderFailed(error)
-      expect(store.outcome()).toEqual({ kind: 'failed', error })
+      store.markRenderFailed(error, '# broken')
+      expect(store.outcome()).toEqual({ kind: 'failed', error, source: '# broken' })
       expect(store.manifest()?.title).toBe('Deck')
       expect(store.renderedSource()).toBe('# ok')
       expect(store.canvasFragmentOf('slide-1')).toBe('<div class="peitho-slide">one</div>')
@@ -366,8 +366,8 @@ describe('outcome', () => {
   test('adversarial: a later failure replaces the earlier one', () => {
     createRoot(() => {
       const store = createRenderStore()
-      store.markRenderFailed(error)
-      store.markRenderFailed({ ...error, headline: 'line 1: other', slide: null })
+      store.markRenderFailed(error, '# broken')
+      store.markRenderFailed({ ...error, headline: 'line 1: other', slide: null }, '# other')
       const outcome = store.outcome()
       expect(outcome.kind).toBe('failed')
       if (outcome.kind === 'failed') expect(outcome.error.headline).toBe('line 1: other')
@@ -407,7 +407,7 @@ describe('brokenSlides', () => {
     createRoot(() => {
       const store = createRenderStore()
       store.applyRenderPayload(payload(), 'broken', new Map([[1, error]]))
-      store.markRenderFailed({ ...error, slide: null })
+      store.markRenderFailed({ ...error, slide: null }, 'broken')
       expect(store.brokenSlides().size).toBe(1)
     })
   })

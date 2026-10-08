@@ -180,7 +180,7 @@ export function Studio() {
       // renders.
       await refreshSource(false, info.render.kind === 'rendered' ? info.render : undefined)
       if (info.render.kind === 'failed') {
-        render.markRenderFailed(info.render.error)
+        render.markRenderFailed(info.render.error, editor.fullSource())
         const broken = brokenSlideIndex(info.render.error, editor.slideRanges().length)
         if (broken !== null) await selectSlide(broken)
         // Render the rest of the deck without the slides that don't build
@@ -1468,7 +1468,7 @@ export function Studio() {
         // error (the error bar and the preview pane show it from there),
         // and an earlier draft's error — about text that is gone — goes.
         persistedFailedSource = content
-        render.markRenderFailed(result.error)
+        render.markRenderFailed(result.error, content)
         setErrorMessage(null)
       } else {
         showBuildError(renderFailureMessage(result.error))
