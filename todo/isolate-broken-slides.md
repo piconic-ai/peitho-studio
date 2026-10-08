@@ -87,6 +87,15 @@ tags: [editor, error-handling, slide-list]
   (それぞれparse_page_commentが拒む)ので、隔離用のdraft印はそれらを外し、
   外したsectionの時間ぶんだけfrontmatterの`time:`を描画用ソース内で
   再同期する(`withSlidesDrafted`)。
+- 描画結果のedit annotation(`data-peitho-src`のバイト範囲)は**描画に
+  渡したソース(attempt)**の座標で、読む側(`textEditFor`、
+  `annotatedSpan`)は`renderedSource`=書かれたままのソースを持つ。
+  draft印の挿入ぶんだけ後ろのスライドの範囲がずれてキャンバス編集が
+  効かなくなる(Pullfrogのレビュー指摘)ので、`withSlidesDrafted`が
+  施した編集(`SourceEdit`、UTF-8バイト)を`Isolation.edits`に持ち、
+  `restoreEditAnnotations`で元ソース座標へ戻してから
+  `applyRenderPayload`する。同じく`slideSpans`(レビューコメントの
+  スライド対応)にも`brokenSlides`を渡す。
 - `open_deck`は1回しか描画しないので、隔離はフロントの
   `renderPreview(source, { persisted: true })`が回す。同じソースへの
   persisted描画は同時に3箇所(`runOpen`、選択が落ち着くまでのタイピング
