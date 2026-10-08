@@ -263,6 +263,32 @@ test('Given typing continues while the deck source editor\'s save is in flight, 
   expect(deck.source).not.toContain('fontss')
 })
 
+test('Given a save is in flight when the text is typed back to what disk holds, when "Back to slide" is clicked, then disk ends up with the typed-back text, not the in-flight one', async ({ page }) => {
+  const deck = await openBroken(page, brokenDeck({
+    source: FRONTMATTER_SOURCE,
+    renderError: content => (content.includes('fontss') ? FRONTMATTER_ERROR : null),
+    renderDraftDelayMs: 1_500,
+  }))
+  const toggle = page.locator(SOURCE_TOGGLE)
+  await toggle.click()
+  const fixed = FRONTMATTER_SOURCE.replace('fontss: x\n', '')
+  await fillEditor(page, fixed, 'source')
+  // The fix's save is in flight (1s pause, then a 1.5s render) when the
+  // text goes back to exactly what was on disk — a clean-looking draft.
+  await page.waitForTimeout(1_200)
+  await fillEditor(page, FRONTMATTER_SOURCE, 'source')
+  await toggle.click()
+
+  // The in-flight save lands first (the fix, which builds); the typed-back
+  // text is then saved over it — and refused, since it doesn't build — so
+  // the editor stays open on it, with the error back, rather than closing
+  // on the text the user had left behind.
+  await expect.poll(() => deck.source, { timeout: 10_000 }).toBe(fixed)
+  await expect(page.locator(ERROR_BAR)).toContainText('unknown field `fontss`', { timeout: 10_000 })
+  await expect(page.locator('[data-editor="source"]')).toBeVisible()
+  await expect.poll(() => editorText(page, 'source')).toBe(FRONTMATTER_SOURCE)
+})
+
 test('Given the deck source editor holds typing that does not build, then the window is told a draft is pending, as for a layout file', async ({ page }) => {
   const reports: unknown[] = []
   await openBroken(page, brokenDeck({

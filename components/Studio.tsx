@@ -541,9 +541,13 @@ export function Studio() {
   // which stays in the editor with its reason shown.
   async function flushSourceEditor(): Promise<boolean> {
     clearTimeout(sourceAutosaveTimer)
-    while (editor.isSourceDirty()) {
+    // Through the queue even when the draft reads clean: a save in flight
+    // writes the text it captured, and the draft is clean against what
+    // was on disk before it — only once it lands (`sourceSaved`) does the
+    // draft show whether it still differs from disk.
+    do {
       if (!await queueSourceSave()) return false
-    }
+    } while (editor.isSourceDirty())
     return true
   }
   // Resolves whether the editor was left: only once everything typed is
