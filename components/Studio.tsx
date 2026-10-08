@@ -534,12 +534,22 @@ export function Studio() {
       sourceEditor.focus()
     }
   }
-  // Resolves whether the editor was left: typing not saved yet is saved
-  // first, and a draft that doesn't build keeps the editor open with the
-  // reason shown — nothing typed is lost.
-  async function closeSourceEditor(): Promise<boolean> {
+  // Saves typing still waiting for its pause now, and whatever is typed
+  // while that save is in flight (`sourceSaved` keeps a draft that moved
+  // on dirty), until nothing is left to save. Resolves whether deck.md
+  // holds the editor's text — `false` for a draft that doesn't build,
+  // which stays in the editor with its reason shown.
+  async function flushSourceEditor(): Promise<boolean> {
     clearTimeout(sourceAutosaveTimer)
-    if (!await queueSourceSave()) return false
+    while (editor.isSourceDirty()) {
+      if (!await queueSourceSave()) return false
+    }
+    return true
+  }
+  // Resolves whether the editor was left: only once everything typed is
+  // on disk — nothing typed is lost.
+  async function closeSourceEditor(): Promise<boolean> {
+    if (!await flushSourceEditor()) return false
     editor.setSourceEditing(SOURCE_EDITING_CLOSED)
     return true
   }
@@ -648,9 +658,10 @@ export function Studio() {
     return tabsBlocker(layouts.tabs()) === null
   }
   // Tells this window's close whether there's a draft to save first
-  // (`report_layout_draft`); quiet with no deck open.
+  // (`report_layout_draft`): a layout file's, or the whole-deck source
+  // editor's (`closeAfterLayoutFlush` saves both); quiet with no deck open.
   createEffect(() => {
-    const pending = layouts.editorDirty()
+    const pending = layouts.editorDirty() || editor.isSourceDirty()
     untrack(() => { deckIpc.reportLayoutDraft(pending).catch(() => {}) })
   })
   // `flushLayoutEditor` before the editor is left — the slides screen, a
@@ -2662,8 +2673,11 @@ export function Studio() {
     await pendingSlideTextEdit
     await structuralQueue
     await saves.drain()
+    // The whole-deck source editor's typing too: it holds the slide's
+    // draft as well when it was opened over one that couldn't be saved.
+    if (editor.sourceOpen() && !await flushSourceEditor()) return false
     if (editor.isDirty()) await handleSave()
-    return await saves.drain() && !editor.isDirty()
+    return await saves.drain() && !editor.isDirty() && !editor.isSourceDirty()
   }
 
   // The deck source a layout file operation is checked against: the one on
@@ -2957,6 +2971,9 @@ export function Studio() {
   // (`report_layout_draft`): saved, it closes; not, it says so, and the
   // next close discards the draft.
   async function closeAfterLayoutFlush(): Promise<void> {
+    // The whole-deck source editor's draft first: one that doesn't build
+    // keeps the window open with its reason in the error bar.
+    if (editor.sourceOpen() && !await flushSourceEditor()) return
     if (await flushLayoutEditor()) {
       await getCurrentWindow().close()
       return

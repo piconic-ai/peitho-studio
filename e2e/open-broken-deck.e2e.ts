@@ -8,7 +8,7 @@
 // engine is `real-engine-open-broken-deck.e2e.ts`.
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
-import { editorText, fillEditor } from './helpers/codeEditor'
+import { editorText, fillEditor, moveToEditorEnd } from './helpers/codeEditor'
 import type { RenderErrorPayload } from '../domain/render'
 
 const ERROR_BAR = '.bg-destructive\\/10'
@@ -234,6 +234,48 @@ test('Given the deck source editor holds a draft that still does not build, when
   expect(deck.source).toBe(FRONTMATTER_SOURCE)
   await expect(page.locator(ERROR_BAR)).toContainText('unknown field `fontss`')
   await expect.poll(() => editorText(page, 'source')).toBe(stillBroken)
+})
+
+test('Given typing continues while the deck source editor\'s save is in flight, when "Back to slide" was clicked meanwhile, then the editor closes only once that typing is saved too', async ({ page }) => {
+  const deck = await openBroken(page, brokenDeck({
+    source: FRONTMATTER_SOURCE,
+    renderError: content => (content.includes('fontss') ? FRONTMATTER_ERROR : null),
+    renderDraftDelayMs: 1_500,
+  }))
+  const toggle = page.locator(SOURCE_TOGGLE)
+  await toggle.click()
+  const fixed = FRONTMATTER_SOURCE.replace('fontss: x\n', '')
+  await fillEditor(page, fixed, 'source')
+  // The autosave starts after a 1s pause and its render takes 1.5s: click
+  // "Back to slide" and keep typing while that save is in flight.
+  await page.waitForTimeout(1_200)
+  await toggle.click()
+  // The click took focus to the button; the editor is still shown, and
+  // typing goes on in it.
+  await moveToEditorEnd(page, 'source')
+  await page.keyboard.insertText('\nLater words\n')
+
+  // The later typing reached disk and only then did the editor close.
+  await expect.poll(() => deck.source, { timeout: 10_000 }).toContain('Later words')
+  await expect(page.locator('[data-editor="source"]')).toBeHidden()
+  await expect(page.locator('[data-editor="body"]')).toBeVisible()
+  expect(deck.source).toContain('# Three\n')
+  expect(deck.source).not.toContain('fontss')
+})
+
+test('Given the deck source editor holds typing that does not build, then the window is told a draft is pending, as for a layout file', async ({ page }) => {
+  const reports: unknown[] = []
+  await openBroken(page, brokenDeck({
+    source: FRONTMATTER_SOURCE,
+    renderError: content => (content.includes('fontss') ? FRONTMATTER_ERROR : null),
+    onInvoke: (cmd, args) => { if (cmd === 'report_layout_draft') reports.push(args.pending) },
+  }))
+  await page.locator(SOURCE_TOGGLE).click()
+  await fillEditor(page, FRONTMATTER_SOURCE.replace('# Three', '# Three!'), 'source')
+  await expect.poll(() => reports.at(-1)).toBe(true)
+  // Saved (buildable) typing clears it again.
+  await fillEditor(page, FRONTMATTER_SOURCE.replace('fontss: x\n', ''), 'source')
+  await expect.poll(() => reports.at(-1), { timeout: 10_000 }).toBe(false)
 })
 
 test('Given a broken deck is open, when the Recent Decks list is read, then the deck was remembered like any other', async ({ page }) => {
