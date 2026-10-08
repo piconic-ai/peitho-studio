@@ -32,6 +32,7 @@ import { PanelToggle } from './PanelToggle'
 import { ReviewPanel } from './ReviewPanel'
 import { type ManifestSlide, type RenderPayload, type SectionDraft, brokenSlideIndex, renderFailureMessage } from '../domain/render'
 import { RenderFailure } from '../ipc/renderOutcome'
+import { SOURCE_EDITING_CLOSED, openSourceEditing, sourceEditorOffered, sourceReadFromDisk, sourceSaved, typeInSource } from '../domain/sourceEditing'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
 import { replacementInsertion, textBetween } from '../domain/editorText'
 import { fileNameOf, partitionDroppedPaths } from '../domain/images'
@@ -460,10 +461,100 @@ export function Studio() {
 
   createEffect(() => {
     const on = settings.settings().vimMode
-    for (const view of [bodyEditor, noteEditor, layoutEditor]) {
+    for (const view of [bodyEditor, noteEditor, layoutEditor, sourceEditor]) {
       if (view) setCodeEditorVimMode(view, on)
     }
   })
+
+  // The whole-deck source editor (`domain/sourceEditing.ts`): the repair
+  // path for a deck that doesn't build because of text the slide editor
+  // never shows — the frontmatter, a page settings comment. Uncontrolled
+  // like the body, off the app's undo timeline like the layout editors
+  // (its typing undoes in the editor itself, see `onMenuHistory`), saved
+  // like them too: each pause in typing saves (`scheduleSourceAutosave`),
+  // through the same render-then-write rule as every other save
+  // (`commitSource`), so a draft that doesn't build stays in the editor
+  // with its reason in the error bar. A save that goes through rebuilds
+  // the per-slide session from disk, since a whole-source edit can move
+  // any slide.
+  let sourceEditor: ReturnType<typeof createCodeEditor> | undefined
+  function onSourceEditorHost(el: HTMLElement): void {
+    sourceEditor = createCodeEditor(el, '', {
+      ...vimEditorOptions(),
+      monospace: true,
+      spellcheck: false,
+      onChange: text => {
+        editor.setSourceEditing(editing => typeInSource(editing, text))
+        scheduleSourceAutosave()
+      },
+    })
+  }
+  let sourceAutosaveTimer: ReturnType<typeof setTimeout> | undefined
+  let sourceSaveQueue: Promise<unknown> = Promise.resolve()
+  function scheduleSourceAutosave(): void {
+    clearTimeout(sourceAutosaveTimer)
+    sourceAutosaveTimer = setTimeout(() => { void queueSourceSave() }, FILE_AUTOSAVE_DELAY_MS)
+  }
+  // Saves run one after another, each reading the draft when its turn
+  // comes, so an older save can't land after a newer one.
+  function queueSourceSave(): Promise<boolean> {
+    const run = sourceSaveQueue.then(commitSource)
+    sourceSaveQueue = run
+    return run
+  }
+  async function commitSource(): Promise<boolean> {
+    const editing = editor.sourceEditing()
+    if (editing.kind !== 'open' || !editor.isSourceDirty()) return true
+    const text = editing.draft
+    setErrorMessage(null)
+    try {
+      const payload = await deckIpc.renderDraft(text)
+      render.applyRenderPayload(payload, text)
+      await deckIpc.saveDeckSource(text)
+      // From disk, as after an external change: the slide session, its
+      // drafts and every kept position are rebuilt for the new source.
+      await refreshSource(true)
+      editor.setSourceEditing(current => sourceSaved(current, text))
+      setStatusMessage({ kind: 'saved' })
+      return true
+    } catch (err) {
+      setErrorMessage(String(err))
+      return false
+    }
+  }
+  // Opens on the deck as the user sees it: the open slide's draft is
+  // saved first when it can be, and included as typed when it can't (the
+  // deck doesn't build — which is why the editor is being opened).
+  async function openSourceEditor(): Promise<void> {
+    await flushDeck()
+    const text = liveSource()
+    editor.setSourceEditing(openSourceEditing(text))
+    if (sourceEditor) {
+      resetCodeEditorText(sourceEditor, text)
+      sourceEditor.focus()
+    }
+  }
+  // Resolves whether the editor was left: typing not saved yet is saved
+  // first, and a draft that doesn't build keeps the editor open with the
+  // reason shown — nothing typed is lost.
+  async function closeSourceEditor(): Promise<boolean> {
+    clearTimeout(sourceAutosaveTimer)
+    if (!await queueSourceSave()) return false
+    editor.setSourceEditing(SOURCE_EDITING_CLOSED)
+    return true
+  }
+  function toggleSourceEditor(): void {
+    if (editor.sourceOpen()) void closeSourceEditor()
+    else void openSourceEditor()
+  }
+  // Disk changed outside the app: an editor with nothing to save follows
+  // it (its text replaced), one holding typing keeps the typing.
+  function syncSourceEditorFromDisk(source: string): void {
+    const before = editor.sourceEditing()
+    const after = sourceReadFromDisk(before, source)
+    editor.setSourceEditing(after)
+    if (sourceEditor && after.kind === 'open' && after.draft !== (before.kind === 'open' ? before.draft : null)) setCodeEditorText(sourceEditor, after.draft)
+  }
 
   // The layout screen's editor: the same editor as the slide body, vim mode
   // included, but off the app's undo timeline — its typing is undone in the
@@ -2116,6 +2207,10 @@ export function Studio() {
   // work, never blocking on a dialog the webview won't show.
   async function selectSlide(index: number): Promise<void> {
     if (index === editor.selectedIndex()) return
+    // Picking a slide means editing it: the whole-source editor is left
+    // first — unless its typing can't be saved yet, which keeps it open
+    // (and the selection where it was) rather than losing the typing.
+    if (editor.sourceOpen() && !await closeSourceEditor()) return
     await pendingSlideTextEdit
     if (editor.isDirty() && !await handleSave()) return
     // Edits may have arrived while the save was in flight. Keep that draft
@@ -3539,12 +3634,14 @@ export function Studio() {
           const { rest, config } = extractPageComment(withoutNote)
           editor.setEditorSession(session => withRefreshedSaved(session, { body: rest, note, config }))
         }
+        syncSourceEditorFromDisk(source)
         await renderPreview(source, { persisted: true })
         setStatusMessage({ kind: 'merged-external-change' })
         return
       }
     }
     await refreshSource(true)
+    syncSourceEditorFromDisk(editor.fullSource())
     await renderPreview(editor.fullSource(), { persisted: true })
     setStatusMessage({ kind: 'reloaded-external-change' })
   }
@@ -3708,8 +3805,9 @@ export function Studio() {
     // as vim's `u` would.
     const onMenuHistory = (direction: 'undo' | 'redo') => {
       if (replayFocusedFieldHistory(direction)) return
-      // The layout editors' typing isn't on the timeline: it undoes there.
-      if (isFocusWithin('[data-layout-editor-host]')) {
+      // The layout editors' typing isn't on the timeline, nor is the
+      // whole-deck source editor's: it undoes there.
+      if (isFocusWithin('[data-layout-editor-host]') || isFocusWithin('[data-editor="source"]')) {
         replayFocusedCodeEditorHistory(direction)
         return
       }
@@ -4050,6 +4148,10 @@ export function Studio() {
               hasSelection={editor.selectedRange() !== null}
               onBodyHost={onBodyEditorHost}
               onNoteHost={onNoteEditorHost}
+              sourceOffered={sourceEditorOffered(editor.sourceEditing(), render.outcome().kind === 'failed')}
+              sourceOpen={editor.sourceOpen()}
+              onToggleSource={toggleSourceEditor}
+              onSourceHost={onSourceEditorHost}
             />
           </div>
         </div>

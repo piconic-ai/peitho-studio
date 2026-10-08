@@ -62,3 +62,37 @@ test('Given a deck the real engine refuses, when opened, then the editor shows i
     engine.stop()
   }
 })
+
+test('Given a deck whose frontmatter the real engine refuses, when the key is removed in the deck source editor, then the deck renders', async ({ page }) => {
+  const engine = startRealEngine()
+  try {
+    const deckPath = await engine.newDeck(mkdtempSync(join(tmpdir(), 'peitho-e2e-')))
+    // `time` stays: peitho-core refuses an emptied `---\n---` block too, so
+    // removing the bad key must leave a frontmatter it accepts.
+    const broken = '---\nfontss: x\ntime: 1m\n---\n<!-- {"key":"a","layout":"title-slide"} -->\n# A\n\nFine\n'
+    writeFileSync(deckPath, broken)
+    const outcome = await engine.invoke(deckPath, 'render_draft', { content: broken }) as RenderOutcome
+    expect(outcome.kind).toBe('failed')
+    if (outcome.kind !== 'failed') return
+    expect(outcome.error.slide).toBeNull()
+
+    const deck = { source: broken, deckPath, realEngine: (cmd: string, args: Record<string, unknown>) => engine.invoke(deckPath, cmd, args) }
+    await mockTauri(page, deck)
+    await page.goto('/')
+    await expect(page.locator('[data-slide-row]')).toHaveCount(1, { timeout: 10_000 })
+    await expect(page.locator(ERROR_BAR)).toContainText(outcome.error.headline)
+
+    // The frontmatter is in no slide's body; the deck source editor has it.
+    await page.locator('[data-source-toggle]').click()
+    await expect.poll(() => editorText(page, 'source')).toContain('fontss: x')
+    const fixed = broken.replace('fontss: x\n', '')
+    await fillEditor(page, fixed, 'source')
+
+    await expect.poll(() => deck.source).toBe(fixed)
+    await expect(page.locator(THUMBNAIL_CANVAS)).toHaveCount(1)
+    await expect(page.locator(ERROR_BAR)).toBeHidden()
+    await expect(page.locator(PREVIEW_ERROR)).toBeHidden()
+  } finally {
+    engine.stop()
+  }
+})

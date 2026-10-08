@@ -51,6 +51,12 @@ export interface Messages {
   speakerNotesPlaceholder: string
   selectSlideToEdit: string
   loadingDeck: string
+  /** The whole-deck repair editor offered while the deck doesn't build
+   * (`domain/sourceEditing.ts`): why it exists, and its toggle's two
+   * labels. */
+  deckSourceHint: string
+  editDeckSource: string
+  backToSlide: string
 
   // Slide list
   openDeckToSeeSlides: string
@@ -286,6 +292,9 @@ const en: Messages = {
   speakerNotesPlaceholder: 'Notes for the presenter — not shown to the audience.',
   selectSlideToEdit: 'Select a slide to edit it.',
   loadingDeck: 'Loading deck…',
+  deckSourceHint: 'The error may be in text no slide shows — the frontmatter, or a slide\'s page settings comment. Edit the whole deck.md here; it saves once the deck builds.',
+  editDeckSource: 'Edit deck source',
+  backToSlide: 'Back to slide',
 
   openDeckToSeeSlides: 'Open a deck to see its slides.',
   expandSection: 'Expand section',
@@ -490,6 +499,9 @@ const ja: Messages = {
   speakerNotesPlaceholder: '発表者用のメモ — 聴衆には表示されません。',
   selectSlideToEdit: '編集するスライドを選んでください。',
   loadingDeck: 'デッキを読み込んでいます…',
+  deckSourceHint: 'エラーは、スライドの本文には出てこない箇所(frontmatterやページ設定コメント)にあるかもしれません。ここでは deck.md 全体を編集でき、ビルドが通った時点で保存されます。',
+  editDeckSource: 'デッキのソースを編集',
+  backToSlide: 'スライド編集に戻る',
 
   openDeckToSeeSlides: 'デッキを開くとスライドが表示されます。',
   expandSection: 'セクションを展開',

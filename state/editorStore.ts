@@ -2,6 +2,7 @@ import { createSignal, createMemo } from '@barefootjs/client'
 import { type EditorSession, isDirty as computeIsDirty } from '../domain/editorSession'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SlideRange } from '../domain/slides'
+import { type SourceEditing, SOURCE_EDITING_CLOSED, isSourceDirty as computeIsSourceDirty } from '../domain/sourceEditing'
 
 /** The editor pane's entire state — which slide (if any) is open, its
  * last-saved fields, and the live draft — as one `domain/editorSession.ts`
@@ -53,8 +54,17 @@ export function createEditorStore() {
     return slideRanges()[i] ?? null
   })
 
+  // The whole-deck repair editor (`domain/sourceEditing.ts`), beside the
+  // per-slide session rather than inside it: it edits text no slide
+  // session addresses (frontmatter, page settings), and the session is
+  // rebuilt from disk whenever it saves.
+  const [sourceEditing, setSourceEditing] = createSignal<SourceEditing>(SOURCE_EDITING_CLOSED)
+  const sourceOpen = createMemo(() => sourceEditing().kind === 'open')
+  const isSourceDirty = createMemo(() => computeIsSourceDirty(sourceEditing()))
+
   return {
     editorSession, setEditorSession, selectedIndex, bodyDraft, noteDraft, pageConfig, isDirty,
     fullSource, setFullSource, slideRanges, setSlideRanges, selectedRange,
+    sourceEditing, setSourceEditing, sourceOpen, isSourceDirty,
   }
 }

@@ -144,6 +144,98 @@ test('Given a deck whose frontmatter peitho-core refuses (no slide to blame), wh
   await expect(page.locator(PREVIEW_ERROR)).toContainText('unknown field `fontss`')
 })
 
+// --- The whole-deck source editor: errors in text no slide's body shows ---
+
+const SOURCE_TOGGLE = '[data-source-toggle]'
+const FRONTMATTER_SOURCE = '---\nfontss: x\n---\n\n# One\n\n---\n\n# Two\n\n---\n\n# Three\n'
+
+test('Given a deck that builds, when it is open, then no source editor is offered', async ({ page }) => {
+  await openBroken(page, brokenDeck({ source: '# One\n\n---\n\n# Two\n\n---\n\n# Three\n' }))
+  await expect(page.locator(THUMBNAIL_CANVAS)).toHaveCount(3)
+  await expect(page.locator(SOURCE_TOGGLE)).toBeHidden()
+})
+
+test('Given a frontmatter error, when the unknown key is removed in the deck source editor, then it saves, renders, and the slide editor is back', async ({ page }) => {
+  const deck = await openBroken(page, brokenDeck({
+    source: FRONTMATTER_SOURCE,
+    renderError: content => (content.includes('fontss') ? FRONTMATTER_ERROR : null),
+  }))
+  // The slide editor can't reach the frontmatter: the first slide's body
+  // shows none of it.
+  await expect.poll(() => editorText(page)).toBe('# One')
+  const toggle = page.locator(SOURCE_TOGGLE)
+  await expect(toggle).toBeVisible()
+  await expect(toggle).toHaveText('Edit deck source')
+
+  await toggle.click()
+  // The whole deck.md, frontmatter included, in place of the slide's body.
+  await expect(page.locator('[data-editor="source"]')).toBeVisible()
+  await expect(page.locator('[data-editor="body"]')).toBeHidden()
+  await expect.poll(() => editorText(page, 'source')).toBe(FRONTMATTER_SOURCE)
+  await expect(toggle).toHaveText('Back to slide')
+
+  const fixed = FRONTMATTER_SOURCE.replace('fontss: x\n', '')
+  await fillEditor(page, fixed, 'source')
+
+  // A pause in typing saves it: the deck builds, the error is gone.
+  await expect.poll(() => deck.source).toBe(fixed)
+  await expect(page.locator(THUMBNAIL_CANVAS)).toHaveCount(3)
+  await expect(page.locator(ERROR_BAR)).toBeHidden()
+  await expect(page.locator(PREVIEW_ERROR)).toBeHidden()
+
+  // Leaving it brings the slide editor back, and once left the toggle
+  // goes away with the deck building again.
+  await toggle.click()
+  await expect(page.locator('[data-editor="body"]')).toBeVisible()
+  await expect.poll(() => editorText(page)).toBe('# One')
+  await expect(toggle).toBeHidden()
+})
+
+test('Given a duplicate slide key, when the key is changed in the deck source editor, then the deck renders with both slides', async ({ page }) => {
+  const source = '<!-- {"key":"same"} -->\n# One\n\n---\n\n<!-- {"key":"same"} -->\n# Two\n\n---\n\n# Three\n'
+  const duplicateKey: RenderErrorPayload = {
+    kind: 'Parse', line: 6, originFile: null,
+    message: "duplicate slide key 'same'",
+    help: 'give each slide a unique key',
+    headline: "slide 2 ('same'), line 6: duplicate slide key 'same'",
+    slide: { number: 2, key: 'same' },
+  }
+  const deck = await openBroken(page, brokenDeck({
+    source,
+    renderError: content => (content.split('"key":"same"').length > 2 ? duplicateKey : null),
+  }))
+  // The blamed slide is open, but its body shows no key to change.
+  await expect.poll(() => editorText(page)).toBe('# Two')
+
+  await page.locator(SOURCE_TOGGLE).click()
+  await expect.poll(() => editorText(page, 'source')).toContain('"key":"same"')
+  const fixed = source.replace('<!-- {"key":"same"} -->\n# Two', '<!-- {"key":"two"} -->\n# Two')
+  await fillEditor(page, fixed, 'source')
+
+  await expect.poll(() => deck.source).toBe(fixed)
+  await expect(page.locator(THUMBNAIL_CANVAS)).toHaveCount(3)
+  await expect(page.locator(ERROR_BAR)).toBeHidden()
+})
+
+test('Given the deck source editor holds a draft that still does not build, when a slide is clicked, then nothing is saved, the editor stays, and the error names the problem', async ({ page }) => {
+  const deck = await openBroken(page, brokenDeck({
+    source: FRONTMATTER_SOURCE,
+    renderError: content => (content.includes('fontss') ? FRONTMATTER_ERROR : null),
+  }))
+  await page.locator(SOURCE_TOGGLE).click()
+  await expect(page.locator('[data-editor="source"]')).toBeVisible()
+  // A change that keeps the bad key.
+  const stillBroken = FRONTMATTER_SOURCE.replace('# Three', '# Three!')
+  await fillEditor(page, stillBroken, 'source')
+  await page.waitForTimeout(1_500)
+
+  await page.locator('[data-slide-row="2"]').click()
+  await expect(page.locator('[data-editor="source"]')).toBeVisible()
+  expect(deck.source).toBe(FRONTMATTER_SOURCE)
+  await expect(page.locator(ERROR_BAR)).toContainText('unknown field `fontss`')
+  await expect.poll(() => editorText(page, 'source')).toBe(stillBroken)
+})
+
 test('Given a broken deck is open, when the Recent Decks list is read, then the deck was remembered like any other', async ({ page }) => {
   const invoked: string[] = []
   await openBroken(page, brokenDeck({ invokedCommands: invoked }))
