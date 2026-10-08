@@ -10,7 +10,7 @@ import { initialUpdateStatus, type UpdateStatus } from '../../domain/updates'
 // against production behavior separately (run-peitho-studio skill).
 import type { Page } from '@playwright/test'
 import { splitSlides, extractNote, extractPageComment, extractHeadingText, slugifyTitle, uniqueSlideKey, parseDurationToMs } from '../../domain/slides'
-import type { Manifest, ManifestSection, ManifestSlide, RenderPayload } from '../../domain/render'
+import type { Manifest, ManifestSection, ManifestSlide, RenderErrorPayload, RenderOutcome, RenderPayload } from '../../domain/render'
 import type { DeckVariant } from '../../domain/deckVariants'
 import type { LayoutVerdict } from '../../domain/layoutFit'
 import type { Size } from '../../domain/geometry'
@@ -167,6 +167,13 @@ export interface MockDeck {
    * layout `layouts` doesn't list — as peitho-core does once a layout's
    * file is gone. Off by default: most tests name layouts freely. */
   rejectUnknownLayouts?: boolean
+  /** peitho-core's structured refusal of `content`, or `null` when it
+   * builds — answered as a `failed` outcome by `open_deck`'s render (the
+   * deck opens all the same, as the real one does) and by `render_draft`
+   * (which the frontend's IPC layer then throws as a `RenderFailure`).
+   * Unlike `commandError`, which fails the command itself (a deck that
+   * can't be opened at all). Ignored when `realEngine` answers. */
+  renderError?: (content: string) => RenderErrorPayload | null
   /** The fragment every `preview_layouts` entry carries — defaults to an
    * empty one (the picker then draws name-only cards and mounts no canvas).
    * Set it to give the picker real slide canvases to inspect. */
@@ -406,6 +413,16 @@ function renderPayloadFor(source: string, deck: MockDeck): RenderPayload {
   return { manifest, fragments, slideLayouts, headingLayouts, assetBaseUrl: 'http://localhost:9/', css: deck.css ?? DEFAULT_CSS }
 }
 
+/** What `open_deck`'s render and `render_draft` answer for `content`: the
+ * real engine's outcome when one is wired, else `renderError`'s refusal
+ * for this source, else the synthetic payload rendered. */
+async function renderOutcomeFor(content: string, deck: MockDeck): Promise<RenderOutcome> {
+  if (deck.realEngine) return await deck.realEngine('render_draft', { content }) as RenderOutcome
+  const error = deck.renderError?.(content)
+  if (error) return { kind: 'failed', error }
+  return { kind: 'rendered', ...renderPayloadFor(content, deck) }
+}
+
 /** Layout `name`'s files in `deck.layoutFiles` — an own entry only, so a
  * layout named like an `Object` prototype member (`constructor`) isn't
  * handed the prototype's value. */
@@ -491,8 +508,12 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         return pending
       }
       case 'get_recent_decks': return deck.recentDecks ?? []
+      // Both answer a `RenderOutcome` as peitho.rs does: the payload under
+      // `kind: 'rendered'`, or peitho-core's refusal under `kind: 'failed'`
+      // (the real engine's own, or `renderError`'s) — `open_deck` opens
+      // the deck either way, as the real one does.
       case 'open_deck':
-        return { deckPath: deck.deckPath ?? deck.source, deckDir: '/fake', trusted: deck.trusted ?? false, render: deck.realEngine ? await deck.realEngine('render_draft', { content: deck.source }) : renderPayloadFor(deck.source, deck) }
+        return { deckPath: deck.deckPath ?? deck.source, deckDir: '/fake', trusted: deck.trusted ?? false, render: await renderOutcomeFor(deck.source, deck) }
       case 'render_draft':
         if (deck.rejectUnknownLayouts) {
           splitSlides(args.content as string).forEach((range, i) => {
@@ -500,7 +521,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
             if (layout !== undefined && !(deck.layouts ?? []).includes(layout)) throw new Error(`slide ${String(i + 1)} names layout '${layout}', which the deck doesn't have`)
           })
         }
-        return deck.realEngine ? deck.realEngine(cmd, args) : renderPayloadFor(args.content as string, deck)
+        return renderOutcomeFor(args.content as string, deck)
       case 'read_deck_source': return deck.source
       case 'save_deck_source':
         await deck.beforeSave?.(args.content as string)
