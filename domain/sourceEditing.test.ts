@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  SOURCE_EDITING_CLOSED, isSourceDirty, openSourceEditing, sourceEditorOffered, sourceReadFromDisk, sourceSaved, typeInSource,
+  SOURCE_EDITING_CLOSED, isSourceDirty, openSourceEditing, slideIndexAfterSourceSave, sourceEditorOffered, sourceReadFromDisk, sourceSaved, typeInSource,
 } from './sourceEditing'
 
 const SOURCE = '---\nfontss: x\n---\n\n# One\n'
@@ -87,5 +87,51 @@ describe('sourceEditorOffered', () => {
 
   test('spec: Given the editor is open, Then the toggle stays offered even once the deck builds again (to leave it)', () => {
     expect(sourceEditorOffered(openSourceEditing(SOURCE), false)).toBe(true)
+  })
+})
+
+describe('slideIndexAfterSourceSave', () => {
+  const before = ['# One', '# Two', '# Three']
+
+  test('spec: Given the save moved nothing, When a row is clicked, Then it is the same index', () => {
+    expect(slideIndexAfterSourceSave(1, before, ['# One', '# Two', '# Three'])).toBe(1)
+  })
+
+  test('spec: Given the save removed a slide above, When the row of a later slide is clicked, Then that slide is found at its new index', () => {
+    expect(slideIndexAfterSourceSave(2, before, ['# Two', '# Three'])).toBe(1)
+  })
+
+  test('spec: Given the save added a slide above, Then the slide clicked is found further down', () => {
+    expect(slideIndexAfterSourceSave(0, before, ['# Zero', '# One', '# Two', '# Three'])).toBe(1)
+  })
+
+  test('spec: the same slide with different surrounding blank lines is still the same slide', () => {
+    expect(slideIndexAfterSourceSave(1, ['# One\n', '\n# Two\n\n', '# Three'], ['# One', '# Two', '# Three'])).toBe(1)
+  })
+
+  test('spec: Given the save rewrote the slide clicked, Then nothing is selected rather than whatever now sits at its number', () => {
+    expect(slideIndexAfterSourceSave(1, before, ['# One', '# Two!', '# Three'])).toBeNull()
+  })
+
+  test('spec: the slide at the same index wins over an identical one elsewhere', () => {
+    expect(slideIndexAfterSourceSave(1, before, ['# Two', '# Two', '# Three'])).toBe(1)
+  })
+
+  test('adversarial: Given the save left two slides alike where the one clicked used to be alone, Then neither is guessed', () => {
+    expect(slideIndexAfterSourceSave(1, before, ['# Two', '# One', '# Two'])).toBeNull()
+  })
+
+  test('adversarial: a row past the end of the deck as it was, or a negative one, selects nothing', () => {
+    expect(slideIndexAfterSourceSave(3, before, before)).toBeNull()
+    expect(slideIndexAfterSourceSave(-1, before, before)).toBeNull()
+  })
+
+  test('adversarial: the save deleted the slide clicked', () => {
+    expect(slideIndexAfterSourceSave(2, before, ['# One', '# Two'])).toBeNull()
+  })
+
+  test('adversarial: empty decks on either side', () => {
+    expect(slideIndexAfterSourceSave(0, [], before)).toBeNull()
+    expect(slideIndexAfterSourceSave(0, before, [])).toBeNull()
   })
 })

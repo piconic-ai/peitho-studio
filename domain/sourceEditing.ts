@@ -54,3 +54,20 @@ export function sourceReadFromDisk(editing: SourceEditing, source: string): Sour
 export function sourceEditorOffered(editing: SourceEditing, deckBroken: boolean): boolean {
   return editing.kind === 'open' || deckBroken
 }
+
+/** Where the slide at `index` of the deck as it was split before the
+ * editor's save (`textsBefore`, each slide's text) sits once the saved
+ * deck is split again (`textsAfter`): still at `index` when the text
+ * there is the same, else the one slide with that text — a whole-source
+ * edit can move any slide. `null` when the save rewrote that slide, left
+ * two alike, or `index` names no slide: selecting by number alone would
+ * open some other slide, so the caller selects nothing. Texts are
+ * compared trimmed, as the editor's own saves keep a slide's surrounding
+ * blank lines but not always its exact count. */
+export function slideIndexAfterSourceSave(index: number, textsBefore: readonly string[], textsAfter: readonly string[]): number | null {
+  const text = textsBefore[index]?.trim()
+  if (text === undefined) return null
+  if (textsAfter[index]?.trim() === text) return index
+  const matches = textsAfter.flatMap((candidate, i) => (candidate.trim() === text ? [i] : []))
+  return matches.length === 1 ? matches[0] : null
+}

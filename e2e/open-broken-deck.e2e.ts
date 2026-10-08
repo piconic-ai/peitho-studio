@@ -353,3 +353,25 @@ test('Given a broken deck is open, when an unrelated error shows (a failed prese
   await expect(errorBar).toContainText(SLIDE_TWO_ERROR.headline, { timeout: 8_000 })
   await expect(errorBar).not.toContainText('simulated present_deck failure')
 })
+
+test('Given the deck source editor removed a slide above the one clicked, when that row is clicked before its autosave, then the slide clicked opens, not the one now at its number', async ({ page }) => {
+  const source = '---\ntitle: Deck\nfontss: x\n---\n\n# One\n\n---\n\n# Two\n\n---\n\n# Three\n'
+  const deck = await openBroken(page, brokenDeck({
+    source,
+    renderError: content => (content.includes('fontss') ? FRONTMATTER_ERROR : null),
+  }))
+  await page.locator(SOURCE_TOGGLE).click()
+  await expect(page.locator('[data-editor="source"]')).toBeVisible()
+  // The fix drops the bad key and the first slide: "Three" is row 2 as
+  // listed, row 1 once saved.
+  const fixed = '---\ntitle: Deck\n---\n\n# Two\n\n---\n\n# Three\n'
+  await fillEditor(page, fixed, 'source')
+  await page.locator('[data-slide-row="2"]').click()
+
+  // The click saved the editor's text and left it, and opened "Three".
+  await expect.poll(() => deck.source).toBe(fixed)
+  await expect(page.locator('[data-editor="body"]')).toBeVisible()
+  await expect(page.locator('[data-slide-row]')).toHaveCount(2)
+  await expect(page.locator('[data-slide-row="1"]').locator(SELECTED_ROW.replace('[data-slide-row] ', ''))).toBeVisible()
+  await expect.poll(() => editorText(page)).toBe('# Three')
+})

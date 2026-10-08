@@ -32,7 +32,7 @@ import { PanelToggle } from './PanelToggle'
 import { ReviewPanel } from './ReviewPanel'
 import { type ManifestSlide, type RenderPayload, type SectionDraft, brokenSlideIndex, renderFailureMessage } from '../domain/render'
 import { RenderFailure } from '../ipc/renderOutcome'
-import { SOURCE_EDITING_CLOSED, openSourceEditing, sourceEditorOffered, sourceReadFromDisk, sourceSaved, typeInSource } from '../domain/sourceEditing'
+import { SOURCE_EDITING_CLOSED, openSourceEditing, slideIndexAfterSourceSave, sourceEditorOffered, sourceReadFromDisk, sourceSaved, typeInSource } from '../domain/sourceEditing'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
 import { replacementInsertion, textBetween } from '../domain/editorText'
 import { fileNameOf, partitionDroppedPaths } from '../domain/images'
@@ -2262,7 +2262,17 @@ export function Studio() {
     // Picking a slide means editing it: the whole-source editor is left
     // first — unless its typing can't be saved yet, which keeps it open
     // (and the selection where it was) rather than losing the typing.
-    if (editor.sourceOpen() && !await closeSourceEditor()) return
+    // Its save can move any slide, so the row clicked is found again in
+    // the saved deck (`slideIndexAfterSourceSave`); a row the save
+    // rewrote is not guessed at, and the selection stays where
+    // `refreshSource` left it.
+    if (editor.sourceOpen()) {
+      const textsBefore = editor.slideRanges().map(range => range.text)
+      if (!await closeSourceEditor()) return
+      const found = slideIndexAfterSourceSave(index, textsBefore, editor.slideRanges().map(range => range.text))
+      if (found === null || found === editor.selectedIndex()) return
+      index = found
+    }
     await pendingSlideTextEdit
     if (editor.isDirty() && !await handleSave()) return
     // Edits may have arrived while the save was in flight. Keep that draft
