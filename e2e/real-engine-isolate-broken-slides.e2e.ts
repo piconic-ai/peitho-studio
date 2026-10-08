@@ -62,6 +62,19 @@ test('Given a deck with one slide the real engine refuses, when opened, then the
     await expect(page.locator('[data-slide-row="1"]').locator(ERROR_BADGE)).toBeVisible()
     await expect(page.locator('[data-preview-host] h1')).toContainText('C')
 
+    // The engine annotated `c`'s heading with byte spans into the copy it
+    // rendered (with `b` marked draft); a canvas edit of it still lands in
+    // `c`'s own text of the deck as written.
+    await page.locator('[data-preview-host] h1').dblclick()
+    const field = page.locator('[data-preview-host] [data-studio-edit]')
+    await expect(field).toHaveText('C')
+    await field.fill('C edited on canvas')
+    await field.press('Meta+Enter')
+    await expect.poll(() => editorText(page)).toBe('# C edited on canvas\n\nEdited')
+    await expect.poll(() => deck.source, { timeout: 10_000 }).toContain('# C edited on canvas\n')
+    expect(deck.source).toContain('# B\n\nOne\n\nTwo\n')
+    expect(deck.source).not.toContain('draft')
+
     // Fixing `b` renders it: three thumbnails, no badge, no error.
     await page.locator('[data-slide-row="1"]').click()
     await expect.poll(() => editorText(page)).toBe('# B\n\nOne\n\nTwo')
