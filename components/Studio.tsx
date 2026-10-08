@@ -3023,8 +3023,12 @@ export function Studio() {
   // next close discards the draft.
   async function closeAfterLayoutFlush(): Promise<void> {
     // The whole-deck source editor's draft first: one that doesn't build
-    // keeps the window open with its reason in the error bar.
-    if (editor.sourceOpen() && !await flushSourceEditor()) return
+    // keeps the window open, the error bar saying so over its reason —
+    // and, as for a layout draft, the next close discards it.
+    if (editor.sourceOpen() && !await flushSourceEditor()) {
+      showBuildError(settings.messages().sourceCloseUnsaved(errorMessage() ?? ''))
+      return
+    }
     if (await flushLayoutEditor()) {
       await getCurrentWindow().close()
       return

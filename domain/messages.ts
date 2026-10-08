@@ -141,6 +141,7 @@ export interface Messages {
   /** The window was closed, but the file's edits couldn't be saved. */
   layoutCloseUnsaved: string
   layoutCloseConflict: string
+  sourceCloseUnsaved: (reason: string) => string
   layoutActionFailed: (error: string) => string
   deckChangeFailed: string
   layoutDeckUnsaved: string
@@ -361,6 +362,7 @@ const en: Messages = {
   layoutConflictFirst: 'This file changed on disk: load it or keep your edits first',
   layoutCloseUnsaved: 'The changes to this file could not be saved. Fix them, or close the window again to discard them',
   layoutCloseConflict: 'This file changed on disk: load it or keep your edits, or close the window again to discard your edits',
+  sourceCloseUnsaved: reason => `The deck source could not be saved. Fix it, or close the window again to discard the changes\n${reason}`,
   layoutActionFailed: error => `Could not change the layouts: ${error}`,
   deckChangeFailed: 'deck.md could not be updated',
   layoutDeckUnsaved: 'the slides have changes that could not be saved to deck.md. Layouts are checked against the saved deck, so save the slides first',
@@ -568,6 +570,7 @@ const ja: Messages = {
   layoutConflictFirst: 'このファイルがディスク上で変更されました。先に、読み込むか自分の編集を残すかを選んでください',
   layoutCloseUnsaved: 'このファイルの変更を保存できませんでした。修正するか、もう一度ウィンドウを閉じて変更を破棄してください',
   layoutCloseConflict: 'このファイルがディスク上で変更されました。読み込むか自分の編集を残すかを選ぶか、もう一度ウィンドウを閉じて自分の編集を破棄してください',
+  sourceCloseUnsaved: reason => `デッキのソースを保存できませんでした。修正するか、もう一度ウィンドウを閉じて変更を破棄してください\n${reason}`,
   layoutActionFailed: error => `レイアウトを変更できませんでした: ${error}`,
   deckChangeFailed: 'deck.md を更新できませんでした',
   layoutDeckUnsaved: 'deck.md に保存できていないスライドの変更があります。レイアウトは保存済みのデッキに対して確認するため、先にスライドを保存してください',

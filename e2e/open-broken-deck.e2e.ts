@@ -375,3 +375,34 @@ test('Given the deck source editor removed a slide above the one clicked, when t
   await expect(page.locator('[data-slide-row="1"]').locator(SELECTED_ROW.replace('[data-slide-row] ', ''))).toBeVisible()
   await expect.poll(() => editorText(page)).toBe('# Three')
 })
+
+test('Given the deck source editor holds typing that does not build, when the window is asked to close, then it stays open, says the next close discards the typing, and closes once the text builds', async ({ page }) => {
+  const deck = await openBroken(page, brokenDeck({
+    source: FRONTMATTER_SOURCE,
+    renderError: content => (content.includes('fontss') ? FRONTMATTER_ERROR : null),
+    invokedCommands: [],
+  }))
+  const flushBeforeClose = () => page.evaluate(() => {
+    (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, toWindow?: string) => void })
+      .__mockEmitTauriEvent('layout:flush-before-close', null, 'main')
+  })
+  await page.locator(SOURCE_TOGGLE).click()
+  const stillBroken = FRONTMATTER_SOURCE.replace('# Three', '# Three!')
+  await fillEditor(page, stillBroken, 'source')
+
+  await flushBeforeClose()
+  const errorBar = page.locator(ERROR_BAR)
+  await expect(errorBar).toContainText('close the window again')
+  await expect(errorBar).toContainText('unknown field `fontss`')
+  expect(deck.invokedCommands).not.toContain('plugin:window|close')
+  // Not a transient notice: it stays until acted on.
+  await page.waitForTimeout(6_500)
+  await expect(errorBar).toContainText('close the window again')
+  expect(deck.source).toBe(FRONTMATTER_SOURCE)
+
+  const fixed = FRONTMATTER_SOURCE.replace('fontss: x\n', '')
+  await fillEditor(page, fixed, 'source')
+  await flushBeforeClose()
+  await expect.poll(() => deck.invokedCommands).toContain('plugin:window|close')
+  expect(deck.source).toBe(fixed)
+})
