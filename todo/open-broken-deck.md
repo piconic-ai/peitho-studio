@@ -223,6 +223,12 @@ tags: [engine, rust-command, editor, error-handling]
   衝突する鍵(`new-slide`)を選びうる。どのみちデッキが壊れていると保存は
   ブロックされるので実害は出ないが、鍵の収集をソース(`slideRanges`の
   PageComment)から行えば描画の有無に依存しなくなる。
+- デッキ全体のソース編集(`domain/sourceEditing.ts`、ビルドできない間だけ
+  エディタ欄に出る「デッキのソースを編集」)はレビュー指摘(frontmatterの
+  未知キー・重複キーはスライド本文に出てこず直せない)を受けて足したもの。
+  右クリックメニュー(`openEditorMenu`はbody/note/layoutのみ)と、未保存の
+  ドラフトを抱えたままのウィンドウクローズ確認(`report_layout_draft`
+  相当)は未対応。ビルドが通ったデッキでも常時使えるようにするかも未決。
 - 壊れたデッキを開いた直後、まだ一度も描画が通っていない間は
   `render.assetBaseUrl()`がnullのため、レビュー(コメント)パネルとその
   レールのトグルが隠れる。描画が通れば出る。コメント対象の描画がないので
