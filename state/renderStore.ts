@@ -1,5 +1,17 @@
 import { createSignal, createMemo, batch } from '@barefootjs/client'
-import { type Manifest, type ManifestSection, type SectionDraft, type RenderPayload, savedSectionDraft, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
+import { type Manifest, type ManifestSection, type SectionDraft, type RenderErrorPayload, type RenderPayload, savedSectionDraft, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
+
+/** How the deck's last render went: `none` before any render was tried
+ * (no deck open), `rendered` once a render succeeded, `failed` while the
+ * source on disk doesn't build — set by `open_deck`'s refusal and by a
+ * failed render of what's on disk, never by a draft failing mid-typing
+ * (the disk's state and the editor's aren't mixed — a draft's failure is
+ * the error bar's alone). Drives what the error bar's timer leaves alone
+ * and what the preview pane shows in place of a slide. */
+export type RenderOutcomeState =
+  | { kind: 'none' }
+  | { kind: 'rendered' }
+  | { kind: 'failed'; error: RenderErrorPayload }
 import { absolutizeCssUrls, scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { absolutizeFragmentUrls, stripEditAnnotations } from '../domain/slideFragment'
 import { stabilizeByKey } from '../domain/slides'
@@ -25,6 +37,14 @@ export function createRenderStore() {
   const [canvasWidth, setCanvasWidth] = createSignal(1280)
   const [canvasHeight, setCanvasHeight] = createSignal(720)
   const [manifest, setManifest] = createSignal<Manifest | null>(null)
+  const [outcome, setOutcome] = createSignal<RenderOutcomeState>({ kind: 'none' })
+  /** The source on disk doesn't build: `open_deck` refused it, or a render
+   * of what's on disk did (`Studio.tsx`'s `renderPreview` of a persisted
+   * source). The last successful render, if any, is kept as it is — only
+   * `outcome` changes. */
+  function markRenderFailed(error: RenderErrorPayload): void {
+    setOutcome({ kind: 'failed', error })
+  }
   // The exact source string that produced the current `manifest()` —
   // written only by `applyRenderPayload`, atomically with the manifest
   // itself (same `batch()` below), never anywhere else. `domain/slideList.ts`'s
@@ -173,11 +193,12 @@ export function createRenderStore() {
         drafts[section.startIndex] = savedSectionDraft(section)
       }
       setSectionDrafts(drafts)
+      if (outcome().kind !== 'rendered') setOutcome({ kind: 'rendered' })
     })
   }
 
   return {
-    assetBaseUrl, canvasWidth, canvasHeight, manifest, renderedSource, slideLayouts, headingLayouts, sectionStartByIndex,
+    assetBaseUrl, canvasWidth, canvasHeight, manifest, outcome, markRenderFailed, renderedSource, slideLayouts, headingLayouts, sectionStartByIndex,
     sectionDrafts, setSectionDrafts, sectionDraftOf,
     fragmentSignal, fragmentOf, canvasFragmentOf, previewFragmentOf, applyRenderPayload,
     slideStylesheetText, fontFaceCss,

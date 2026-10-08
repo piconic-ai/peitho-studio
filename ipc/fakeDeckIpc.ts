@@ -59,7 +59,7 @@ export function createFakeDeckIpc(overrides: Partial<DeckIpc> = {}): FakeDeckIpc
     getRecentDecks: async () => { record('getRecentDecks', []); return [] },
     openDeck: async path => {
       record('openDeck', [path])
-      const info: DeckSessionInfo = { deckPath: path, deckDir: path, trusted: false, render: emptyRenderPayload }
+      const info: DeckSessionInfo = { deckPath: path, deckDir: path, trusted: false, render: { kind: 'rendered', ...emptyRenderPayload } }
       return info
     },
     renderDraft: async content => { record('renderDraft', [content]); return emptyRenderPayload },

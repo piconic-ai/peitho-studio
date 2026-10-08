@@ -18,12 +18,14 @@ import type { DeckFileEntry } from '../domain/deckFiles'
 import type { DeckSettingsState } from '../domain/deckSettings'
 import type { DeckVariant } from '../domain/deckVariants'
 import type { NewDeckSettings } from '../domain/newDeckSettings'
-import type { RenderPayload } from '../domain/render'
+import type { RenderOutcome, RenderPayload } from '../domain/render'
 import type { LayoutVerdict } from '../domain/layoutFit'
+import { unwrapRenderOutcome } from './renderOutcome'
 
 export type { DeckVariant } from '../domain/deckVariants'
-export type { Manifest, ManifestSection, ManifestSlide, RenderPayload } from '../domain/render'
+export type { Manifest, ManifestSection, ManifestSlide, RenderErrorPayload, RenderOutcome, RenderPayload } from '../domain/render'
 export type { LayoutVerdict } from '../domain/layoutFit'
+export { RenderFailure } from './renderOutcome'
 
 export interface DeckSessionInfo {
   deckPath: string
@@ -31,7 +33,10 @@ export interface DeckSessionInfo {
   /** Whether the deck's folder is trusted to run its scripts — see
    * `trust_open_deck` in peitho.rs. */
   trusted: boolean
-  render: RenderPayload
+  /** The deck as rendered on open — or, `failed`, peitho-core's refusal
+   * with the deck open all the same, so its source can be fixed in the
+   * editor (see `open_deck` in peitho.rs). */
+  render: RenderOutcome
 }
 
 export interface LayoutPreview {
@@ -60,6 +65,10 @@ export interface DeckIpc {
   takePendingDeck(): Promise<string | null>
   getRecentDecks(): Promise<string[]>
   openDeck(path: string): Promise<DeckSessionInfo>
+  /** Renders `content` in memory. Rejects with a `RenderFailure` (its
+   * `error` peitho-core's structured refusal, its message the text the
+   * error bar shows) when the draft doesn't build — see
+   * `ipc/renderOutcome.ts`. */
   renderDraft(content: string): Promise<RenderPayload>
   readDeckSource(): Promise<string>
   saveDeckSource(content: string): Promise<void>
@@ -194,7 +203,7 @@ export function createTauriDeckIpc(): DeckIpc {
     takePendingDeck: () => invoke('take_pending_deck'),
     getRecentDecks: () => invoke('get_recent_decks'),
     openDeck: path => invoke('open_deck', { path }),
-    renderDraft: content => invoke('render_draft', { content }),
+    renderDraft: async content => unwrapRenderOutcome(await invoke<RenderOutcome>('render_draft', { content })),
     readDeckSource: () => invoke('read_deck_source'),
     saveDeckSource: content => invoke('save_deck_source', { content }),
     listDeckVariants: () => invoke('list_deck_variants'),
