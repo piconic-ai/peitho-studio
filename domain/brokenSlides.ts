@@ -115,7 +115,11 @@ export function withSlidesDrafted(source: string, indexes: ReadonlySet<number> |
 }
 
 /** The one edit that turns `before` (the text of `source` at `at`) into
- * `after`: the part past their common prefix and suffix, in UTF-8 bytes. */
+ * `after`: the part past their common prefix and suffix, in UTF-8 bytes.
+ * Not `domain/editorText.ts`'s `editorTextChange`: that normalizes the
+ * line breaks of its target, which would count a CRLF deck's every line
+ * as changed. The edits here only ever touch ASCII (a PageComment, a
+ * `time:` value), so a prefix or suffix never ends inside a character. */
 function editBetween(source: string, at: number, before: string, after: string): SourceEdit {
   let prefix = 0
   while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix++
@@ -152,9 +156,11 @@ export function originalByteOffset(offset: number, edits: readonly SourceEdit[])
 /** `fragments` as rendered from an attempt built with `edits`, their edit
  * annotations (byte spans into the attempt) rewritten as spans into the
  * source as written — the source every consumer of an annotation holds.
- * An annotation that can't be placed (one inside an edit) is dropped. */
-export function restoreEditAnnotations(fragments: Readonly<Record<string, string>>, edits: readonly SourceEdit[]): Record<string, string> {
-  if (edits.length === 0) return { ...fragments }
+ * An annotation that can't be placed (one inside an edit) is dropped.
+ * With no edits, `fragments` itself: nothing to rewrite, and this runs on
+ * every render. */
+export function restoreEditAnnotations(fragments: Readonly<Record<string, string>>, edits: readonly SourceEdit[]): Readonly<Record<string, string>> {
+  if (edits.length === 0) return fragments
   const restored: Record<string, string> = {}
   for (const [key, html] of Object.entries(fragments)) {
     restored[key] = mapEditAnnotations(html, span => {

@@ -234,11 +234,9 @@ describe('restoreEditAnnotations', () => {
     expect(restoreEditAnnotations({ k: '<p data-peitho-src="6-8" data-peitho-md="x">x</p>' }, edits)).toEqual({ k: '<p>x</p>' })
   })
 
-  test('adversarial: no edits hands the fragments back as they are, as a copy', () => {
+  test('adversarial: no edits hands the fragments back as they are — the same object, nothing rewritten', () => {
     const fragments = { k: '<p data-peitho-src="6-8" data-peitho-md="x">x</p>' }
-    const restored = restoreEditAnnotations(fragments, [])
-    expect(restored).toEqual(fragments)
-    expect(restored).not.toBe(fragments)
+    expect(restoreEditAnnotations(fragments, [])).toBe(fragments)
   })
 })
 

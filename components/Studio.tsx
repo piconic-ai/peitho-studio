@@ -1473,7 +1473,7 @@ export function Studio() {
   // `domain/brokenSlides.ts`). Resolves with the payload and the slides it
   // was rendered without, or with the error that stopped it; rejects only
   // for a failure other than peitho-core's refusal (the deck not open).
-  async function renderIsolating(content: string, allow: (error: RenderErrorPayload, broken: BrokenSlides) => boolean): Promise<
+  async function renderIsolating(content: string, allow: (error: RenderErrorPayload) => boolean): Promise<
     { kind: 'rendered'; payload: RenderPayload; broken: BrokenSlides } | { kind: 'failed'; error: RenderErrorPayload }
   > {
     let isolation = startIsolation(content)
@@ -1483,10 +1483,10 @@ export function Studio() {
         // The edit annotations are byte spans into what was rendered — the
         // attempt — while everything that reads them holds `content`.
         const fragments = restoreEditAnnotations(payload.fragments, isolation.edits)
-        return { kind: 'rendered', payload: { ...payload, fragments }, broken: isolation.broken }
+        return { kind: 'rendered', payload: fragments === payload.fragments ? payload : { ...payload, fragments }, broken: isolation.broken }
       } catch (err) {
         if (!(err instanceof RenderFailure)) throw err
-        const next = allow(err.error, isolation.broken) ? isolateSlide(isolation, err.error) : null
+        const next = allow(err.error) ? isolateSlide(isolation, err.error) : null
         if (next === null) return { kind: 'failed', error: err.error }
         isolation = next
       }
