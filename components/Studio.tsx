@@ -31,7 +31,7 @@ import { CommentBox } from './CommentBox'
 import { PanelToggle } from './PanelToggle'
 import { ReviewPanel } from './ReviewPanel'
 import { type ManifestSlide, type RenderErrorPayload, type RenderPayload, type SectionDraft, brokenSlideIndex, renderFailureMessage } from '../domain/render'
-import { type BrokenSlides, brokenSlidesAfterCommand, brokenSlidesSummary, isolateSlide, saveDecision, startIsolation } from '../domain/brokenSlides'
+import { type BrokenSlides, brokenSlidesAfterCommand, brokenSlidesSummary, isolateSlide, restoreEditAnnotations, saveDecision, startIsolation } from '../domain/brokenSlides'
 import { RenderFailure } from '../ipc/renderOutcome'
 import { SOURCE_EDITING_CLOSED, openSourceEditing, slideIndexAfterSourceSave, sourceEditorOffered, sourceReadFromDisk, sourceSaved, typeInSource } from '../domain/sourceEditing'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
@@ -1480,7 +1480,10 @@ export function Studio() {
     for (;;) {
       try {
         const payload = await deckIpc.renderDraft(isolation.attempt)
-        return { kind: 'rendered', payload, broken: isolation.broken }
+        // The edit annotations are byte spans into what was rendered — the
+        // attempt — while everything that reads them holds `content`.
+        const fragments = restoreEditAnnotations(payload.fragments, isolation.edits)
+        return { kind: 'rendered', payload: { ...payload, fragments }, broken: isolation.broken }
       } catch (err) {
         if (!(err instanceof RenderFailure)) throw err
         const next = allow(err.error, isolation.broken) ? isolateSlide(isolation, err.error) : null
@@ -1584,7 +1587,7 @@ export function Studio() {
   const [sessionDirs, setSessionDirs] = createSignal<string[]>([])
 
   // Each slide's comment key and span in the source the preview shows.
-  const renderedSlideSpans = createMemo(() => slideSpans(render.renderedSource(), render.manifest()?.slides ?? []))
+  const renderedSlideSpans = createMemo(() => slideSpans(render.renderedSource(), render.manifest()?.slides ?? [], render.brokenSlides()))
 
   function slideNumberOf(key: string): number {
     return renderedSlideSpans().findIndex(slide => slide.key === key) + 1
@@ -2001,7 +2004,7 @@ export function Studio() {
     try {
       if (editor.isDirty()) await handleSave()
       const source = editor.fullSource()
-      const slides = slideSpans(source, render.manifest()?.slides ?? [])
+      const slides = slideSpans(source, render.manifest()?.slides ?? [], render.brokenSlides())
       const pending = review.pending()
       const comments = pending.map(comment => {
         const index = slides.findIndex(slide => slide.key === comment.slideKey)
@@ -2268,9 +2271,14 @@ export function Studio() {
       // without it and saved as written — the deck on disk is no worse
       // off. Any other slide not building does, the slide being edited
       // first of all (`saveDecision`); the save is then refused with that
-      // error, as any draft that doesn't build is.
+      // error, as any draft that doesn't build is. The edited slide is
+      // the open one whenever its draft is in `nextSource` — a save of it
+      // (`expectedDraft`), or any other change built from
+      // `currentSlideTexts`, which carries the open slide's typing — at
+      // the row `cmd` leaves it on.
       const known = cmd ? brokenSlidesAfterCommand(render.brokenSlides(), cmd) : render.brokenSlides()
-      const editedIndex = expectedDraft && before.kind === 'editing' ? before.index : null
+      const dirtyIndex = before.kind === 'editing' && (expectedDraft !== undefined || editor.isDirty()) ? before.index : null
+      const editedIndex = dirtyIndex !== null && cmd ? indexAfterCommand(dirtyIndex, cmd) : dirtyIndex
       const slideCount = splitSlides(nextSource).length
       const result = await renderIsolating(nextSource, error => saveDecision(error, known, editedIndex, slideCount) === 'isolate')
       if (result.kind === 'failed') throw new RenderFailure(result.error)
