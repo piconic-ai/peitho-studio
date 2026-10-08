@@ -92,12 +92,23 @@ review-comment-ui.md`で作った往復(Studioがcritにコメント登録→
 - **エラーは1件ではなく一覧**: 前段の隔離で、1回の「ディスクの描画」が
   複数の壊れたスライド(`render.brokenSlides()`、それぞれにエラー)を
   返す。デッキ全体が拒まれた場合(`render.outcome().kind === 'failed'`)
-  は1件。`diskBuildOf(outcome, brokenSlides, renderedSource)`がこの2つを
-  「ディスクのビルド結果」`{ok} | {failed, errors[], source}`にまとめ、
-  コメントはエラー1件につき1つ。トリガーは`runOpen`/
-  `handleExternalChange`への配線ではなく、`renderStore`の`outcome`と
-  `brokenSlides`を読む`createEffect`(保存で同じスライドを隔離し直しても
-  identityの列が変わらなければ何も起きない)。
+  は1件。`diskBuildOf(diskRender)`がこの2つを「ディスクのビルド結果」
+  `{ok} | {failed, errors[], source}`にまとめ、コメントはエラー1件に
+  つき1つ。トリガーは`runOpen`/`handleExternalChange`への配線ではなく、
+  `renderStore`の`diskRender`を読む`createEffect`。
+- **`renderStore`に「ディスクの描画」`diskRender`を別に持たせた**(PR
+  #187のレビューで指摘)。`outcome`/`brokenSlides`はタイプ中のドラフトが
+  描画に通っても`rendered`/空になる(プレビュー用)ので、それを
+  `disk-render-ok`と見なすと、直後の保存が失敗してディスクが壊れたままでも
+  報告が`idle`に戻ってしまい、エージェントが待ち始めても何も送られない。
+  `diskRender`は`markRenderFailed`と`markDiskRendered`だけが書く:
+  `open_deck`の描画、`persisted`な描画、保存は`save_deck_source`が返って
+  から。レイアウト変更での再描画(`renderAfterLayoutChange`)は、何も打っていない
+  ときだけ`persisted`。
+- **effectはディスクの描画のたびにdispatchする**(identityの列が同じでも)。
+  エージェントが作業中に上の行を増やすと、待っているエラーの行が動く —
+  identityで絞ると古い行・headline・quoteのまま送ってしまう。同じ
+  identityの繰り返しは`decide`が`reported`で弾くので再送にはならない。
 - **「同じエラー」の判定はheadlineではなく`kind`+`message`+スライドの
   キー(なければ番号)+`originFile`**(`buildErrorIdentity`)。headlineは
   行番号を含むので、エージェントがスライド2を直すとスライド4のエラーの
@@ -210,14 +221,12 @@ review-comment-ui.md`で作った往復(Studioがcritにコメント登録→
   `NewLayoutComment`(`FileLines`)でそのファイルに付ける。
 - `handleExternalChange`の`window.confirm`依存(CLAUDE.mdの落とし穴)を
   アプリ内UIに置き換える — 本件とは別。
-- タイプ中のドラフトが描画に通ると(隔離なしの1回描画が成功すると)、
-  前段の`applyRenderPayload`が`brokenSlides`を空にするので、本件は
-  それを`disk-render-ok`と見なす(600ms後の自動保存でディスクも直る
-  前提)。保存が通らず壊れたままなら次の失敗で同じエラーを送り直す。
-  ドラフトの成功と保存の成功を区別するなら、`renderStore`に「ディスクの
-  描画か」を持たせる必要がある。
-- 送信失敗後の再試行は「次のイベント」(ディスクの変更、エージェントの
-  次の巡)任せ。タイマーでの再試行は入れていない。
+- 送信失敗後の再試行は「次のイベント」任せで、タイマーでの再試行は
+  入れていない。失敗したエラーは`send-failed`状態に保持し、ディスクの
+  次の描画(`disk-render-failed`、同じエラーでも)またはエージェントの
+  次の巡(`agent-arrived`: セッションの`agentWaiting`がfalse→true)で
+  送る。失敗した送信自身が`busy`を離すときの`agent-waiting`では送らない
+  (即時の再試行ループになるため)。
 - 同じ`kind`+`message`のエラーがキーのないスライドで位置を変えたとき
   (前にスライドを挿入した)は別のエラーとして送り直す。キーを付ければ
   位置に依らない。
