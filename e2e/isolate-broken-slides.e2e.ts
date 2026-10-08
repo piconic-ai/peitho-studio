@@ -9,7 +9,7 @@
 // `real-engine-isolate-broken-slides.e2e.ts`.
 import { test, expect, type Page } from '@playwright/test'
 import { emitLayoutFilesChanged, mockTauri, slotErrorAt, type MockDeck } from './helpers/mockTauri'
-import { editorText, fillEditor } from './helpers/codeEditor'
+import { editorText, fillEditor, moveToEditorEnd } from './helpers/codeEditor'
 
 const ERROR_BAR = '.bg-destructive\\/10'
 const PREVIEW_ERROR = '[data-preview-build-error]'
@@ -298,5 +298,18 @@ test('Given slide 2 is isolated, when a layout file changes so that it builds, t
   await expect(page.locator(THUMBNAIL_CANVAS)).toHaveCount(3, { timeout: 5_000 })
   await expect(page.locator(ERROR_BADGE)).toHaveCount(0)
   await expect(page.locator(ERROR_BAR)).toBeHidden()
+})
+
+test('Given the opening render is still in flight, when typing is taken back to the saved text before it lands, then the deck still renders — the render superseded by the typing is not the one waited on', async ({ page }) => {
+  await open(page, brokenDeck({ renderDraftDelayMs: 1_000 }))
+  await expect.poll(() => editorText(page)).toBe('# Two\n\nBROKEN')
+
+  await moveToEditorEnd(page)
+  await page.keyboard.type('x')
+  await page.waitForTimeout(200)
+  await page.keyboard.press('Backspace')
+
+  await expect(page.locator(THUMBNAIL_CANVAS)).toHaveCount(2, { timeout: 10_000 })
+  await expect(page.locator('[data-slide-row="1"]').locator(ERROR_BADGE)).toBeVisible()
 })
 

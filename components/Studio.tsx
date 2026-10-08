@@ -1427,21 +1427,23 @@ export function Studio() {
   // same source is asked for from several places at once when a deck
   // opens broken (`runOpen`, and the typing effect below as the selection
   // settles): a persisted render already in flight for the same source is
-  // shared, and a source known not to build (`persistedFailedSource`)
-  // isn't rendered again until it changes.
+  // shared — while it is still the latest render asked for; one a draft's
+  // render superseded would resolve stale and be dropped, so the source
+  // is rendered again — and a source known not to build
+  // (`persistedFailedSource`) isn't rendered again until it changes.
   let previewGeneration = 0
-  let persistedRender: { content: string; done: Promise<void> } | null = null
+  let persistedRender: { content: string; generation: number; done: Promise<void> } | null = null
   let persistedFailedSource: string | null = null
   function renderPreview(content: string, { persisted = false }: { persisted?: boolean } = {}): Promise<void> {
-    if (!persisted) return runRenderPreview(content, false)
-    if (persistedRender?.content === content) return persistedRender.done
-    const done = runRenderPreview(content, true)
-    persistedRender = { content, done }
+    if (!persisted) return runRenderPreview(content, false, ++previewGeneration)
+    if (persistedRender?.content === content && persistedRender.generation === previewGeneration) return persistedRender.done
+    const generation = ++previewGeneration
+    const done = runRenderPreview(content, true, generation)
+    persistedRender = { content, generation, done }
     void done.finally(() => { if (persistedRender?.done === done) persistedRender = null })
     return done
   }
-  async function runRenderPreview(content: string, persisted: boolean): Promise<void> {
-    const generation = ++previewGeneration
+  async function runRenderPreview(content: string, persisted: boolean, generation: number): Promise<void> {
     try {
       const result = await renderIsolating(content, () => persisted, persisted ? NO_BROKEN_SLIDES : draftSeed(content))
       if (generation !== previewGeneration) return
