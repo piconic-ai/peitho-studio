@@ -25,7 +25,6 @@ import { unwrapRenderOutcome } from './renderOutcome'
 export type { DeckVariant } from '../domain/deckVariants'
 export type { Manifest, ManifestSection, ManifestSlide, RenderErrorPayload, RenderOutcome, RenderPayload } from '../domain/render'
 export type { LayoutVerdict } from '../domain/layoutFit'
-export { RenderFailure } from './renderOutcome'
 
 export interface DeckSessionInfo {
   deckPath: string
