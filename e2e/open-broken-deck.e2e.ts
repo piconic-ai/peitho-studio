@@ -304,6 +304,28 @@ test('Given the deck source editor holds typing that does not build, then the wi
   await expect.poll(() => reports.at(-1), { timeout: 10_000 }).toBe(false)
 })
 
+test('Given a save is in flight when the text is typed back to what disk holds, then the window is still told a draft is pending until it lands', async ({ page }) => {
+  const reports: boolean[] = []
+  await openBroken(page, brokenDeck({
+    source: FRONTMATTER_SOURCE,
+    renderError: content => (content.includes('fontss') ? FRONTMATTER_ERROR : null),
+    renderDraftDelayMs: 1_500,
+    onInvoke: (cmd, args) => { if (cmd === 'report_layout_draft') reports.push(args.pending as boolean) },
+  }))
+  await page.locator(SOURCE_TOGGLE).click()
+  await fillEditor(page, FRONTMATTER_SOURCE.replace('fontss: x\n', ''), 'source')
+  await expect.poll(() => reports.at(-1)).toBe(true)
+  // The save is in flight; the draft goes back to the text disk holds.
+  await page.waitForTimeout(1_200)
+  const reportsBeforeRevert = reports.length
+  await fillEditor(page, FRONTMATTER_SOURCE, 'source')
+  await page.waitForTimeout(500)
+  // A clean-looking draft, but a write still pending: never reported as
+  // nothing to save.
+  expect(reports.slice(reportsBeforeRevert)).not.toContain(false)
+  expect(reports.at(-1)).toBe(true)
+})
+
 test('Given a broken deck is open, when the Recent Decks list is read, then the deck was remembered like any other', async ({ page }) => {
   const invoked: string[] = []
   await openBroken(page, brokenDeck({ invokedCommands: invoked }))

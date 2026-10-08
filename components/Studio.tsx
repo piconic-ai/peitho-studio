@@ -502,11 +502,16 @@ export function Studio() {
     sourceSaveQueue = run
     return run
   }
+  // How many source saves are between reading the draft and landing on
+  // disk — the pending-draft report counts them (`reportLayoutDraft`), as
+  // the draft reads clean meanwhile when typed back to the earlier text.
+  const [sourceSavesInFlight, setSourceSavesInFlight] = createSignal(0)
   async function commitSource(): Promise<boolean> {
     const editing = editor.sourceEditing()
     if (editing.kind !== 'open' || !editor.isSourceDirty()) return true
     const text = editing.draft
     setErrorMessage(null)
+    setSourceSavesInFlight(n => n + 1)
     try {
       const payload = await deckIpc.renderDraft(text)
       render.applyRenderPayload(payload, text)
@@ -520,6 +525,8 @@ export function Studio() {
     } catch (err) {
       setErrorMessage(String(err))
       return false
+    } finally {
+      setSourceSavesInFlight(n => n - 1)
     }
   }
   // Opens on the deck as the user sees it: the open slide's draft is
@@ -663,9 +670,10 @@ export function Studio() {
   }
   // Tells this window's close whether there's a draft to save first
   // (`report_layout_draft`): a layout file's, or the whole-deck source
-  // editor's (`closeAfterLayoutFlush` saves both); quiet with no deck open.
+  // editor's — typing not on disk, or a save of it still in flight
+  // (`closeAfterLayoutFlush` waits for both); quiet with no deck open.
   createEffect(() => {
-    const pending = layouts.editorDirty() || editor.isSourceDirty()
+    const pending = layouts.editorDirty() || editor.isSourceDirty() || sourceSavesInFlight() > 0
     untrack(() => { deckIpc.reportLayoutDraft(pending).catch(() => {}) })
   })
   // `flushLayoutEditor` before the editor is left — the slides screen, a
