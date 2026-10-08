@@ -1,5 +1,6 @@
 import { createSignal, createMemo, batch } from '@barefootjs/client'
 import { type Manifest, type ManifestSection, type SectionDraft, type RenderErrorPayload, type RenderPayload, savedSectionDraft, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
+import { type BrokenSlides, NO_BROKEN_SLIDES } from '../domain/brokenSlides'
 
 /** How the deck's last render went: `none` before any render was tried
  * (no deck open), `rendered` once a render succeeded, `failed` while the
@@ -12,7 +13,6 @@ export type RenderOutcomeState =
   | { kind: 'none' }
   | { kind: 'rendered' }
   | { kind: 'failed'; error: RenderErrorPayload }
-import { type BrokenSlides, NO_BROKEN_SLIDES } from '../domain/brokenSlides'
 import { absolutizeCssUrls, scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
 import { absolutizeFragmentUrls, stripEditAnnotations } from '../domain/slideFragment'
 import { stabilizeByKey } from '../domain/slides'
