@@ -21,7 +21,7 @@ import {
   type CommentTarget, type LayoutCommentTarget, type PreviewPin,
 } from '../domain/reviewComment'
 import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, connectTargetOf, showsConnectGuide } from '../domain/agentConnect'
-import { type BuildErrorReportEvent, type DiskBuild, buildErrorComment, buildErrorIdentity, decideBuildErrorReport, diskBuildOf } from '../domain/buildErrorReport'
+import { type BuildErrorReportEvent, buildErrorComment, buildErrorIdentity, decideBuildErrorReport, diskBuildOf } from '../domain/buildErrorReport'
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
 import { layoutThumbnailClickOf, layoutThumbnailContextClickOf, noteLayoutRowPress } from '../dom/layoutComments'
 import { keepShownPopupsInWindow } from '../dom/popupFit'
@@ -2094,19 +2094,16 @@ export function Studio() {
   }
   // What the deck on disk builds to, from the disk's render state (never
   // a draft's — see `render.diskRender`): the deck's refusal, or the
-  // slides its render isolated. A memo of the errors' identities too, so
-  // a render that isolates the same slides again (every save around them)
-  // doesn't re-run the effect for nothing.
-  const diskBuild = createMemo<DiskBuild | null>(() => diskBuildOf(render.diskRender()))
-  const diskBuildKey = createMemo<string | null>(() => {
-    const build = diskBuild()
-    return build === null ? null : build.kind === 'ok' ? 'ok' : build.errors.map(buildErrorIdentity).join('\n')
-  })
+  // slides its render isolated. Every render of the disk goes in, not
+  // only one with other errors: the same error's line moves with the
+  // edits above it (the agent's own, while it works), and what waits to
+  // be sent must say where the error is now. `decideBuildErrorReport`
+  // tells a repeat from news (`reported`), so a render that isolates the
+  // same slides again sends nothing.
   createEffect(() => {
-    if (diskBuildKey() === null) return
+    const build = diskBuildOf(render.diskRender())
+    if (build === null) return
     untrack(() => {
-      const build = diskBuild()
-      if (build === null) return
       dispatchBuildErrorReport(build.kind === 'ok' ? { type: 'disk-render-ok' } : { type: 'disk-render-failed', errors: build.errors, source: build.source })
     })
   })

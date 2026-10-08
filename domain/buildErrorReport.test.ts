@@ -125,6 +125,20 @@ describe('decideBuildErrorReport', () => {
       expect(decideBuildErrorReport(idle, { type: 'agent-waiting' }, true)).toEqual({ next: idle })
     })
 
+    test('spec: Given an error waiting, When the deck changes under it and the error moves (its line, headline, source), Then what waits is the error where it is now, and goes there when the agent comes', () => {
+      const waiting: BuildErrorReport = { kind: 'waiting-for-agent', errors: [SLIDE_TWO], source: SOURCE, reported: [] }
+      const moved = { ...SLIDE_TWO, line: 10, headline: "slide 2 ('two'), line 10: ..." }
+      const movedSource = SOURCE.replace('# One\n', '# One\n\nAn intro line\n')
+      const refreshed = decideBuildErrorReport(waiting, { type: 'disk-render-failed', errors: [moved], source: movedSource }, false)
+      expect(refreshed).toEqual({ next: { kind: 'waiting-for-agent', errors: [moved], source: movedSource, reported: [] } })
+      expect(decideBuildErrorReport(refreshed.next, { type: 'agent-waiting' }, true).effect).toEqual({ kind: 'send', errors: [moved], source: movedSource })
+    })
+
+    test('adversarial: Given an error waiting, When the disk renders again with it unchanged, Then what waits is the same (nothing sent, nothing lost)', () => {
+      const waiting: BuildErrorReport = { kind: 'waiting-for-agent', errors: [SLIDE_TWO], source: SOURCE, reported: [] }
+      expect(decideBuildErrorReport(waiting, failed(SLIDE_TWO), false)).toEqual({ next: waiting })
+    })
+
     test('adversarial: Given errors waiting, When the agent waits but a send is in flight, Then nothing is sent yet and nothing is lost', () => {
       const waiting: BuildErrorReport = { kind: 'waiting-for-agent', errors: [SLIDE_TWO], source: SOURCE, reported: [] }
       expect(decideBuildErrorReport(waiting, { type: 'agent-waiting' }, false)).toEqual({ next: waiting })

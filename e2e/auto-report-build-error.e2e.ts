@@ -126,6 +126,28 @@ test('Given the agent is at work (not waiting), when the deck breaks, then the e
   await expect(page.locator(STATUS)).toHaveText('Sent the build error to the agent.')
 })
 
+test('Given the agent is at work, when its edit moves the waiting error to another line, then the error goes on that line when it comes to wait', async ({ page }) => {
+  const crit = createFakeCritIpc({ session: 'working' })
+  const deck = await open(page, brokenDeck(crit))
+  await expect(page.locator(ERROR_BADGE)).toHaveCount(1)
+
+  // Two lines added above slide 2: the same error, two lines down.
+  await changeOnDisk(page, deck, SOURCE.replace('# One\n', '# One\n\nAn intro line\n'))
+  await expect(page.locator(STATUS)).toHaveText('Reloaded — the deck changed on disk.')
+  await page.waitForTimeout(300)
+  expect(methods(crit)).not.toContain('addComments')
+
+  crit.agentConnects()
+
+  await expect.poll(() => methods(crit)).toContain('finish')
+  expect(sentComments(crit)).toEqual([{
+    ...SLIDE_TWO_COMMENT,
+    startLine: 10,
+    endLine: 10,
+    body: SLIDE_TWO_COMMENT.body.replace('line 8', 'line 10'),
+  }])
+})
+
 test('Given the agent is at work, when the deck is fixed on disk before it waits, then nothing is sent', async ({ page }) => {
   const crit = createFakeCritIpc({ session: 'working' })
   const deck = await open(page, brokenDeck(crit))
