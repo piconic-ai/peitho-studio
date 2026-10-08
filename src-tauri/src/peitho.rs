@@ -2482,7 +2482,7 @@ Start writing your slides here.\n";
             std::fs::read_to_string(&deck_path).unwrap()
         );
 
-        let err = pipeline::render_source(&deck_path, &source).err().expect("title-body has no image slot");
+        let err = pipeline::render_source(&deck_path, &source).err().expect("title-body has no image slot").to_string();
         assert!(err.contains("no slot accepts image in layout 'title-body'"), "{err}");
         let verdicts = crate::engine::layout_fit::check_slide_layouts(&deck_path, &source, 1).unwrap().unwrap();
         let fitting: Vec<&str> = verdicts
@@ -2581,7 +2581,7 @@ Start writing your slides here.\n";
         let parent = tempfile::tempdir().unwrap();
         let (deck_path, source) = created_deck_source_with(parent.path(), &["# Just a heading\n".to_string()]);
 
-        let err = pipeline::render_source(&deck_path, &source).err().expect("ambiguous");
+        let err = pipeline::render_source(&deck_path, &source).err().expect("ambiguous").to_string();
         assert!(err.contains("slide matches multiple layouts"), "{err}");
         for name in ["title-slide", "section-header", "title-only", "main-point"] {
             assert!(err.contains(name), "{name} is among the matches: {err}");
@@ -2596,7 +2596,7 @@ Start writing your slides here.\n";
         for name in ["caption", "blank"] {
             let slide = format!("<!-- {{\"key\":\"x\",\"layout\":\"{name}\"}} -->\n# New Slide\n");
             let (deck_path, source) = created_deck_source_with(parent.path().join(name).as_path(), &[slide]);
-            let err = pipeline::render_source(&deck_path, &source).err().unwrap_or_else(|| panic!("{name} has no title slot"));
+            let err = pipeline::render_source(&deck_path, &source).err().unwrap_or_else(|| panic!("{name} has no title slot")).to_string();
             assert!(err.contains("title"), "{name}: {err}");
         }
     }
@@ -2608,7 +2608,7 @@ Start writing your slides here.\n";
         let slide = "<!-- {\"key\":\"x\",\"layout\":\"title-slide\"} -->\n# A title\n\nOne.\n\nTwo.\n".to_string();
         let (deck_path, source) = created_deck_source_with(parent.path(), &[slide]);
 
-        let err = pipeline::render_source(&deck_path, &source).err().expect("two subtitle paragraphs");
+        let err = pipeline::render_source(&deck_path, &source).err().expect("two subtitle paragraphs").to_string();
         assert!(err.contains("body"), "{err}");
     }
 
@@ -2621,7 +2621,7 @@ Start writing your slides here.\n";
         let (deck_path, image) = created_deck_with_image(parent.path());
         let source = format!("{}\n![]({image})\n", std::fs::read_to_string(&deck_path).unwrap());
 
-        let err = pipeline::render_source(&deck_path, &source).err().expect("title-slide has no image slot");
+        let err = pipeline::render_source(&deck_path, &source).err().expect("title-slide has no image slot").to_string();
         assert!(err.contains("no slot accepts image in layout 'title-slide'"), "{err}");
         let verdicts = crate::engine::layout_fit::check_slide_layouts(&deck_path, &source, 0).unwrap().unwrap();
         let fitting: Vec<&str> = verdicts
@@ -2645,7 +2645,7 @@ Start writing your slides here.\n";
         let source = format!("# Old deck\n\n![]({image})\n");
         std::fs::write(&deck_path, &source).unwrap();
 
-        let err = pipeline::render_source(&deck_path, &source).err().expect("the built-in layout has no image slot");
+        let err = pipeline::render_source(&deck_path, &source).err().expect("the built-in layout has no image slot").to_string();
         assert!(err.contains("no slot accepts image"), "{err}");
     }
 

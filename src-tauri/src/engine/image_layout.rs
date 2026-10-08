@@ -363,7 +363,7 @@ pub(crate) mod tests {
         let with_image = format!("# Cover\n\nIntro.\n\n![](img/photo.png)\n\n---\n\n{others}");
         let (dir, deck_path) = deck(&[], &[], &with_image);
         let before = render_source(&deck_path, &without_image).unwrap();
-        let err = render_source(&deck_path, &with_image).err().unwrap();
+        let err = render_source(&deck_path, &with_image).err().unwrap().to_string();
         assert!(err.contains("no slot accepts image"), "{err}");
 
         let written = add_image_layout(&deck_path, &with_image, 0).unwrap();
@@ -413,7 +413,7 @@ pub(crate) mod tests {
             let before = render_source(&example, &std::fs::read_to_string(&example).unwrap()).unwrap();
             let (_dir, deck_path, image_slide) = example_with_image_slide(name);
             let source = std::fs::read_to_string(&deck_path).unwrap();
-            let err = render_source(&deck_path, &source).err().unwrap();
+            let err = render_source(&deck_path, &source).err().unwrap().to_string();
             assert!(err.contains("no slot accepts image in layout '"), "{name}: {err}");
             // The shape `domain/imageSlot.ts`'s `parseImageSlotError` reads
             // the slide's position from.
