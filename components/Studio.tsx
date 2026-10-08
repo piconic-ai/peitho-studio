@@ -2307,11 +2307,17 @@ export function Studio() {
       // the open one whenever its draft is in `nextSource` — a save of it
       // (`expectedDraft`), or any other change built from
       // `currentSlideTexts`, which carries the open slide's typing — at
-      // the row `cmd` leaves it on.
-      const known = cmd ? brokenSlidesAfterCommand(render.brokenSlides(), cmd) : render.brokenSlides()
+      // the row `cmd` leaves it on. Typed text can re-split the deck (a
+      // `---` line): without a `cmd`, the known slides follow the split
+      // (`brokenSlidesAfterEdit`); with one, the row `cmd` leaves them on
+      // is taken as is — a re-split carried by a structural change leaves
+      // them unknown, and the save blocked, the safe side.
       const dirtyIndex = before.kind === 'editing' && (expectedDraft !== undefined || editor.isDirty()) ? before.index : null
       const editedIndex = dirtyIndex !== null && cmd ? indexAfterCommand(dirtyIndex, cmd) : dirtyIndex
       const slideCount = splitSlides(nextSource).length
+      const known = cmd
+        ? brokenSlidesAfterCommand(render.brokenSlides(), cmd)
+        : brokenSlidesAfterEdit(render.brokenSlides(), dirtyIndex, splitSlides(render.renderedSource()).length, slideCount)
       const result = await renderIsolating(nextSource, error => saveDecision(error, known, editedIndex, slideCount) === 'isolate')
       if (result.kind === 'failed') throw new RenderFailure(result.error)
       render.applyRenderPayload(result.payload, nextSource, result.broken)

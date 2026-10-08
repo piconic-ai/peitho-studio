@@ -313,3 +313,19 @@ test('Given the opening render is still in flight, when typing is taken back to 
   await expect(page.locator('[data-slide-row="1"]').locator(ERROR_BADGE)).toBeVisible()
 })
 
+test('Given a keyless slide 3 is isolated, when a `---` typed into slide 1 splits it in two, then the save goes through and the ERROR row follows slide 3 down', async ({ page }) => {
+  const deck = await open(page, brokenDeck({ source: '# One\n\n---\n\n# Two\n\n---\n\n# Three\n\nBROKEN\n' }))
+  await expect(page.locator('[data-slide-row="2"]').locator(ERROR_BADGE)).toBeVisible()
+  await page.locator('[data-slide-row="0"]').click()
+  await expect.poll(() => editorText(page)).toBe('# One')
+
+  await fillEditor(page, '# One\n\n---\n\n# One and a half')
+
+  await expect.poll(() => deck.source).toContain('# One and a half')
+  expect(deck.source).not.toContain('draft')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(4)
+  await expect(page.locator('[data-slide-row="3"]').locator(ERROR_BADGE)).toBeVisible()
+  await expect(page.locator(ERROR_BADGE)).toHaveCount(1)
+  await expect(page.locator(THUMBNAIL_CANVAS)).toHaveCount(3)
+})
+
