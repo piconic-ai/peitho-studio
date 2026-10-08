@@ -374,3 +374,52 @@ describe('outcome', () => {
     })
   })
 })
+
+describe('brokenSlides', () => {
+  const error = { kind: 'Arity', line: 8, originFile: null, message: 'm', help: 'h', headline: 'slide 2, line 8: m', slide: { number: 2, key: null } }
+
+  test('spec: Given no render yet, Then no slide is isolated', () => {
+    createRoot(() => {
+      expect(createRenderStore().brokenSlides().size).toBe(0)
+    })
+  })
+
+  test('spec: Given a render that isolated slide 2, Then the store names it with its error, alongside the deck as written', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.applyRenderPayload(payload(), '# One\n\n---\n\n# Two\n\nBROKEN\n', new Map([[1, error]]))
+      expect([...store.brokenSlides().entries()]).toEqual([[1, error]])
+      expect(store.renderedSource()).toBe('# One\n\n---\n\n# Two\n\nBROKEN\n')
+      expect(store.outcome()).toEqual({ kind: 'rendered' })
+    })
+  })
+
+  test('spec: Given the slide was fixed and the next render isolated nothing, Then no slide is isolated any more', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.applyRenderPayload(payload(), 'broken', new Map([[1, error]]))
+      store.applyRenderPayload(payload(), 'fixed')
+      expect(store.brokenSlides().size).toBe(0)
+    })
+  })
+
+  test('spec: Given the disk source then stopped building altogether (markRenderFailed), Then the last render\'s isolated slides are kept with it', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.applyRenderPayload(payload(), 'broken', new Map([[1, error]]))
+      store.markRenderFailed({ ...error, slide: null })
+      expect(store.brokenSlides().size).toBe(1)
+    })
+  })
+
+  test('adversarial: renders that isolate nothing never notify a reader of brokenSlides', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      let runs = 0
+      createEffect(() => { store.brokenSlides(); runs++ })
+      store.applyRenderPayload(payload(), 'a')
+      store.applyRenderPayload(payload(), 'b')
+      expect(runs).toBe(1)
+    })
+  })
+})
