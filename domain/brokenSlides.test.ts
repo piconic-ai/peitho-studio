@@ -118,6 +118,11 @@ describe('withSlidesDrafted', () => {
     expect(drafted(DECK, [-1])).toBe(DECK)
   })
 
+  test('adversarial: a slide whose PageComment is empty (`<!-- {} -->`) has it rewritten, not a second one added — two PageComments are a parse error to peitho-core', () => {
+    const source = '# One\n\n---\n\n<!-- {} -->\n# Two\n'
+    expect(drafted(source, [1])).toBe('# One\n\n---\n\n<!-- {"draft":true} -->\n# Two\n')
+  })
+
   test('adversarial: a slide whose PageComment is malformed gets a fresh comment rather than a crash', () => {
     const source = '# One\n\n---\n\n<!-- {not json} -->\n# Two\n'
     const attempt = drafted(source, [1]) ?? ''

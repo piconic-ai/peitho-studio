@@ -10,7 +10,7 @@
 import { type RenderErrorPayload, brokenSlideIndex } from './render'
 import { type PageConfig, serializePageConfig } from './pageConfig'
 import { type SlideCommand, indexAfterCommand } from './slideCommands'
-import { extractPageComment, splitSlides, sumSectionTimesMs, updateFrontmatterTime, updatePageComment } from './slides'
+import { extractPageComment, findPageComment, splitSlides, sumSectionTimesMs, updateFrontmatterTime, updatePageComment } from './slides'
 import { readFrontmatterKey } from './frontmatter'
 import { mapEditAnnotations } from './slideFragment'
 
@@ -174,8 +174,12 @@ export function restoreEditAnnotations(fragments: Readonly<Record<string, string
 
 const DRAFT_MARK: Partial<PageConfig> = { draft: true, skip: undefined, page_number: undefined, section: undefined, time: undefined }
 
+/** `text` with the draft mark: in its PageComment when it has one (even
+ * an empty `<!-- {} -->` — a second comment is a parse error to
+ * peitho-core, which would make the slide unisolatable), else in a new
+ * one. */
 function markedDraft(text: string, config: PageConfig): string {
-  if (Object.keys(config).length > 0) return updatePageComment(text, DRAFT_MARK)
+  if (findPageComment(text) !== null) return updatePageComment(text, DRAFT_MARK)
   const comment = `<!-- ${serializePageConfig({ draft: true })} -->`
   return text.startsWith('\n') ? `${comment}${text}` : `${comment}\n${text}`
 }
