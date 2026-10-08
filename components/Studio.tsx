@@ -174,12 +174,12 @@ export function Studio() {
       // A deck peitho-core refused opens all the same (see `open_deck` in
       // peitho.rs): the editor works from the source alone — every row a
       // placeholder (`slideEntries`) — with the refusal in the error bar
-      // and the preview pane, and the slide it names selected, until a
-      // fixed source renders.
+      // (`shownErrorMessage`, from `render.outcome()`) and the preview
+      // pane, and the slide it names selected, until a fixed source
+      // renders.
       await refreshSource(false, info.render.kind === 'rendered' ? info.render : undefined)
       if (info.render.kind === 'failed') {
         render.markRenderFailed(info.render.error)
-        setErrorMessage(renderFailureMessage(info.render.error))
         const broken = brokenSlideIndex(info.render.error, editor.slideRanges().length)
         if (broken !== null) await selectSlide(broken)
       }
@@ -525,7 +525,8 @@ export function Studio() {
       setStatusMessage({ kind: 'saved' })
       return true
     } catch (err) {
-      setErrorMessage(String(err))
+      if (err instanceof RenderFailure) showBuildError(err.message)
+      else setErrorMessage(String(err))
       return false
     } finally {
       setSourceSavesInFlight(n => n - 1)
@@ -1093,6 +1094,11 @@ export function Studio() {
     const outcome = render.outcome()
     return outcome.kind === 'failed' ? renderFailureMessage(outcome.error) : null
   })
+  // The error bar: a transient error (`errorMessage`, cleared on its
+  // timer) in front of the deck's refusal, which comes back once that
+  // clears — so neither is lost to the other. The refusal is never put in
+  // `errorMessage` itself: it lasts as long as `render.outcome()` says so.
+  const shownErrorMessage = createMemo<string | null>(() => errorMessage() ?? buildError())
   // The preview's header (and the phone shape menu in it) is hidden while no
   // slide is selected — a draft placeholder or no slide at all — so an open
   // menu goes with it instead of reappearing already open on the next
@@ -1266,7 +1272,7 @@ export function Studio() {
   // `domain/imageSlot.ts`), whichever path the failing build came from — a
   // draft render or a save. Each such error asks which layouts that slide
   // fits; a slower answer for an earlier error is dropped.
-  const imageSlotError = createMemo(() => parseImageSlotError(errorMessage(), editor.slideRanges().length))
+  const imageSlotError = createMemo(() => parseImageSlotError(shownErrorMessage(), editor.slideRanges().length))
   const [imageSlotFix, setImageSlotFix] = createSignal<ImageSlotFix>({ kind: 'none' })
   const shownFix = createMemo(() => shownImageSlotFix(imageSlotError(), imageSlotFix()))
   let imageSlotFixRequest = 0
@@ -1342,17 +1348,28 @@ export function Studio() {
   // still unread.
   // Also skipped while the error bar offers a fix: the error stays until
   // it's acted on or goes away by itself (the next successful render).
-  // And skipped while the deck on disk doesn't build (`render.outcome()`):
-  // that error is the one thing to act on, and it clears itself the
-  // moment a render goes through (`renderPreview`/`commitChange`).
+  // And skipped for a build error of the text being edited while the deck
+  // on disk doesn't build either (`render.outcome()`): that error is what
+  // is left to fix, and it goes by itself the moment a render goes through
+  // (`renderPreview`/`commitChange`). Only that one — any other error
+  // shown meanwhile (a failed present, the clipboard) clears as usual, and
+  // the deck's own refusal comes back behind it (`shownErrorMessage`).
   createEffect(() => {
-    if (errorMessage() === null || deck.newDeckModalOpen() || shownFix().kind !== 'none' || render.outcome().kind === 'failed') return
+    if (errorMessage() === null || deck.newDeckModalOpen() || shownFix().kind !== 'none') return
+    if (render.outcome().kind === 'failed' && errorMessage() === shownBuildError) return
     const timer = window.setTimeout(() => setErrorMessage(null), 6000)
     return () => window.clearTimeout(timer)
   })
+  // The last build error shown for the text being edited (a draft that
+  // doesn't build, a save refused for it) — see the timer above.
+  let shownBuildError: string | null = null
+  function showBuildError(message: string): void {
+    shownBuildError = message
+    setErrorMessage(message)
+  }
 
   async function copyErrorMessage(): Promise<void> {
-    const message = errorMessage()
+    const message = shownErrorMessage()
     if (message === null) return
     await navigator.clipboard.writeText(message)
     setErrorMessageCopied(true)
@@ -1381,8 +1398,17 @@ export function Studio() {
       // Keep whatever last rendered successfully on screen; just surface
       // the build error (e.g. a mid-edit unclosed code fence) — a draft
       // that doesn't build yet shouldn't blank the preview.
-      setErrorMessage(String(err))
-      if (persisted && err instanceof RenderFailure) render.markRenderFailed(err.error)
+      if (persisted && err instanceof RenderFailure) {
+        // The deck on disk doesn't build: `render.outcome()` carries its
+        // error (the error bar and the preview pane show it from there),
+        // and an earlier draft's error — about text that is gone — goes.
+        render.markRenderFailed(err.error)
+        setErrorMessage(null)
+      } else if (err instanceof RenderFailure) {
+        showBuildError(err.message)
+      } else {
+        setErrorMessage(String(err))
+      }
     }
   }
 
@@ -2200,7 +2226,8 @@ export function Studio() {
       saved = true
       return true
     } catch (err) {
-      setErrorMessage(String(err))
+      if (err instanceof RenderFailure) showBuildError(err.message)
+      else setErrorMessage(String(err))
       return false
     } finally {
       finishSave(saved)
@@ -4382,7 +4409,7 @@ export function Studio() {
 
       <StatusBar
         language={settings.language()}
-        errorMessage={errorMessage()}
+        errorMessage={shownErrorMessage()}
         errorMessageCopied={errorMessageCopied()}
         imageSlotFix={shownFix().kind}
         imageLayoutAdding={ui.imageLayoutAdding()}

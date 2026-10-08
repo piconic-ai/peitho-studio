@@ -336,3 +336,20 @@ test('Given a broken deck is open, when the Recent Decks list is read, then the 
   expect(invoked).toContain('open_deck')
   expect(invoked).toContain('read_deck_source')
 })
+
+test('Given a broken deck is open, when an unrelated error shows (a failed present), then it clears on the usual timer and the deck\'s own error is back', async ({ page }) => {
+  await openBroken(page, brokenDeck({
+    commandError: cmd => (cmd === 'present_deck' ? 'simulated present_deck failure' : null),
+  }))
+  const errorBar = page.locator(ERROR_BAR)
+  await expect(errorBar).toContainText(SLIDE_TWO_ERROR.headline)
+
+  await page.getByRole('button', { name: 'Present', exact: true }).click()
+  await expect(errorBar).toContainText('simulated present_deck failure')
+  await expect(errorBar).not.toContainText(SLIDE_TWO_ERROR.headline)
+
+  // Only the deck's refusal is kept past the timer: the transient error
+  // goes, and the refusal comes back behind it rather than being lost.
+  await expect(errorBar).toContainText(SLIDE_TWO_ERROR.headline, { timeout: 8_000 })
+  await expect(errorBar).not.toContainText('simulated present_deck failure')
+})
