@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: ディスク上のデッキがビルドできないとき、critで待っているエージェントにそのエラーを自動でコメントして直させる
 tags: [agent, crit, error-handling]
 ---
@@ -86,6 +86,47 @@ review-comment-ui.md`で作った往復(Studioがcritにコメント登録→
   (`todo/archive/crit-review-bridge.md`の落とし穴)。本件はIDを追わない
   ので影響なしのはず。
 
+実装時に分かったこと(前段`todo/isolate-broken-slides.md`の実装に合わせて
+方針から変えた点):
+
+- **エラーは1件ではなく一覧**: 前段の隔離で、1回の「ディスクの描画」が
+  複数の壊れたスライド(`render.brokenSlides()`、それぞれにエラー)を
+  返す。デッキ全体が拒まれた場合(`render.outcome().kind === 'failed'`)
+  は1件。`diskBuildOf(outcome, brokenSlides, renderedSource)`がこの2つを
+  「ディスクのビルド結果」`{ok} | {failed, errors[], source}`にまとめ、
+  コメントはエラー1件につき1つ。トリガーは`runOpen`/
+  `handleExternalChange`への配線ではなく、`renderStore`の`outcome`と
+  `brokenSlides`を読む`createEffect`(保存で同じスライドを隔離し直しても
+  identityの列が変わらなければ何も起きない)。
+- **「同じエラー」の判定はheadlineではなく`kind`+`message`+スライドの
+  キー(なければ番号)+`originFile`**(`buildErrorIdentity`)。headlineは
+  行番号を含むので、エージェントがスライド2を直すとスライド4のエラーの
+  行がずれ、同じエラーを送り直してループになる。送信済みのidentityは
+  `sent.reported`に持ち、次の失敗ではそこに無いものだけ送る(ディスクが
+  一度ビルドできたら忘れる)。
+- **`RenderOutcomeState`は`domain/render.ts`へ移し、`failed`に失敗した
+  ソース`source`を持たせた**(行番号が数えるテキストを、エラーと一緒に
+  持たないとquoteが取れない)。`markRenderFailed(error, source)`。
+- **`review.reset()`は`runOpen`の先頭に移した**: 以前は`opened`の後だった
+  ので、開いた時の`markRenderFailed`で記録した報告状態を直後のresetが
+  消していた。
+- **`kind: 'Other'`のエラー(レイアウトHTML、IO)は送らない**
+  (`isReportable`)。それだけのときは「壊れているが送るものなし」で、
+  `sent`も`idle`も崩さない。
+- **送信中の二重送信**は`review.busy()`で防ぐ(本件の送信も`'sending'`に
+  する — パネルの「送信中」表示とSendボタンの無効化がそのまま効く)。
+  `agentWaiting`と`busy`を読むeffectが「待っている & 送信中でない」に
+  なるたび`agent-waiting`をdispatchするので、ユーザーのSendや本件の送信が
+  終わった時点で待ちのエラーが自動で流れる。
+- `[Build error]`ラベルはパネルで`splitCommentLabel`がtargetとして出す
+  (`domain/reviewPanel.ts`)。ピンは`quote`なしの行コメント扱いで
+  スライドの隅に付く(`pinOfQuote`、`slideIndexOfLine`で該当スライドに
+  紐づく)。
+- 送信に使うソースは`render.renderedSource()`(隔離した描画と対になる
+  書かれたままのソース)または`outcome.source`で、`editor.fullSource()`
+  ではない(`commitChange`は`applyRenderPayload`の後、ディスク書き込みを
+  待ってから`fullSource`を更新するため、その隙間に読むとずれる)。
+
 ## 方針
 
 1. `domain/buildErrorReport.ts`(新規、純粋)にADTと遷移表:
@@ -149,8 +190,8 @@ review-comment-ui.md`で作った往復(Studioがcritにコメント登録→
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] `bun run test:e2e` グリーン(新規specを含む)
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] `bun run test:e2e` グリーン(新規specを含む)
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
 - [ ] **設計判断**: 自動送信でユーザーの未送信コメントを巻き込まない
@@ -169,3 +210,22 @@ review-comment-ui.md`で作った往復(Studioがcritにコメント登録→
   `NewLayoutComment`(`FileLines`)でそのファイルに付ける。
 - `handleExternalChange`の`window.confirm`依存(CLAUDE.mdの落とし穴)を
   アプリ内UIに置き換える — 本件とは別。
+- タイプ中のドラフトが描画に通ると(隔離なしの1回描画が成功すると)、
+  前段の`applyRenderPayload`が`brokenSlides`を空にするので、本件は
+  それを`disk-render-ok`と見なす(600ms後の自動保存でディスクも直る
+  前提)。保存が通らず壊れたままなら次の失敗で同じエラーを送り直す。
+  ドラフトの成功と保存の成功を区別するなら、`renderStore`に「ディスクの
+  描画か」を持たせる必要がある。
+- 送信失敗後の再試行は「次のイベント」(ディスクの変更、エージェントの
+  次の巡)任せ。タイマーでの再試行は入れていない。
+- 同じ`kind`+`message`のエラーがキーのないスライドで位置を変えたとき
+  (前にスライドを挿入した)は別のエラーとして送り直す。キーを付ければ
+  位置に依らない。
+- ステータスバーの文言は件数を出さない(「ビルドエラーをエージェントに
+  送りました。」)。複数件でも同じ。
+- Rust側の`crit_add_comments`は、同じ行・本文・quote・authorの未解決
+  コメントが既にセッションにあれば送らない(`unsent_comments`、送信失敗の
+  再試行用)。「一度直ってまた同じ壊れ方をした」とき、前のコメントが
+  未解決のまま残っていればコメントは増えず`finish`だけになる(critは
+  `finish`ごとに未解決コメントを全部エージェントに渡すので、届きはする)。
+  モックe2eのfakeCritはこの重複排除をしないので、そこでは2件になる。
