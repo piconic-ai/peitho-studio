@@ -26,8 +26,11 @@ tags: [editor, error-handling, slide-list]
   - スライドに紐づかないエラー(frontmatter、include、「全スライドが
     draft」、レイアウトファイル)。これらは`todo/open-broken-deck.md`の
     「描画なしで開く」状態のまま。
-  - タイプ中のドラフト(`renderPreview`経由の失敗)での隔離。今まで通り、
-    最後に成功した描画を残してエラーバーだけ出す。
+  - タイプ中のドラフト(`renderPreview`経由の失敗)で**新たに**スライドを
+    隔離すること。ドラフトは前回の描画が隔離したスライドを除いた形で1回
+    だけ描画し(`startIsolation`の`known`)、それでも失敗すれば今まで通り
+    最後に成功した描画を残してエラーバーだけ出す。隔離の判断は保存
+    (`commitChange`)の側でだけ行う。
   - エラーの自動修正、エージェントへの通知
     (`todo/auto-report-build-error.md`)。
 - **受け入れ条件**:
@@ -102,7 +105,18 @@ tags: [editor, error-handling, slide-list]
   effect)から要求されるので、in-flightの共有と「ビルドできないと分かった
   ソースは変わるまで再描画しない」(`persistedFailedSource`)で、壊れた
   スライド1枚の open が`render_draft` 2回に収まるようにした(e2eの
-  non-functionalテストで固定)。
+  non-functionalテストで固定)。共有するのは「まだ最新の描画要求である」
+  間だけ: ドラフトの描画に追い越されたin-flightは世代違いで捨てられる
+  ので、保存済みテキストに戻したときは描画し直す(レビュー指摘)。
+- レイアウトファイルの変更後の再描画(`renderAfterLayoutChange`)は、
+  タイプ中でなければpersisted扱い(隔離をやり直すので、レイアウトの修正で
+  直ったスライドのバッジは消える)、タイプ中なら既知の壊れたスライドを
+  除いたドラフト描画。古いレイアウトで読んだin-flightの描画は世代を進めて
+  捨てる。
+- デッキ全体のソースエディタの保存(`commitSource`)は、エラーの指す
+  スライドが既知の壊れたスライドと**本文が一字一句同じ**ときだけ隔離する
+  (`sourceSaveDecision`)。全文編集では位置が自由に動くので位置やキーでは
+  判断しない。
 
 ## 方針
 
@@ -187,21 +201,22 @@ tags: [editor, error-handling, slide-list]
 - 隔離中のスライドをプレビューに「最後に成功したときの描画」で出す案
   (サムネイルは`lastRenderedKey`の仕組みで最後の描画が残る。プレビュー欄
   は選択中の壊れたスライドのエラーを出す実装にした — 描画は出さない)。
-- **タイプ中のドラフトの隔離**(本ファイルの「やらないこと」): 壊れた
-  スライドが残っている間、別スライドをタイプしても`renderPreview`(draft)
-  は既知の壊れたスライドで失敗し、プレビューは保存(600msの自動保存→
-  `commitChange`が隔離する)まで更新されない。既知の`brokenSlides`を
-  ドラフトにも適用するだけなら再試行なしの1回描画で済むので、次の改善
-  候補として大きい。
+- ~~**タイプ中のドラフトの隔離**~~(対応済み): ドラフトは既知の
+  `brokenSlides`を除いた形で1回描画する(`draftSeed`→`startIsolation`の
+  `known`)。編集中のスライド自身は除かないので、直った瞬間にプレビューに
+  出てバッジも消える。タイプで`---`を打って分割がずれても
+  `brokenSlidesAfterEdit`で既知の位置を追従する。
 - 壊れたスライドが残っている間、`checkSlideLayouts`/`addImageLayout`/
   `createLayout`などデッキ全体のソースをエンジンに渡す操作は、
   `editor.fullSource()`(壊れたまま)を渡すので失敗しうる(エラーバーに
   出るだけで壊れはしない)。描画に使った`Isolation.attempt`相当を渡す
-  形にすれば通る。
-- `commitChange`の既知判定は位置(`brokenSlidesAfterCommand`で構造変更を
-  追従)とpeitho-coreが報告するキー(導出キー含む)で行う。キーのない
-  スライドのタイトルを変えつつ別スライドの保存で位置もずれる、という
-  重なりでは未知扱い→保存ブロックになる(安全側)。
+  形にすれば通る。レイアウト変更**後の再描画**は対応済み
+  (`renderAfterLayoutChange`、背景の項を参照)。
+- `commitChange`の既知判定は位置(`brokenSlidesAfterCommand`で構造変更を、
+  `brokenSlidesAfterEdit`でタイプによる再分割を追従)とpeitho-coreが報告
+  するキー(導出キー含む)で行う。構造変更(`cmd`あり)に開いている
+  スライドのタイプが同乗し、そのタイプが再分割も起こす、という重なりでは
+  未知扱い→保存ブロックになる(安全側)。
 - `todo/open-broken-deck.md`の「先送り事項」にある`existingSlideKeys()`
   (manifestから鍵を集める)は、隔離中のスライドの鍵がmanifestに無いため
   New Slideが既存の鍵と衝突する鍵を選びうる点で本件にも当てはまる
