@@ -226,9 +226,11 @@ tags: [engine, rust-command, editor, error-handling]
 - デッキ全体のソース編集(`domain/sourceEditing.ts`、ビルドできない間だけ
   エディタ欄に出る「デッキのソースを編集」)はレビュー指摘(frontmatterの
   未知キー・重複キーはスライド本文に出てこず直せない)を受けて足したもの。
-  右クリックメニュー(`openEditorMenu`はbody/note/layoutのみ)と、未保存の
-  ドラフトを抱えたままのウィンドウクローズ確認(`report_layout_draft`
-  相当)は未対応。ビルドが通ったデッキでも常時使えるようにするかも未決。
+  右クリックメニュー(`openEditorMenu`はbody/note/layoutのみ)は未対応。
+  未保存のドラフトを抱えたままのウィンドウクローズ確認は、Pullfrogの指摘を
+  受けて対応済み(`reportLayoutDraft`に`isSourceDirty`/保存中を報告し、
+  `closeAfterLayoutFlush`が`flushSourceEditor`を先に走らせる)。ビルドが
+  通ったデッキでも常時使えるようにするかは未決。
 - 壊れたデッキを開いた直後、まだ一度も描画が通っていない間は
   `render.assetBaseUrl()`がnullのため、レビュー(コメント)パネルとその
   レールのトグルが隠れる。描画が通れば出る。コメント対象の描画がないので
