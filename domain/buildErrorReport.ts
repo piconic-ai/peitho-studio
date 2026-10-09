@@ -90,6 +90,11 @@ export type BuildErrorReportEvent =
   /** The send failed: its errors are kept, and retried on the deck's next
    * render on disk or the agent's next round — never at once. */
   | { type: 'send-failed' }
+  /** The user asked for the deck's errors to go to the agent (the error
+   * bar's button, todo/send-build-error-from-error-bar.md): these are the
+   * disk's errors now, counting lines into `source`, to send whether or
+   * not they were sent before. */
+  | { type: 'report-requested'; errors: readonly RenderErrorPayload[]; source: string }
 
 export interface BuildErrorReportDecision {
   next: BuildErrorReport
@@ -162,6 +167,18 @@ export function decideBuildErrorReport(state: BuildErrorReport, event: BuildErro
       // render on disk (`disk-render-failed`, with the errors as they are
       // then) or the agent's next round (`agent-arrived`) sends them.
       return { next: state.kind === 'waiting-for-agent' ? { ...state, kind: 'send-failed' } : state }
+    case 'report-requested': {
+      // Asked for by name: what was sent before goes again, so `reported`
+      // starts over — one send per ask, never one per error. Nothing to
+      // send (the deck builds, or only `Other` failures) leaves the state
+      // alone, and a send already on its way (`agentReady` false while
+      // `busy`) is the ask's send: the errors wait behind it, which is
+      // what the user asked for, not a second copy.
+      const errors = unreported(event.errors, [])
+      if (errors.length === 0) return { next: state }
+      const next: BuildErrorReport = { kind: 'waiting-for-agent', errors, source: event.source, reported: [] }
+      return agentReady ? { next, effect: { kind: 'send', errors, source: event.source } } : { next }
+    }
     default: {
       const _exhaustive: never = event
       throw new Error(`Unhandled BuildErrorReportEvent: ${JSON.stringify(_exhaustive)}`)
