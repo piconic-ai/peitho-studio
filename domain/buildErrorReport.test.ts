@@ -268,6 +268,57 @@ describe('decideBuildErrorReport', () => {
   })
 })
 
+describe('decideBuildErrorReport: the user asks for the errors to go', () => {
+  const requested = (...errors: RenderErrorPayload[]): BuildErrorReportEvent => ({ type: 'report-requested', errors, source: SOURCE })
+
+  test('spec: Given an agent waiting, When the user asks, Then the disk\'s errors are sent at once, with nothing held as reported', () => {
+    expect(decideBuildErrorReport(idle, requested(SLIDE_TWO), true)).toEqual({
+      next: { kind: 'waiting-for-agent', errors: [SLIDE_TWO], source: SOURCE, reported: [] },
+      effect: { kind: 'send', errors: [SLIDE_TWO], source: SOURCE },
+    })
+  })
+
+  test('spec: Given an error sent already, When the user asks, Then it is sent again — the ask overrides what was reported', () => {
+    const sent: BuildErrorReport = { kind: 'sent', reported: [id(SLIDE_TWO)] }
+    expect(decideBuildErrorReport(sent, requested(SLIDE_TWO), true)).toEqual({
+      next: { kind: 'waiting-for-agent', errors: [SLIDE_TWO], source: SOURCE, reported: [] },
+      effect: { kind: 'send', errors: [SLIDE_TWO], source: SOURCE },
+    })
+  })
+
+  test('spec: Given no agent waiting, When the user asks, Then the errors wait for one, and go when it comes', () => {
+    const decision = decideBuildErrorReport(idle, requested(SLIDE_TWO, SLIDE_FOUR), false)
+    expect(decision).toEqual({ next: { kind: 'waiting-for-agent', errors: [SLIDE_TWO, SLIDE_FOUR], source: SOURCE, reported: [] } })
+    expect(decideBuildErrorReport(decision.next, { type: 'agent-waiting' }, true)).toEqual({
+      next: decision.next,
+      effect: { kind: 'send', errors: [SLIDE_TWO, SLIDE_FOUR], source: SOURCE },
+    })
+  })
+
+  test('spec: Given the ask was sent, When the deck renders on disk with the same error still there, Then it is not sent a second time', () => {
+    const asked = decideBuildErrorReport({ kind: 'sent', reported: [id(SLIDE_TWO)] }, requested(SLIDE_TWO), true).next
+    const sent = decideBuildErrorReport(asked, { type: 'sent', identities: [id(SLIDE_TWO)] }, false).next
+    expect(sent).toEqual({ kind: 'sent', reported: [id(SLIDE_TWO)] })
+    expect(decideBuildErrorReport(sent, failed(SLIDE_TWO), true)).toEqual({ next: sent })
+  })
+
+  test('adversarial: Given nothing to send (no errors, or only an Other failure already filtered out), When the user asks, Then the state is left alone', () => {
+    const sent: BuildErrorReport = { kind: 'sent', reported: [id(SLIDE_TWO)] }
+    expect(decideBuildErrorReport(idle, requested(), true)).toEqual({ next: idle })
+    expect(decideBuildErrorReport(sent, requested(), true)).toEqual({ next: sent })
+  })
+
+  test('adversarial: Given a failed send holding an error, When the user asks for it, Then it goes now (or waits as waiting-for-agent, not send-failed)', () => {
+    const held: BuildErrorReport = { kind: 'send-failed', errors: [SLIDE_TWO], source: SOURCE, reported: [] }
+    expect(decideBuildErrorReport(held, requested(SLIDE_TWO), true).effect).toEqual({ kind: 'send', errors: [SLIDE_TWO], source: SOURCE })
+    expect(decideBuildErrorReport(held, requested(SLIDE_TWO), false).next.kind).toBe('waiting-for-agent')
+  })
+
+  test('adversarial: Given the same error twice in the ask, Then it is sent once', () => {
+    expect(decideBuildErrorReport(idle, requested(SLIDE_TWO, SLIDE_TWO), true).effect).toEqual({ kind: 'send', errors: [SLIDE_TWO], source: SOURCE })
+  })
+})
+
 describe('buildErrorLine', () => {
   test('spec: Given an error on a line of the deck, Then the comment goes on that line', () => {
     expect(buildErrorLine(SLIDE_TWO, SOURCE)).toBe(8)

@@ -63,7 +63,7 @@ test('Given an agent waiting, when a deck with a broken slide is opened, then it
   await expect.poll(() => methods(crit)).toContain('finish')
   expect(sentComments(crit)).toEqual([SLIDE_TWO_COMMENT])
   expect(methods(crit).indexOf('addComments')).toBeLessThan(methods(crit).indexOf('finish'))
-  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the agent.')
+  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the AI.')
 
   // The comment is a thread in the panel, on the broken slide, with
   // nothing left unsent.
@@ -108,7 +108,7 @@ test('Given an agent waiting, when a deck nothing can isolate (a frontmatter err
     body: `[Build error] ${error.headline}\n= help: ${error.help}\nFix the deck so \`peitho build\` passes, then reply.`,
     author: 'Peitho Studio',
   }])
-  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the agent.')
+  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the AI.')
 })
 
 test('Given the agent is at work (not waiting), when the deck breaks, then the error waits and goes when the agent comes to wait', async ({ page }) => {
@@ -117,13 +117,13 @@ test('Given the agent is at work (not waiting), when the deck breaks, then the e
   await expect(page.locator(ERROR_BADGE)).toHaveCount(1)
   await page.waitForTimeout(300)
   expect(methods(crit)).not.toContain('addComments')
-  await expect(page.locator(STATUS)).not.toHaveText('Sent the build error to the agent.')
+  await expect(page.locator(STATUS)).not.toHaveText('Sent the build error to the AI.')
 
   crit.agentConnects()
 
   await expect.poll(() => methods(crit)).toContain('finish')
   expect(sentComments(crit)).toEqual([SLIDE_TWO_COMMENT])
-  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the agent.')
+  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the AI.')
 })
 
 test('Given the agent is at work, when its edit moves the waiting error to another line, then the error goes on that line when it comes to wait', async ({ page }) => {
@@ -256,7 +256,7 @@ test('Given crit refused the comment once, when the deck changes on disk with th
 
   await expect.poll(() => methods(crit)).toContain('finish')
   expect(sentComments(crit)).toEqual([SLIDE_TWO_COMMENT])
-  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the agent.')
+  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the AI.')
   await expect(page.locator('[data-review-error]')).toBeHidden()
 })
 
@@ -286,7 +286,7 @@ test('Given crit refused the comment once, when the agent comes to wait again af
 
   await expect.poll(() => methods(crit).filter(method => method === 'finish')).toHaveLength(2)
   expect(sentComments(crit).map(comment => comment.body)).toEqual(['[Slide 1 › heading "One"] Make it bigger', SLIDE_TWO_COMMENT.body])
-  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the agent.')
+  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the AI.')
 })
 
 test('Given crit refuses the comment, then the review panel shows the failure, the round is not finished, and nothing is retried on its own', async ({ page }) => {
@@ -299,5 +299,5 @@ test('Given crit refuses the comment, then the review panel shows the failure, t
   await page.waitForTimeout(500)
   expect(invoked.filter(cmd => cmd === 'crit_add_comments')).toHaveLength(1)
   expect(methods(crit)).not.toContain('finish')
-  await expect(page.locator(STATUS)).not.toHaveText('Sent the build error to the agent.')
+  await expect(page.locator(STATUS)).not.toHaveText('Sent the build error to the AI.')
 })

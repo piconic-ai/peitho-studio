@@ -22,6 +22,7 @@ import {
 } from '../domain/reviewComment'
 import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, connectTargetOf, showsConnectGuide } from '../domain/agentConnect'
 import { type BuildErrorReportEvent, buildErrorComment, buildErrorIdentity, decideBuildErrorReport, diskBuildOf } from '../domain/buildErrorReport'
+import { type AgentState, type ShownError, errorBarAction } from '../domain/errorBar'
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
 import { layoutThumbnailClickOf, layoutThumbnailContextClickOf, noteLayoutRowPress } from '../dom/layoutComments'
 import { keepShownPopupsInWindow } from '../dom/popupFit'
@@ -512,8 +513,8 @@ export function Studio() {
   // comes, so an older save can't land after a newer one. The chain never
   // holds a rejection: `commitSource` reports its failures as `false`,
   // and one that threw anyway must not skip every save queued after it.
-  function queueSourceSave(): Promise<boolean> {
-    const run = sourceSaveQueue.then(commitSource)
+  function queueSourceSave(handOff = false): Promise<boolean> {
+    const run = sourceSaveQueue.then(() => commitSource(handOff))
     sourceSaveQueue = run.catch(() => {})
     return run
   }
@@ -521,7 +522,7 @@ export function Studio() {
   // disk — the pending-draft report counts them (`reportLayoutDraft`), as
   // the draft reads clean meanwhile when typed back to the earlier text.
   const [sourceSavesInFlight, setSourceSavesInFlight] = createSignal(0)
-  async function commitSource(): Promise<boolean> {
+  async function commitSource(handOff = false): Promise<boolean> {
     const editing = editor.sourceEditing()
     if (editing.kind !== 'open' || !editor.isSourceDirty()) return true
     const text = editing.draft
@@ -531,14 +532,25 @@ export function Studio() {
       // Rendered without a slide already known broken that the text keeps
       // word for word (`sourceSaveDecision`): the editor's own typing is
       // never saved broken, but a slide it didn't touch doesn't hold its
-      // save back either.
+      // save back either. Except on a `handOff`: the user asked for the
+      // text to go to the agent as it is (`handOffBuildError`), so it is
+      // written whatever it builds to, the deck on disk then not building
+      // (`markRenderFailed`, as `open_deck` finds a broken deck).
       const known = render.brokenSlides()
       const from = render.renderedSource()
       const result = await renderIsolating(text, error => sourceSaveDecision(error, known, from, text) === 'isolate')
-      if (result.kind === 'failed') throw new RenderFailure(result.error)
-      render.applyRenderPayload(result.payload, text, result.broken)
+      if (result.kind === 'failed' && !handOff) throw new RenderFailure(result.error)
+      if (result.kind === 'rendered') render.applyRenderPayload(result.payload, text, result.broken)
       await deckIpc.saveDeckSource(text)
-      render.markDiskRendered(text, result.broken)
+      // The disk's render of a hand-off is the user's ask (`handOffSource`).
+      if (handOff) handOffSource = text
+      if (result.kind === 'rendered') {
+        render.markDiskRendered(text, result.broken)
+      } else {
+        // Known not to build as written: not rendered again until it changes.
+        persistedFailedSource = text
+        render.markRenderFailed(result.error, text)
+      }
       // From disk, as after an external change: the slide session, its
       // drafts and every kept position are rebuilt for the new source.
       await refreshSource(true)
@@ -1390,15 +1402,16 @@ export function Studio() {
   // still unread.
   // Also skipped while the error bar offers a fix: the error stays until
   // it's acted on or goes away by itself (the next successful render).
-  // And skipped for a build error of the text being edited while the deck
-  // on disk doesn't build either (`render.outcome()`): that error is what
-  // is left to fix, and it goes by itself the moment a render goes through
-  // (`renderPreview`/`commitChange`). Only that one — any other error
-  // shown meanwhile (a failed present, the clipboard) clears as usual, and
-  // the deck's own refusal comes back behind it (`shownErrorMessage`).
+  // And skipped for a build error of the text being edited: that error is
+  // what is left to fix, and it goes by itself the moment a render goes
+  // through (`renderPreview`/`commitChange`) — or to the agent, from the
+  // bar's own button (`handOffBuildError`). Only that one — any other
+  // error shown meanwhile (a failed present, the clipboard) clears as
+  // usual, and the deck's own refusal comes back behind it
+  // (`shownErrorMessage`).
   createEffect(() => {
     if (errorMessage() === null || deck.newDeckModalOpen() || shownFix().kind !== 'none') return
-    if (render.outcome().kind === 'failed' && errorMessage() === shownBuildError) return
+    if (errorMessage() === shownBuildError) return
     const timer = window.setTimeout(() => setErrorMessage(null), 6000)
     return () => window.clearTimeout(timer)
   })
@@ -2100,11 +2113,28 @@ export function Studio() {
   // be sent must say where the error is now. `decideBuildErrorReport`
   // tells a repeat from news (`reported`), so a render that isolates the
   // same slides again sends nothing.
+  // A render the user's own Send wrote (`handOffBuildError`) is that
+  // ask: it goes as `report-requested` — sent whether or not its errors
+  // were reported before — and never also as `disk-render-failed`. The
+  // write is known by its text (`handOffSource`, set by the save as it
+  // marks the disk), so a render of anything else that lands while the
+  // save waits on its write — an external change — is not taken for it.
+  // `handOffAsks` counts the asks raised here, for the press to tell
+  // whether its write was rendered at all.
+  let handOffSource: string | null = null
+  let handOffAsks = 0
   createEffect(() => {
-    const build = diskBuildOf(render.diskRender())
-    if (build === null) return
+    const disk = render.diskRender()
+    const build = diskBuildOf(disk)
+    if (build === null || disk.kind === 'none') return
     untrack(() => {
-      dispatchBuildErrorReport(build.kind === 'ok' ? { type: 'disk-render-ok' } : { type: 'disk-render-failed', errors: build.errors, source: build.source })
+      const requested = handOffSource !== null && disk.source === handOffSource
+      if (requested) {
+        handOffSource = null
+        handOffAsks++
+      }
+      if (build.kind === 'ok') dispatchBuildErrorReport({ type: 'disk-render-ok' })
+      else dispatchBuildErrorReport({ type: requested ? 'report-requested' : 'disk-render-failed', errors: build.errors, source: build.source })
     })
   })
   // The agent came to wait (the session poll or crit's event saw it), or
@@ -2147,6 +2177,50 @@ export function Studio() {
     }
     await refreshReview()
   }
+
+  // The error bar's button on a build error
+  // (todo/send-build-error-from-error-bar.md): the error goes to the agent
+  // — the disk's errors as they are, sent again if they were sent before
+  // (`report-requested`). Typing that doesn't build is the editor's, not
+  // the disk's, and the agent can't fix what isn't written: so it is
+  // written first, broken (`handOff` in `commitChange`/`commitSource`),
+  // and the disk's render of that write *is* the ask (`handOffSource`,
+  // read by the effect on `render.diskRender()`): one request per press,
+  // raised where the write lands, so the ask can't trail an automatic
+  // report of the same write and send it twice. Only when no render came
+  // of the press (`handOffAsks` unchanged: nothing was dirty, or the save
+  // found nothing left to write) is the ask raised here, with the disk's
+  // errors as they are. With no agent waiting, the errors wait for one,
+  // and the status bar says so.
+  async function handOffBuildError(): Promise<void> {
+    const asksBefore = handOffAsks
+    const saved = editor.sourceOpen() && editor.isSourceDirty()
+      ? await queueSourceSave(true)
+      : editor.isDirty() ? await handleSave({ handOff: true }) : true
+    handOffSource = null
+    if (!saved) return
+    if (handOffAsks === asksBefore) {
+      const build = diskBuildOf(render.diskRender())
+      if (build === null || build.kind === 'ok') return
+      dispatchBuildErrorReport({ type: 'report-requested', errors: build.errors, source: build.source })
+    }
+    if (review.report().kind === 'waiting-for-agent' && review.busy() !== 'sending') setStatusMessage({ kind: 'build-error-waiting' })
+  }
+  // What the error bar offers next to the error it shows
+  // (`domain/errorBar.ts`): a build error — the text being edited not
+  // building (`shownBuildError`), or the deck on disk (its refusal, or the
+  // slides isolated from it) — goes to the AI, or is with it already; any
+  // other error is copied.
+  const errorAction = createMemo<'copy' | 'send' | 'fixing'>(() => {
+    const transient = errorMessage()
+    const shown: ShownError | null = transient !== null
+      ? (transient === shownBuildError ? 'transient-build' : 'transient-other')
+      : (deckErrorMessage() !== null || brokenSlidesMessage() !== null ? 'deck-build' : null)
+    if (shown === null) return 'copy'
+    const session = review.session()
+    const agent: AgentState = session?.kind !== 'found' ? 'none' : session.agentWaiting ? 'waiting' : 'working'
+    return errorBarAction(shown, review.report().kind, agent)
+  })
 
   async function resolveReviewComment(id: string): Promise<void> {
     try {
@@ -2384,7 +2458,7 @@ export function Studio() {
   async function commitChange(
     nextSource: string,
     plan: SelectionPlan,
-    { expectedDraft, cmd }: { expectedDraft?: { body: string; note: string }; cmd?: SlideCommand } = {},
+    { expectedDraft, cmd, handOff = false }: { expectedDraft?: { body: string; note: string }; cmd?: SlideCommand; handOff?: boolean } = {},
   ): Promise<boolean> {
     const before = editor.editorSession()
     const finishSave = saves.begin(nextSource, expectedDraft ? 'draft' : 'structural')
@@ -2412,13 +2486,26 @@ export function Studio() {
       const known = cmd
         ? brokenSlidesAfterCommand(render.brokenSlides(), cmd)
         : brokenSlidesAfterEdit(render.brokenSlides(), dirtyIndex, splitSlides(render.renderedSource()).length, slideCount)
-      const result = await renderIsolating(nextSource, error => saveDecision(error, known, editedIndex, slideCount) === 'isolate')
-      if (result.kind === 'failed') throw new RenderFailure(result.error)
-      render.applyRenderPayload(result.payload, nextSource, result.broken)
+      // `handOff`: the user asked for their typing to go to the agent as
+      // it is (`handOffBuildError`) — the edited slide is isolated and
+      // saved broken, and what can't be isolated (an error naming no
+      // slide) is saved all the same, the deck on disk then not building
+      // (`markRenderFailed`, as an external change that breaks it).
+      const result = await renderIsolating(nextSource, error => saveDecision(error, known, editedIndex, slideCount, handOff) === 'isolate')
+      if (result.kind === 'failed' && !handOff) throw new RenderFailure(result.error)
+      if (result.kind === 'rendered') render.applyRenderPayload(result.payload, nextSource, result.broken)
       await deckIpc.saveDeckSource(nextSource)
       // Only now is the render the disk's: a write that fails leaves the
-      // file as it was, however well the draft rendered.
-      render.markDiskRendered(nextSource, result.broken)
+      // file as it was, however well the draft rendered. The disk's render
+      // of a hand-off is the user's ask (`handOffSource`).
+      if (handOff) handOffSource = nextSource
+      if (result.kind === 'rendered') {
+        render.markDiskRendered(nextSource, result.broken)
+      } else {
+        // Known not to build as written: not rendered again until it changes.
+        persistedFailedSource = nextSource
+        render.markRenderFailed(result.error, nextSource)
+      }
       editor.setFullSource(nextSource)
       const ranges = splitSlides(nextSource)
       editor.setSlideRanges(ranges)
@@ -2517,7 +2604,7 @@ export function Studio() {
     syncEditorFields({ kind: 'switch', from, to: index })
   }
 
-  async function handleSave(): Promise<boolean> {
+  async function handleSave({ handOff = false }: { handOff?: boolean } = {}): Promise<boolean> {
     await pendingSlideTextEdit
     const range = editor.selectedRange()
     const index = editor.selectedIndex()
@@ -2530,7 +2617,7 @@ export function Studio() {
     // Typed text can itself re-split the deck (a `---` line, an unclosed code
     // fence), shifting the positions every history step addresses slides by.
     const resplits = splitSlides(nextSource).length !== editor.slideRanges().length
-    const saved = await commitChange(nextSource, { kind: 'keep' }, { expectedDraft: { body, note } })
+    const saved = await commitChange(nextSource, { kind: 'keep' }, { expectedDraft: { body, note }, handOff })
     if (saved && resplits) forgetSlidePositions()
     return saved
   }
@@ -4657,10 +4744,13 @@ export function Studio() {
         language={settings.language()}
         errorMessage={shownErrorMessage()}
         errorMessageCopied={errorMessageCopied()}
+        errorAction={errorAction()}
+        sendingError={review.busy() === 'sending'}
         imageSlotFix={shownFix().kind}
         imageLayoutAdding={ui.imageLayoutAdding()}
         statusMessage={statusText(settings.messages(), statusMessage())}
         onCopyErrorMessage={() => void copyErrorMessage()}
+        onSendErrorToAi={() => void handOffBuildError()}
         onImageSlotFix={applyImageSlotFix}
       />
 

@@ -45,6 +45,13 @@ export interface Messages {
   // Status bar
   copyError: string
   errorCopied: string
+  /** The error bar's button on a build error: it goes to the AI in crit,
+   * written to disk first when it is the editor's own typing
+   * (todo/send-build-error-from-error-bar.md). */
+  sendErrorToAi: string
+  /** In the button's place once the error was sent and the AI is at
+   * work on it (`domain/errorBar.ts`). */
+  aiFixingError: string
 
   // Slide editor
   speakerNotes: string
@@ -238,6 +245,9 @@ export interface Messages {
    * waiting in crit, with nothing for the user to do
    * (`domain/buildErrorReport.ts`). */
   buildErrorReported: string
+  /** The user asked for the build error to go to the agent, and none
+   * waits in crit yet: it goes when one does. */
+  buildErrorWaitingForAi: string
   presenting: string
   presentingRehearsal: string
   externalChangeConfirm: string
@@ -302,6 +312,8 @@ const en: Messages = {
 
   copyError: 'Copy',
   errorCopied: 'Copied',
+  sendErrorToAi: 'Send to AI',
+  aiFixingError: 'AI is fixing…',
 
   speakerNotes: 'Speaker Notes',
   speakerNotesPlaceholder: 'Notes for the presenter — not shown to the audience.',
@@ -404,7 +416,7 @@ const en: Messages = {
   slideDoesNotBuild: 'This slide doesn\'t build, so it was left out of the deck\'s preview.',
   fixSlideToPreview: 'Fix it in the editor and save; its preview comes back once it builds.',
 
-  reviewComments: 'Comments for the agent',
+  reviewComments: 'Comments for the AI',
   connectAgentTitle: 'First, connect me',
   connectAgentLead: 'To get your comments, I need to be waiting for this deck\'s review.',
   connectAgentStepOpen: 'Open me in Claude Code, Codex, or another coding agent.',
@@ -416,7 +428,7 @@ const en: Messages = {
   copyCommand: 'Copy Command',
   copiedToClipboard: 'Copied',
   commentHint: 'Right-click a slide or element and choose Comment to leave feedback.',
-  commentPlaceholder: 'What should the agent change here?',
+  commentPlaceholder: 'What should the AI change here?',
   addComment: 'Add Comment',
   discardComment: 'Discard',
   editComment: 'Edit',
@@ -454,7 +466,8 @@ const en: Messages = {
   historyCleared: 'Undo history cleared — the deck changed since.',
   mergedExternalChange: 'Deck changed on disk elsewhere — merged around your unsaved edit.',
   reloadedExternalChange: 'Reloaded — the deck changed on disk.',
-  buildErrorReported: 'Sent the build error to the agent.',
+  buildErrorReported: 'Sent the build error to the AI.',
+  buildErrorWaitingForAi: 'Waiting for the AI to connect; the build error goes once it does.',
   presenting: 'Presenting…',
   presentingRehearsal: 'Presenting (rehearsal)…',
   externalChangeConfirm: 'This deck changed outside Peitho Studio (e.g. another editor). Reload it and discard your unsaved edits here?',
@@ -515,6 +528,8 @@ const ja: Messages = {
 
   copyError: 'コピー',
   errorCopied: 'コピーしました',
+  sendErrorToAi: 'AIに送る',
+  aiFixingError: 'AIが調整中…',
 
   speakerNotes: 'スピーカーノート',
   speakerNotesPlaceholder: '発表者用のメモ — 聴衆には表示されません。',
@@ -617,7 +632,7 @@ const ja: Messages = {
   slideDoesNotBuild: 'このスライドはビルドできないため、デッキのプレビューから外しています。',
   fixSlideToPreview: 'エディタで直して保存すると、ビルドが通った時点でこのスライドのプレビューが戻ります。',
 
-  reviewComments: 'エージェントへのコメント',
+  reviewComments: 'AIへのコメント',
   connectAgentTitle: 'まず、私を接続してください',
   connectAgentLead: 'コメントを受け取るには、私がこのデッキのレビューを待っている必要があります。',
   connectAgentStepOpen: 'Claude Code や Codex などで、私を開いてください。',
@@ -667,7 +682,8 @@ const ja: Messages = {
   historyCleared: 'デッキが変更されたため、取り消し履歴を消去しました。',
   mergedExternalChange: 'デッキがほかの場所で変更されました — 未保存の編集はそのまま残し、それ以外を反映しました。',
   reloadedExternalChange: 'デッキがほかの場所で変更されたため、読み込み直しました。',
-  buildErrorReported: 'ビルドエラーをエージェントに送りました。',
+  buildErrorReported: 'ビルドエラーをAIに送りました。',
+  buildErrorWaitingForAi: 'AIの接続を待っています。接続したらビルドエラーを送ります。',
   presenting: '発表中…',
   presentingRehearsal: '発表中(リハーサル)…',
   externalChangeConfirm: 'このデッキはPeitho Studioの外(ほかのエディタなど)で変更されました。読み込み直して、ここでの未保存の編集を破棄しますか?',

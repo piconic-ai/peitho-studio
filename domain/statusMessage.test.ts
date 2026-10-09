@@ -11,6 +11,7 @@ const EVERY_STATUS: StatusMessage[] = [
   { kind: 'merged-external-change' },
   { kind: 'reloaded-external-change' },
   { kind: 'build-error-reported' },
+  { kind: 'build-error-waiting' },
   { kind: 'presenting', rehearsal: false },
   { kind: 'presenting', rehearsal: true },
   { kind: 'importing-images', count: 1 },
@@ -72,8 +73,13 @@ describe('statusText', () => {
   })
 
   test('spec: Given the build errors went to the agent, when worded in each language, then the status says so', () => {
-    expect(statusText(messagesFor('en'), { kind: 'build-error-reported' })).toBe('Sent the build error to the agent.')
-    expect(statusText(messagesFor('ja'), { kind: 'build-error-reported' })).toBe('ビルドエラーをエージェントに送りました。')
+    expect(statusText(messagesFor('en'), { kind: 'build-error-reported' })).toBe('Sent the build error to the AI.')
+    expect(statusText(messagesFor('ja'), { kind: 'build-error-reported' })).toBe('ビルドエラーをAIに送りました。')
+  })
+
+  test('spec: Given the user asked for the build error to go and no agent waits, when worded in each language, then the status says it waits', () => {
+    expect(statusText(messagesFor('en'), { kind: 'build-error-waiting' })).toBe('Waiting for the AI to connect; the build error goes once it does.')
+    expect(statusText(messagesFor('ja'), { kind: 'build-error-waiting' })).toBe('AIの接続を待っています。接続したらビルドエラーを送ります。')
   })
 
   test('spec: Given nothing to report, when worded, then the status bar is empty', () => {
