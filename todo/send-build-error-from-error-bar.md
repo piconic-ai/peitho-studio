@@ -223,9 +223,13 @@ deck.mdに書いてから、#187と同じ`[Build error]`コメントを送る**
 
 - 送信の本体は方針通り#187のまま。ボタンは「書く」(`commitChange`/
   `commitSource`の`handOff`)と「重複除外を外して流す」
-  (`report-requested`)だけで、`disk-render-failed`が先に`send`を起こして
-  いれば`report-requested`は何も足さない(`busy`中は`agentReady`が
-  偽で`waiting-for-agent`に留まり、`sent`で空になる)。
+  (`report-requested`)だけ。方針4の「書いた後に`report-requested`を
+  別途流す」はPullfrogの指摘(ソースエディタの`refreshSource`がディスクを
+  読み直す間に自動送信が終わると、同じエラーを次の巡にもう一度積む)で
+  やめ、押下で書いたディスク描画そのものを`report-requested`として流す
+  (`handOffPending`を`render.diskRender()`のeffectが消費する)。何も
+  書かなかったときだけ、その場で`report-requested`を流す。
+  `read_deck_source`を遅らせる回帰e2eあり(`readDeckSourceDelayMs`)。
 - 本文エディタから保存したスライドは`replaceSlideText`の並べ方で
   行がずれる(e2eの`SOURCE`では`BROKEN`が8行目→保存後7行目)。
   コメントはディスクの行に付くので、下書き中にエラーバーが示す行と
