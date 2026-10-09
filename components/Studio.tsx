@@ -30,7 +30,9 @@ import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
 import { PanelToggle } from './PanelToggle'
 import { ReviewPanel } from './ReviewPanel'
-import { type ManifestSlide, type RenderPayload, type SectionDraft } from '../domain/render'
+import { type ManifestSlide, type RenderPayload, type SectionDraft, brokenSlideIndex, renderFailureMessage } from '../domain/render'
+import { RenderFailure } from '../ipc/renderOutcome'
+import { SOURCE_EDITING_CLOSED, openSourceEditing, slideIndexAfterSourceSave, sourceEditorOffered, sourceReadFromDisk, sourceSaved, typeInSource } from '../domain/sourceEditing'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
 import { replacementInsertion, textBetween } from '../domain/editorText'
 import { fileNameOf, partitionDroppedPaths } from '../domain/images'
@@ -169,7 +171,18 @@ export function Studio() {
       // Before any slide mounts, so none of them goes in with the wrong trust.
       setSlideScriptsTrusted(info.trusted)
       setScriptTrust(scriptTrustOnOpen(info.trusted))
-      await refreshSource(false, info.render)
+      // A deck peitho-core refused opens all the same (see `open_deck` in
+      // peitho.rs): the editor works from the source alone — every row a
+      // placeholder (`slideEntries`) — with the refusal in the error bar
+      // (`shownErrorMessage`, from `render.outcome()`) and the preview
+      // pane, and the slide it names selected, until a fixed source
+      // renders.
+      await refreshSource(false, info.render.kind === 'rendered' ? info.render : undefined)
+      if (info.render.kind === 'failed') {
+        render.markRenderFailed(info.render.error)
+        const broken = brokenSlideIndex(info.render.error, editor.slideRanges().length)
+        if (broken !== null) await selectSlide(broken)
+      }
       setStatusMessage({ kind: 'opened', deckPath: info.deckPath })
       await dispatch({ type: 'opened', deckPath: info.deckPath })
       // Only once `open`: a variant picked while still `opening` would be
@@ -448,10 +461,124 @@ export function Studio() {
 
   createEffect(() => {
     const on = settings.settings().vimMode
-    for (const view of [bodyEditor, noteEditor, layoutEditor]) {
+    for (const view of [bodyEditor, noteEditor, layoutEditor, sourceEditor]) {
       if (view) setCodeEditorVimMode(view, on)
     }
   })
+
+  // The whole-deck source editor (`domain/sourceEditing.ts`): the repair
+  // path for a deck that doesn't build because of text the slide editor
+  // never shows — the frontmatter, a page settings comment. Uncontrolled
+  // like the body, off the app's undo timeline like the layout editors
+  // (its typing undoes in the editor itself, see `onMenuHistory`), saved
+  // like them too: each pause in typing saves (`scheduleSourceAutosave`),
+  // through the same render-then-write rule as every other save
+  // (`commitSource`), so a draft that doesn't build stays in the editor
+  // with its reason in the error bar. A save that goes through rebuilds
+  // the per-slide session from disk, since a whole-source edit can move
+  // any slide.
+  let sourceEditor: ReturnType<typeof createCodeEditor> | undefined
+  function onSourceEditorHost(el: HTMLElement): void {
+    sourceEditor = createCodeEditor(el, '', {
+      ...vimEditorOptions(),
+      monospace: true,
+      spellcheck: false,
+      onChange: text => {
+        editor.setSourceEditing(editing => typeInSource(editing, text))
+        scheduleSourceAutosave()
+      },
+    })
+  }
+  let sourceAutosaveTimer: ReturnType<typeof setTimeout> | undefined
+  let sourceSaveQueue: Promise<unknown> = Promise.resolve()
+  function scheduleSourceAutosave(): void {
+    clearTimeout(sourceAutosaveTimer)
+    sourceAutosaveTimer = setTimeout(() => { void queueSourceSave() }, FILE_AUTOSAVE_DELAY_MS)
+  }
+  // Saves run one after another, each reading the draft when its turn
+  // comes, so an older save can't land after a newer one. The chain never
+  // holds a rejection: `commitSource` reports its failures as `false`,
+  // and one that threw anyway must not skip every save queued after it.
+  function queueSourceSave(): Promise<boolean> {
+    const run = sourceSaveQueue.then(commitSource)
+    sourceSaveQueue = run.catch(() => {})
+    return run
+  }
+  // How many source saves are between reading the draft and landing on
+  // disk — the pending-draft report counts them (`reportLayoutDraft`), as
+  // the draft reads clean meanwhile when typed back to the earlier text.
+  const [sourceSavesInFlight, setSourceSavesInFlight] = createSignal(0)
+  async function commitSource(): Promise<boolean> {
+    const editing = editor.sourceEditing()
+    if (editing.kind !== 'open' || !editor.isSourceDirty()) return true
+    const text = editing.draft
+    setErrorMessage(null)
+    setSourceSavesInFlight(n => n + 1)
+    try {
+      const payload = await deckIpc.renderDraft(text)
+      render.applyRenderPayload(payload, text)
+      await deckIpc.saveDeckSource(text)
+      // From disk, as after an external change: the slide session, its
+      // drafts and every kept position are rebuilt for the new source.
+      await refreshSource(true)
+      editor.setSourceEditing(current => sourceSaved(current, text))
+      setStatusMessage({ kind: 'saved' })
+      return true
+    } catch (err) {
+      if (err instanceof RenderFailure) showBuildError(err.message)
+      else setErrorMessage(String(err))
+      return false
+    } finally {
+      setSourceSavesInFlight(n => n - 1)
+    }
+  }
+  // Opens on the deck as the user sees it: the open slide's draft is
+  // saved first when it can be, and included as typed when it can't (the
+  // deck doesn't build — which is why the editor is being opened).
+  async function openSourceEditor(): Promise<void> {
+    await flushDeck()
+    const text = liveSource()
+    editor.setSourceEditing(openSourceEditing(text))
+    if (sourceEditor) {
+      resetCodeEditorText(sourceEditor, text)
+      sourceEditor.focus()
+    }
+  }
+  // Saves typing still waiting for its pause now, and whatever is typed
+  // while that save is in flight (`sourceSaved` keeps a draft that moved
+  // on dirty), until nothing is left to save. Resolves whether deck.md
+  // holds the editor's text — `false` for a draft that doesn't build,
+  // which stays in the editor with its reason shown.
+  async function flushSourceEditor(): Promise<boolean> {
+    clearTimeout(sourceAutosaveTimer)
+    // Through the queue even when the draft reads clean: a save in flight
+    // writes the text it captured, and the draft is clean against what
+    // was on disk before it — only once it lands (`sourceSaved`) does the
+    // draft show whether it still differs from disk.
+    do {
+      if (!await queueSourceSave()) return false
+    } while (editor.isSourceDirty())
+    return true
+  }
+  // Resolves whether the editor was left: only once everything typed is
+  // on disk — nothing typed is lost.
+  async function closeSourceEditor(): Promise<boolean> {
+    if (!await flushSourceEditor()) return false
+    editor.setSourceEditing(SOURCE_EDITING_CLOSED)
+    return true
+  }
+  function toggleSourceEditor(): void {
+    if (editor.sourceOpen()) void closeSourceEditor()
+    else void openSourceEditor()
+  }
+  // Disk changed outside the app: an editor with nothing to save follows
+  // it (its text replaced), one holding typing keeps the typing.
+  function syncSourceEditorFromDisk(source: string): void {
+    const before = editor.sourceEditing()
+    const after = sourceReadFromDisk(before, source)
+    editor.setSourceEditing(after)
+    if (sourceEditor && after.kind === 'open' && after.draft !== (before.kind === 'open' ? before.draft : null)) setCodeEditorText(sourceEditor, after.draft)
+  }
 
   // The layout screen's editor: the same editor as the slide body, vim mode
   // included, but off the app's undo timeline — its typing is undone in the
@@ -545,9 +672,11 @@ export function Studio() {
     return tabsBlocker(layouts.tabs()) === null
   }
   // Tells this window's close whether there's a draft to save first
-  // (`report_layout_draft`); quiet with no deck open.
+  // (`report_layout_draft`): a layout file's, or the whole-deck source
+  // editor's — typing not on disk, or a save of it still in flight
+  // (`closeAfterLayoutFlush` waits for both); quiet with no deck open.
   createEffect(() => {
-    const pending = layouts.editorDirty()
+    const pending = layouts.editorDirty() || editor.isSourceDirty() || sourceSavesInFlight() > 0
     untrack(() => { deckIpc.reportLayoutDraft(pending).catch(() => {}) })
   })
   // `flushLayoutEditor` before the editor is left — the slides screen, a
@@ -881,7 +1010,13 @@ export function Studio() {
   // comment for the exact scenario this fixes), and pairing `manifest()`
   // with anything other than the source that actually produced it is
   // exactly what corrupted a thumbnail's canvas permanently.
-  const slideEntries = createMemo(() => buildSlideList(render.renderedSource(), render.manifest()?.slides ?? []))
+  // With no render at all (a deck that opened broken — `runOpen`), there
+  // is no manifest to pair with anything: every slide of the source as the
+  // editor has it is a placeholder, which that pairing can't get wrong.
+  const slideEntries = createMemo(() => {
+    const manifest = render.manifest()
+    return manifest === null ? buildSlideList(editor.fullSource(), []) : buildSlideList(render.renderedSource(), manifest.slides)
+  })
   const sectionStarts = createMemo(() => sectionStartBySourceIndex(render.manifest()?.sections ?? [], slideEntries()))
   // The slide list's section folding (`domain/sectionCollapse.ts`): each
   // section's rows, which of them are collapsed, and from that how every
@@ -952,6 +1087,18 @@ export function Studio() {
   // what lets the preview pane (below) depend on "which slide is
   // selected" without also depending on "has its content changed".
   const selectedSlideKey = createMemo<string | null>(() => selectedSlide()?.key ?? null)
+  // peitho-core's refusal of the deck on disk, for the preview pane — as
+  // one string, so the pane isn't notified for an error object that reads
+  // the same.
+  const buildError = createMemo<string | null>(() => {
+    const outcome = render.outcome()
+    return outcome.kind === 'failed' ? renderFailureMessage(outcome.error) : null
+  })
+  // The error bar: a transient error (`errorMessage`, cleared on its
+  // timer) in front of the deck's refusal, which comes back once that
+  // clears — so neither is lost to the other. The refusal is never put in
+  // `errorMessage` itself: it lasts as long as `render.outcome()` says so.
+  const shownErrorMessage = createMemo<string | null>(() => errorMessage() ?? buildError())
   // The preview's header (and the phone shape menu in it) is hidden while no
   // slide is selected — a draft placeholder or no slide at all — so an open
   // menu goes with it instead of reappearing already open on the next
@@ -1125,7 +1272,7 @@ export function Studio() {
   // `domain/imageSlot.ts`), whichever path the failing build came from — a
   // draft render or a save. Each such error asks which layouts that slide
   // fits; a slower answer for an earlier error is dropped.
-  const imageSlotError = createMemo(() => parseImageSlotError(errorMessage(), editor.slideRanges().length))
+  const imageSlotError = createMemo(() => parseImageSlotError(shownErrorMessage(), editor.slideRanges().length))
   const [imageSlotFix, setImageSlotFix] = createSignal<ImageSlotFix>({ kind: 'none' })
   const shownFix = createMemo(() => shownImageSlotFix(imageSlotError(), imageSlotFix()))
   let imageSlotFixRequest = 0
@@ -1201,14 +1348,28 @@ export function Studio() {
   // still unread.
   // Also skipped while the error bar offers a fix: the error stays until
   // it's acted on or goes away by itself (the next successful render).
+  // And skipped for a build error of the text being edited while the deck
+  // on disk doesn't build either (`render.outcome()`): that error is what
+  // is left to fix, and it goes by itself the moment a render goes through
+  // (`renderPreview`/`commitChange`). Only that one — any other error
+  // shown meanwhile (a failed present, the clipboard) clears as usual, and
+  // the deck's own refusal comes back behind it (`shownErrorMessage`).
   createEffect(() => {
     if (errorMessage() === null || deck.newDeckModalOpen() || shownFix().kind !== 'none') return
+    if (render.outcome().kind === 'failed' && errorMessage() === shownBuildError) return
     const timer = window.setTimeout(() => setErrorMessage(null), 6000)
     return () => window.clearTimeout(timer)
   })
+  // The last build error shown for the text being edited (a draft that
+  // doesn't build, a save refused for it) — see the timer above.
+  let shownBuildError: string | null = null
+  function showBuildError(message: string): void {
+    shownBuildError = message
+    setErrorMessage(message)
+  }
 
   async function copyErrorMessage(): Promise<void> {
-    const message = errorMessage()
+    const message = shownErrorMessage()
     if (message === null) return
     await navigator.clipboard.writeText(message)
     setErrorMessageCopied(true)
@@ -1220,8 +1381,12 @@ export function Studio() {
   // older, slower-to-resolve render landing after a newer one — with
   // peitho-core embedded directly this is on the order of tens of ms, but
   // IPC calls can still resolve out of order under load.
+  // `persisted`: `content` is what deck.md holds (not a draft being typed),
+  // so its failure to build is the deck's state, not the editor's — recorded
+  // in `render.outcome()` (see `state/renderStore.ts`), which keeps the
+  // error bar from clearing itself and puts the error in the preview pane.
   let previewGeneration = 0
-  async function renderPreview(content: string): Promise<void> {
+  async function renderPreview(content: string, { persisted = false }: { persisted?: boolean } = {}): Promise<void> {
     const generation = ++previewGeneration
     try {
       const payload = await deckIpc.renderDraft(content)
@@ -1233,7 +1398,17 @@ export function Studio() {
       // Keep whatever last rendered successfully on screen; just surface
       // the build error (e.g. a mid-edit unclosed code fence) — a draft
       // that doesn't build yet shouldn't blank the preview.
-      setErrorMessage(String(err))
+      if (persisted && err instanceof RenderFailure) {
+        // The deck on disk doesn't build: `render.outcome()` carries its
+        // error (the error bar and the preview pane show it from there),
+        // and an earlier draft's error — about text that is gone — goes.
+        render.markRenderFailed(err.error)
+        setErrorMessage(null)
+      } else if (err instanceof RenderFailure) {
+        showBuildError(err.message)
+      } else {
+        setErrorMessage(String(err))
+      }
     }
   }
 
@@ -1256,7 +1431,7 @@ export function Studio() {
     if (!editor.isDirty()) {
       untrack(() => {
         const source = editor.fullSource()
-        if (source !== render.renderedSource()) void renderPreview(source)
+        if (source !== render.renderedSource()) void renderPreview(source, { persisted: true })
         // Back to what's on screen (an Undo before the typed text rendered):
         // a render still in flight is now stale and must not land.
         else previewGeneration++
@@ -2051,7 +2226,8 @@ export function Studio() {
       saved = true
       return true
     } catch (err) {
-      setErrorMessage(String(err))
+      if (err instanceof RenderFailure) showBuildError(err.message)
+      else setErrorMessage(String(err))
       return false
     } finally {
       finishSave(saved)
@@ -2083,6 +2259,20 @@ export function Studio() {
   // work, never blocking on a dialog the webview won't show.
   async function selectSlide(index: number): Promise<void> {
     if (index === editor.selectedIndex()) return
+    // Picking a slide means editing it: the whole-source editor is left
+    // first — unless its typing can't be saved yet, which keeps it open
+    // (and the selection where it was) rather than losing the typing.
+    // Its save can move any slide, so the row clicked is found again in
+    // the saved deck (`slideIndexAfterSourceSave`); a row the save
+    // rewrote is not guessed at, and the selection stays where
+    // `refreshSource` left it.
+    if (editor.sourceOpen()) {
+      const textsBefore = editor.slideRanges().map(range => range.text)
+      if (!await closeSourceEditor()) return
+      const found = slideIndexAfterSourceSave(index, textsBefore, editor.slideRanges().map(range => range.text))
+      if (found === null || found === editor.selectedIndex()) return
+      index = found
+    }
     await pendingSlideTextEdit
     if (editor.isDirty() && !await handleSave()) return
     // Edits may have arrived while the save was in flight. Keep that draft
@@ -2534,8 +2724,11 @@ export function Studio() {
     await pendingSlideTextEdit
     await structuralQueue
     await saves.drain()
+    // The whole-deck source editor's typing too: it holds the slide's
+    // draft as well when it was opened over one that couldn't be saved.
+    if (editor.sourceOpen() && !await flushSourceEditor()) return false
     if (editor.isDirty()) await handleSave()
-    return await saves.drain() && !editor.isDirty()
+    return await saves.drain() && !editor.isDirty() && !editor.isSourceDirty()
   }
 
   // The deck source a layout file operation is checked against: the one on
@@ -2829,6 +3022,13 @@ export function Studio() {
   // (`report_layout_draft`): saved, it closes; not, it says so, and the
   // next close discards the draft.
   async function closeAfterLayoutFlush(): Promise<void> {
+    // The whole-deck source editor's draft first: one that doesn't build
+    // keeps the window open, the error bar saying so over its reason —
+    // and, as for a layout draft, the next close discards it.
+    if (editor.sourceOpen() && !await flushSourceEditor()) {
+      showBuildError(settings.messages().sourceCloseUnsaved(errorMessage() ?? ''))
+      return
+    }
     if (await flushLayoutEditor()) {
       await getCurrentWindow().close()
       return
@@ -3506,13 +3706,15 @@ export function Studio() {
           const { rest, config } = extractPageComment(withoutNote)
           editor.setEditorSession(session => withRefreshedSaved(session, { body: rest, note, config }))
         }
-        await renderPreview(source)
+        syncSourceEditorFromDisk(source)
+        await renderPreview(source, { persisted: true })
         setStatusMessage({ kind: 'merged-external-change' })
         return
       }
     }
     await refreshSource(true)
-    await renderPreview(editor.fullSource())
+    syncSourceEditorFromDisk(editor.fullSource())
+    await renderPreview(editor.fullSource(), { persisted: true })
     setStatusMessage({ kind: 'reloaded-external-change' })
   }
 
@@ -3675,8 +3877,9 @@ export function Studio() {
     // as vim's `u` would.
     const onMenuHistory = (direction: 'undo' | 'redo') => {
       if (replayFocusedFieldHistory(direction)) return
-      // The layout editors' typing isn't on the timeline: it undoes there.
-      if (isFocusWithin('[data-layout-editor-host]')) {
+      // The layout editors' typing isn't on the timeline, nor is the
+      // whole-deck source editor's: it undoes there.
+      if (isFocusWithin('[data-layout-editor-host]') || isFocusWithin('[data-editor="source"]')) {
         replayFocusedCodeEditorHistory(direction)
         return
       }
@@ -3968,7 +4171,7 @@ export function Studio() {
           <div id="panel-slides" className={ui.slidesOpen() ? 'panel-content' : 'hidden'}>
             <SlideList
               language={settings.language()}
-              manifest={render.manifest()}
+              deckOpen={deck.deckPath() !== null}
               entries={slideEntries()}
               slideListWidth={ui.slideListWidth()}
               draggedIndex={ui.draggedIndex()}
@@ -4017,6 +4220,10 @@ export function Studio() {
               hasSelection={editor.selectedRange() !== null}
               onBodyHost={onBodyEditorHost}
               onNoteHost={onNoteEditorHost}
+              sourceOffered={sourceEditorOffered(editor.sourceEditing(), render.outcome().kind === 'failed')}
+              sourceOpen={editor.sourceOpen()}
+              onToggleSource={toggleSourceEditor}
+              onSourceHost={onSourceEditorHost}
             />
           </div>
         </div>
@@ -4034,6 +4241,7 @@ export function Studio() {
               language={settings.language()}
               selectedSlideKey={selectedSlideKey()}
               hasDeck={Boolean(render.assetBaseUrl())}
+              buildError={buildError()}
               canvasFragmentOf={render.previewFragmentOf}
               slideStylesheet={getSlideStylesheet}
               viewportMode={ui.viewportMode()}
@@ -4215,7 +4423,7 @@ export function Studio() {
 
       <StatusBar
         language={settings.language()}
-        errorMessage={errorMessage()}
+        errorMessage={shownErrorMessage()}
         errorMessageCopied={errorMessageCopied()}
         imageSlotFix={shownFix().kind}
         imageLayoutAdding={ui.imageLayoutAdding()}

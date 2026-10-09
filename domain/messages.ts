@@ -51,6 +51,12 @@ export interface Messages {
   speakerNotesPlaceholder: string
   selectSlideToEdit: string
   loadingDeck: string
+  /** The whole-deck repair editor offered while the deck doesn't build
+   * (`domain/sourceEditing.ts`): why it exists, and its toggle's two
+   * labels. */
+  deckSourceHint: string
+  editDeckSource: string
+  backToSlide: string
 
   // Slide list
   openDeckToSeeSlides: string
@@ -135,6 +141,7 @@ export interface Messages {
   /** The window was closed, but the file's edits couldn't be saved. */
   layoutCloseUnsaved: string
   layoutCloseConflict: string
+  sourceCloseUnsaved: (reason: string) => string
   layoutActionFailed: (error: string) => string
   deckChangeFailed: string
   layoutDeckUnsaved: string
@@ -156,6 +163,10 @@ export interface Messages {
   previewScaledDownDetail: string
   selectSlideToPreview: string
   openDeckToPreview: string
+  /** Shown in the preview pane, above peitho-core's own error text, while
+   * the deck on disk doesn't build — and the way out, below it. */
+  deckDoesNotBuild: string
+  fixSourceToPreview: string
 
   // Review comments to the Coding Agent (the preview's pins, the comment
   // box and the comments panel under the preview)
@@ -282,6 +293,9 @@ const en: Messages = {
   speakerNotesPlaceholder: 'Notes for the presenter — not shown to the audience.',
   selectSlideToEdit: 'Select a slide to edit it.',
   loadingDeck: 'Loading deck…',
+  deckSourceHint: 'The error may be in text no slide shows — the frontmatter, or a slide\'s page settings comment. Edit the whole deck.md here; it saves once the deck builds.',
+  editDeckSource: 'Edit deck source',
+  backToSlide: 'Back to slide',
 
   openDeckToSeeSlides: 'Open a deck to see its slides.',
   expandSection: 'Expand section',
@@ -348,6 +362,7 @@ const en: Messages = {
   layoutConflictFirst: 'This file changed on disk: load it or keep your edits first',
   layoutCloseUnsaved: 'The changes to this file could not be saved. Fix them, or close the window again to discard them',
   layoutCloseConflict: 'This file changed on disk: load it or keep your edits, or close the window again to discard your edits',
+  sourceCloseUnsaved: reason => `The deck source could not be saved. Fix it, or close the window again to discard the changes\n${reason}`,
   layoutActionFailed: error => `Could not change the layouts: ${error}`,
   deckChangeFailed: 'deck.md could not be updated',
   layoutDeckUnsaved: 'the slides have changes that could not be saved to deck.md. Layouts are checked against the saved deck, so save the slides first',
@@ -368,6 +383,8 @@ const en: Messages = {
   previewScaledDownDetail: 'The device doesn\'t fit this panel at real size, so it is shown smaller',
   selectSlideToPreview: 'Select a slide to preview it.',
   openDeckToPreview: 'Open a deck to preview it.',
+  deckDoesNotBuild: 'This deck doesn\'t build yet, so there is nothing to preview.',
+  fixSourceToPreview: 'Fix the source in the editor and save; the preview comes back once the deck builds.',
 
   reviewComments: 'Comments for the agent',
   connectAgentTitle: 'First, connect me',
@@ -484,6 +501,9 @@ const ja: Messages = {
   speakerNotesPlaceholder: '発表者用のメモ — 聴衆には表示されません。',
   selectSlideToEdit: '編集するスライドを選んでください。',
   loadingDeck: 'デッキを読み込んでいます…',
+  deckSourceHint: 'エラーは、スライドの本文には出てこない箇所(frontmatterやページ設定コメント)にあるかもしれません。ここでは deck.md 全体を編集でき、ビルドが通った時点で保存されます。',
+  editDeckSource: 'デッキのソースを編集',
+  backToSlide: 'スライド編集に戻る',
 
   openDeckToSeeSlides: 'デッキを開くとスライドが表示されます。',
   expandSection: 'セクションを展開',
@@ -550,6 +570,7 @@ const ja: Messages = {
   layoutConflictFirst: 'このファイルがディスク上で変更されました。先に、読み込むか自分の編集を残すかを選んでください',
   layoutCloseUnsaved: 'このファイルの変更を保存できませんでした。修正するか、もう一度ウィンドウを閉じて変更を破棄してください',
   layoutCloseConflict: 'このファイルがディスク上で変更されました。読み込むか自分の編集を残すかを選ぶか、もう一度ウィンドウを閉じて自分の編集を破棄してください',
+  sourceCloseUnsaved: reason => `デッキのソースを保存できませんでした。修正するか、もう一度ウィンドウを閉じて変更を破棄してください\n${reason}`,
   layoutActionFailed: error => `レイアウトを変更できませんでした: ${error}`,
   deckChangeFailed: 'deck.md を更新できませんでした',
   layoutDeckUnsaved: 'deck.md に保存できていないスライドの変更があります。レイアウトは保存済みのデッキに対して確認するため、先にスライドを保存してください',
@@ -570,6 +591,8 @@ const ja: Messages = {
   previewScaledDownDetail: '実寸ではこのパネルに収まらないため、縮小して表示しています',
   selectSlideToPreview: 'プレビューするスライドを選んでください。',
   openDeckToPreview: 'デッキを開くとプレビューが表示されます。',
+  deckDoesNotBuild: 'このデッキはまだビルドできないため、プレビューがありません。',
+  fixSourceToPreview: 'エディタでソースを直して保存すると、ビルドが通った時点でプレビューが戻ります。',
 
   reviewComments: 'エージェントへのコメント',
   connectAgentTitle: 'まず、私を接続してください',

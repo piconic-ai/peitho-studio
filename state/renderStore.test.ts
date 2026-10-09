@@ -309,3 +309,68 @@ describe('slideStylesheetText / fontFaceCss', () => {
     })
   })
 })
+
+describe('outcome', () => {
+  const error = { kind: 'Arity', line: 12, originFile: null, message: 'm', help: 'h', headline: "slide 2 ('arch'), line 12: m", slide: { number: 2, key: 'arch' } }
+
+  test('spec: Given no render yet, Then the outcome is none', () => {
+    createRoot(() => {
+      expect(createRenderStore().outcome()).toEqual({ kind: 'none' })
+    })
+  })
+
+  test('spec: Given a deck that opened broken (markRenderFailed), Then the outcome is failed with that error and nothing is rendered', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.markRenderFailed(error)
+      expect(store.outcome()).toEqual({ kind: 'failed', error })
+      expect(store.manifest()).toBeNull()
+      expect(store.assetBaseUrl()).toBeNull()
+    })
+  })
+
+  test('spec: Given the source was fixed and rendered, Then the outcome goes back to rendered', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.markRenderFailed(error)
+      store.applyRenderPayload(payload(), '# fixed')
+      expect(store.outcome()).toEqual({ kind: 'rendered' })
+      expect(store.manifest()?.title).toBe('Deck')
+    })
+  })
+
+  test('spec: Given a rendered deck whose disk source then broke, Then the last render is kept and only the outcome turns failed', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.applyRenderPayload(payload(), '# ok')
+      store.markRenderFailed(error)
+      expect(store.outcome()).toEqual({ kind: 'failed', error })
+      expect(store.manifest()?.title).toBe('Deck')
+      expect(store.renderedSource()).toBe('# ok')
+      expect(store.canvasFragmentOf('slide-1')).toBe('<div class="peitho-slide">one</div>')
+    })
+  })
+
+  test('adversarial: a second successful render does not notify outcome readers again (equality-guarded)', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      let runs = 0
+      createEffect(() => { store.outcome(); runs++ })
+      store.applyRenderPayload(payload(), 'a')
+      const afterFirst = runs
+      store.applyRenderPayload(payload(), 'b')
+      expect(runs).toBe(afterFirst)
+    })
+  })
+
+  test('adversarial: a later failure replaces the earlier one', () => {
+    createRoot(() => {
+      const store = createRenderStore()
+      store.markRenderFailed(error)
+      store.markRenderFailed({ ...error, headline: 'line 1: other', slide: null })
+      const outcome = store.outcome()
+      expect(outcome.kind).toBe('failed')
+      if (outcome.kind === 'failed') expect(outcome.error.headline).toBe('line 1: other')
+    })
+  })
+})

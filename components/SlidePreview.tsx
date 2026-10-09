@@ -16,6 +16,11 @@ export interface SlidePreviewProps {
   language: Language
   selectedSlideKey: string | null
   hasDeck: boolean
+  /** peitho-core's refusal of the deck on disk (`renderFailureMessage`),
+   * shown in place of the "select a slide" hint while nothing is selected
+   * — a deck that opened broken has no slide to select, since every row
+   * is a placeholder. `null` while the deck builds. */
+  buildError: string | null
   /** Which toggle segment is lit; the canvas size for it arrives as
    * `canvasWidth`/`canvasHeight`. */
   viewportMode: ViewportMode
@@ -179,8 +184,21 @@ export function SlidePreview(props: SlidePreviewProps) {
           ))}
         </div>
       </div>
-      <div className={(props.selectedSlideKey === null ? '' : 'hidden ') + 'flex-1 flex items-center justify-center text-sm text-muted-foreground'}>
+      <div className={(props.selectedSlideKey === null && props.buildError === null ? '' : 'hidden ') + 'flex-1 flex items-center justify-center text-sm text-muted-foreground'}>
         {props.hasDeck ? messagesFor(props.language).selectSlideToPreview : messagesFor(props.language).openDeckToPreview}
+      </div>
+      {/* Permanently mounted like its siblings (see above): the deck on
+          disk doesn't build, and there is no slide to show — peitho-core's
+          error, as the error bar has it, stays readable here. */}
+      <div
+        data-preview-build-error
+        className={(props.selectedSlideKey === null && props.buildError !== null ? '' : 'hidden ') + 'flex-1 min-h-0 overflow-auto flex flex-col justify-center gap-3 p-6 text-sm'}
+      >
+        <p className="text-destructive font-medium">{messagesFor(props.language).deckDoesNotBuild}</p>
+        {/* Not `bg-destructive/10`: that class is how the e2e suite finds
+            the error bar (`StatusBar.tsx`), one element at a time. */}
+        <pre className="font-mono text-xs whitespace-pre-wrap select-text text-destructive bg-muted rounded p-3">{props.buildError ?? ''}</pre>
+        <p className="text-muted-foreground">{messagesFor(props.language).fixSourceToPreview}</p>
       </div>
     </div>
   )

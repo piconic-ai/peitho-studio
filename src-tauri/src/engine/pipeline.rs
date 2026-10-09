@@ -6,6 +6,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use peitho_core::domain::{Accepts, SlotContract};
@@ -50,6 +51,100 @@ pub struct RenderOutput {
     pub deck_dir: PathBuf,
 }
 
+/// peitho-core's `BuildError`, serialized for the frontend (camelCase):
+/// `kind` is the `ErrorKind` variant's name, `headline` is peitho-core's own
+/// `headline()` (the location-prefixed first line, help left out), and
+/// `slide.number` counts from 1 over the source's slides, drafts included —
+/// what `domain/render.ts` reads to select the broken slide. An error the
+/// engine raises outside peitho-core (`RenderError::Other`) takes this shape
+/// too, with `kind` `"Other"`, the message as `headline` and no help.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenderErrorPayload {
+    pub kind: String,
+    pub line: Option<usize>,
+    pub origin_file: Option<String>,
+    pub message: String,
+    pub help: String,
+    pub headline: String,
+    pub slide: Option<ErrorSlidePayload>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ErrorSlidePayload {
+    pub number: usize,
+    pub key: Option<String>,
+}
+
+/// Why a render produced no `RenderOutput`: peitho-core refused the deck
+/// (`Build`, its structure kept), or something around it failed — a layout
+/// file that doesn't parse (`assets::resolve`), an unreadable image
+/// (`Other`, a message only). `Display` is what the string errors used to
+/// be — peitho-core's own `headline + "\n  = help: " + help` for a `Build`,
+/// the message for an `Other` — so a caller that only reports it (`?` into
+/// a `Result<_, String>`, `to_string()`) reads exactly what it did before.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenderError {
+    Build(RenderErrorPayload),
+    Other(String),
+}
+
+impl RenderError {
+    /// The shape the frontend gets — see `RenderErrorPayload`.
+    pub fn into_payload(self) -> RenderErrorPayload {
+        match self {
+            RenderError::Build(payload) => payload,
+            RenderError::Other(message) => RenderErrorPayload {
+                kind: "Other".to_string(),
+                line: None,
+                origin_file: None,
+                headline: message.clone(),
+                message,
+                help: String::new(),
+                slide: None,
+            },
+        }
+    }
+}
+
+impl From<BuildError> for RenderError {
+    fn from(err: BuildError) -> Self {
+        RenderError::Build(RenderErrorPayload {
+            kind: format!("{:?}", err.kind),
+            line: err.line,
+            origin_file: err.origin_file.as_ref().map(|path| path.display().to_string()),
+            headline: err.headline(),
+            message: err.message,
+            help: err.help,
+            slide: err.slide.map(|slide| ErrorSlidePayload { number: slide.number, key: slide.key }),
+        })
+    }
+}
+
+impl From<String> for RenderError {
+    fn from(message: String) -> Self {
+        RenderError::Other(message)
+    }
+}
+
+impl From<RenderError> for String {
+    fn from(err: RenderError) -> Self {
+        err.to_string()
+    }
+}
+
+impl std::fmt::Display for RenderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RenderError::Build(payload) => write!(f, "{}\n  = help: {}", payload.headline, payload.help),
+            RenderError::Other(message) => f.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for RenderError {}
+
 /// A deck source parsed up to (not including) layout dispatch, plus the
 /// deck-adjacent assets the parse resolved — the shared first half of
 /// `render_source` and `engine::layout_fit`, which needs the parsed slides
@@ -66,12 +161,11 @@ pub(crate) fn deck_dir_of(deck_path: &Path) -> &Path {
         .unwrap_or_else(|| Path::new("."))
 }
 
-pub fn parse_source(deck_path: &Path, source: &str) -> Result<ParsedSource, String> {
+pub fn parse_source(deck_path: &Path, source: &str) -> Result<ParsedSource, RenderError> {
     let deck_dir = deck_dir_of(deck_path);
 
-    let frontmatter = parse_frontmatter(source).map_err(|err| err.to_string())?;
-    let expanded = peitho_core::include::expand_includes(source, frontmatter.body_start(), deck_path)
-        .map_err(|err| err.to_string())?;
+    let frontmatter = parse_frontmatter(source)?;
+    let expanded = peitho_core::include::expand_includes(source, frontmatter.body_start(), deck_path)?;
 
     let assets = assets::resolve(deck_dir)?;
 
@@ -87,13 +181,12 @@ pub fn parse_source(deck_path: &Path, source: &str) -> Result<ParsedSource, Stri
         &UnsupportedOEmbedFetcher,
         &code_images_cache_dir,
         &embeds_cache_dir,
-    )
-    .map_err(|err| err.to_string())?;
+    )?;
 
     Ok(ParsedSource { deck, assets })
 }
 
-pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, String> {
+pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, RenderError> {
     render_parsed(deck_path, parse_source(deck_path, source)?)
 }
 
@@ -102,7 +195,7 @@ pub fn render_source(deck_path: &Path, source: &str) -> Result<RenderOutput, Str
 /// assets other than the ones on disk — `engine::layout_files` checks a
 /// layout deletion this way, with the layout and its CSS left out, before
 /// removing any file.
-pub fn render_parsed(deck_path: &Path, parsed_source: ParsedSource) -> Result<RenderOutput, String> {
+pub fn render_parsed(deck_path: &Path, parsed_source: ParsedSource) -> Result<RenderOutput, RenderError> {
     let mut resolver = DraftImageResolver::new(deck_dir_of(deck_path));
     render_parsed_with_images(deck_path, parsed_source, |request| resolver.resolve(request))
 }
@@ -113,7 +206,7 @@ pub(super) fn render_parsed_with_images(
     deck_path: &Path,
     parsed_source: ParsedSource,
     resolve_image: impl FnMut(ImageRequest<'_>) -> peitho_core::Result<ResolvedImageAsset>,
-) -> Result<RenderOutput, String> {
+) -> Result<RenderOutput, RenderError> {
     let deck_dir = deck_dir_of(deck_path);
 
     let ParsedSource { deck: parsed, assets: ResolvedAssets { layouts, css: css_files, highlighter, fonts_dir } } = parsed_source;
@@ -122,27 +215,25 @@ pub(super) fn render_parsed_with_images(
 
     let slide_layouts = slide_layouts(&parsed, &layouts);
     let heading_layouts = layouts.iter().filter(|layout| takes_bare_heading(layout)).map(|layout| layout.name().to_string()).collect();
-    let mapped = dispatch_by_convention(parsed, &layouts).map_err(|err| err.to_string())?;
-    let checked = check_deck(mapped).map_err(|err| err.to_string())?;
+    let mapped = dispatch_by_convention(parsed, &layouts)?;
+    let checked = check_deck(mapped)?;
 
     let theme_css = build_theme_css(
         &css_files,
         &checked.slide_slot_classes(),
         &layouts.slot_classes(),
         &layouts.root_classes(),
-    )
-    .map_err(|err| err.to_string())?;
+    )?;
 
     let mut resolver = DraftImageResolver::new(deck_dir);
-    let (resolved, mut image_assets) =
-        resolve_image_paths(checked, resolve_image).map_err(|err| err.to_string())?;
+    let (resolved, mut image_assets) = resolve_image_paths(checked, resolve_image)?;
     // Resolved after Markdown images so a file referenced from both dedupes
     // onto the asset the Markdown path already registered (same order as
     // `peitho`'s own `build_artifacts`).
     let layout_assets = resolve_layout_assets(&layouts, &mut resolver, &mut image_assets)?;
 
     let manifest = build_manifest(&resolved, &image_assets);
-    let manifest_json = manifest_json(&manifest).map_err(|err| err.to_string())?;
+    let manifest_json = manifest_json(&manifest)?;
 
     // `On`, as `peitho preview` renders: paragraphs, headings, list items
     // and table cells carry `data-peitho-src` (their UTF-8 byte span in the
@@ -150,8 +241,7 @@ pub(super) fn render_parsed_with_images(
     // the preview's comment UI reads (`domain/reviewComment.ts`). Nothing
     // Studio renders here is ever published, which is the only place
     // peitho-core refuses the attributes (`find_edit_annotation_attribute`).
-    let rendered = render_deck(resolved, highlighter, theme_css, EditAnnotations::On, &layout_assets)
-        .map_err(|err| err.to_string())?;
+    let rendered = render_deck(resolved, highlighter, theme_css, EditAnnotations::On, &layout_assets)?;
     let has_math = rendered.math_assets().is_some();
     let css = rendered.css().to_string();
 
@@ -414,7 +504,7 @@ mod tests {
 
         match render_source(&deck_path, &source) {
             Ok(_) => panic!("expected a layout-ambiguity error, got Ok"),
-            Err(err) => assert!(err.contains("matches multiple layouts"), "unexpected error: {err}"),
+            Err(err) => assert!(err.to_string().contains("matches multiple layouts"), "unexpected error: {err}"),
         }
     }
 
@@ -424,7 +514,7 @@ mod tests {
         let deck_path = dir.path().join("deck.md");
         let first = "<!-- {\"key\":\"cover\",\"layout\":\"title-body-code\"} -->\n# Title\n\nEdited body\n";
         let second = "---\n\n<!-- {\"key\":\"next\",\"layout\":\"title-body-code\"} -->\n# Next\n\nUnchanged body\n";
-        let error = render_source(&deck_path, &format!("{first}{second}")).err().expect("a Setext heading consumes the boundary");
+        let error = render_source(&deck_path, &format!("{first}{second}")).err().expect("a Setext heading consumes the boundary").to_string();
         assert!(error.contains("page settings comment must appear before slide content"), "{error}");
         let output = render_source(&deck_path, &format!("{first}\n{second}")).unwrap();
         assert_eq!(output.fragments.len(), 2);
@@ -571,7 +661,7 @@ mod tests {
         let empty_title = source.replace("# Title", "# \u{a0}");
         assert!(render_source(&deck_path, &empty_title).is_ok());
         let old = source.replace("\u{a0}  ", "");
-        assert!(render_source(&deck_path, &old).err().unwrap().contains("got 2 item(s)"));
+        assert!(render_source(&deck_path, &old).err().unwrap().to_string().contains("got 2 item(s)"));
     }
 
     #[test]
@@ -802,6 +892,7 @@ mod tests {
         match render_source(&deck_path, &source) {
             Ok(_) => panic!("expected a missing-asset error, got Ok"),
             Err(err) => {
+                let err = err.to_string();
                 assert!(err.contains("assets/hero.mp4"), "unexpected error: {err}");
                 assert!(err.contains("<video src="), "unexpected error: {err}");
                 assert!(err.contains("layout 'cover'"), "unexpected error: {err}");
@@ -839,5 +930,136 @@ mod tests {
         let full = short_sha256_hex(b"", 64);
         assert_eq!(full.len(), 64);
         assert_eq!(short_sha256_hex(b"", 1000), full);
+    }
+
+    // --- RenderError: what a failed render tells the frontend ---
+
+    /// `render_source` of `source` in a fresh deck directory (built-in
+    /// layout), which the test expects to fail.
+    fn render_error(source: &str) -> RenderError {
+        let dir = tempfile::tempdir().unwrap();
+        let deck_path = dir.path().join("deck.md");
+        render_source(&deck_path, source).err().unwrap_or_else(|| panic!("expected a render error for {source:?}"))
+    }
+
+    fn build_payload(err: RenderError) -> RenderErrorPayload {
+        match err {
+            RenderError::Build(payload) => payload,
+            RenderError::Other(message) => panic!("expected a Build error, got Other({message:?})"),
+        }
+    }
+
+    #[test]
+    fn render_error_spec_an_unknown_frontmatter_key_is_a_build_error_with_a_line_and_no_slide() {
+        // Given a deck whose frontmatter names a key peitho doesn't know,
+        let payload = build_payload(render_error("---\nfontss: x\n---\n\n# One\n"));
+        // Then peitho-core's structure reaches the payload: a parse error
+        // located on a line, before any slide, with help attached,
+        assert_eq!(payload.kind, "Parse");
+        assert!(payload.line.is_some(), "{payload:?}");
+        assert_eq!(payload.slide, None);
+        assert!(payload.message.contains("fontss"), "{payload:?}");
+        assert!(!payload.help.is_empty(), "{payload:?}");
+        // and its headline is the first line of peitho-core's own Display.
+        assert!(payload.headline.starts_with("line "), "{payload:?}");
+        assert!(!payload.headline.contains("help"), "{payload:?}");
+    }
+
+    #[test]
+    fn render_error_spec_a_duplicate_slide_key_names_the_slide() {
+        // Given two slides with the same explicit key,
+        let payload = build_payload(render_error("<!-- {\"key\":\"same\"} -->\n# One\n\n---\n\n<!-- {\"key\":\"same\"} -->\n# Two\n"));
+        // Then the error points at the second slide, by number (1-based,
+        // over the source) and key.
+        assert_eq!(payload.kind, "Parse");
+        let slide = payload.slide.as_ref().expect("a duplicate key is attributed to a slide");
+        assert_eq!(slide.number, 2);
+        assert_eq!(slide.key.as_deref(), Some("same"));
+        assert!(payload.message.contains("duplicate slide key 'same'"), "{payload:?}");
+        assert!(payload.headline.starts_with("slide 2 ('same')"), "{payload:?}");
+    }
+
+    #[test]
+    fn render_error_spec_a_slot_arity_violation_carries_slide_line_and_kind() {
+        // Given a slide with two code blocks on the built-in layout, whose
+        // `code` slot takes at most one,
+        let payload = build_payload(render_error("# Title\n\nBody\n\n```js\na\n```\n\n```js\nb\n```\n"));
+        // Then the error is an arity error, on slide 1, at a line,
+        assert_eq!(payload.kind, "Arity");
+        assert_eq!(payload.slide.as_ref().map(|slide| slide.number), Some(1));
+        assert!(payload.line.is_some(), "{payload:?}");
+        assert!(payload.message.contains("got 2 item(s)"), "{payload:?}");
+        // and `Display` reads as peitho-core's: headline, then the help tail.
+        let shown = RenderError::Build(payload.clone()).to_string();
+        assert_eq!(shown, format!("{}\n  = help: {}", payload.headline, payload.help));
+    }
+
+    #[test]
+    fn render_error_spec_a_layout_file_that_does_not_parse_is_an_other_error() {
+        // Given a deck whose `layouts/` holds a file peitho can't read as a
+        // layout (no `<section>`, no slots),
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("layouts")).unwrap();
+        std::fs::write(dir.path().join("layouts/broken.html"), "<div>not a layout").unwrap();
+        let deck_path = dir.path().join("deck.md");
+        // Then the failure comes from `assets::resolve`, outside peitho-core's
+        // build pipeline: a message only,
+        let err = render_source(&deck_path, "# One\n").err().expect("a broken layout file fails the render");
+        let message = match &err {
+            RenderError::Other(message) => message.clone(),
+            RenderError::Build(payload) => panic!("expected Other, got Build({payload:?})"),
+        };
+        assert!(!message.is_empty());
+        // which the frontend still gets in the one error shape.
+        let payload = err.clone().into_payload();
+        assert_eq!(payload.kind, "Other");
+        assert_eq!(payload.headline, message);
+        assert_eq!(payload.message, message);
+        assert_eq!(payload.help, "");
+        assert_eq!((payload.line, payload.origin_file, payload.slide), (None, None, None));
+        assert_eq!(err.to_string(), message);
+    }
+
+    #[test]
+    fn render_error_adversarial_an_empty_source_and_a_lone_separator_fail_as_build_errors_with_no_slide() {
+        // Given nothing to build at all,
+        for source in ["", "---\n"] {
+            // Then peitho-core refuses it as a build error (never a panic),
+            // attributed to no slide, and the headline is still a non-empty
+            // first line.
+            match render_source(&tempfile::tempdir().unwrap().path().join("deck.md"), source) {
+                Ok(_) => panic!("{source:?} should not render"),
+                Err(RenderError::Build(payload)) => {
+                    assert_eq!(payload.slide, None, "{source:?}: {payload:?}");
+                    assert!(!payload.headline.is_empty(), "{source:?}");
+                    assert_eq!(payload.headline, RenderError::Build(payload.clone()).to_string().lines().next().unwrap());
+                }
+                Err(RenderError::Other(message)) => panic!("{source:?}: expected a Build error, got Other({message:?})"),
+            }
+        }
+    }
+
+    #[test]
+    fn render_error_spec_serializes_camel_cased_for_the_frontend() {
+        let payload = build_payload(render_error("<!-- {\"key\":\"same\"} -->\n# One\n\n---\n\n<!-- {\"key\":\"same\"} -->\n# Two\n"));
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["kind"], "Parse");
+        assert_eq!(json["slide"]["number"], 2);
+        assert_eq!(json["slide"]["key"], "same");
+        assert!(json.get("originFile").is_some(), "{json}");
+        assert!(json.get("origin_file").is_none(), "{json}");
+        assert_eq!(json["headline"], payload.headline);
+    }
+
+    #[test]
+    fn render_error_spec_converts_into_the_string_callers_used_to_get() {
+        let err = render_error("# Title\n\nBody\n\n```js\na\n```\n\n```js\nb\n```\n");
+        let shown = err.to_string();
+        let converted: String = err.into();
+        assert_eq!(converted, shown);
+        assert!(shown.contains("\n  = help: "), "{shown}");
+        let other: RenderError = "disk is gone".to_string().into();
+        let converted: String = other.into();
+        assert_eq!(converted, "disk is gone");
     }
 }

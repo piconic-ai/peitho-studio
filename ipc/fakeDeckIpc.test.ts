@@ -19,7 +19,15 @@ describe('createFakeDeckIpc', () => {
     const ipc = createFakeDeckIpc()
     const info = await ipc.openDeck('/tmp/deck.md')
     expect(info.deckPath).toBe('/tmp/deck.md')
-    expect(info.render.manifest.slides).toEqual([])
+    expect(info.render.kind).toBe('rendered')
+    if (info.render.kind === 'rendered') expect(info.render.manifest.slides).toEqual([])
+  })
+
+  test('spec: an openDeck override can answer a failed render, as open_deck does for a deck peitho-core refuses', async () => {
+    const error = { kind: 'Parse', line: 3, originFile: null, message: 'm', help: 'h', headline: 'line 3: m', slide: null }
+    const ipc = createFakeDeckIpc({ openDeck: async path => ({ deckPath: path, deckDir: '/tmp', trusted: false, render: { kind: 'failed', error } }) })
+    const info = await ipc.openDeck('/tmp/deck.md')
+    expect(info.render).toEqual({ kind: 'failed', error })
   })
 
   test('spec: listDeckVariants defaults to no variants (a lone deck) and records the call', async () => {
