@@ -223,6 +223,18 @@ export function saveDecision(error: RenderErrorPayload, known: BrokenSlides, edi
   return 'block'
 }
 
+/** Whether a save whose render failed outright — nothing left to isolate,
+ * e.g. the deck's only slide that isn't a draft — is written all the same,
+ * the deck on disk then not building: on a `handOff`, whatever the error
+ * (the user asked for it to go to the agent as it is); otherwise only
+ * when the error is about `savedAsIs` itself, the slide the user asked to
+ * keep as it is (`saveDecision`). An error about any other slide, or about
+ * none, still refuses the save. */
+export function savesUnrendered(error: RenderErrorPayload, slideCount: number, savedAsIs: number | null, handOff = false): boolean {
+  if (handOff) return true
+  return savedAsIs !== null && brokenSlideIndex(error, slideCount) === savedAsIs
+}
+
 /** `known` re-keyed to where its slides sit once the slide at
  * `editedIndex` was retyped: typed text can re-split a slide (a `---`
  * line, an unclosed code fence swallowing the separators after it), so the

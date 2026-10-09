@@ -33,7 +33,7 @@ import { CommentBox } from './CommentBox'
 import { PanelToggle } from './PanelToggle'
 import { ReviewPanel } from './ReviewPanel'
 import { type ManifestSlide, type RenderErrorPayload, type RenderPayload, type SectionDraft, brokenSlideIndex, renderFailureMessage } from '../domain/render'
-import { type BrokenSlides, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesAfterEdit, brokenSlidesSummary, isolateSlide, restoreEditAnnotations, saveDecision, sourceSaveDecision, startIsolation } from '../domain/brokenSlides'
+import { type BrokenSlides, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesAfterEdit, brokenSlidesSummary, isolateSlide, restoreEditAnnotations, saveDecision, savesUnrendered, sourceSaveDecision, startIsolation } from '../domain/brokenSlides'
 import { RenderFailure } from '../ipc/renderOutcome'
 import { SOURCE_EDITING_CLOSED, openSourceEditing, slideIndexAfterSourceSave, sourceEditorOffered, sourceReadFromDisk, sourceSaved, typeInSource } from '../domain/sourceEditing'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
@@ -2497,7 +2497,8 @@ export function Studio() {
       // (`markRenderFailed`, as an external change that breaks it).
       const asIs = savedAsIs ?? (handOff ? editedIndex : null)
       const result = await renderIsolating(nextSource, error => saveDecision(error, known, editedIndex, slideCount, asIs) === 'isolate')
-      if (result.kind === 'failed' && !handOff) throw new RenderFailure(result.error)
+      // With nothing left to isolate, `savedAsIs` failing is saved as is too.
+      if (result.kind === 'failed' && !savesUnrendered(result.error, slideCount, asIs, handOff)) throw new RenderFailure(result.error)
       if (result.kind === 'rendered') render.applyRenderPayload(result.payload, nextSource, result.broken)
       await deckIpc.saveDeckSource(nextSource)
       // Only now is the render the disk's: a write that fails leaves the
