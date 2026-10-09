@@ -187,6 +187,9 @@ export interface MockDeck {
   checkUpdateResult?: UpdateStatus
   updateSaveAcks?: { token: number; saved: boolean }[]
   beforeSave?: (source: string) => Promise<void>
+  /** How long `read_deck_source` takes — a slow disk read, to order what
+   * happens while a save's `refreshSource` waits on it. */
+  readDeckSourceDelayMs?: number
   /** What `get_system_locales` answers (the OS's preferred languages) —
    * defaults to `['en-US']`. */
   systemLocales?: unknown
@@ -550,7 +553,9 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
           })
         }
         return renderOutcomeFor(args.content as string, deck)
-      case 'read_deck_source': return deck.source
+      case 'read_deck_source':
+        if (deck.readDeckSourceDelayMs) await sleep(deck.readDeckSourceDelayMs)
+        return deck.source
       case 'save_deck_source':
         await deck.beforeSave?.(args.content as string)
         deck.source = args.content as string

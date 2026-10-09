@@ -212,6 +212,51 @@ test('Given a frontmatter error typed in the deck source editor, when it is sent
   await expect(page.locator(SOURCE_TOGGLE)).toBeVisible()
 })
 
+test('Given the automatic report of a handed-off source finishes before the save resolves, then the press still sends it once', async ({ page }) => {
+  // A different error from the one reported at open, so the disk's render
+  // of the handed-off text has something new to send on its own — which
+  // must be the press's one send, not a first of two. `read_deck_source`
+  // is slow: the write's report lands and finishes while `commitSource`
+  // still waits on its re-read of the disk.
+  const retypedError: RenderErrorPayload = {
+    ...FRONTMATTER_ERROR,
+    message: 'invalid deck frontmatter: unknown field `fontsz`',
+    headline: 'line 2: invalid deck frontmatter: unknown field `fontsz`',
+  }
+  const crit = createFakeCritIpc()
+  const deck = await open(page, deckWith(crit, {
+    source: FRONTMATTER_SOURCE,
+    renderError: content => (content.includes('fontsz') ? retypedError : content.includes('fontss') ? FRONTMATTER_ERROR : null),
+    readDeckSourceDelayMs: 800,
+  }))
+  await expect.poll(() => methods(crit)).toContain('finish')
+  expect(sentComments(crit)).toHaveLength(1)
+  crit.agentConnects()
+
+  await page.locator(SOURCE_TOGGLE).click()
+  await expect(page.locator('[data-editor="source"]')).toBeVisible()
+  const retyped = FRONTMATTER_SOURCE.replace('fontss: x', 'fontsz: x')
+  await fillEditor(page, retyped, 'source')
+  await page.waitForTimeout(1_300)
+  expect(deck.source).toBe(FRONTMATTER_SOURCE)
+
+  await page.locator(SEND).click()
+
+  await expect.poll(() => deck.source).toBe(retyped)
+  await expect.poll(() => sentComments(crit)).toHaveLength(2)
+  expect(sentComments(crit)[1].body).toContain('unknown field `fontsz`')
+  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the AI.')
+
+  // The agent's next round, the deck unchanged: nothing more is sent — the
+  // press was one send, not one now and one queued for later.
+  await page.waitForTimeout(1_500)
+  crit.agentConnects()
+  await page.waitForTimeout(800)
+  expect(sentComments(crit)).toHaveLength(2)
+  expect(methods(crit).filter(method => method === 'finish')).toHaveLength(2)
+  await expect(page.locator(SEND)).toBeVisible()
+})
+
 test('Given an error that is not a build error, then the bar still offers to copy it', async ({ page }) => {
   const deck = await open(page, deckWith(createFakeCritIpc(), { commandError: cmd => (cmd === 'present_deck' ? 'simulated present_deck failure' : null) }))
   await page.getByRole('button', { name: 'Present', exact: true }).click()
