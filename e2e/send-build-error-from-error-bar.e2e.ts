@@ -257,6 +257,48 @@ test('Given the automatic report of a handed-off source finishes before the save
   await expect(page.locator(SEND)).toBeVisible()
 })
 
+/** The deck changes on disk (the agent, or another editor, wrote it). */
+async function changeOnDisk(page: Page, deck: MockDeck, source: string): Promise<void> {
+  deck.source = source
+  await page.evaluate(() => {
+    (window as unknown as { __mockEmitTauriEvent?: (event: string, payload: unknown) => void }).__mockEmitTauriEvent?.('deck-file-changed', null)
+  })
+}
+
+test('Given an external change lands while a handed-off source waits on its write, then it is the handed-off text that reaches the AI, on its own line', async ({ page }) => {
+  const crit = createFakeCritIpc()
+  const deck = await open(page, deckWith(crit, {
+    source: FRONTMATTER_SOURCE,
+    renderError: content => (content.includes('fontss') ? FRONTMATTER_ERROR : null),
+  }))
+  await expect.poll(() => methods(crit)).toContain('finish')
+  expect(sentComments(crit)).toHaveLength(1)
+  crit.agentConnects()
+
+  await page.locator(SOURCE_TOGGLE).click()
+  await expect(page.locator('[data-editor="source"]')).toBeVisible()
+  const retyped = FRONTMATTER_SOURCE.replace('fontss: x', 'fontss: y')
+  await fillEditor(page, retyped, 'source')
+  await page.waitForTimeout(1_300)
+  expect(deck.source).toBe(FRONTMATTER_SOURCE)
+
+  // The hand-off's write is held; meanwhile the deck changes on disk to a
+  // third text with the same error — a render of the disk that is not the
+  // press's, and must not be taken for it.
+  let release: () => void = () => {}
+  let held = false
+  deck.beforeSave = () => new Promise<void>(resolve => { held = true; release = resolve })
+  await page.locator(SEND).click()
+  await expect.poll(() => held).toBe(true)
+  await changeOnDisk(page, deck, FRONTMATTER_SOURCE.replace('fontss: x', 'fontss: z'))
+  await page.waitForTimeout(500)
+  release()
+
+  await expect.poll(() => deck.source).toBe(retyped)
+  await expect.poll(() => sentComments(crit).map(comment => comment.quote)).toEqual(['fontss: x', 'fontss: y'])
+  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the AI.')
+})
+
 test('Given an error that is not a build error, then the bar still offers to copy it', async ({ page }) => {
   const deck = await open(page, deckWith(createFakeCritIpc(), { commandError: cmd => (cmd === 'present_deck' ? 'simulated present_deck failure' : null) }))
   await page.getByRole('button', { name: 'Present', exact: true }).click()
