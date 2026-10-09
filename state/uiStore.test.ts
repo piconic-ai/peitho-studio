@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { createEffect, createRoot } from '@barefootjs/client'
 import { createUiStore } from './uiStore'
-import { chooseLayout, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
+import { layoutFitOf } from '../domain/contextMenu'
 import type { LayoutVerdict } from '../domain/layoutFit'
 import { DEVICE_PRESETS } from '../domain/viewport'
 import { openOnEditor } from '../domain/commentMenu'
@@ -21,21 +21,6 @@ describe('layout fit check on the context menu', () => {
       store.settleLayoutFit(requestId, VERDICTS)
 
       expect(layoutFitOf(store.contextMenu())).toEqual({ kind: 'checked', verdicts: VERDICTS })
-    })
-  })
-
-  test('spec: Given a checked slide, when a layout it does not fit is chosen and refused, then the notice shows until the menu closes', () => {
-    createRoot(() => {
-      const store = createUiStore()
-      store.settleLayoutFit(store.openSlideContextMenu(1, 10, 20), VERDICTS)
-
-      const choice = chooseLayout(store.contextMenu(), 'cover')
-      if (choice.kind !== 'reject') throw new Error(`expected a refusal, got ${choice.kind}`)
-      store.showLayoutNotice(choice.notice)
-      expect(layoutNoticeOf(store.contextMenu())).toBe(choice.notice)
-
-      store.closeContextMenu()
-      expect(layoutNoticeOf(store.contextMenu())).toBeNull()
     })
   })
 
@@ -60,20 +45,17 @@ describe('layout fit check on the context menu', () => {
       const requestId = store.openSlideContextMenu(0, 0, 0)
       store.closeContextMenu()
       store.settleLayoutFit(requestId, VERDICTS)
-      store.showLayoutNotice({ kind: 'checking' })
       expect(store.contextMenu()).toEqual({ kind: 'closed' })
     })
   })
 
-  test('adversarial: toggling the picker keeps the settled check and the notice', () => {
+  test('adversarial: toggling the picker keeps the settled check', () => {
     createRoot(() => {
       const store = createUiStore()
       store.settleLayoutFit(store.openSlideContextMenu(0, 0, 0), VERDICTS)
-      store.showLayoutNotice({ kind: 'mismatch', layout: 'cover', reason: 'why' })
       store.toggleLayoutPicker()
       store.toggleLayoutPicker()
       expect(layoutFitOf(store.contextMenu())).toEqual({ kind: 'checked', verdicts: VERDICTS })
-      expect(layoutNoticeOf(store.contextMenu())).toEqual({ kind: 'mismatch', layout: 'cover', reason: 'why' })
     })
   })
 })

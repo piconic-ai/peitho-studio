@@ -48,8 +48,8 @@ import { type FrontmatterStep, type HistoryStep, type LayoutPinsStep, type PageN
 import { type DeckSettingsState, frontmatterValueOf, pickChangesNothing, readDeckSettings, resolveDeckSettingPick, sameDeckSettings } from '../domain/deckSettings'
 import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
-import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, commentClickOf, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
-import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
+import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, commentClickOf, layoutFitOf } from '../domain/contextMenu'
+import { type LayoutVerdict } from '../domain/layoutFit'
 import { type LayoutColumns, type LayoutNameProblem, type StudioMode, initialLayoutListWidth, layoutColumnFilling, layoutRailShown, layoutFilesChanged, layoutListGeneration, layoutRows, layoutThumbnailStyle, layoutUsage, selectedPreviewRoom, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
 import { FILE_AUTOSAVE_DELAY_MS, allTabsOpen, autosavePaths, canCloseFile, fileDraft, isFileChangedOnDisk, isFileDirty, leaveBlocker, shouldAutosave, tabsBlocker, type FileEditor } from '../domain/fileEditor'
@@ -3089,17 +3089,14 @@ export function Studio() {
     ui.settleLayoutFit(requestId, verdicts)
   }
 
-  // A layout the slide fits is pinned and the menu closes, same as before
-  // the fit check existed; one it doesn't fit — or any, while the check is
-  // still running — keeps the menu open with a notice, and deck.md is left
-  // untouched.
+  // Any layout chosen is pinned and the menu closes — one the slide doesn't
+  // fit too (the picker marks it): the build error it leaves until the
+  // content fits shows in the error bar.
   function chooseLayoutFromPicker(layout: string): void {
-    const choice = chooseLayout(ui.contextMenu(), layout)
+    const choice = chooseLayout(ui.contextMenu())
     if (choice.kind === 'apply') {
       void changeSlideLayout(choice.index, layout)
       ui.closeContextMenu()
-    } else if (choice.kind === 'reject' || choice.kind === 'wait') {
-      ui.showLayoutNotice(choice.notice)
     }
   }
 
@@ -3562,21 +3559,14 @@ export function Studio() {
     setStatusMessage({ kind: 'layout-created', layout: copy })
   }
 
-  // Pins the slide open in the slides screen to layout `name`, through the same Undo-able path as the context menu's
-  // Change Layout — after the same fit check, so a layout the slide doesn't
-  // fit is refused with peitho-core's reason instead of a build error.
+  // Pins the slide open in the slides screen to layout `name`, through the
+  // same Undo-able path as the context menu's Change Layout — a layout the
+  // slide doesn't fit too, the slide then showing the build error until its
+  // content fits.
   async function applyLayout(name: string | null): Promise<void> {
     const index = editor.selectedIndex()
     if (name === null || index === null) return
     await runLayoutAction(async () => {
-      let verdicts: LayoutVerdict[] | null = null
-      try {
-        verdicts = await deckIpc.checkSlideLayouts(liveSource(), index)
-      } catch {
-        // Unavailable: `commitChange` renders before it saves anyway.
-      }
-      const availability = availabilityOf(settledFitCheck(verdicts), name)
-      if (availability.kind === 'mismatch') throw new Error(settings.messages().layoutMismatch(name, availability.reason))
       const change = await changeSlideLayout(index, name)
       switch (change) {
         case 'done':
@@ -3606,7 +3596,7 @@ export function Studio() {
 
   // The layout list's right-click menu: on a row, it acts on that layout
   // (not necessarily the one shown); on empty space, it offers New Layout.
-  // With a slide open in the slides screen, Apply waits on the same fit
+  // With a slide open in the slides screen, Apply is warned by the same fit
   // check as the slide menu's Change Layout.
   function openLayoutMenu(name: string | null, event: MouseEvent): void {
     event.preventDefault()
@@ -4809,7 +4799,6 @@ export function Studio() {
         layoutPickerView={layoutPickerView()}
         layoutPreviews={ui.layoutPreviews()}
         layoutFit={layoutFitOf(ui.contextMenu())}
-        layoutNotice={layoutNoticeOf(ui.contextMenu())}
         layoutPreviewStylesheet={getLayoutPreviewStylesheet}
         canvasWidth={render.canvasWidth()}
         canvasHeight={render.canvasHeight()}

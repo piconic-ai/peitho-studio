@@ -33,15 +33,17 @@ export type LayoutMenuAction = CommentAction | 'new-layout' | 'apply' | 'edit' |
 export interface LayoutMenuItem {
   action: LayoutMenuAction
   enabled: boolean
-  /** Why it's off, worded by `layoutMenuTitle`; `null` when there's
-   * nothing to explain. */
+  /** What its tooltip explains, worded by `layoutMenuTitle`; `null` when
+   * there's nothing to explain. */
   reason: LayoutMenuReason | null
 }
 
-/** Why an item is off. */
+/** What an item's tooltip explains: why it's off, or — `mismatch`, which
+ * leaves Apply on — that the slide doesn't fit the layout, so applying it
+ * leaves a build error until the content fits (the user's call, as in the
+ * slide menu's Change Layout). */
 export type LayoutMenuReason =
   | { kind: 'no-slide' }
-  | { kind: 'checking' }
   | { kind: 'mismatch'; reason: string }
   | { kind: 'only-layout' }
 
@@ -104,15 +106,17 @@ export function withLayoutMenuPosition(menu: LayoutMenu, at: { x: number; y: num
 }
 
 function item(action: LayoutMenuAction, reason: LayoutMenuReason | null, busy: boolean): LayoutMenuItem {
-  return { action, enabled: reason === null && !busy, reason }
+  const blocked = reason !== null && reason.kind !== 'mismatch'
+  return { action, enabled: !blocked && !busy, reason }
 }
 
 function applyReason(menu: Extract<LayoutMenu, { kind: 'on-layout' | 'on-preview' }>, ctx: LayoutMenuContext): LayoutMenuReason | null {
   if (!ctx.hasSlide) return { kind: 'no-slide' }
   const availability = availabilityOf(menu.fit, menu.name)
   switch (availability.kind) {
-    case 'selectable': return null
-    case 'checking': return { kind: 'checking' }
+    // Apply doesn't wait for the check: it only adds the warning.
+    case 'selectable':
+    case 'checking': return null
     case 'mismatch': return { kind: 'mismatch', reason: availability.reason }
     default: {
       const _exhaustive: never = availability
@@ -124,7 +128,8 @@ function applyReason(menu: Extract<LayoutMenu, { kind: 'on-layout' | 'on-preview
 /** The menu's items, in order, each with whether it can run now. Each
  * opens with the comment (`domain/menuComment.ts`), on what the menu is
  * open on. Then empty space offers New Layout; a layout offers Apply to
- * Slide (only with a slide open that fits it), Edit, Duplicate and Delete
+ * Slide (with a slide open — warned, not off, when the slide doesn't fit
+ * it), Edit, Duplicate and Delete
  * (not the deck's last layout); the large preview the same but Edit — it's
  * the layout being edited. Everything but Edit and the comment waits while
  * another operation runs — a comment touches no file until it's sent. */
@@ -172,12 +177,12 @@ export function layoutMenuLabel(action: LayoutMenuAction, messages: Messages): s
   }
 }
 
-/** Why an item is off, as its tooltip; `''` when it isn't. */
+/** The item's tooltip: why it's off, or why the slide won't build on the
+ * layout; `''` when there's nothing to say. */
 export function layoutMenuTitle(reason: LayoutMenuReason | null, messages: Messages): string {
   if (reason === null) return ''
   switch (reason.kind) {
     case 'no-slide': return messages.applyLayoutNeedsSlide
-    case 'checking': return messages.layoutChecking
     case 'mismatch': return reason.reason
     case 'only-layout': return messages.onlyLayoutCannotBeDeleted
     default: {

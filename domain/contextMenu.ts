@@ -1,16 +1,15 @@
 import { type PageConfig } from './pageConfig'
 import { COMMENT_ACTION, type CommentAction } from './menuComment'
 import type { PreviewClick } from './reviewComment'
-import { type LayoutFitCheck, type LayoutNotice, type LayoutVerdict, availabilityOf, settledFitCheck } from './layoutFit'
+import { type LayoutFitCheck, type LayoutVerdict, settledFitCheck } from './layoutFit'
 
 /** The thumbnail context menu's own state. `layoutPickerOpen` only exists
  * on `on-slide` — right-clicking empty space can't expand a layout picker
  * there's no slide to change the layout of, and this makes that
  * unrepresentable instead of just "always false in that case". The same
- * goes for `layoutFit` (which layouts that slide fits) and `layoutNotice`
- * (why the last layout chosen from the picker was refused): both belong to
- * one right-click on one slide, so closing the menu or opening it again
- * elsewhere can't carry either over. */
+ * goes for `layoutFit` (which layouts that slide fits): it belongs to one
+ * right-click on one slide, so closing the menu or opening it again
+ * elsewhere can't carry it over. */
 export type ContextMenu =
   | { kind: 'closed' }
   | { kind: 'on-empty-space'; x: number; y: number }
@@ -21,7 +20,6 @@ export type ContextMenu =
     y: number
     layoutPickerOpen: boolean
     layoutFit: LayoutFitCheck
-    layoutNotice: LayoutNotice | null
     /** What the comment item is on: where the slide preview was
      * right-clicked (the target a left-click there gives), or `null` from
      * the slide list — the slide as a whole. */
@@ -117,10 +115,10 @@ export function appendIndex(menu: ContextMenu, slideCount: number): number {
 
 /** A menu freshly opened by right-clicking slide `index` — its row, or
  * its preview at `comment` (what a comment from there is on): picker
- * collapsed, no notice, and its fit check waiting on the
+ * collapsed, and its fit check waiting on the
  * `check_slide_layouts` call identified by `requestId`. */
 export function openOnSlide(index: number, x: number, y: number, requestId: number, comment: PreviewClick | null = null): ContextMenu {
-  return { kind: 'on-slide', index, x, y, layoutPickerOpen: false, layoutFit: { kind: 'checking', requestId }, layoutNotice: null, comment }
+  return { kind: 'on-slide', index, x, y, layoutPickerOpen: false, layoutFit: { kind: 'checking', requestId }, comment }
 }
 
 /** Where the slide preview was right-clicked, for the comment item —
@@ -135,9 +133,7 @@ export function commentClickOf(menu: ContextMenu): PreviewClick | null {
  * right-click, while it was in flight — and leaves `menu` unchanged. */
 export function withLayoutFitResult(menu: ContextMenu, requestId: number, verdicts: readonly LayoutVerdict[] | null): ContextMenu {
   if (menu.kind !== 'on-slide' || menu.layoutFit.kind !== 'checking' || menu.layoutFit.requestId !== requestId) return menu
-  // Clears the notice too: while the check was in flight the only notice
-  // it could carry is the `checking` one, which the answer makes stale.
-  return { ...menu, layoutFit: settledFitCheck(verdicts), layoutNotice: null }
+  return { ...menu, layoutFit: settledFitCheck(verdicts) }
 }
 
 /** The menu's fit check — `unavailable` outside `on-slide`, where there's
@@ -146,42 +142,19 @@ export function layoutFitOf(menu: ContextMenu): LayoutFitCheck {
   return menu.kind === 'on-slide' ? menu.layoutFit : { kind: 'unavailable' }
 }
 
-/** Why the last layout chosen from the picker was refused, if one was. */
-export function layoutNoticeOf(menu: ContextMenu): LayoutNotice | null {
-  return menu.kind === 'on-slide' ? menu.layoutNotice : null
-}
-
 /** What choosing a layout from the picker should do: pin it on slide
- * `index`, refuse it with `notice` (the slide doesn't fit it), hold off
- * with `notice` (the fit check hasn't answered yet — shown so the click
- * visibly did something instead of silently doing nothing), or nothing
- * (no slide targeted). */
+ * `index`, or nothing (no slide targeted). A layout the slide doesn't fit
+ * is pinned too — the picker marks it, but which layout a slide is on is
+ * the user's call: a new slide (a lone heading) can't fit a layout whose
+ * image is required until the image is added, and the build error that
+ * leaves meanwhile is shown in the error bar like any other. The fit check
+ * is not waited on either, for the same reason. */
 export type LayoutChoice =
   | { kind: 'apply'; index: number }
-  | { kind: 'reject'; notice: LayoutNotice }
-  | { kind: 'wait'; notice: LayoutNotice }
   | { kind: 'ignore' }
 
-export function chooseLayout(menu: ContextMenu, layout: string): LayoutChoice {
-  if (menu.kind !== 'on-slide') return { kind: 'ignore' }
-  const availability = availabilityOf(menu.layoutFit, layout)
-  switch (availability.kind) {
-    case 'selectable':
-      return { kind: 'apply', index: menu.index }
-    case 'checking':
-      return { kind: 'wait', notice: { kind: 'checking' } }
-    case 'mismatch':
-      return { kind: 'reject', notice: { kind: 'mismatch', layout, reason: availability.reason } }
-    default: {
-      const _exhaustive: never = availability
-      return _exhaustive
-    }
-  }
-}
-
-/** `menu` showing `notice` in its picker — a no-op outside `on-slide`. */
-export function withLayoutNotice(menu: ContextMenu, notice: LayoutNotice): ContextMenu {
-  return menu.kind === 'on-slide' ? { ...menu, layoutNotice: notice } : menu
+export function chooseLayout(menu: ContextMenu): LayoutChoice {
+  return menu.kind === 'on-slide' ? { kind: 'apply', index: menu.index } : { kind: 'ignore' }
 }
 
 /** Whether a given action is enabled in the given `menuItems()` result. */

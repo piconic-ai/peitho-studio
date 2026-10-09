@@ -5,7 +5,7 @@ import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
 import { menuItemEnabled, menuItemChecked, type MenuItem } from '../domain/contextMenu'
 import { COMMENT_ACTION, commentItemLabel } from '../domain/menuComment'
-import { entryTitle, isSelectable, layoutNoticeText, type LayoutFitCheck, type LayoutNotice } from '../domain/layoutFit'
+import { entryTitle, isMismatch, type LayoutFitCheck } from '../domain/layoutFit'
 import { layoutDisplayName } from '../domain/standardLayouts'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 
@@ -27,12 +27,9 @@ export interface SlideContextMenuProps {
   layoutPickerOpen: boolean
   layoutPickerView: 'loading' | 'empty' | 'ready'
   layoutPreviews: { name: string; fragment: string }[] | null
-  /** Which layouts the right-clicked slide fits — entries it doesn't (or
-   * all of them, while the check is still running) are dimmed. */
+  /** Which layouts the right-clicked slide fits — entries it doesn't are
+   * marked, but stay choosable. */
   layoutFit: LayoutFitCheck
-  /** Why the last layout chosen from the picker was refused, shown under
-   * the picker grid; `null` hides it. */
-  layoutNotice: LayoutNotice | null
   layoutPreviewStylesheet: () => CSSStyleSheet
   canvasWidth: number
   canvasHeight: number
@@ -211,13 +208,12 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
                   <button
                     type="button"
                     key={preview.name}
-                    // `aria-disabled`, not `disabled`: a refused layout must
-                    // still receive the click, so `onChangeLayout` can explain
-                    // why it was refused instead of the click doing nothing.
-                    aria-disabled={isSelectable(props.layoutFit, preview.name) ? 'false' : 'true'}
+                    // A layout the slide doesn't fit stays choosable: it's
+                    // only marked, with the reason on hover.
+                    data-layout-mismatch={isMismatch(props.layoutFit, preview.name) ? 'true' : 'false'}
                     title={entryTitle(props.layoutFit, preview.name, messagesFor(props.language))}
                     onClick={() => props.onChangeLayout(preview.name)}
-                    className={(isSelectable(props.layoutFit, preview.name) ? '' : 'opacity-40 ') + 'flex flex-col gap-1 text-left group'}
+                    className="flex flex-col gap-1 text-left group"
                   >
                     <span
                       className="block relative rounded border border-border bg-black overflow-hidden group-hover:border-muted-foreground"
@@ -234,23 +230,13 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
                         />
                       ) : null}
                     </span>
-                    <span className="text-[10px] text-muted-foreground truncate">{layoutDisplayName(preview.name, props.language)}</span>
+                    <span className="text-[10px] text-muted-foreground truncate">{(isMismatch(props.layoutFit, preview.name) ? '⚠ ' : '') + layoutDisplayName(preview.name, props.language)}</span>
                   </button>
                 ))}
               </div>
             )}
           </div>
         ) : null}
-        {/* Outside the picker's own scroll area, so the notice stays in view
-            whichever entry was clicked; permanently mounted with `hidden`
-            rather than a conditional, like StatusBar's error banner. */}
-        <div
-          role="alert"
-          hidden={props.layoutNotice === null || !props.layoutPickerOpen}
-          className="mx-3 my-1.5 text-xs text-destructive break-words"
-        >
-          {props.layoutNotice === null ? '' : layoutNoticeText(messagesFor(props.language), props.layoutNotice)}
-        </div>
         <button
           type="button"
           disabled={!menuItemEnabled(props.menuItems, 'toggle-draft')}

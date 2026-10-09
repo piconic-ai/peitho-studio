@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { availabilityOf, entryTitle, isSelectable, layoutNoticeText, settledFitCheck, type LayoutFitCheck, type LayoutVerdict } from './layoutFit'
+import { availabilityOf, entryTitle, isMismatch, settledFitCheck, type LayoutFitCheck, type LayoutVerdict } from './layoutFit'
 import { messagesFor } from './messages'
 
 const en = messagesFor('en')
@@ -71,18 +71,23 @@ describe('availabilityOf', () => {
   })
 })
 
-describe('isSelectable', () => {
-  test('spec: only a layout the slide is known not to fit, or any layout mid-check, is dimmed', () => {
+describe('isMismatch', () => {
+  test('spec: only a layout the slide is known not to fit is marked', () => {
     const checked: LayoutFitCheck = { kind: 'checked', verdicts }
-    expect(isSelectable(checked, 'statement')).toBe(true)
-    expect(isSelectable(checked, 'cover')).toBe(false)
-    expect(isSelectable({ kind: 'checking', requestId: 1 }, 'statement')).toBe(false)
+    expect(isMismatch(checked, 'cover')).toBe(true)
+    expect(isMismatch(checked, 'statement')).toBe(false)
   })
 
-  test('adversarial: unavailable checks and unknown or empty names stay selectable', () => {
-    expect(isSelectable({ kind: 'unavailable' }, 'cover')).toBe(true)
-    expect(isSelectable({ kind: 'checked', verdicts }, 'poster')).toBe(true)
-    expect(isSelectable({ kind: 'checked', verdicts }, '')).toBe(true)
+  test('adversarial: mid-check, unavailable checks, and unknown or empty names are never marked', () => {
+    expect(isMismatch({ kind: 'checking', requestId: 1 }, 'cover')).toBe(false)
+    expect(isMismatch({ kind: 'unavailable' }, 'cover')).toBe(false)
+    expect(isMismatch({ kind: 'checked', verdicts }, 'poster')).toBe(false)
+    expect(isMismatch({ kind: 'checked', verdicts }, '')).toBe(false)
+    expect(isMismatch({ kind: 'checked', verdicts: [] }, 'cover')).toBe(false)
+  })
+
+  test('adversarial: an empty reason is still marked', () => {
+    expect(isMismatch({ kind: 'checked', verdicts: [{ layout: 'cover', fit: { kind: 'mismatch', reason: '' } }] }, 'cover')).toBe(true)
   })
 })
 
@@ -104,22 +109,10 @@ describe('entryTitle', () => {
     expect(entryTitle({ kind: 'unavailable' }, 'cover', en)).toBe('cover')
     expect(entryTitle({ kind: 'unavailable' }, '', en)).toBe('')
   })
-})
-
-describe('layoutNoticeText', () => {
-  test('spec: a mismatch names the layout and gives the reason', () => {
-    expect(layoutNoticeText(en, { kind: 'mismatch', layout: 'cover', reason: "unassigned content remains for missing 'body' slot" }))
-      .toBe("\"cover\" doesn't fit this slide: unassigned content remains for missing 'body' slot")
-  })
-
-  test('spec: Given a choice made before the check answered, when worded in each language, then it says the check is still running', () => {
-    expect(layoutNoticeText(en, { kind: 'checking' })).toBe('Still checking which layouts fit this slide — try again in a moment.')
-    expect(layoutNoticeText(ja, { kind: 'checking' })).toBe(ja.layoutChecking)
-  })
 
   test('adversarial: empty strings and markup-like text pass through verbatim (rendered as text, never HTML)', () => {
-    expect(layoutNoticeText(en, { kind: 'mismatch', layout: '', reason: '' })).toBe("\"\" doesn't fit this slide: ")
-    expect(layoutNoticeText(en, { kind: 'mismatch', layout: '<b>x</b>', reason: "slot 'a' got 2 item(s)\nsecond line" }))
-      .toBe("\"<b>x</b>\" doesn't fit this slide: slot 'a' got 2 item(s)\nsecond line")
+    const odd: LayoutFitCheck = { kind: 'checked', verdicts: [{ layout: '<b>x</b>', fit: { kind: 'mismatch', reason: "slot 'a' got 2 item(s)\nsecond line" } }, { layout: '', fit: { kind: 'mismatch', reason: '' } }] }
+    expect(entryTitle(odd, '<b>x</b>', en)).toBe("\"<b>x</b>\" doesn't fit this slide: slot 'a' got 2 item(s)\nsecond line")
+    expect(entryTitle(odd, '', en)).toBe("\"\" doesn't fit this slide: ")
   })
 })

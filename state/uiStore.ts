@@ -1,7 +1,7 @@
 import { createSignal, createMemo } from '@barefootjs/client'
 import { type DragState } from '../domain/drag'
-import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withLayoutFitResult, withLayoutNotice } from '../domain/contextMenu'
-import { type LayoutNotice, type LayoutVerdict } from '../domain/layoutFit'
+import { type ContextMenu, appendIndex as computeAppendIndex, openOnSlide, withLayoutFitResult } from '../domain/contextMenu'
+import { type LayoutVerdict } from '../domain/layoutFit'
 import type { PreviewClick } from '../domain/reviewComment'
 import { COMMENT_MENU_CLOSED, type CommentMenu, withCommentMenuPosition } from '../domain/commentMenu'
 import { scopeRootToHost, splitFontFaceRules } from '../domain/slideCss'
@@ -81,9 +81,6 @@ export function createUiStore() {
   }
   function settleLayoutFit(requestId: number, verdicts: readonly LayoutVerdict[] | null): void {
     setContextMenu(menu => withLayoutFitResult(menu, requestId, verdicts))
-  }
-  function showLayoutNotice(notice: LayoutNotice): void {
-    setContextMenu(menu => withLayoutNotice(menu, notice))
   }
   /** The index a slide-appending action (New Slide, Paste) should insert
    * after — the right-clicked slide, or the end of the list when the menu
@@ -242,7 +239,7 @@ export function createUiStore() {
     studioMode, setStudioMode,
     dragState, setDragState, draggedIndex, dragOverGap, dragDeltaY,
     contextMenu, setContextMenu, closeContextMenu, toggleLayoutPicker, contextMenuAppendIndex,
-    openSlideContextMenu, settleLayoutFit, showLayoutNotice,
+    openSlideContextMenu, settleLayoutFit,
     commentMenu, openCommentMenu, closeCommentMenu, moveCommentMenu,
     layoutPreviews, setLayoutPreviews, layoutPreviewStylesheetText, setLayoutPreviewCss,
     clipboardSlideText, setClipboardSlideText,

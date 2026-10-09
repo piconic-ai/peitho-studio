@@ -117,8 +117,8 @@ test.describe('functional', () => {
 
     const photo = page.locator('button[data-key="photo"]')
     await expect(photo).toBeVisible()
-    await expect(photo).toHaveAttribute('aria-disabled', 'false')
-    await expect(page.locator('button[data-key="title-body-code"]')).toHaveAttribute('aria-disabled', 'true')
+    await expect(photo).toHaveAttribute('data-layout-mismatch', 'false')
+    await expect(page.locator('button[data-key="title-body-code"]')).toHaveAttribute('data-layout-mismatch', 'true')
     await photo.click()
 
     await expect.poll(() => slidesOf(deck.source)[0]).toContain('"layout":"photo"')
