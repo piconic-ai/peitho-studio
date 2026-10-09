@@ -43,7 +43,7 @@ export function statusText(messages: Messages, status: StatusMessage): string {
     case 'merged-external-change': return messages.mergedExternalChange
     case 'reloaded-external-change': return messages.reloadedExternalChange
     case 'build-error-reported': return messages.buildErrorReported
-    case 'build-error-waiting': return messages.buildErrorWaitingForAgent
+    case 'build-error-waiting': return messages.buildErrorWaitingForAi
     case 'presenting': return status.rehearsal ? messages.presentingRehearsal : messages.presenting
     case 'importing-images': return messages.importingImages(status.count)
     case 'imported-images': return messages.importedImages(status.count)

@@ -115,7 +115,7 @@ test('Given an agent waiting and typing that does not build, when the error is s
   await expect.poll(() => methods(crit)).toContain('finish')
   expect(sentComments(crit)).toEqual([slideTwoComment(7)])
   expect(methods(crit).indexOf('addComments')).toBeLessThan(methods(crit).indexOf('finish'))
-  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the agent.')
+  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the AI.')
   await page.waitForTimeout(500)
   expect(methods(crit).filter(method => method === 'finish')).toHaveLength(1)
 
@@ -144,7 +144,7 @@ test('Given no agent waiting, when the error is sent, then it is written and wai
   await page.locator(SEND).click()
 
   await expect.poll(() => deck.source).toContain(BROKEN_TWO)
-  await expect(page.locator(STATUS)).toHaveText('Waiting for an agent to send the build error to.')
+  await expect(page.locator(STATUS)).toHaveText('Waiting for the AI to connect; the build error goes once it does.')
   await page.waitForTimeout(300)
   expect(methods(crit)).not.toContain('addComments')
 
@@ -152,7 +152,7 @@ test('Given no agent waiting, when the error is sent, then it is written and wai
 
   await expect.poll(() => methods(crit)).toContain('finish')
   expect(sentComments(crit)).toEqual([slideTwoComment(7)])
-  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the agent.')
+  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the AI.')
 })
 
 test('Given the deck on disk was reported already, when the user sends its error again, then the same error goes once more', async ({ page }) => {
@@ -175,7 +175,7 @@ test('Given the deck on disk was reported already, when the user sends its error
 
   await expect.poll(() => sentComments(crit)).toEqual([slideTwoComment(8), slideTwoComment(8)])
   await expect.poll(() => methods(crit).filter(method => method === 'finish')).toHaveLength(2)
-  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the agent.')
+  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the AI.')
 })
 
 test('Given a frontmatter error typed in the deck source editor, when it is sent, then the text is written as it is and the error goes to the agent', async ({ page }) => {
@@ -205,7 +205,7 @@ test('Given a frontmatter error typed in the deck source editor, when it is sent
   await expect.poll(() => sentComments(crit)).toHaveLength(2)
   expect(sentComments(crit)[1]).toMatchObject({ startLine: 2, endLine: 2, quote: 'fontss: y' })
   expect(sentComments(crit)[1].body).toContain('[Build error] line 2: invalid deck frontmatter')
-  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the agent.')
+  await expect(page.locator(STATUS)).toHaveText('Sent the build error to the AI.')
   // The deck on disk doesn't build at all now: no thumbnails, the source
   // editor still offered.
   await expect(page.locator(THUMBNAIL_CANVAS)).toHaveCount(0)
