@@ -345,19 +345,25 @@ describe('saveDecision', () => {
     expect(saveDecision(slideError(2, 'two'), known, 1, 3)).toBe('block')
   })
 
-  test('spec: Given the user hands their typing to the agent (handOff), when the slide they edit does not build, then it is isolated and saved as typed', () => {
-    expect(saveDecision(slideError(2, 'two'), known, 1, 3, true)).toBe('isolate')
-    expect(saveDecision(slideError(3, 'three'), NO_BROKEN_SLIDES, 2, 3, true)).toBe('isolate')
+  test('spec: Given the user hands their typing to the agent (the edited slide saved as is), when the slide they edit does not build, then it is isolated and saved as typed', () => {
+    expect(saveDecision(slideError(2, 'two'), known, 1, 3, 1)).toBe('isolate')
+    expect(saveDecision(slideError(3, 'three'), NO_BROKEN_SLIDES, 2, 3, 2)).toBe('isolate')
   })
 
-  test('adversarial: Given a hand-off, when the error names another slide not known broken, then it is still blocked — only the edited slide is handed off', () => {
-    expect(saveDecision(slideError(3, 'three'), known, 0, 3, true)).toBe('block')
-    expect(saveDecision(slideError(3, 'three'), NO_BROKEN_SLIDES, null, 3, true)).toBe('block')
+  test('spec: Given the user pins a slide to a layout it does not fit (saved as is), when that slide does not build, then it is isolated and the pin is saved', () => {
+    expect(saveDecision(slideError(2, 'two'), NO_BROKEN_SLIDES, null, 3, 1)).toBe('isolate')
+    expect(saveDecision(slideError(1, 'one'), NO_BROKEN_SLIDES, 2, 3, 0)).toBe('isolate')
   })
 
-  test('adversarial: Given a hand-off, when the error names no slide or one past the deck, then there is nothing to isolate and it is blocked', () => {
-    expect(saveDecision(slideError(2, 'two', { slide: null }), NO_BROKEN_SLIDES, 1, 3, true)).toBe('block')
-    expect(saveDecision(slideError(9, 'nine'), NO_BROKEN_SLIDES, 8, 3, true)).toBe('block')
+  test('adversarial: Given a slide saved as is, when the error names another slide not known broken, then it is still blocked — only that slide is saved broken', () => {
+    expect(saveDecision(slideError(3, 'three'), known, 0, 3, 0)).toBe('block')
+    expect(saveDecision(slideError(3, 'three'), NO_BROKEN_SLIDES, null, 3, 0)).toBe('block')
+    expect(saveDecision(slideError(3, 'three'), NO_BROKEN_SLIDES, 2, 3, 0)).toBe('block')
+  })
+
+  test('adversarial: Given a slide saved as is, when the error names no slide or one past the deck, then there is nothing to isolate and it is blocked', () => {
+    expect(saveDecision(slideError(2, 'two', { slide: null }), NO_BROKEN_SLIDES, 1, 3, 1)).toBe('block')
+    expect(saveDecision(slideError(9, 'nine'), NO_BROKEN_SLIDES, 8, 3, 8)).toBe('block')
   })
 
   test('spec: Given the known slide moved (a slide inserted above it), when the error names its new position with the same key, then it is still isolated', () => {

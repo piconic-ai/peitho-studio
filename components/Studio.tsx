@@ -44,7 +44,7 @@ import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, indexAfterCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
-import { type FrontmatterStep, type HistoryStep, type LayoutPinsStep, type PageNumbersStep, type SlideChange, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyLayoutPinsStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inverseLayoutPinsStep, inversePageNumbersStep, historyPinsLayout, layoutPinsStepFor, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
+import { type FrontmatterStep, type HistoryStep, type LayoutPinsStep, type PageNumbersStep, type SlideChange, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyLayoutPinsStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inverseLayoutPinsStep, inversePageNumbersStep, historyPinsLayout, layoutPinnedSlide, layoutPinsStepFor, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
 import { type DeckSettingsState, frontmatterValueOf, pickChangesNothing, readDeckSettings, resolveDeckSettingPick, sameDeckSettings } from '../domain/deckSettings'
 import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
@@ -2452,13 +2452,17 @@ export function Studio() {
   // `cmd`: the structural command `nextSource` applies, if any — the kept
   // editor states follow their slides through it.
   //
+  // `savedAsIs`: a slide the user asked to keep as it is even if it doesn't
+  // build — one they pinned to a layout it doesn't fit (yet) — isolated
+  // and saved broken rather than refusing the change.
+  //
   // Resolves `true` once the change is rendered and saved, `false` if either
   // step failed (the error is already shown) — undo history records only a
   // change that actually landed.
   async function commitChange(
     nextSource: string,
     plan: SelectionPlan,
-    { expectedDraft, cmd, handOff = false }: { expectedDraft?: { body: string; note: string }; cmd?: SlideCommand; handOff?: boolean } = {},
+    { expectedDraft, cmd, handOff = false, savedAsIs = null }: { expectedDraft?: { body: string; note: string }; cmd?: SlideCommand; handOff?: boolean; savedAsIs?: number | null } = {},
   ): Promise<boolean> {
     const before = editor.editorSession()
     const finishSave = saves.begin(nextSource, expectedDraft ? 'draft' : 'structural')
@@ -2491,7 +2495,8 @@ export function Studio() {
       // saved broken, and what can't be isolated (an error naming no
       // slide) is saved all the same, the deck on disk then not building
       // (`markRenderFailed`, as an external change that breaks it).
-      const result = await renderIsolating(nextSource, error => saveDecision(error, known, editedIndex, slideCount, handOff) === 'isolate')
+      const asIs = savedAsIs ?? (handOff ? editedIndex : null)
+      const result = await renderIsolating(nextSource, error => saveDecision(error, known, editedIndex, slideCount, asIs) === 'isolate')
       if (result.kind === 'failed' && !handOff) throw new RenderFailure(result.error)
       if (result.kind === 'rendered') render.applyRenderPayload(result.payload, nextSource, result.broken)
       await deckIpc.saveDeckSource(nextSource)
@@ -2743,7 +2748,7 @@ export function Studio() {
     const cmd = commandForStep(texts, step)
     if (validate(texts, cmd)) return { kind: 'rejected' }
     const inverse = inverseStep(texts, step)
-    const ok = await commitChange(sourceFor(applyCommand(texts, cmd), cmd), planFor(cmd), { cmd })
+    const ok = await commitChange(sourceFor(applyCommand(texts, cmd), cmd), planFor(cmd), { cmd, savedAsIs: layoutPinnedSlide(step) })
     return ok ? { kind: 'done', inverse } : { kind: 'failed' }
   }
 

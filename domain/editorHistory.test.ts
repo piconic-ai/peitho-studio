@@ -7,6 +7,7 @@ import {
   applyLayoutPinsStep,
   inverseLayoutPinsStep,
   layoutPinsStepFor,
+  layoutPinnedSlide,
   applyPageNumbersStep,
   commandForStep,
   hiddenPageNumberSlides,
@@ -690,5 +691,22 @@ describe('stepPinsLayout / historyPinsLayout (forgetting history after a layout 
   test('adversarial: Given an empty history or an empty layout name, Then nothing pins it', () => {
     expect(historyPinsLayout(EMPTY_HISTORY, 'quote')).toBe(false)
     expect(historyPinsLayout({ undo: [LAYOUT_OFF], redo: [] }, '')).toBe(false)
+  })
+})
+
+describe('layoutPinnedSlide', () => {
+  test('spec: a config step that sets a slide\'s layout pins that slide', () => {
+    expect(layoutPinnedSlide({ kind: 'config', index: 2, patch: { layout: 'title-body-image' } })).toBe(2)
+    expect(layoutPinnedSlide({ kind: 'config', index: 0, patch: { layout: 'cover', draft: true } })).toBe(0)
+  })
+
+  test('spec: Undo clearing a layout (the field named, set to undefined) still pins that slide', () => {
+    expect(layoutPinnedSlide({ kind: 'config', index: 1, patch: { layout: undefined } })).toBe(1)
+  })
+
+  test('adversarial: config steps that leave the layout alone, and slide commands, pin nothing', () => {
+    expect(layoutPinnedSlide({ kind: 'config', index: 1, patch: { draft: true } })).toBeNull()
+    expect(layoutPinnedSlide({ kind: 'config', index: 1, patch: {} })).toBeNull()
+    expect(layoutPinnedSlide({ kind: 'slides', cmd: { type: 'replace', index: 1, text: '<!-- {"layout":"x"} -->\n# X\n' } })).toBeNull()
   })
 })
