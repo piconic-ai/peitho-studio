@@ -10,11 +10,15 @@
 // themselves match peitho-core is `engine::layout_fit`'s own Rust tests.
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
-import { fillEditor } from './helpers/codeEditor'
+import { editorText, fillEditor } from './helpers/codeEditor'
 import type { LayoutVerdict } from '../domain/layoutFit'
+import type { RenderErrorPayload } from '../domain/render'
+import { extractPageComment, splitSlides } from '../domain/slides'
 
 const MISSING_BODY = "unassigned content remains for missing 'body' slot"
 const NO_BODY = "slot 'body' got 0 item(s), but layout 'statement' allows 1..*"
+const MISSING_IMAGE = "slot 'image' got 0 item(s), but layout 'title-body-image' allows 1..1"
+const ERROR_BAR = '.bg-destructive\\/10'
 
 const SOURCE = '<!-- {"key":"cover","layout":"cover"} -->\n# Cover\n\n---\n\n<!-- {"key":"what","layout":"statement"} -->\n# What\n\nA paragraph.\n'
 
@@ -58,7 +62,6 @@ test('Given a slide with a body, when the user chooses a layout with nowhere to 
 })
 
 test('Given a new slide holding only a heading, when the user chooses the image layout it is missing an image for, then the layout is pinned', async ({ page }) => {
-  const MISSING_IMAGE = "slot 'image' got 0 item(s), but layout 'title-body-image' allows 1..1"
   const deck: MockDeck = {
     source: '<!-- {"key":"intro","layout":"title-body"} -->\n# Intro\n\nHello.\n',
     layouts: ['title-body', 'title-body-image'],
@@ -80,6 +83,51 @@ test('Given a new slide holding only a heading, when the user chooses the image 
   await pickerEntry(page, 'title-body-image').click()
 
   await expect.poll(() => deck.source.split(/^---$/m)[1]).toContain('"layout":"title-body-image"')
+})
+
+
+/** peitho-core's refusal of a non-draft slide pinned to the image layout
+ * without an image — attributed to that slide, as the real engine does. */
+function missingImageError(content: string): RenderErrorPayload | null {
+  const ranges = splitSlides(content)
+  for (let i = 0; i < ranges.length; i++) {
+    const { config } = extractPageComment(ranges[i].text)
+    if (config.draft === true || config.layout !== 'title-body-image' || ranges[i].text.includes('![')) continue
+    const key = config.key ?? null
+    return {
+      kind: 'Arity', line: 1, originFile: null, message: MISSING_IMAGE, help: 'add content for the image slot',
+      headline: `slide ${String(i + 1)}${key === null ? '' : ` ('${key}')`}: ${MISSING_IMAGE}`,
+      slide: { number: i + 1, key },
+    }
+  }
+  return null
+}
+
+test('Given a deck whose only slide holds just a heading, when the user chooses the image layout, then the pin is saved though nothing is left to render, and adding the image renders it', async ({ page }) => {
+  const deck: MockDeck = {
+    source: '<!-- {"key":"only","layout":"title-body"} -->\n# Only\n',
+    layouts: ['title-body', 'title-body-image'],
+    renderError: missingImageError,
+    layoutVerdicts: () => [
+      { layout: 'title-body', fit: { kind: 'fits' } },
+      { layout: 'title-body-image', fit: { kind: 'mismatch', reason: MISSING_IMAGE } },
+    ],
+  }
+  await mockTauri(page, deck)
+  await page.goto('/')
+  await expect(page.locator('[data-slide-row]')).toHaveCount(1, { timeout: 10_000 })
+
+  await openLayoutPicker(page, 0)
+  await pickerEntry(page, 'title-body-image').click()
+
+  await expect.poll(() => deck.source).toContain('"layout":"title-body-image"')
+  await expect(page.locator(ERROR_BAR)).toContainText(MISSING_IMAGE)
+
+  await page.locator('[data-slide-row="0"]').click()
+  await expect.poll(() => editorText(page)).toBe('# Only')
+  await fillEditor(page, '# Only\n\n![](img/photo.png)')
+  await expect.poll(() => deck.source, { timeout: 10_000 }).toContain('![](img/photo.png)')
+  await expect(page.locator(ERROR_BAR)).toBeHidden({ timeout: 10_000 })
 })
 
 test('Given a title-only slide, when the user chooses a layout it fits, then the layout is pinned and the menu closes', async ({ page }) => {

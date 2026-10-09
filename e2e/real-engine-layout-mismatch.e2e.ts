@@ -73,3 +73,40 @@ test('Given a new slide holding only a heading, when the image layout is chosen 
     engine.stop()
   }
 })
+
+test('Given a deck whose only slide holds just a heading, when the image layout is chosen, then the pin is saved though nothing is left to render, and adding the image renders it', async ({ page }) => {
+  const engine = startRealEngine()
+  try {
+    const deckPath = await engine.newDeck(mkdtempSync(join(tmpdir(), 'peitho-e2e-')))
+    mkdirSync(join(dirname(deckPath), 'img'), { recursive: true })
+    writeFileSync(join(dirname(deckPath), 'img/photo.png'), TINY_PNG)
+    const source = '<!-- {"key":"only","layout":"title-body"} -->\n# Only\n'
+    writeFileSync(deckPath, source)
+
+    const deck = {
+      source,
+      deckPath,
+      layouts: ['title-slide', 'title-body', IMAGE_LAYOUT],
+      realEngine: (cmd: string, args: Record<string, unknown>) => engine.invoke(deckPath, cmd, args),
+    }
+    await mockTauri(page, deck)
+    await page.goto('/')
+    await expect(page.locator('[data-slide-row]')).toHaveCount(1, { timeout: 10_000 })
+
+    await page.locator('[data-slide-row="0"]').click({ button: 'right' })
+    await page.getByRole('button', { name: /^Change Layout/ }).click()
+    await page.locator(`button[data-key="${IMAGE_LAYOUT}"]`).click()
+
+    await expect.poll(() => deck.source, { timeout: 10_000 }).toContain(`"layout":"${IMAGE_LAYOUT}"`)
+    await expect(page.locator(ERROR_BAR)).toContainText("slot 'image' got 0 item(s)")
+
+    await page.locator('[data-slide-row="0"]').click()
+    await expect.poll(() => editorText(page)).toBe('# Only')
+    await fillEditor(page, '# Only\n\n![](img/photo.png)')
+    await expect.poll(() => deck.source, { timeout: 10_000 }).toContain('![](img/photo.png)')
+    await expect(page.locator(ERROR_BAR)).toBeHidden({ timeout: 10_000 })
+    await expect(page.locator('[data-preview-host] img')).toHaveCount(1)
+  } finally {
+    engine.stop()
+  }
+})
