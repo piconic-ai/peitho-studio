@@ -22,6 +22,7 @@ import {
 } from '../domain/reviewComment'
 import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, connectTargetOf, showsConnectGuide } from '../domain/agentConnect'
 import { type BuildErrorReportEvent, buildErrorComment, buildErrorIdentity, decideBuildErrorReport, diskBuildOf } from '../domain/buildErrorReport'
+import { type AgentState, type ShownError, errorBarAction } from '../domain/errorBar'
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
 import { layoutThumbnailClickOf, layoutThumbnailContextClickOf, noteLayoutRowPress } from '../dom/layoutComments'
 import { keepShownPopupsInWindow } from '../dom/popupFit'
@@ -2180,14 +2181,20 @@ export function Studio() {
     dispatchBuildErrorReport({ type: 'report-requested', errors: build.errors, source: build.source })
     if (review.report().kind === 'waiting-for-agent' && review.busy() !== 'sending') setStatusMessage({ kind: 'build-error-waiting' })
   }
-  // What the error bar's button does with the error it shows: a build
-  // error — the text being edited not building (`shownBuildError`), or
-  // the deck on disk (its refusal, or the slides isolated from it) — goes
-  // to the agent; any other error is copied.
-  const errorAction = createMemo<'copy' | 'send'>(() => {
+  // What the error bar offers next to the error it shows
+  // (`domain/errorBar.ts`): a build error — the text being edited not
+  // building (`shownBuildError`), or the deck on disk (its refusal, or the
+  // slides isolated from it) — goes to the AI, or is with it already; any
+  // other error is copied.
+  const errorAction = createMemo<'copy' | 'send' | 'fixing'>(() => {
     const transient = errorMessage()
-    if (transient !== null) return transient === shownBuildError ? 'send' : 'copy'
-    return deckErrorMessage() !== null || brokenSlidesMessage() !== null ? 'send' : 'copy'
+    const shown: ShownError | null = transient !== null
+      ? (transient === shownBuildError ? 'transient-build' : 'transient-other')
+      : (deckErrorMessage() !== null || brokenSlidesMessage() !== null ? 'deck-build' : null)
+    if (shown === null) return 'copy'
+    const session = review.session()
+    const agent: AgentState = session?.kind !== 'found' ? 'none' : session.agentWaiting ? 'waiting' : 'working'
+    return errorBarAction(shown, review.report().kind, agent)
   })
 
   async function resolveReviewComment(id: string): Promise<void> {
@@ -4716,7 +4723,7 @@ export function Studio() {
         imageLayoutAdding={ui.imageLayoutAdding()}
         statusMessage={statusText(settings.messages(), statusMessage())}
         onCopyErrorMessage={() => void copyErrorMessage()}
-        onSendErrorToAgent={() => void handOffBuildError()}
+        onSendErrorToAi={() => void handOffBuildError()}
         onImageSlotFix={applyImageSlotFix}
       />
 
