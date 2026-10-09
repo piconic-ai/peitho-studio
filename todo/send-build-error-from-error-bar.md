@@ -39,8 +39,13 @@ deck.mdに書いてから、#187と同じ`[Build error]`コメントを送る**
 - **受け入れ条件**:
   - エラーバーがビルドエラー(`showBuildError`で出したもの、または
     `render.outcome()`/隔離済みスライドのディスクのエラー)を出している
-    とき、ボタンは「コピー」ではなく「エージェントに送る」(en: "Send to
-    agent")。ビルド以外のエラーでは今まで通り「コピー」。
+    とき、ボタンは「コピー」ではなく「AIに送る」(en: "Send to AI")。
+    ビルド以外のエラーでは今まで通り「コピー」。
+  - 送った後(ディスクのエラーが送信済みで、エージェントが巡を受け取って
+    作業中)は、ボタンの代わりに「AIが調整中…」(en: "AI is fixing…")が
+    出る。エージェントが直せば描画が通ってバーごと消え、直さずに
+    次の巡で待ち始めればボタンが戻る(もう一度送れる)。判定は
+    `domain/errorBar.ts`の`errorBarAction`。
   - ビルドエラーは6秒で消えない。次の描画が通った時点(打ち直して直った、
     別スライドに移って下書きが消えた、エージェントが直して外部変更が
     来た)で消える。
@@ -162,8 +167,9 @@ deck.mdに書いてから、#187と同じ`[Build error]`コメントを送る**
    `errorBarAction(shown: 'build' | 'other' | 'none')`を置くほどでも
    ないので、`Studio.tsx`のmemoで`shownBuildError !== null ||
    buildError() !== null`を見て決める。
-5. メッセージ(`domain/messages.ts` en/ja): `sendErrorToAgent`
-   ("Send to agent"/「エージェントに送る」)、
+5. メッセージ(`domain/messages.ts` en/ja): `sendErrorToAi`
+   ("Send to AI"/「AIに送る」)、`aiFixingError`("AI is fixing…"/
+   「AIが調整中…」)、
    `buildErrorWaitingForAgent`("Waiting for an agent to send the build
    error to."/「エージェントの接続を待っています。」)。
 
