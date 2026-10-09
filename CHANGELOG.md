@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.1.7](https://github.com/piconic-ai/peitho-studio/compare/v0.1.6...v0.1.7) - 2026-10-09
+
+- Open a deck that doesn't build, with peitho-core's error in view by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/185
+- Render a deck without the slides that don't build by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/186
+- Comment the deck's build errors to the agent waiting in crit by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/187
+- Send a build error to the agent from the error bar, and keep it shown by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/190
+
 ## [v0.1.6](https://github.com/piconic-ai/peitho-studio/compare/v0.1.5...v0.1.6) - 2026-10-07
 
 - Upload the updater archive under a name GitHub keeps as-is by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/181
