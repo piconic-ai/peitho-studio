@@ -10,6 +10,12 @@ export interface StatusBarProps {
   language: Language
   errorMessage: string | null
   errorMessageCopied: boolean
+  /** What the bar's button does with the error shown: a build error goes
+   * to the agent (`send`, todo/send-build-error-from-error-bar.md), any
+   * other error is copied. */
+  errorAction: 'copy' | 'send'
+  /** A send to the agent is on its way: the send button waits for it. */
+  sendingError: boolean
   /** The way out of the error shown, if the app has one — see
    * `domain/imageSlot.ts`. */
   imageSlotFix: ImageSlotFix['kind']
@@ -17,6 +23,7 @@ export interface StatusBarProps {
   imageLayoutAdding: boolean
   statusMessage: string
   onCopyErrorMessage: () => void
+  onSendErrorToAgent: () => void
   onImageSlotFix: (event: MouseEvent) => void
 }
 
@@ -48,8 +55,22 @@ export function StatusBar(props: StatusBarProps) {
         >
           {imageSlotFixLabel(messagesFor(props.language), props.imageSlotFix, props.imageLayoutAdding)}
         </button>
+        {/* One button each, both always mounted (as above), one hidden:
+            a build error is handed to the agent, anything else copied. */}
         <button
           type="button"
+          data-error-action="send"
+          hidden={props.errorAction !== 'send'}
+          disabled={props.sendingError}
+          onClick={() => props.onSendErrorToAgent()}
+          className="shrink-0 px-1.5 py-0.5 rounded border border-destructive bg-destructive/20 font-medium hover:bg-destructive/30 disabled:opacity-50"
+        >
+          {messagesFor(props.language).sendErrorToAgent}
+        </button>
+        <button
+          type="button"
+          data-error-action="copy"
+          hidden={props.errorAction !== 'copy'}
           onClick={() => props.onCopyErrorMessage()}
           className="shrink-0 px-1.5 py-0.5 rounded border border-destructive/30 hover:bg-destructive/20"
         >
