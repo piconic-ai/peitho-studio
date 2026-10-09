@@ -45,10 +45,13 @@ export interface Messages {
   // Status bar
   copyError: string
   errorCopied: string
-  /** The error bar's button on a build error: it goes to the agent in
-   * crit, written to disk first when it is the editor's own typing
+  /** The error bar's button on a build error: it goes to the AI in crit,
+   * written to disk first when it is the editor's own typing
    * (todo/send-build-error-from-error-bar.md). */
-  sendErrorToAgent: string
+  sendErrorToAi: string
+  /** In the button's place once the error was sent and the AI is at
+   * work on it (`domain/errorBar.ts`). */
+  aiFixingError: string
 
   // Slide editor
   speakerNotes: string
@@ -309,7 +312,8 @@ const en: Messages = {
 
   copyError: 'Copy',
   errorCopied: 'Copied',
-  sendErrorToAgent: 'Send to agent',
+  sendErrorToAi: 'Send to AI',
+  aiFixingError: 'AI is fixing…',
 
   speakerNotes: 'Speaker Notes',
   speakerNotesPlaceholder: 'Notes for the presenter — not shown to the audience.',
@@ -524,7 +528,8 @@ const ja: Messages = {
 
   copyError: 'コピー',
   errorCopied: 'コピーしました',
-  sendErrorToAgent: 'エージェントに送る',
+  sendErrorToAi: 'AIに送る',
+  aiFixingError: 'AIが調整中…',
 
   speakerNotes: 'スピーカーノート',
   speakerNotesPlaceholder: '発表者用のメモ — 聴衆には表示されません。',
