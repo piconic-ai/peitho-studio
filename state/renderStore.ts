@@ -1,5 +1,6 @@
 import { createSignal, createMemo, batch } from '@barefootjs/client'
 import { type Manifest, type ManifestSection, type SectionDraft, type RenderErrorPayload, type RenderPayload, savedSectionDraft, sectionStartByIndex as computeSectionStartByIndex } from '../domain/render'
+import { type BrokenSlides, NO_BROKEN_SLIDES } from '../domain/brokenSlides'
 
 /** How the deck's last render went: `none` before any render was tried
  * (no deck open), `rendered` once a render succeeded, `failed` while the
@@ -66,6 +67,16 @@ export function createRenderStore() {
   // produced it removes the mismatched read entirely, regardless of when
   // `fullSource()` itself gets around to catching up.
   const [renderedSource, setRenderedSource] = createSignal('')
+  // The slides the current render isolated for not building (by their
+  // position in `renderedSource()` — see `domain/brokenSlides.ts`),
+  // written only with the manifest they were isolated from, in the same
+  // `batch()`. A whole map in one signal, which CLAUDE.md warns against
+  // for anything rows read: no row reads this — `Studio.tsx`'s
+  // `slideEntries` memo bakes each slide's error into its own entry
+  // (`buildSlideList`), and the error bar's summary is a memo of a
+  // string — so a render that isolates the same slides notifies the same
+  // readers a render always does, and nothing per row.
+  const [brokenSlides, setBrokenSlides] = createSignal<BrokenSlides>(NO_BROKEN_SLIDES)
   // The layout each slide of `manifest()` was built on (by key) and the
   // deck's layouts, written with it — read when a slide is added, to name
   // the new slide's layout (`domain/standardLayouts.ts`).
@@ -151,7 +162,12 @@ export function createRenderStore() {
   // that's unchanged is what lets the keyed `.map()` over `manifest().slides`
   // skip re-running that row's bindings at all — see `stabilizeByKey`'s own
   // comment for why this is load-bearing, not just tidiness.
-  function applyRenderPayload(payload: RenderPayload, source: string): void {
+  //
+  // `source` is the deck as written, even when `payload` was rendered
+  // from a copy with `broken`'s slides marked draft: the manifest pairs up
+  // with the written source exactly because `buildSlideList` skips those
+  // positions (`domain/slideList.ts`).
+  function applyRenderPayload(payload: RenderPayload, source: string, broken: BrokenSlides = NO_BROKEN_SLIDES): void {
     // Everything a slide's one-shot mount read depends on — its fragment,
     // the canvas size, the asset base URL — must already be current
     // *before* `setManifest` below, not after. A brand-new row (this deck's
@@ -184,6 +200,7 @@ export function createRenderStore() {
       if (canvasWidth() !== payload.manifest.canvasWidth) setCanvasWidth(payload.manifest.canvasWidth)
       if (canvasHeight() !== payload.manifest.canvasHeight) setCanvasHeight(payload.manifest.canvasHeight)
       if (renderedSource() !== source) setRenderedSource(source)
+      if (brokenSlides().size > 0 || broken.size > 0) setBrokenSlides(broken)
       setSlideLayouts(payload.slideLayouts)
       setHeadingLayouts(payload.headingLayouts)
       const previousSlides = manifest()?.slides ?? []
@@ -198,7 +215,7 @@ export function createRenderStore() {
   }
 
   return {
-    assetBaseUrl, canvasWidth, canvasHeight, manifest, outcome, markRenderFailed, renderedSource, slideLayouts, headingLayouts, sectionStartByIndex,
+    assetBaseUrl, canvasWidth, canvasHeight, manifest, outcome, markRenderFailed, renderedSource, brokenSlides, slideLayouts, headingLayouts, sectionStartByIndex,
     sectionDrafts, setSectionDrafts, sectionDraftOf,
     fragmentSignal, fragmentOf, canvasFragmentOf, previewFragmentOf, applyRenderPayload,
     slideStylesheetText, fontFaceCss,

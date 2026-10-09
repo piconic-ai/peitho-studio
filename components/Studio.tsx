@@ -30,7 +30,8 @@ import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
 import { PanelToggle } from './PanelToggle'
 import { ReviewPanel } from './ReviewPanel'
-import { type ManifestSlide, type RenderPayload, type SectionDraft, brokenSlideIndex, renderFailureMessage } from '../domain/render'
+import { type ManifestSlide, type RenderErrorPayload, type RenderPayload, type SectionDraft, brokenSlideIndex, renderFailureMessage } from '../domain/render'
+import { type BrokenSlides, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesAfterEdit, brokenSlidesSummary, isolateSlide, restoreEditAnnotations, saveDecision, sourceSaveDecision, startIsolation } from '../domain/brokenSlides'
 import { RenderFailure } from '../ipc/renderOutcome'
 import { SOURCE_EDITING_CLOSED, openSourceEditing, slideIndexAfterSourceSave, sourceEditorOffered, sourceReadFromDisk, sourceSaved, typeInSource } from '../domain/sourceEditing'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
@@ -182,6 +183,13 @@ export function Studio() {
         render.markRenderFailed(info.render.error)
         const broken = brokenSlideIndex(info.render.error, editor.slideRanges().length)
         if (broken !== null) await selectSlide(broken)
+        // Render the rest of the deck without the slides that don't build
+        // (`domain/brokenSlides.ts`): `open_deck` renders once and stops
+        // at the first refusal; this retries, isolating each slide named,
+        // and lands as a render with ERROR rows — or, when it can't
+        // isolate, leaves the failed state set above. Not awaited: the
+        // editor opens on the source meanwhile.
+        void renderPreview(editor.fullSource(), { persisted: true })
       }
       setStatusMessage({ kind: 'opened', deckPath: info.deckPath })
       await dispatch({ type: 'opened', deckPath: info.deckPath })
@@ -515,8 +523,15 @@ export function Studio() {
     setErrorMessage(null)
     setSourceSavesInFlight(n => n + 1)
     try {
-      const payload = await deckIpc.renderDraft(text)
-      render.applyRenderPayload(payload, text)
+      // Rendered without a slide already known broken that the text keeps
+      // word for word (`sourceSaveDecision`): the editor's own typing is
+      // never saved broken, but a slide it didn't touch doesn't hold its
+      // save back either.
+      const known = render.brokenSlides()
+      const from = render.renderedSource()
+      const result = await renderIsolating(text, error => sourceSaveDecision(error, known, from, text) === 'isolate')
+      if (result.kind === 'failed') throw new RenderFailure(result.error)
+      render.applyRenderPayload(result.payload, text, result.broken)
       await deckIpc.saveDeckSource(text)
       // From disk, as after an external change: the slide session, its
       // drafts and every kept position are rebuilt for the new source.
@@ -1013,9 +1028,11 @@ export function Studio() {
   // With no render at all (a deck that opened broken — `runOpen`), there
   // is no manifest to pair with anything: every slide of the source as the
   // editor has it is a placeholder, which that pairing can't get wrong.
+  // `render.brokenSlides()` is keyed by position in `renderedSource()` and
+  // written with the manifest (same `batch()`), so the three agree.
   const slideEntries = createMemo(() => {
     const manifest = render.manifest()
-    return manifest === null ? buildSlideList(editor.fullSource(), []) : buildSlideList(render.renderedSource(), manifest.slides)
+    return manifest === null ? buildSlideList(editor.fullSource(), []) : buildSlideList(render.renderedSource(), manifest.slides, render.brokenSlides())
   })
   const sectionStarts = createMemo(() => sectionStartBySourceIndex(render.manifest()?.sections ?? [], slideEntries()))
   // The slide list's section folding (`domain/sectionCollapse.ts`): each
@@ -1087,18 +1104,37 @@ export function Studio() {
   // what lets the preview pane (below) depend on "which slide is
   // selected" without also depending on "has its content changed".
   const selectedSlideKey = createMemo<string | null>(() => selectedSlide()?.key ?? null)
-  // peitho-core's refusal of the deck on disk, for the preview pane — as
-  // one string, so the pane isn't notified for an error object that reads
-  // the same.
+  // peitho-core's refusal of the deck on disk, or of the selected slide
+  // when it was isolated from the render, for the preview pane — as one
+  // string, so the pane isn't notified for an error object that reads the
+  // same. The deck's own refusal wins: with it set, the last render (and
+  // its isolated slides) is stale.
+  const selectedBrokenSlideError = createMemo<RenderErrorPayload | null>(() => {
+    const i = editor.selectedIndex()
+    const entry = i === null ? undefined : slideEntries()[i]
+    return entry?.kind === 'placeholder' ? entry.error : null
+  })
+  const buildErrorScope = createMemo<'deck' | 'slide'>(() => (render.outcome().kind === 'failed' ? 'deck' : 'slide'))
   const buildError = createMemo<string | null>(() => {
+    const outcome = render.outcome()
+    if (outcome.kind === 'failed') return renderFailureMessage(outcome.error)
+    const slideError = selectedBrokenSlideError()
+    return slideError === null ? null : renderFailureMessage(slideError)
+  })
+  // The error bar behind a transient error (`errorMessage`, cleared on
+  // its timer): the deck's refusal, else how many slides are isolated and
+  // the first one's error — either comes back once the transient error
+  // clears, so neither is lost to the other. The refusal is never put in
+  // `errorMessage` itself: it lasts as long as `render.outcome()` says so.
+  const deckErrorMessage = createMemo<string | null>(() => {
     const outcome = render.outcome()
     return outcome.kind === 'failed' ? renderFailureMessage(outcome.error) : null
   })
-  // The error bar: a transient error (`errorMessage`, cleared on its
-  // timer) in front of the deck's refusal, which comes back once that
-  // clears — so neither is lost to the other. The refusal is never put in
-  // `errorMessage` itself: it lasts as long as `render.outcome()` says so.
-  const shownErrorMessage = createMemo<string | null>(() => errorMessage() ?? buildError())
+  const brokenSlidesMessage = createMemo<string | null>(() => {
+    const summary = brokenSlidesSummary(render.brokenSlides())
+    return summary === null ? null : settings.messages().slidesDoNotBuild(summary.count, summary.first.headline)
+  })
+  const shownErrorMessage = createMemo<string | null>(() => errorMessage() ?? deckErrorMessage() ?? brokenSlidesMessage())
   // The preview's header (and the phone shape menu in it) is hidden while no
   // slide is selected — a draft placeholder or no slide at all — so an open
   // menu goes with it instead of reappearing already open on the next
@@ -1332,7 +1368,7 @@ export function Studio() {
       ui.setLayoutPreviews(null)
       if (pin !== null) await updateSlideConfig(index, pin)
       else if (editor.isDirty()) await handleSave()
-      else await renderPreview(editor.fullSource())
+      else await renderAfterLayoutChange()
       // After the save above, whose own "Saved" would otherwise hide it.
       setStatusMessage({ kind: 'image-layout-added' })
     } finally {
@@ -1385,31 +1421,115 @@ export function Studio() {
   // so its failure to build is the deck's state, not the editor's — recorded
   // in `render.outcome()` (see `state/renderStore.ts`), which keeps the
   // error bar from clearing itself and puts the error in the preview pane.
+  // A persisted source is also rendered without the slides that don't
+  // build (`renderIsolating`, any slide), so one broken slide shows as an
+  // ERROR row instead of blanking the whole deck. A draft being typed is
+  // rendered once, without the slides the last render isolated
+  // (`draftSeed`), so the preview follows the typing around them; a slide
+  // is never newly isolated on a draft's account — its failure is the
+  // editor's, shown in the error bar only, and a save decides
+  // (`commitChange`).
+  //
+  // A persisted render costs up to `MAX_ISOLATIONS + 1` renders, and the
+  // same source is asked for from several places at once when a deck
+  // opens broken (`runOpen`, and the typing effect below as the selection
+  // settles): a persisted render already in flight for the same source is
+  // shared — while it is still the latest render asked for; one a draft's
+  // render superseded would resolve stale and be dropped, so the source
+  // is rendered again — and a source known not to build
+  // (`persistedFailedSource`) isn't rendered again until it changes.
   let previewGeneration = 0
-  async function renderPreview(content: string, { persisted = false }: { persisted?: boolean } = {}): Promise<void> {
+  let persistedRender: { content: string; generation: number; done: Promise<void> } | null = null
+  let persistedFailedSource: string | null = null
+  function renderPreview(content: string, { persisted = false }: { persisted?: boolean } = {}): Promise<void> {
+    if (!persisted) return runRenderPreview(content, false, ++previewGeneration)
+    if (persistedRender?.content === content && persistedRender.generation === previewGeneration) return persistedRender.done
     const generation = ++previewGeneration
+    const done = runRenderPreview(content, true, generation)
+    persistedRender = { content, generation, done }
+    void done.finally(() => { if (persistedRender?.done === done) persistedRender = null })
+    return done
+  }
+  async function runRenderPreview(content: string, persisted: boolean, generation: number): Promise<void> {
     try {
-      const payload = await deckIpc.renderDraft(content)
+      const result = await renderIsolating(content, () => persisted, persisted ? NO_BROKEN_SLIDES : draftSeed(content))
       if (generation !== previewGeneration) return
-      render.applyRenderPayload(payload, content)
-      setErrorMessage(null)
-    } catch (err) {
-      if (generation !== previewGeneration) return
+      if (result.kind === 'rendered') {
+        persistedFailedSource = null
+        render.applyRenderPayload(result.payload, content, result.broken)
+        setErrorMessage(null)
+        return
+      }
       // Keep whatever last rendered successfully on screen; just surface
       // the build error (e.g. a mid-edit unclosed code fence) — a draft
       // that doesn't build yet shouldn't blank the preview.
-      if (persisted && err instanceof RenderFailure) {
+      if (persisted) {
         // The deck on disk doesn't build: `render.outcome()` carries its
         // error (the error bar and the preview pane show it from there),
         // and an earlier draft's error — about text that is gone — goes.
-        render.markRenderFailed(err.error)
+        persistedFailedSource = content
+        render.markRenderFailed(result.error)
         setErrorMessage(null)
-      } else if (err instanceof RenderFailure) {
-        showBuildError(err.message)
       } else {
-        setErrorMessage(String(err))
+        showBuildError(renderFailureMessage(result.error))
+      }
+    } catch (err) {
+      if (generation !== previewGeneration) return
+      setErrorMessage(String(err))
+    }
+  }
+
+  // Renders `content`, and when peitho-core refuses a slide that `allow`
+  // permits isolating, renders again without it — until a render goes
+  // through, `allow` says no, or `isolateSlide` gives up (an error about
+  // no slide, no progress, the isolation limit; see
+  // `domain/brokenSlides.ts`). Resolves with the payload and the slides it
+  // was rendered without, or with the error that stopped it; rejects only
+  // for a failure other than peitho-core's refusal (the deck not open).
+  // `known` are slides rendered without from the start (see
+  // `startIsolation`), keyed to `content`'s positions.
+  async function renderIsolating(content: string, allow: (error: RenderErrorPayload) => boolean, known: BrokenSlides = NO_BROKEN_SLIDES): Promise<
+    { kind: 'rendered'; payload: RenderPayload; broken: BrokenSlides } | { kind: 'failed'; error: RenderErrorPayload }
+  > {
+    let isolation = startIsolation(content, known)
+    for (;;) {
+      try {
+        const payload = await deckIpc.renderDraft(isolation.attempt)
+        // The edit annotations are byte spans into what was rendered — the
+        // attempt — while everything that reads them holds `content`.
+        const fragments = restoreEditAnnotations(payload.fragments, isolation.edits)
+        return { kind: 'rendered', payload: fragments === payload.fragments ? payload : { ...payload, fragments }, broken: isolation.broken }
+      } catch (err) {
+        if (!(err instanceof RenderFailure)) throw err
+        const next = allow(err.error) ? isolateSlide(isolation, err.error) : null
+        if (next === null) return { kind: 'failed', error: err.error }
+        isolation = next
       }
     }
+  }
+
+  // The slides a draft is rendered without from the start: the ones the
+  // last render isolated, where they sit in `content`
+  // (`render.brokenSlides()` is keyed to `renderedSource()`, which the
+  // typing may have re-split — `brokenSlidesAfterEdit`), the open slide's
+  // own typing excepted: the preview shows it the moment it builds, and
+  // its ERROR badge goes with that render.
+  function draftSeed(content: string): BrokenSlides {
+    const known = render.brokenSlides()
+    if (known.size === 0) return known
+    const editedIndex = editor.isDirty() ? editor.selectedIndex() : null
+    return brokenSlidesAfterEdit(known, editedIndex, splitSlides(render.renderedSource()).length, splitSlides(content).length)
+  }
+
+  // The slides rendered again once the deck's layout files changed, as
+  // the user sees them (`liveSource`): the deck on disk when nothing is
+  // being typed — persisted, so a slide the change fixed or broke is
+  // isolated afresh or not at all — else the typing in front, around the
+  // slides known broken. A render still in flight read the old files and
+  // must not land.
+  function renderAfterLayoutChange(): Promise<void> {
+    previewGeneration++
+    return renderPreview(liveSource(), { persisted: !editor.isDirty() })
   }
 
   function currentDraftSource(): string | null {
@@ -1431,7 +1551,7 @@ export function Studio() {
     if (!editor.isDirty()) {
       untrack(() => {
         const source = editor.fullSource()
-        if (source !== render.renderedSource()) void renderPreview(source, { persisted: true })
+        if (source !== render.renderedSource() && source !== persistedFailedSource) void renderPreview(source, { persisted: true })
         // Back to what's on screen (an Undo before the typed text rendered):
         // a render still in flight is now stale and must not land.
         else previewGeneration++
@@ -1506,7 +1626,7 @@ export function Studio() {
   const [sessionDirs, setSessionDirs] = createSignal<string[]>([])
 
   // Each slide's comment key and span in the source the preview shows.
-  const renderedSlideSpans = createMemo(() => slideSpans(render.renderedSource(), render.manifest()?.slides ?? []))
+  const renderedSlideSpans = createMemo(() => slideSpans(render.renderedSource(), render.manifest()?.slides ?? [], render.brokenSlides()))
 
   function slideNumberOf(key: string): number {
     return renderedSlideSpans().findIndex(slide => slide.key === key) + 1
@@ -1923,7 +2043,7 @@ export function Studio() {
     try {
       if (editor.isDirty()) await handleSave()
       const source = editor.fullSource()
-      const slides = slideSpans(source, render.manifest()?.slides ?? [])
+      const slides = slideSpans(source, render.manifest()?.slides ?? [], render.brokenSlides())
       const pending = review.pending()
       const comments = pending.map(comment => {
         const index = slides.findIndex(slide => slide.key === comment.slideKey)
@@ -2185,8 +2305,29 @@ export function Studio() {
     let saved = false
     setErrorMessage(null)
     try {
-      const payload = await deckIpc.renderDraft(nextSource)
-      render.applyRenderPayload(payload, nextSource)
+      // A slide already isolated as broken (by where `cmd` leaves it, or
+      // by its key) doesn't block this save: the change is rendered
+      // without it and saved as written — the deck on disk is no worse
+      // off. Any other slide not building does, the slide being edited
+      // first of all (`saveDecision`); the save is then refused with that
+      // error, as any draft that doesn't build is. The edited slide is
+      // the open one whenever its draft is in `nextSource` — a save of it
+      // (`expectedDraft`), or any other change built from
+      // `currentSlideTexts`, which carries the open slide's typing — at
+      // the row `cmd` leaves it on. Typed text can re-split the deck (a
+      // `---` line): without a `cmd`, the known slides follow the split
+      // (`brokenSlidesAfterEdit`); with one, the row `cmd` leaves them on
+      // is taken as is — a re-split carried by a structural change leaves
+      // them unknown, and the save blocked, the safe side.
+      const dirtyIndex = before.kind === 'editing' && (expectedDraft !== undefined || editor.isDirty()) ? before.index : null
+      const editedIndex = dirtyIndex !== null && cmd ? indexAfterCommand(dirtyIndex, cmd) : dirtyIndex
+      const slideCount = splitSlides(nextSource).length
+      const known = cmd
+        ? brokenSlidesAfterCommand(render.brokenSlides(), cmd)
+        : brokenSlidesAfterEdit(render.brokenSlides(), dirtyIndex, splitSlides(render.renderedSource()).length, slideCount)
+      const result = await renderIsolating(nextSource, error => saveDecision(error, known, editedIndex, slideCount) === 'isolate')
+      if (result.kind === 'failed') throw new RenderFailure(result.error)
+      render.applyRenderPayload(result.payload, nextSource, result.broken)
       await deckIpc.saveDeckSource(nextSource)
       editor.setFullSource(nextSource)
       const ranges = splitSlides(nextSource)
@@ -2927,7 +3068,7 @@ export function Studio() {
     if (!layoutFilesChanged(previous, stamp)) return false
     await Promise.all([
       reloadLayoutPreviews().then(showSavedLayoutPreview),
-      renderPreview(liveSource()),
+      renderAfterLayoutChange(),
       refreshDeckFiles(),
     ])
     const name = shownLayout(layouts.selectedLayout(), layoutNames())
@@ -3173,7 +3314,7 @@ export function Studio() {
     void noteLayoutFiles()
     ui.setLayoutPreviews(null)
     await Promise.all([loadLayoutPreviews(), refreshDeckFiles()])
-    await renderPreview(liveSource())
+    await renderAfterLayoutChange()
     const name = shownLayout(select ?? layouts.selectedLayout(), layoutNames())
     if (name !== layouts.selectedLayout()) await openLayout(name)
     await pullOpenFiles()
@@ -3487,7 +3628,7 @@ export function Studio() {
     const layout = layoutOfFile(path, layoutNames())
     setStatusMessage(layout === null ? { kind: 'file-saved', path } : { kind: 'layout-saved', layout })
     void reloadLayoutPreviews().then(showSavedLayoutPreview)
-    void renderPreview(liveSource())
+    void renderAfterLayoutChange()
     void refreshDeckFiles()
   }
 
@@ -4242,6 +4383,7 @@ export function Studio() {
               selectedSlideKey={selectedSlideKey()}
               hasDeck={Boolean(render.assetBaseUrl())}
               buildError={buildError()}
+              buildErrorScope={buildErrorScope()}
               canvasFragmentOf={render.previewFragmentOf}
               slideStylesheet={getSlideStylesheet}
               viewportMode={ui.viewportMode()}

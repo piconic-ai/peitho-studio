@@ -117,3 +117,20 @@ export function stripEditAnnotations(html: string): string {
     .map(part => (SCRIPT_OPEN_TAG_PATTERN.test(part) ? part : part.replace(EDIT_ANNOTATION_PATTERN, '')))
     .join('')
 }
+
+const EDIT_ANNOTATION_SPAN_PATTERN = / data-peitho-src="(\d+)-(\d+)"( data-peitho-md="[^"]*")/g
+
+/** `html` with every edit annotation's byte span replaced by what `map`
+ * makes of it — an annotation `map` answers `null` for is removed, as
+ * `stripEditAnnotations` would. For a fragment rendered from a source
+ * other than the one its consumers hold (`domain/brokenSlides.ts`'s
+ * attempt, with slides marked draft). `<script>` bodies are left alone. */
+export function mapEditAnnotations(html: string, map: (span: { start: number; end: number }) => { start: number; end: number } | null): string {
+  return html
+    .split(SCRIPT_BLOCK_PATTERN)
+    .map(part => (SCRIPT_OPEN_TAG_PATTERN.test(part) ? part : part.replace(EDIT_ANNOTATION_SPAN_PATTERN, (_match, start: string, end: string, markdown: string) => {
+      const mapped = map({ start: Number(start), end: Number(end) })
+      return mapped === null ? '' : ` data-peitho-src="${String(mapped.start)}-${String(mapped.end)}"${markdown}`
+    })))
+    .join('')
+}

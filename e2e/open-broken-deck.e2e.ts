@@ -6,6 +6,13 @@
 // stands in for peitho-core with `renderError`, the structured refusal
 // `open_deck`/`render_draft` answer; the same flow against the real
 // engine is `real-engine-open-broken-deck.e2e.ts`.
+//
+// An error peitho-core pins on one slide now leaves only that slide out
+// (`isolate-broken-slides.e2e.ts`); the "no render at all" state these
+// tests cover is reached by an error about no slide (the frontmatter) or
+// one isolation can't fix (a duplicate key — peitho-core checks keys
+// before it drops draft slides, so marking the slide draft changes
+// nothing — modeled here by `SLIDE_TWO_ERROR` ignoring draft marks).
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 import { editorText, fillEditor, moveToEditorEnd } from './helpers/codeEditor'
@@ -19,12 +26,12 @@ const SELECTED_ROW = '[data-slide-row] .border-\\[\\#eab308\\]'
 const SOURCE = '# One\n\n---\n\n<!-- {"key":"two"} -->\n# Two\n\nBROKEN\n\n---\n\n# Three\n'
 
 const SLIDE_TWO_ERROR: RenderErrorPayload = {
-  kind: 'Arity',
+  kind: 'Parse',
   line: 8,
   originFile: null,
-  message: "slot 'body' got 2 item(s), but layout 'title-slide' allows 0..1",
-  help: 'use a layout with a body slot or remove one paragraph',
-  headline: "slide 2 ('two'), line 8: slot 'body' got 2 item(s), but layout 'title-slide' allows 0..1",
+  message: 'unknown footnote reference',
+  help: 'define the footnote or remove the reference',
+  headline: "slide 2 ('two'), line 8: unknown footnote reference",
   slide: { number: 2, key: 'two' },
 }
 
@@ -54,7 +61,7 @@ function brokenDeck(overrides: Partial<MockDeck> = {}): MockDeck {
   }
 }
 
-test('Given a deck peitho-core refuses, when it is opened, then the editor opens on its source with the broken slide selected and the error shown', async ({ page }) => {
+test('Given a deck peitho-core refuses with an error isolation cannot fix, when it is opened, then the editor opens on its source with the broken slide selected and the error shown', async ({ page }) => {
   await openBroken(page, brokenDeck())
 
   // The editor, not the welcome screen, with the deck's path in the header.
@@ -111,7 +118,7 @@ test('Given a broken deck is open, when a fix leaves another slide broken, then 
   const slideThreeError: RenderErrorPayload = {
     ...SLIDE_TWO_ERROR,
     line: 13,
-    headline: "slide 3, line 13: slot 'body' got 2 item(s), but layout 'title-slide' allows 0..1",
+    headline: 'slide 3, line 13: unknown footnote reference',
     slide: { number: 3, key: null },
   }
   const deck = await openBroken(page, brokenDeck({

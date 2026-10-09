@@ -14,6 +14,7 @@ import {
   extractNote,
   injectNote,
   extractPageComment,
+  findPageComment,
   buildSlideText,
   replaceSlideText,
   slideFieldStarts,
@@ -903,5 +904,25 @@ describe('replacing a slide preserves Markdown slide boundaries', () => {
     const ranges = splitSlides(source)
     expect(replaceSlideText(source, ranges[1], '# Changed\n')).toBe('# First\n\n---\n# Changed\n')
     expect(replaceSlideText(source, ranges[0], '# Changed\n')).toBe('# Changed\n\n---\n# Last\n')
+  })
+})
+
+describe('findPageComment', () => {
+  test('spec: Given a slide with a PageComment, then the comment as written and its config', () => {
+    expect(findPageComment('<!-- {"key":"two","draft":true} -->\n# Two')).toEqual({ commentText: '<!-- {"key":"two","draft":true} -->', config: { key: 'two', draft: true } })
+  })
+
+  test('spec: an empty PageComment is a PageComment all the same', () => {
+    expect(findPageComment('<!-- {} -->\n# Two')).toEqual({ commentText: '<!-- {} -->', config: {} })
+  })
+
+  test('spec: a note comment before it is skipped — only a comment whose body starts with `{` counts', () => {
+    expect(findPageComment('<!-- a note -->\n<!-- {"key":"x"} -->\n# Two')?.config).toEqual({ key: 'x' })
+  })
+
+  test('adversarial: none without a `{` comment, and none for a malformed one, which is never rewritten', () => {
+    expect(findPageComment('# Two\n\n<!-- a note -->')).toBeNull()
+    expect(findPageComment('<!-- {not json} -->\n# Two')).toBeNull()
+    expect(findPageComment('')).toBeNull()
   })
 })

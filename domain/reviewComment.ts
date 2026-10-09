@@ -18,6 +18,7 @@ import type { Messages } from './messages'
 import { isPointInRect, type Point, type Rect } from './geometry'
 import type { ManifestSlide } from './render'
 import { buildSlideList, type SlideListEntry } from './slideList'
+import { type BrokenSlides, NO_BROKEN_SLIDES } from './brokenSlides'
 import { slideFieldStarts, splitSlides } from './slides'
 import type { PageConfig } from './pageConfig'
 
@@ -557,10 +558,12 @@ export function newReviewComment(pending: PendingComment, source: string, slideS
  * slide; for one the manifest doesn't list (a draft), the key it last
  * rendered under, or its `placeholder:` key. In source order, so index + 1
  * is the slide's number in the slide list. `manifestSlides` must be the
- * manifest rendered from `source`. */
-export function slideSpans(source: string, manifestSlides: readonly ManifestSlide[]): { key: string; span: CharSpan }[] {
+ * manifest rendered from `source`, and `broken` the positions that render
+ * isolated (`domain/brokenSlides.ts`), so the pairing is the slide
+ * list's own. */
+export function slideSpans(source: string, manifestSlides: readonly ManifestSlide[], broken: BrokenSlides = NO_BROKEN_SLIDES): { key: string; span: CharSpan }[] {
   const ranges = splitSlides(source)
-  return buildSlideList(source, manifestSlides).map((entry, i) => ({
+  return buildSlideList(source, manifestSlides, broken).map((entry, i) => ({
     key: commentKeyOf(entry),
     span: { start: ranges[i].start, end: ranges[i].end },
   }))

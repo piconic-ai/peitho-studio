@@ -41,14 +41,18 @@ test('Given a deck the real engine refuses, when opened, then the editor shows i
 
     // The editor opens on the deck's source, with the slide the engine
     // blamed selected, and the engine's own headline (line number
-    // included) in the error bar and the preview pane.
+    // included) in the error bar and the preview pane. The error is about
+    // one slide, so that slide alone is left out of the render
+    // (`real-engine-isolate-broken-slides.e2e.ts`): the other has a
+    // thumbnail.
     await expect(page.locator('[data-slide-row]')).toHaveCount(2, { timeout: 10_000 })
     await expect(page.locator('[data-slide-row="1"]').locator(SELECTED)).toBeVisible()
     await expect.poll(() => editorText(page)).toBe('# B\n\nOne\n\nTwo')
     await expect(page.locator(ERROR_BAR)).toContainText(outcome.error.headline)
-    await expect(page.locator(ERROR_BAR)).toContainText(outcome.error.help)
     await expect(page.locator(PREVIEW_ERROR)).toContainText(outcome.error.headline)
-    await expect(page.locator(THUMBNAIL_CANVAS)).toHaveCount(0)
+    await expect(page.locator(PREVIEW_ERROR)).toContainText(outcome.error.help)
+    await expect(page.locator(THUMBNAIL_CANVAS)).toHaveCount(1)
+    await expect(page.locator('[data-slide-row="1"] [data-slide-status="error"]')).toBeVisible()
 
     // Fixing the slide saves and renders: real thumbnails, a real preview,
     // and no error left.

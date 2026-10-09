@@ -165,23 +165,33 @@ export function slideFieldStarts(config: PageConfig, body: string, note: string)
  * the comment is removed rather than written as `<!-- {} -->`, which
  * peitho-core refuses — see `removeComment` for the blank lines around it. */
 export function updatePageComment(raw: string, updates: Partial<PageConfig>): string {
-  const re = /<!--([\s\S]*?)-->/g
-  let match: RegExpExecArray | null
-  let existing: { commentText: string; config: PageConfig } | null = null
-  while ((match = re.exec(raw)) !== null) {
-    const trimmed = match[1].trim()
-    if (trimmed.startsWith('{')) {
-      const parsed = parsePageComment(trimmed)
-      if (parsed.kind === 'ok') existing = { commentText: match[0], config: parsed.config }
-      break
-    }
-  }
+  const existing = findPageComment(raw)
   const nextConfig: PageConfig = { ...(existing?.config ?? {}), ...updates }
   const serialized = serializePageConfig(nextConfig)
   if (serialized === '{}') return existing ? removeComment(raw, existing.commentText) : raw
   const nextComment = `<!-- ${serialized} -->`
   if (existing) return raw.replace(existing.commentText, nextComment)
   return `${nextComment}\n${raw}`
+}
+
+/** The slide's PageComment as written (its full `<!-- ... -->` text) with
+ * its parsed config — `{}` for `<!-- {} -->`, which is a PageComment all
+ * the same — or `null` when the slide has none: no HTML comment whose
+ * trimmed body starts with `{`, or the first such comment doesn't parse
+ * (a malformed one is left alone, never rewritten). What
+ * `updatePageComment` rewrites in place rather than adding a second
+ * comment, which peitho-core refuses. */
+export function findPageComment(raw: string): { commentText: string; config: PageConfig } | null {
+  const re = /<!--([\s\S]*?)-->/g
+  let match: RegExpExecArray | null
+  while ((match = re.exec(raw)) !== null) {
+    const trimmed = match[1].trim()
+    if (trimmed.startsWith('{')) {
+      const parsed = parsePageComment(trimmed)
+      return parsed.kind === 'ok' ? { commentText: match[0], config: parsed.config } : null
+    }
+  }
+  return null
 }
 
 /** `raw` without the first occurrence of `comment`, and without the line

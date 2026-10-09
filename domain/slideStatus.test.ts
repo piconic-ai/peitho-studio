@@ -1,8 +1,49 @@
 import { describe, expect, test } from 'bun:test'
 import { isExhaustivelyAccountedFor } from './spec'
 import type { ManifestSlide } from './render'
-import { slideStatusBadge, type SlideStatusFlags } from './slideStatus'
+import { slideEntryBadge, slideStatusBadge, type SlideStatusFlags } from './slideStatus'
 import { slideStatusBadgeExamples } from './slideStatus.examples'
+import type { PlaceholderSlideEntry } from './slideList'
+import type { RenderErrorPayload } from './render'
+
+const brokenError: RenderErrorPayload = {
+  kind: 'Arity', line: 8, originFile: null,
+  message: "slot 'body' got 2 item(s), but layout 'title-slide' allows 0..1",
+  help: 'use a layout with a body slot or remove one paragraph',
+  headline: "slide 2 ('two'), line 8: slot 'body' got 2 item(s), but layout 'title-slide' allows 0..1",
+  slide: { number: 2, key: 'two' },
+}
+
+type PlaceholderFlags = Omit<PlaceholderSlideEntry, 'badge'>
+
+function placeholder(overrides: Partial<PlaceholderFlags> = {}): PlaceholderFlags {
+  return { kind: 'placeholder', sourceIndex: 1, title: 'Two', draft: false, error: null, key: 'placeholder:1', lastRenderedKey: null, ...overrides }
+}
+
+describe('slideEntryBadge', () => {
+  test('spec: Given a slide isolated for not building, when its row is drawn, then it wears ERROR', () => {
+    expect(slideEntryBadge(placeholder({ error: brokenError }))).toBe('error')
+  })
+
+  test('spec: Given a draft placeholder, then DRAFT; given one the manifest has not caught up with, then no badge', () => {
+    expect(slideEntryBadge(placeholder({ draft: true }))).toBe('draft')
+    expect(slideEntryBadge(placeholder())).toBeNull()
+  })
+
+  test('spec: Given a rendered slide, then its manifest skip flag decides, as slideStatusBadge does', () => {
+    const slide: ManifestSlide = {
+      index: 0, key: 'intro', src: '# Intro', hasNotes: false, skip: true, revealSteps: 1,
+      text: { title: 'Intro', body: '', code: '' },
+    }
+    const rendered = { kind: 'rendered' as const, sourceIndex: 0, manifestIndex: 0, slide }
+    expect(slideEntryBadge(rendered)).toBe('skip')
+    expect(slideEntryBadge({ ...rendered, slide: { ...slide, skip: false } })).toBeNull()
+  })
+
+  test('adversarial: an isolated slide that is also a draft wears ERROR, the stronger statement', () => {
+    expect(slideEntryBadge(placeholder({ draft: true, error: brokenError }))).toBe('error')
+  })
+})
 
 describe('slideStatusBadge', () => {
   test.each(slideStatusBadgeExamples.automated.map(e => [`${e.id}: Given ${e.given}, when ${e.when}, then ${e.then}`, e] as const))(

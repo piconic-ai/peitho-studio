@@ -3,12 +3,26 @@
 // what data" (see docs/architecture.md's "Examples by Specification"). Run
 // by slideList.test.ts.
 import { defineExamples } from './spec'
-import type { ManifestSlide } from './render'
+import type { ManifestSlide, RenderErrorPayload } from './render'
 import type { SlideListEntry } from './slideList'
+import type { BrokenSlides } from './brokenSlides'
 
 interface BuildSlideListState {
   fullSource: string
   manifestSlides: ManifestSlide[]
+  /** The source positions the render isolated — none when absent. */
+  broken?: BrokenSlides
+}
+
+/** peitho-core's refusal of the slide isolated in the example below. */
+const brokenError: RenderErrorPayload = {
+  kind: 'Arity',
+  line: 8,
+  originFile: null,
+  message: "slot 'body' got 2 item(s), but layout 'title-slide' allows 0..1",
+  help: 'use a layout with a body slot or remove one paragraph',
+  headline: "slide 2 ('two'), line 8: slot 'body' got 2 item(s), but layout 'title-slide' allows 0..1",
+  slide: { number: 2, key: 'two' },
 }
 
 /** The only event these examples describe: the slide list being (re)built
@@ -33,8 +47,8 @@ export const buildSlideListExamples = defineExamples<BuildSlideListState, SlideL
       },
       event: 'slide-list-built',
       expect: [
-        { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
-        { kind: 'rendered', sourceIndex: 1, manifestIndex: 1, slide: slide(1, 'two', 'Two') },
+        { kind: 'rendered', badge: null, sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
+        { kind: 'rendered', badge: null, sourceIndex: 1, manifestIndex: 1, slide: slide(1, 'two', 'Two') },
       ],
     },
     {
@@ -48,9 +62,9 @@ export const buildSlideListExamples = defineExamples<BuildSlideListState, SlideL
       },
       event: 'slide-list-built',
       expect: [
-        { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
-        { kind: 'placeholder', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: null },
-        { kind: 'rendered', sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'three', 'Three') },
+        { kind: 'rendered', badge: null, sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
+        { kind: 'placeholder', badge: 'draft', sourceIndex: 1, title: 'Hidden', draft: true, key: 'placeholder:1', lastRenderedKey: null, error: null },
+        { kind: 'rendered', badge: null, sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'three', 'Three') },
       ],
     },
     {
@@ -64,8 +78,8 @@ export const buildSlideListExamples = defineExamples<BuildSlideListState, SlideL
       },
       event: 'slide-list-built',
       expect: [
-        { kind: 'rendered', sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
-        { kind: 'placeholder', sourceIndex: 1, title: 'Two', draft: false, key: 'placeholder:1', lastRenderedKey: null },
+        { kind: 'rendered', badge: null, sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
+        { kind: 'placeholder', badge: null, sourceIndex: 1, title: 'Two', draft: false, key: 'placeholder:1', lastRenderedKey: null, error: null },
       ],
     },
     {
@@ -79,7 +93,24 @@ export const buildSlideListExamples = defineExamples<BuildSlideListState, SlideL
       },
       event: 'slide-list-built',
       expect: [
-        { kind: 'placeholder', sourceIndex: 0, title: 'Cover', draft: true, key: 'placeholder:0', lastRenderedKey: 'cover' },
+        { kind: 'placeholder', badge: 'draft', sourceIndex: 0, title: 'Cover', draft: true, key: 'placeholder:0', lastRenderedKey: 'cover', error: null },
+      ],
+    },
+    {
+      id: 'broken-slide-isolated',
+      given: 'a three-slide deck whose middle slide does not build and was isolated from the render (rendered as a draft, though the source does not mark it)',
+      when: 'the slide list is built from the deck, the manifest of the other two slides, and the isolated slide\'s error',
+      then: 'the broken slide is a placeholder carrying its error at its own row — claiming no manifest entry, so the slide after it still pairs with its own',
+      state: {
+        fullSource: '# One\n\n---\n\n<!-- {"key":"two"} -->\n# Two\n\nBROKEN\n\n---\n\n# Three\n',
+        manifestSlides: [slide(0, 'one', 'One'), slide(1, 'three', 'Three')],
+        broken: new Map([[1, brokenError]]),
+      },
+      event: 'slide-list-built',
+      expect: [
+        { kind: 'rendered', badge: null, sourceIndex: 0, manifestIndex: 0, slide: slide(0, 'one', 'One') },
+        { kind: 'placeholder', badge: 'error', sourceIndex: 1, title: 'Two', draft: false, key: 'placeholder:1', lastRenderedKey: 'two', error: brokenError },
+        { kind: 'rendered', badge: null, sourceIndex: 2, manifestIndex: 1, slide: slide(1, 'three', 'Three') },
       ],
     },
   ],

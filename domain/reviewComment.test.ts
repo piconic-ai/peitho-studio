@@ -458,6 +458,15 @@ describe('slideSpans', () => {
     expect(slideSpans(source, [manifestSlide('one', 0)]).map(s => s.key)).toEqual(['one', 'placeholder:1'])
   })
 
+  test('spec: Given the middle slide was isolated from the render, Then it keeps its own key and span, and the slide after it keeps its manifest key and its own text', () => {
+    const source = '# One\n\n---\n\n<!-- {"key":"two"} -->\n# Two\n\nBROKEN\n\n---\n\n# Three\n'
+    const error = { kind: 'Arity', line: 8, originFile: null, message: 'm', help: 'h', headline: "slide 2 ('two'), line 8: m", slide: { number: 2, key: 'two' } }
+    const spans = slideSpans(source, [manifestSlide('one', 0), manifestSlide('three', 1)], new Map([[1, error]]))
+    expect(spans.map(s => s.key)).toEqual(['one', 'two', 'three'])
+    expect(source.slice(spans[1].span.start, spans[1].span.end)).toBe('\n<!-- {"key":"two"} -->\n# Two\n\nBROKEN\n\n')
+    expect(source.slice(spans[2].span.start, spans[2].span.end)).toBe('\n# Three\n')
+  })
+
   test('adversarial: Given an empty deck, Then there are no slides', () => {
     expect(slideSpans('', [])).toEqual([])
   })

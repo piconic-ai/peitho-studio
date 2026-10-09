@@ -413,6 +413,34 @@ function renderPayloadFor(source: string, deck: MockDeck): RenderPayload {
   return { manifest, fragments, slideLayouts, headingLayouts, assetBaseUrl: 'http://localhost:9/', css: deck.css ?? DEFAULT_CSS }
 }
 
+/** A `renderError` that refuses the first slide of a source containing
+ * `marker` the way peitho-core refuses a slot violation: attributed to
+ * that slide's position among every slide of the source (drafts counted)
+ * with its explicit key, at the marker's line — and never to a draft
+ * slide, which peitho-core drops before it checks slots. That last part
+ * is what lets the frontend isolate the slide (`domain/brokenSlides.ts`):
+ * rendered again with the slide marked draft, the source builds. */
+export function slotErrorAt(marker: string): (content: string) => RenderErrorPayload | null {
+  return content => {
+    const ranges = splitSlides(content)
+    for (let i = 0; i < ranges.length; i++) {
+      const { config } = extractPageComment(ranges[i].text)
+      const at = ranges[i].text.indexOf(marker)
+      if (config.draft === true || at === -1) continue
+      const line = content.slice(0, ranges[i].start + at).split('\n').length
+      const key = config.key ?? null
+      const message = "slot 'body' got 2 item(s), but layout 'title-slide' allows 0..1"
+      return {
+        kind: 'Arity', line, originFile: null, message,
+        help: 'use a layout with a body slot or remove one paragraph',
+        headline: `slide ${String(i + 1)}${key === null ? '' : ` ('${key}')`}, line ${String(line)}: ${message}`,
+        slide: { number: i + 1, key },
+      }
+    }
+    return null
+  }
+}
+
 /** What `open_deck`'s render and `render_draft` answer for `content`: the
  * real engine's outcome when one is wired, else `renderError`'s refusal
  * for this source, else the synthetic payload rendered. */
