@@ -223,8 +223,8 @@ export interface MockDeck {
    * `data-peitho-src`/`data-peitho-md` on its headings, list items and
    * paragraphs (see `annotatedFragment`) — instead of `fragmentFor`. */
   editAnnotations?: boolean
-  /** Answers `render_draft` (and `open_deck`'s render) and
-   * `create_image_canvas` with the real engine (`helpers/realEngine.ts`):
+  /** Answers `render_draft` (and `open_deck`'s render),
+   * `create_image_canvas` and `check_slide_layouts` with the real engine (`helpers/realEngine.ts`):
    * peitho-core's actual output, its errors rejecting as in the app. */
   realEngine?: (cmd: string, args: Record<string, unknown>) => Promise<unknown>
   /** The path `open_deck` reports — defaults to the source itself (which
@@ -575,6 +575,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
       case 'preview_layouts': return { previews: (deck.layouts ?? []).map(name => ({ name, fragment: layoutFileOf(deck, name)?.html ?? deck.layoutFragment ?? '' })), css: '' }
       case 'list_deck_variants': return deck.deckVariants ?? []
       case 'check_slide_layouts':
+        if (deck.realEngine) return deck.realEngine(cmd, args)
         return deck.layoutVerdicts?.(args.content as string, args.slideIndex as number) ?? null
       case 'add_image_layout':
         return deck.addImageLayout?.(args.content as string, args.slideIndex as number) ?? []

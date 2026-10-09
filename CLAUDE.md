@@ -70,7 +70,8 @@ see every file's status at a glance:
   enough to exercise the app's own reactive/DOM code (this caught and
   fixed a real bug, see `new-slide.e2e.ts`). Passing `realEngine` from
   `e2e/helpers/realEngine.ts` instead answers `render_draft`/
-  `create_image_canvas` with peitho-core's actual output (needs
+  `create_image_canvas`/`check_slide_layouts` with peitho-core's actual
+  output (needs
   `cargo build --example e2e_engine` in `src-tauri/`; specs named
   `real-engine-*.e2e.ts` skip without it and run in CI's macOS
   `e2e-real-engine` job) — use it whenever a canvas edit's resulting
