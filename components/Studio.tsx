@@ -2111,11 +2111,18 @@ export function Studio() {
   // be sent must say where the error is now. `decideBuildErrorReport`
   // tells a repeat from news (`reported`), so a render that isolates the
   // same slides again sends nothing.
+  // A render the user's own Send wrote (`handOffBuildError`) is that
+  // ask: it goes as `report-requested` — sent whether or not its errors
+  // were reported before — and never also as `disk-render-failed`.
+  let handOffPending = false
   createEffect(() => {
     const build = diskBuildOf(render.diskRender())
     if (build === null) return
     untrack(() => {
-      dispatchBuildErrorReport(build.kind === 'ok' ? { type: 'disk-render-ok' } : { type: 'disk-render-failed', errors: build.errors, source: build.source })
+      const requested = handOffPending
+      handOffPending = false
+      if (build.kind === 'ok') dispatchBuildErrorReport({ type: 'disk-render-ok' })
+      else dispatchBuildErrorReport({ type: requested ? 'report-requested' : 'disk-render-failed', errors: build.errors, source: build.source })
     })
   })
   // The agent came to wait (the session poll or crit's event saw it), or
@@ -2165,20 +2172,30 @@ export function Studio() {
   // (`report-requested`). Typing that doesn't build is the editor's, not
   // the disk's, and the agent can't fix what isn't written: so it is
   // written first, broken (`handOff` in `commitChange`/`commitSource`),
-  // and the disk's render of it feeds the report as any other
-  // (`disk-render-failed`, raised by the effect on `render.diskRender()`,
-  // which sends it when the agent waits — the ask then finds a send on
-  // its way, or nothing left to send, and adds no second copy). With no
-  // agent waiting, the errors wait for one, and the status bar says so.
+  // and the disk's render of that write *is* the ask (`handOffPending`,
+  // read by the effect on `render.diskRender()`): one request per press,
+  // raised where the write lands, so the ask can't trail an automatic
+  // report of the same write and send it twice. Only when nothing was
+  // written — the error shown is the disk's own — is the ask raised here,
+  // with the disk's errors as they are. With no agent waiting, the errors
+  // wait for one, and the status bar says so.
   async function handOffBuildError(): Promise<void> {
-    if (editor.sourceOpen() && editor.isSourceDirty()) {
-      if (!await queueSourceSave(true)) return
-    } else if (editor.isDirty()) {
-      if (!await handleSave({ handOff: true })) return
+    handOffPending = true
+    const saved = editor.sourceOpen() && editor.isSourceDirty()
+      ? await queueSourceSave(true)
+      : editor.isDirty() ? await handleSave({ handOff: true }) : true
+    if (!saved) {
+      handOffPending = false
+      return
     }
-    const build = diskBuildOf(render.diskRender())
-    if (build === null || build.kind === 'ok') return
-    dispatchBuildErrorReport({ type: 'report-requested', errors: build.errors, source: build.source })
+    // Still pending: no render of the disk came of this press (nothing was
+    // dirty, or the text was on disk already) — ask with what is there.
+    if (handOffPending) {
+      handOffPending = false
+      const build = diskBuildOf(render.diskRender())
+      if (build === null || build.kind === 'ok') return
+      dispatchBuildErrorReport({ type: 'report-requested', errors: build.errors, source: build.source })
+    }
     if (review.report().kind === 'waiting-for-agent' && review.busy() !== 'sending') setStatusMessage({ kind: 'build-error-waiting' })
   }
   // What the error bar offers next to the error it shows
