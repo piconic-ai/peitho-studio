@@ -542,6 +542,8 @@ export function Studio() {
       if (result.kind === 'failed' && !handOff) throw new RenderFailure(result.error)
       if (result.kind === 'rendered') render.applyRenderPayload(result.payload, text, result.broken)
       await deckIpc.saveDeckSource(text)
+      // The disk's render of a hand-off is the user's ask (`handOffSource`).
+      if (handOff) handOffSource = text
       if (result.kind === 'rendered') {
         render.markDiskRendered(text, result.broken)
       } else {
@@ -2113,14 +2115,24 @@ export function Studio() {
   // same slides again sends nothing.
   // A render the user's own Send wrote (`handOffBuildError`) is that
   // ask: it goes as `report-requested` — sent whether or not its errors
-  // were reported before — and never also as `disk-render-failed`.
-  let handOffPending = false
+  // were reported before — and never also as `disk-render-failed`. The
+  // write is known by its text (`handOffSource`, set by the save as it
+  // marks the disk), so a render of anything else that lands while the
+  // save waits on its write — an external change — is not taken for it.
+  // `handOffAsks` counts the asks raised here, for the press to tell
+  // whether its write was rendered at all.
+  let handOffSource: string | null = null
+  let handOffAsks = 0
   createEffect(() => {
-    const build = diskBuildOf(render.diskRender())
-    if (build === null) return
+    const disk = render.diskRender()
+    const build = diskBuildOf(disk)
+    if (build === null || disk.kind === 'none') return
     untrack(() => {
-      const requested = handOffPending
-      handOffPending = false
+      const requested = handOffSource !== null && disk.source === handOffSource
+      if (requested) {
+        handOffSource = null
+        handOffAsks++
+      }
       if (build.kind === 'ok') dispatchBuildErrorReport({ type: 'disk-render-ok' })
       else dispatchBuildErrorReport({ type: requested ? 'report-requested' : 'disk-render-failed', errors: build.errors, source: build.source })
     })
@@ -2172,26 +2184,22 @@ export function Studio() {
   // (`report-requested`). Typing that doesn't build is the editor's, not
   // the disk's, and the agent can't fix what isn't written: so it is
   // written first, broken (`handOff` in `commitChange`/`commitSource`),
-  // and the disk's render of that write *is* the ask (`handOffPending`,
+  // and the disk's render of that write *is* the ask (`handOffSource`,
   // read by the effect on `render.diskRender()`): one request per press,
   // raised where the write lands, so the ask can't trail an automatic
-  // report of the same write and send it twice. Only when nothing was
-  // written — the error shown is the disk's own — is the ask raised here,
-  // with the disk's errors as they are. With no agent waiting, the errors
-  // wait for one, and the status bar says so.
+  // report of the same write and send it twice. Only when no render came
+  // of the press (`handOffAsks` unchanged: nothing was dirty, or the save
+  // found nothing left to write) is the ask raised here, with the disk's
+  // errors as they are. With no agent waiting, the errors wait for one,
+  // and the status bar says so.
   async function handOffBuildError(): Promise<void> {
-    handOffPending = true
+    const asksBefore = handOffAsks
     const saved = editor.sourceOpen() && editor.isSourceDirty()
       ? await queueSourceSave(true)
       : editor.isDirty() ? await handleSave({ handOff: true }) : true
-    if (!saved) {
-      handOffPending = false
-      return
-    }
-    // Still pending: no render of the disk came of this press (nothing was
-    // dirty, or the text was on disk already) — ask with what is there.
-    if (handOffPending) {
-      handOffPending = false
+    handOffSource = null
+    if (!saved) return
+    if (handOffAsks === asksBefore) {
       const build = diskBuildOf(render.diskRender())
       if (build === null || build.kind === 'ok') return
       dispatchBuildErrorReport({ type: 'report-requested', errors: build.errors, source: build.source })
@@ -2488,7 +2496,9 @@ export function Studio() {
       if (result.kind === 'rendered') render.applyRenderPayload(result.payload, nextSource, result.broken)
       await deckIpc.saveDeckSource(nextSource)
       // Only now is the render the disk's: a write that fails leaves the
-      // file as it was, however well the draft rendered.
+      // file as it was, however well the draft rendered. The disk's render
+      // of a hand-off is the user's ask (`handOffSource`).
+      if (handOff) handOffSource = nextSource
       if (result.kind === 'rendered') {
         render.markDiskRendered(nextSource, result.broken)
       } else {
