@@ -21,6 +21,7 @@ import {
   type CommentTarget, type LayoutCommentTarget, type PreviewPin,
 } from '../domain/reviewComment'
 import { agentConnectCommand, agentConnectPrompt, agentGoneQuiet, connectTargetOf, showsConnectGuide } from '../domain/agentConnect'
+import { type BuildErrorReportEvent, buildErrorComment, buildErrorIdentity, decideBuildErrorReport, diskBuildOf } from '../domain/buildErrorReport'
 import { formatReviewTime, isUnsentEditing, resolvedCount, reviewRows, threadOfPin } from '../domain/reviewPanel'
 import { layoutThumbnailClickOf, layoutThumbnailContextClickOf, noteLayoutRowPress } from '../dom/layoutComments'
 import { keepShownPopupsInWindow } from '../dom/popupFit'
@@ -167,6 +168,11 @@ export function Studio() {
   // regardless of which event started the chain.
   async function runOpen(path: string): Promise<void> {
     setErrorMessage(null)
+    // Before the render lands, not after: a deck that opens broken reports
+    // its build errors to the agent (`dispatchBuildErrorReport`) as soon
+    // as `markRenderFailed` below records them, and a reset after that
+    // would forget them.
+    review.reset()
     try {
       const info = await deckIpc.openDeck(path)
       // Before any slide mounts, so none of them goes in with the wrong trust.
@@ -180,7 +186,7 @@ export function Studio() {
       // renders.
       await refreshSource(false, info.render.kind === 'rendered' ? info.render : undefined)
       if (info.render.kind === 'failed') {
-        render.markRenderFailed(info.render.error)
+        render.markRenderFailed(info.render.error, editor.fullSource())
         const broken = brokenSlideIndex(info.render.error, editor.slideRanges().length)
         if (broken !== null) await selectSlide(broken)
         // Render the rest of the deck without the slides that don't build
@@ -196,7 +202,6 @@ export function Studio() {
       // Only once `open`: a variant picked while still `opening` would be
       // rejected by `decide` as busy, silently doing nothing.
       void refreshDeckVariants()
-      review.reset()
       void refreshReview()
       void noteLayoutFiles()
     } catch (err) {
@@ -533,6 +538,7 @@ export function Studio() {
       if (result.kind === 'failed') throw new RenderFailure(result.error)
       render.applyRenderPayload(result.payload, text, result.broken)
       await deckIpc.saveDeckSource(text)
+      render.markDiskRendered(text, result.broken)
       // From disk, as after an external change: the slide session, its
       // drafts and every kept position are rebuilt for the new source.
       await refreshSource(true)
@@ -1457,6 +1463,7 @@ export function Studio() {
       if (result.kind === 'rendered') {
         persistedFailedSource = null
         render.applyRenderPayload(result.payload, content, result.broken)
+        if (persisted) render.markDiskRendered(content, result.broken)
         setErrorMessage(null)
         return
       }
@@ -1468,7 +1475,7 @@ export function Studio() {
         // error (the error bar and the preview pane show it from there),
         // and an earlier draft's error — about text that is gone — goes.
         persistedFailedSource = content
-        render.markRenderFailed(result.error)
+        render.markRenderFailed(result.error, content)
         setErrorMessage(null)
       } else {
         showBuildError(renderFailureMessage(result.error))
@@ -2066,6 +2073,81 @@ export function Studio() {
     await refreshReview()
   }
 
+  // Reports the deck's build errors to the agent on its own
+  // (todo/auto-report-build-error.md, `domain/buildErrorReport.ts`): while
+  // the deck on disk doesn't build — opened broken, or broken by an edit
+  // from outside (the agent's own, most often: `handleExternalChange`) —
+  // each error goes to the agent waiting in crit as a comment on its line,
+  // and the round is finished. Every transition goes through
+  // `decideBuildErrorReport`; this only feeds it what changed and runs the
+  // send it asks for. A draft being typed never reaches this: neither its
+  // failure nor its success is the disk's (`render.diskRender()`), and the
+  // agent can't fix what isn't written.
+  function agentReadyForReport(): boolean {
+    const session = review.session()
+    return session?.kind === 'found' && session.agentWaiting && review.busy() === 'idle'
+  }
+  function dispatchBuildErrorReport(event: BuildErrorReportEvent): void {
+    const decision = decideBuildErrorReport(review.report(), event, agentReadyForReport())
+    review.setReport(decision.next)
+    if (decision.effect?.kind === 'send') void sendBuildErrors(decision.effect.errors, decision.effect.source)
+  }
+  // What the deck on disk builds to, from the disk's render state (never
+  // a draft's — see `render.diskRender`): the deck's refusal, or the
+  // slides its render isolated. Every render of the disk goes in, not
+  // only one with other errors: the same error's line moves with the
+  // edits above it (the agent's own, while it works), and what waits to
+  // be sent must say where the error is now. `decideBuildErrorReport`
+  // tells a repeat from news (`reported`), so a render that isolates the
+  // same slides again sends nothing.
+  createEffect(() => {
+    const build = diskBuildOf(render.diskRender())
+    if (build === null) return
+    untrack(() => {
+      dispatchBuildErrorReport(build.kind === 'ok' ? { type: 'disk-render-ok' } : { type: 'disk-render-failed', errors: build.errors, source: build.source })
+    })
+  })
+  // The agent came to wait (the session poll or crit's event saw it), or
+  // the send that was in the way finished: whatever waited to be reported
+  // goes now.
+  createEffect(() => {
+    if (!agentReadyForReport()) return
+    untrack(() => dispatchBuildErrorReport({ type: 'agent-waiting' }))
+  })
+  // The agent came to wait after not waiting — its next round (or the
+  // first seen): told apart from the effect above, which a send ending
+  // raises too, so that a failed send is retried on a new round and not
+  // the moment it lets go of `busy`. `review.setSession` leaves the signal
+  // alone when nothing changed, so this runs on a change of session, not
+  // on every poll.
+  let agentWaitedBefore = false
+  createEffect(() => {
+    const session = review.session()
+    const waiting = session?.kind === 'found' && session.agentWaiting
+    const arrived = waiting && !agentWaitedBefore
+    agentWaitedBefore = waiting
+    if (arrived) untrack(() => dispatchBuildErrorReport({ type: 'agent-arrived' }))
+  })
+  // The `send` effect: the errors as comments on their lines of `source`
+  // (what they count lines into), then the round — like `sendReview`, but
+  // without the user's unsent comments, which go with their own Send.
+  async function sendBuildErrors(errors: readonly RenderErrorPayload[], source: string): Promise<void> {
+    review.setBusy('sending')
+    review.setError(null)
+    try {
+      await critIpc.addComments(errors.map(error => buildErrorComment(error, source)))
+      await critIpc.finish()
+      dispatchBuildErrorReport({ type: 'sent', identities: errors.map(buildErrorIdentity) })
+      setStatusMessage({ kind: 'build-error-reported' })
+    } catch (err) {
+      review.setError(settings.messages().reviewFailed(String(err)))
+      dispatchBuildErrorReport({ type: 'send-failed' })
+    } finally {
+      review.setBusy('idle')
+    }
+    await refreshReview()
+  }
+
   async function resolveReviewComment(id: string): Promise<void> {
     try {
       review.setComments(await critIpc.resolveComment(id))
@@ -2208,7 +2290,12 @@ export function Studio() {
     // A deck read fresh from disk (a newly opened deck, an external edit)
     // may not match any position kept so far.
     forgetSlidePositions()
-    if (renderPayload) render.applyRenderPayload(renderPayload, source)
+    // A payload given here is the disk's render (`open_deck`'s), of the
+    // very source just read.
+    if (renderPayload) {
+      render.applyRenderPayload(renderPayload, source)
+      render.markDiskRendered(source)
+    }
     editor.setFullSource(source)
     const ranges = splitSlides(source)
     editor.setSlideRanges(ranges)
@@ -2329,6 +2416,9 @@ export function Studio() {
       if (result.kind === 'failed') throw new RenderFailure(result.error)
       render.applyRenderPayload(result.payload, nextSource, result.broken)
       await deckIpc.saveDeckSource(nextSource)
+      // Only now is the render the disk's: a write that fails leaves the
+      // file as it was, however well the draft rendered.
+      render.markDiskRendered(nextSource, result.broken)
       editor.setFullSource(nextSource)
       const ranges = splitSlides(nextSource)
       editor.setSlideRanges(ranges)

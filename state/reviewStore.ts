@@ -1,4 +1,5 @@
 import { batch, createMemo, createSignal } from '@barefootjs/client'
+import type { BuildErrorReport } from '../domain/buildErrorReport'
 import type { CritDeckSession, ReviewComment } from '../domain/critReview'
 import { awaitingAgentCount, liveReplies, rewriteUnsent, sendAvailability, unsentBody, type CommentBox, type CommentTarget, type LayoutCommentTarget, type PendingComment, type PendingLayoutComment, type PendingReply, type PinSpot, type SentPins } from '../domain/reviewComment'
 
@@ -59,6 +60,9 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
   const [error, setError] = createSignal<string | null>(null)
   // Where the pins of comments sent in this window sat (`SentPins`).
   const [sentPins, setSentPins] = createSignal<SentPins>({})
+  // Where reporting the deck's build errors to the agent stands
+  // (`domain/buildErrorReport.ts`); `Studio.tsx` decides every transition.
+  const [report, setReport] = createSignal<BuildErrorReport>({ kind: 'idle' })
   let nextId = 1
 
   // The unsent replies that can still be sent (`liveReplies`).
@@ -248,6 +252,7 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
       setBusy('idle')
       setError(null)
       setSentPins({})
+      setReport({ kind: 'idle' })
     })
   }
 
@@ -257,6 +262,7 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
     unsentEdit, startEdit, setEditText, cancelEdit, commitEdit,
     replyDraft, editReply, setReplyText, cancelReply, commitReply, markSent, sentPins,
     busy, setBusy, error, setError, showResolved, toggleShowResolved: () => setShowResolved(!showResolved()),
+    report, setReport,
     commentCountOf, syncCommentCounts, reset,
   }
 }

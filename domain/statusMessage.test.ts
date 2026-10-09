@@ -10,6 +10,7 @@ const EVERY_STATUS: StatusMessage[] = [
   { kind: 'history-cleared' },
   { kind: 'merged-external-change' },
   { kind: 'reloaded-external-change' },
+  { kind: 'build-error-reported' },
   { kind: 'presenting', rehearsal: false },
   { kind: 'presenting', rehearsal: true },
   { kind: 'importing-images', count: 1 },
@@ -68,6 +69,11 @@ describe('statusText', () => {
     const en = messagesFor('en')
     expect(statusText(en, { kind: 'layout-deleted-history-cleared', layout: 'quote' })).toContain('undo history cleared')
     expect(statusText(en, { kind: 'layout-deleted', layout: 'quote' })).not.toContain('undo history')
+  })
+
+  test('spec: Given the build errors went to the agent, when worded in each language, then the status says so', () => {
+    expect(statusText(messagesFor('en'), { kind: 'build-error-reported' })).toBe('Sent the build error to the agent.')
+    expect(statusText(messagesFor('ja'), { kind: 'build-error-reported' })).toBe('ビルドエラーをエージェントに送りました。')
   })
 
   test('spec: Given nothing to report, when worded, then the status bar is empty', () => {

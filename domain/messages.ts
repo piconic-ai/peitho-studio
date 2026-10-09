@@ -234,6 +234,10 @@ export interface Messages {
   historyCleared: string
   mergedExternalChange: string
   reloadedExternalChange: string
+  /** The deck on disk doesn't build and its errors went to the agent
+   * waiting in crit, with nothing for the user to do
+   * (`domain/buildErrorReport.ts`). */
+  buildErrorReported: string
   presenting: string
   presentingRehearsal: string
   externalChangeConfirm: string
@@ -450,6 +454,7 @@ const en: Messages = {
   historyCleared: 'Undo history cleared — the deck changed since.',
   mergedExternalChange: 'Deck changed on disk elsewhere — merged around your unsaved edit.',
   reloadedExternalChange: 'Reloaded — the deck changed on disk.',
+  buildErrorReported: 'Sent the build error to the agent.',
   presenting: 'Presenting…',
   presentingRehearsal: 'Presenting (rehearsal)…',
   externalChangeConfirm: 'This deck changed outside Peitho Studio (e.g. another editor). Reload it and discard your unsaved edits here?',
@@ -662,6 +667,7 @@ const ja: Messages = {
   historyCleared: 'デッキが変更されたため、取り消し履歴を消去しました。',
   mergedExternalChange: 'デッキがほかの場所で変更されました — 未保存の編集はそのまま残し、それ以外を反映しました。',
   reloadedExternalChange: 'デッキがほかの場所で変更されたため、読み込み直しました。',
+  buildErrorReported: 'ビルドエラーをエージェントに送りました。',
   presenting: '発表中…',
   presentingRehearsal: '発表中(リハーサル)…',
   externalChangeConfirm: 'このデッキはPeitho Studioの外(ほかのエディタなど)で変更されました。読み込み直して、ここでの未保存の編集を破棄しますか?',

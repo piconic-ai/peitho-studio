@@ -4,6 +4,7 @@
 // not a detail of that boundary; ipc/deckIpc.ts imports these types
 // rather than the other way around, per docs/architecture.md's `ipc/ ->
 // domain/` dependency direction.
+import type { BrokenSlides } from './brokenSlides'
 
 export interface ManifestSlide {
   index: number
@@ -97,6 +98,34 @@ export interface RenderErrorPayload {
 export type RenderOutcome =
   | ({ kind: 'rendered' } & RenderPayload)
   | { kind: 'failed'; error: RenderErrorPayload }
+
+/** How the deck's last render went, as `state/renderStore.ts` holds it:
+ * `none` before any render was tried (no deck open), `rendered` once a
+ * render succeeded, `failed` while the source on disk doesn't build — set
+ * by `open_deck`'s refusal and by a failed render of what's on disk, never
+ * by a draft failing mid-typing (the disk's state and the editor's aren't
+ * mixed — a draft's failure is the error bar's alone). `source` is the
+ * text that failed, which `error.line` counts into. Drives what the error
+ * bar's timer leaves alone, what the preview pane shows in place of a
+ * slide, and what is reported to the agent (`domain/buildErrorReport.ts`). */
+export type RenderOutcomeState =
+  | { kind: 'none' }
+  | { kind: 'rendered' }
+  | { kind: 'failed'; error: RenderErrorPayload; source: string }
+
+/** What the deck on disk last rendered to, for what must follow the
+ * file's state and not the editor's (`domain/buildErrorReport.ts`): none
+ * yet; `rendered`, with the slides isolated from it (`domain/
+ * brokenSlides.ts`, by position in `source`); or `failed` with the error
+ * `source` was refused with. Unlike `RenderOutcomeState`, never touched
+ * by a draft: a draft that renders says nothing about the file (the save
+ * after it can fail), so `state/renderStore.ts` records a render here
+ * only for a source known to be on disk — `open_deck`'s, an external
+ * change's, or a save's once it landed. */
+export type DiskRenderState =
+  | { kind: 'none' }
+  | { kind: 'rendered'; source: string; broken: BrokenSlides }
+  | { kind: 'failed'; error: RenderErrorPayload; source: string }
 
 /** The error as one block of text — peitho-core's own `Display`: the
  * headline, then `  = help: ...` on a second line when there is help.

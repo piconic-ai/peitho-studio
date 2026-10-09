@@ -33,8 +33,10 @@ export interface FakeCritIpc extends CritIpc {
 
 export interface FakeCritOptions {
   /** `'none'`: no session until `startSession`. `'waiting'` (default): a
-   * session with an agent waiting in it. */
-  session?: 'none' | 'waiting'
+   * session with an agent waiting in it. `'working'`: a session whose
+   * agent is at work on its last round (not waiting) until
+   * `agentConnects`. */
+  session?: 'none' | 'waiting' | 'working'
   /** What `bundledCritPath` answers; `null` rejects, as with no bundled
    * crit. Defaults to where a release build has it. */
   critPath?: string | null
@@ -49,7 +51,7 @@ export const FAKE_CRIT_PATH = '/Applications/Peitho Studio.app/Contents/MacOS/cr
 export function createFakeCritIpc(options: FakeCritOptions = {}): FakeCritIpc {
   let session: CritDeckSession = options.session === 'none'
     ? { kind: 'none' }
-    : { kind: 'found', id: 'fake-session', port: 0, file: 'deck.md', reviewRound: 1, agentWaiting: true }
+    : { kind: 'found', id: 'fake-session', port: 0, file: 'deck.md', reviewRound: 1, agentWaiting: options.session !== 'working' }
   const calls: RecordedCritCall[] = []
   const comments: ReviewComment[] = []
   const listeners = new Set<(event: CritReviewEvent) => void>()

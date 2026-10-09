@@ -244,10 +244,18 @@ describe('replies and sending', () => {
       store.setBoxDraft('x')
       store.commitBox()
       store.setError('boom')
+      store.setReport({ kind: 'sent', reported: ['x'] })
       store.reset()
       expect(store.session()).toBeNull()
       expect(store.pending()).toEqual([])
       expect(store.error()).toBeNull()
+      expect(store.report()).toEqual({ kind: 'idle' })
+    })
+  })
+
+  test('Given a fresh store, Then no build error report is under way', () => {
+    createRoot(() => {
+      expect(createReviewStore().report()).toEqual({ kind: 'idle' })
     })
   })
 })
