@@ -141,7 +141,7 @@ test('Given the layout menu, when each item is chosen, then it acts on the right
   await expect(page.locator('[data-delete-layout-panel]')).toContainText('1 slide uses "quote"')
 })
 
-test('Given a layout the selected slide does not fit, when its row is right-clicked, then Apply is off with the reason', async ({ page }) => {
+test('Given a layout the selected slide does not fit, when its row is right-clicked, then Apply stays on, warning with the reason, and applying it pins the layout', async ({ page }) => {
   const verdicts = (): LayoutVerdict[] => [
     { layout: 'title-slide', fit: { kind: 'fits' } },
     { layout: 'title-body', fit: { kind: 'fits' } },
@@ -151,12 +151,10 @@ test('Given a layout the selected slide does not fit, when its row is right-clic
   await openLayoutScreen(page, deck)
 
   await row(page, 'quote').click({ button: 'right' })
-  await expect(layoutMenuItem(page, 'apply')).toBeDisabled()
-  await expect(layoutMenuItem(page, 'apply')).toHaveAttribute('title', "unassigned content remains for missing 'body' slot")
-  expect(deck.invokedCommands).not.toContain('save_deck_source')
-  await page.keyboard.press('Escape')
-  await row(page, 'title-body').click({ button: 'right' })
   await expect(layoutMenuItem(page, 'apply')).toBeEnabled()
+  await expect(layoutMenuItem(page, 'apply')).toHaveAttribute('title', "unassigned content remains for missing 'body' slot")
+  await layoutMenuItem(page, 'apply').click()
+  await expect.poll(() => deck.source).toContain('"layout":"quote"')
 })
 
 test('Given the deck\'s only layout, when its row is right-clicked, then Delete is off with the reason', async ({ page }) => {

@@ -185,6 +185,15 @@ export function slideConfigOfText(text: string): PageConfig {
   return extractPageComment(extractNote(text).rest).config
 }
 
+/** The slide `step` pins a layout on (sets or clears its `"layout"`), or
+ * `null` for any other step. Which layout a slide is on is the user's call
+ * even when the slide doesn't fit it yet (a new slide's heading on an image
+ * layout, before the image), so the save keeps that slide as it is instead
+ * of refusing it (`saveDecision`'s `savedAsIs`) — by Undo and Redo too. */
+export function layoutPinnedSlide(step: StructuralStep): number | null {
+  return step.kind === 'config' && 'layout' in step.patch ? step.index : null
+}
+
 /** The step that undoes `step`, given the slide list `step` is about to be
  * applied to. A text marker is its own inverse: the editor's history
  * undoes or redoes the same group. */

@@ -33,7 +33,7 @@ import { CommentBox } from './CommentBox'
 import { PanelToggle } from './PanelToggle'
 import { ReviewPanel } from './ReviewPanel'
 import { type ManifestSlide, type RenderErrorPayload, type RenderPayload, type SectionDraft, brokenSlideIndex, renderFailureMessage } from '../domain/render'
-import { type BrokenSlides, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesAfterEdit, brokenSlidesSummary, isolateSlide, restoreEditAnnotations, saveDecision, sourceSaveDecision, startIsolation } from '../domain/brokenSlides'
+import { type BrokenSlides, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesAfterEdit, brokenSlidesSummary, isolateSlide, restoreEditAnnotations, saveDecision, savesUnrendered, sourceSaveDecision, startIsolation } from '../domain/brokenSlides'
 import { RenderFailure } from '../ipc/renderOutcome'
 import { SOURCE_EDITING_CLOSED, openSourceEditing, slideIndexAfterSourceSave, sourceEditorOffered, sourceReadFromDisk, sourceSaved, typeInSource } from '../domain/sourceEditing'
 import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
@@ -44,12 +44,12 @@ import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
 import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, indexAfterCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
-import { type FrontmatterStep, type HistoryStep, type LayoutPinsStep, type PageNumbersStep, type SlideChange, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyLayoutPinsStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inverseLayoutPinsStep, inversePageNumbersStep, historyPinsLayout, layoutPinsStepFor, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
+import { type FrontmatterStep, type HistoryStep, type LayoutPinsStep, type PageNumbersStep, type SlideChange, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyLayoutPinsStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inverseLayoutPinsStep, inversePageNumbersStep, historyPinsLayout, layoutPinnedSlide, layoutPinsStepFor, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
 import { type DeckSettingsState, frontmatterValueOf, pickChangesNothing, readDeckSettings, resolveDeckSettingPick, sameDeckSettings } from '../domain/deckSettings'
 import { PAGE_NUMBERS_KEY, pageNumbersShown, parsePageNumbersMode, readFrontmatterKey, setFrontmatterKey } from '../domain/frontmatter'
 import { arm, move, dropTarget, cancel } from '../domain/drag'
-import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, commentClickOf, layoutFitOf, layoutNoticeOf } from '../domain/contextMenu'
-import { type LayoutVerdict, availabilityOf, settledFitCheck } from '../domain/layoutFit'
+import { indexOf as contextMenuIndexOf, positionOf as contextMenuPositionOf, isLayoutPickerOpen, menuItems as computeMenuItems, chooseLayout, commentClickOf, layoutFitOf } from '../domain/contextMenu'
+import { type LayoutVerdict } from '../domain/layoutFit'
 import { type LayoutColumns, type LayoutNameProblem, type StudioMode, initialLayoutListWidth, layoutColumnFilling, layoutRailShown, layoutFilesChanged, layoutListGeneration, layoutRows, layoutThumbnailStyle, layoutUsage, selectedPreviewRoom, shownLayout } from '../domain/layoutScreen'
 import { canConfirmDelete, replacementChoices } from '../domain/layoutDelete'
 import { FILE_AUTOSAVE_DELAY_MS, allTabsOpen, autosavePaths, canCloseFile, fileDraft, isFileChangedOnDisk, isFileDirty, leaveBlocker, shouldAutosave, tabsBlocker, type FileEditor } from '../domain/fileEditor'
@@ -2452,13 +2452,17 @@ export function Studio() {
   // `cmd`: the structural command `nextSource` applies, if any — the kept
   // editor states follow their slides through it.
   //
+  // `savedAsIs`: a slide the user asked to keep as it is even if it doesn't
+  // build — one they pinned to a layout it doesn't fit (yet) — isolated
+  // and saved broken rather than refusing the change.
+  //
   // Resolves `true` once the change is rendered and saved, `false` if either
   // step failed (the error is already shown) — undo history records only a
   // change that actually landed.
   async function commitChange(
     nextSource: string,
     plan: SelectionPlan,
-    { expectedDraft, cmd, handOff = false }: { expectedDraft?: { body: string; note: string }; cmd?: SlideCommand; handOff?: boolean } = {},
+    { expectedDraft, cmd, handOff = false, savedAsIs = null }: { expectedDraft?: { body: string; note: string }; cmd?: SlideCommand; handOff?: boolean; savedAsIs?: number | null } = {},
   ): Promise<boolean> {
     const before = editor.editorSession()
     const finishSave = saves.begin(nextSource, expectedDraft ? 'draft' : 'structural')
@@ -2491,8 +2495,10 @@ export function Studio() {
       // saved broken, and what can't be isolated (an error naming no
       // slide) is saved all the same, the deck on disk then not building
       // (`markRenderFailed`, as an external change that breaks it).
-      const result = await renderIsolating(nextSource, error => saveDecision(error, known, editedIndex, slideCount, handOff) === 'isolate')
-      if (result.kind === 'failed' && !handOff) throw new RenderFailure(result.error)
+      const asIs = savedAsIs ?? (handOff ? editedIndex : null)
+      const result = await renderIsolating(nextSource, error => saveDecision(error, known, editedIndex, slideCount, asIs) === 'isolate')
+      // With nothing left to isolate, `savedAsIs` failing is saved as is too.
+      if (result.kind === 'failed' && !savesUnrendered(result.error, slideCount, asIs, handOff)) throw new RenderFailure(result.error)
       if (result.kind === 'rendered') render.applyRenderPayload(result.payload, nextSource, result.broken)
       await deckIpc.saveDeckSource(nextSource)
       // Only now is the render the disk's: a write that fails leaves the
@@ -2743,7 +2749,7 @@ export function Studio() {
     const cmd = commandForStep(texts, step)
     if (validate(texts, cmd)) return { kind: 'rejected' }
     const inverse = inverseStep(texts, step)
-    const ok = await commitChange(sourceFor(applyCommand(texts, cmd), cmd), planFor(cmd), { cmd })
+    const ok = await commitChange(sourceFor(applyCommand(texts, cmd), cmd), planFor(cmd), { cmd, savedAsIs: layoutPinnedSlide(step) })
     return ok ? { kind: 'done', inverse } : { kind: 'failed' }
   }
 
@@ -3084,17 +3090,14 @@ export function Studio() {
     ui.settleLayoutFit(requestId, verdicts)
   }
 
-  // A layout the slide fits is pinned and the menu closes, same as before
-  // the fit check existed; one it doesn't fit — or any, while the check is
-  // still running — keeps the menu open with a notice, and deck.md is left
-  // untouched.
+  // Any layout chosen is pinned and the menu closes — one the slide doesn't
+  // fit too (the picker marks it): the build error it leaves until the
+  // content fits shows in the error bar.
   function chooseLayoutFromPicker(layout: string): void {
-    const choice = chooseLayout(ui.contextMenu(), layout)
+    const choice = chooseLayout(ui.contextMenu())
     if (choice.kind === 'apply') {
       void changeSlideLayout(choice.index, layout)
       ui.closeContextMenu()
-    } else if (choice.kind === 'reject' || choice.kind === 'wait') {
-      ui.showLayoutNotice(choice.notice)
     }
   }
 
@@ -3557,21 +3560,14 @@ export function Studio() {
     setStatusMessage({ kind: 'layout-created', layout: copy })
   }
 
-  // Pins the slide open in the slides screen to layout `name`, through the same Undo-able path as the context menu's
-  // Change Layout — after the same fit check, so a layout the slide doesn't
-  // fit is refused with peitho-core's reason instead of a build error.
+  // Pins the slide open in the slides screen to layout `name`, through the
+  // same Undo-able path as the context menu's Change Layout — a layout the
+  // slide doesn't fit too, the slide then showing the build error until its
+  // content fits.
   async function applyLayout(name: string | null): Promise<void> {
     const index = editor.selectedIndex()
     if (name === null || index === null) return
     await runLayoutAction(async () => {
-      let verdicts: LayoutVerdict[] | null = null
-      try {
-        verdicts = await deckIpc.checkSlideLayouts(liveSource(), index)
-      } catch {
-        // Unavailable: `commitChange` renders before it saves anyway.
-      }
-      const availability = availabilityOf(settledFitCheck(verdicts), name)
-      if (availability.kind === 'mismatch') throw new Error(settings.messages().layoutMismatch(name, availability.reason))
       const change = await changeSlideLayout(index, name)
       switch (change) {
         case 'done':
@@ -3601,7 +3597,7 @@ export function Studio() {
 
   // The layout list's right-click menu: on a row, it acts on that layout
   // (not necessarily the one shown); on empty space, it offers New Layout.
-  // With a slide open in the slides screen, Apply waits on the same fit
+  // With a slide open in the slides screen, Apply is warned by the same fit
   // check as the slide menu's Change Layout.
   function openLayoutMenu(name: string | null, event: MouseEvent): void {
     event.preventDefault()
@@ -4804,7 +4800,6 @@ export function Studio() {
         layoutPickerView={layoutPickerView()}
         layoutPreviews={ui.layoutPreviews()}
         layoutFit={layoutFitOf(ui.contextMenu())}
-        layoutNotice={layoutNoticeOf(ui.contextMenu())}
         layoutPreviewStylesheet={getLayoutPreviewStylesheet}
         canvasWidth={render.canvasWidth()}
         canvasHeight={render.canvasHeight()}

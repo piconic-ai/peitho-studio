@@ -1,7 +1,7 @@
 // Which layouts the right-clicked slide's content fits, for the "Change
 // Layout" picker — so a layout peitho-core would reject for this slide is
-// marked before it's chosen, and choosing it anyway explains why instead of
-// closing the menu on a build error in the status bar.
+// marked, with the reason, before it's chosen. Choosing it is still allowed
+// (see `chooseLayout` in `contextMenu.ts`).
 import type { Messages } from './messages'
 
 /** Mirrors `engine::layout_fit::LayoutFit` (src-tauri) as serialized by
@@ -61,28 +61,17 @@ export function availabilityOf(check: LayoutFitCheck, layout: string): LayoutAva
   }
 }
 
-/** Why a layout chosen from the picker wasn't applied: the fit check hadn't
- * answered yet, or the slide doesn't fit it. Kept as what happened rather
- * than as text, so a language change rewords a notice already shown. */
-export type LayoutNotice =
-  | { kind: 'checking' }
-  | { kind: 'mismatch'; layout: string; reason: string }
-
-/** `notice` worded with `messages`. `reason` is peitho-core's own message
- * and stays as it is. */
-export function layoutNoticeText(messages: Messages, notice: LayoutNotice): string {
-  return notice.kind === 'checking' ? messages.layoutChecking : messages.layoutMismatch(notice.layout, notice.reason)
+/** Whether `layout`'s picker entry is marked as one the slide doesn't fit
+ * — only on a settled verdict saying so, never while checking or without
+ * one. */
+export function isMismatch(check: LayoutFitCheck, layout: string): boolean {
+  return availabilityOf(check, layout).kind === 'mismatch'
 }
 
-/** Whether `layout`'s picker entry is shown as choosable (not dimmed). */
-export function isSelectable(check: LayoutFitCheck, layout: string): boolean {
-  return availabilityOf(check, layout).kind === 'selectable'
-}
-
-/** The picker entry's hover text: the mismatch notice for a layout the
- * slide doesn't fit, otherwise just the layout's name (the entry's own
- * label truncates long names). */
+/** The picker entry's hover text: why the slide doesn't fit the layout,
+ * otherwise just the layout's name (the entry's own label truncates long
+ * names). */
 export function entryTitle(check: LayoutFitCheck, layout: string, messages: Messages): string {
   const availability = availabilityOf(check, layout)
-  return availability.kind === 'mismatch' ? layoutNoticeText(messages, { kind: 'mismatch', layout, reason: availability.reason }) : layout
+  return availability.kind === 'mismatch' ? messages.layoutMismatch(layout, availability.reason) : layout
 }

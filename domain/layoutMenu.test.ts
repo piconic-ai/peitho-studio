@@ -31,14 +31,24 @@ describe('layoutMenuItems', () => {
     expect(items[1]).toEqual({ action: 'apply', enabled: false, reason: { kind: 'no-slide' } })
   })
 
-  test('spec: Given a slide that does not fit the layout, Then Apply is off with peitho-core\'s reason', () => {
+  test('spec: Given a slide that does not fit the layout, Then Apply stays on, warning with peitho-core\'s reason', () => {
     const menu = withLayoutMenuFit(openOnLayout('quote', 0, 0, 7), 7, [{ layout: 'quote', fit: { kind: 'mismatch', reason: "missing 'body' slot" } }])
-    expect(layoutMenuItems(menu, READY)[1]).toEqual({ action: 'apply', enabled: false, reason: { kind: 'mismatch', reason: "missing 'body' slot" } })
+    expect(layoutMenuItems(menu, READY)[1]).toEqual({ action: 'apply', enabled: true, reason: { kind: 'mismatch', reason: "missing 'body' slot" } })
   })
 
-  test('spec: Given the fit check still running, Then Apply waits; an unavailable check leaves it on', () => {
-    expect(enabledOf(openOnLayout('quote', 0, 0, 1), READY).apply).toBe(false)
-    expect(enabledOf(withLayoutMenuFit(openOnLayout('quote', 0, 0, 1), 1, null), READY).apply).toBe(true)
+  test('spec: Given the fit check still running or unavailable, Then Apply is on without a warning', () => {
+    expect(layoutMenuItems(openOnLayout('quote', 0, 0, 1), READY)[1]).toEqual({ action: 'apply', enabled: true, reason: null })
+    expect(layoutMenuItems(withLayoutMenuFit(openOnLayout('quote', 0, 0, 1), 1, null), READY)[1]).toEqual({ action: 'apply', enabled: true, reason: null })
+  })
+
+  test('adversarial: Given a mismatch while another operation runs, Then Apply still waits for it', () => {
+    const menu = withLayoutMenuFit(openOnLayout('quote', 0, 0, 7), 7, [{ layout: 'quote', fit: { kind: 'mismatch', reason: '' } }])
+    expect(layoutMenuItems(menu, { ...READY, busy: true })[1]).toEqual({ action: 'apply', enabled: false, reason: { kind: 'mismatch', reason: '' } })
+  })
+
+  test('adversarial: Given no slide open, Then a mismatch never turns Apply on', () => {
+    const menu = withLayoutMenuFit(openOnLayout('quote', 0, 0, 7), 7, [{ layout: 'quote', fit: { kind: 'mismatch', reason: 'x' } }])
+    expect(layoutMenuItems(menu, { ...READY, hasSlide: false })[1]).toEqual({ action: 'apply', enabled: false, reason: { kind: 'no-slide' } })
   })
 
   test('spec: Given the deck\'s only layout, Then Delete is off', () => {
@@ -112,11 +122,11 @@ describe('labels and titles', () => {
     }
   })
 
-  test('spec: Given why an item is off, Then the title says so; an enabled one has none', () => {
+  test('spec: Given why an item is off or warned, Then the title says so; otherwise it has none', () => {
     const en = messagesFor('en')
     expect(layoutMenuTitle(null, en)).toBe('')
     expect(layoutMenuTitle({ kind: 'mismatch', reason: "missing 'body' slot" }, en)).toBe("missing 'body' slot")
-    for (const kind of ['no-slide', 'checking', 'only-layout'] as const) expect(layoutMenuTitle({ kind }, en)).not.toBe('')
+    for (const kind of ['no-slide', 'only-layout'] as const) expect(layoutMenuTitle({ kind }, en)).not.toBe('')
   })
 })
 
@@ -139,9 +149,10 @@ describe('the menu on the selected layout\'s large preview', () => {
 
   test('spec: Given its fit check, Then it settles as a row\'s does, and a stale answer is dropped', () => {
     const menu = openOnPreview('quote', null, 0, 0, 5)
-    expect(enabledOf(menu, READY).apply).toBe(false)
-    expect(withLayoutMenuFit(menu, 4, [])).toBe(menu)
-    expect(enabledOf(withLayoutMenuFit(menu, 5, null), READY).apply).toBe(true)
+    const mismatch = [{ layout: 'quote', fit: { kind: 'mismatch', reason: 'x' } }] as const
+    expect(layoutMenuItems(menu, READY)[1]!.reason).toBeNull()
+    expect(withLayoutMenuFit(menu, 4, mismatch)).toBe(menu)
+    expect(layoutMenuItems(withLayoutMenuFit(menu, 5, mismatch), READY)[1]!.reason).toEqual({ kind: 'mismatch', reason: 'x' })
   })
 
   test('adversarial: Given a row\'s menu or empty space, Then no slot is known', () => {

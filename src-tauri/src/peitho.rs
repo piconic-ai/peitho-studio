@@ -368,6 +368,11 @@ pub fn invoke_for_e2e(deck_path: &Path, cmd: &str, args: serde_json::Value) -> R
             let count = args["count"].as_u64().unwrap_or(0) as usize;
             json(crate::engine::slide_edit::image_canvas_change(deck_path, &content, &base, count, &placements, &strings("removeSlots")?.unwrap_or_default()))
         }
+        "check_slide_layouts" => {
+            let index = args["slideIndex"].as_u64().ok_or("missing slideIndex")? as usize;
+            let verdicts = layout_fit::check_slide_layouts(deck_path, &string("content")?, index)?;
+            serde_json::to_value(verdicts).map_err(|err| err.to_string())
+        }
         // `deck_path` is unused: this makes the deck (`create_deck`'s files).
         "create_deck" => {
             let settings = NewDeckSettings::parse(args["aspectRatio"].as_str(), args["lang"].as_str())?;
@@ -2972,6 +2977,23 @@ Start writing your slides here.\n";
         assert_eq!(invoke_for_e2e(&deck_path, "render_draft", serde_json::json!({})).unwrap_err(), "missing content");
         assert_eq!(invoke_for_e2e(&deck_path, "create_image_canvas", serde_json::json!({ "content": "" })).unwrap_err(), "missing baseLayout");
         assert!(invoke_for_e2e(&deck_path, "save_deck_source", serde_json::json!({ "content": "" })).unwrap_err().contains("not available"));
+        assert_eq!(invoke_for_e2e(&deck_path, "check_slide_layouts", serde_json::json!({ "content": "" })).unwrap_err(), "missing slideIndex");
+        assert_eq!(invoke_for_e2e(&deck_path, "check_slide_layouts", serde_json::json!({ "slideIndex": -1, "content": "" })).unwrap_err(), "missing slideIndex");
+    }
+
+    #[test]
+    fn invoke_for_e2e_spec_check_slide_layouts_answers_the_verdicts_check_slide_layouts_would() {
+        // Given a new deck, whose image layout requires an image,
+        let parent = tempfile::tempdir().unwrap();
+        let created = invoke_for_e2e(Path::new(""), "create_deck", serde_json::json!({ "parentDir": parent.path(), "name": "talk" })).unwrap();
+        let deck_path = PathBuf::from(created.as_str().unwrap());
+        let source = "<!-- {\"key\":\"a\",\"layout\":\"title-body\"} -->\n# New Slide\n";
+        // When e2e checks a heading-only slide's layouts,
+        let verdicts = invoke_for_e2e(&deck_path, "check_slide_layouts", serde_json::json!({ "content": source, "slideIndex": 0 })).unwrap();
+        let fit_of = |layout: &str| verdicts.as_array().unwrap().iter().find(|verdict| verdict["layout"] == layout).map(|verdict| verdict["fit"]["kind"].clone());
+        // Then the answer is peitho-core's verdict per layout, as the command's.
+        assert_eq!(fit_of("title-body"), Some("fits".into()), "{verdicts}");
+        assert_eq!(fit_of("title-body-image"), Some("mismatch".into()), "{verdicts}");
     }
 
     #[test]

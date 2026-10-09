@@ -2,15 +2,12 @@ import { describe, expect, test } from 'bun:test'
 import fc from 'fast-check'
 import {
   indexOf, positionOf, isLayoutPickerOpen, menuItems, appendIndex, menuItemEnabled, menuItemChecked,
-  openOnSlide, commentClickOf, withLayoutFitResult, layoutFitOf, layoutNoticeOf, chooseLayout, withLayoutNotice,
+  openOnSlide, commentClickOf, withLayoutFitResult, layoutFitOf, chooseLayout,
   type ContextMenu, type MenuContext, type MenuItem,
 } from './contextMenu'
 import { layoutChoiceExamples, fitAnswerExamples } from './contextMenu.examples'
 import { isExhaustivelyAccountedFor } from './spec'
-import type { LayoutNotice, LayoutVerdict } from './layoutFit'
-
-const CHECKING_NOTICE: LayoutNotice = { kind: 'checking' }
-const notice = (reason: string): LayoutNotice => ({ kind: 'mismatch', layout: 'cover', reason })
+import type { LayoutVerdict } from './layoutFit'
 
 const ctx = (overrides: Partial<MenuContext> = {}): MenuContext => ({
   slideCount: 3,
@@ -22,15 +19,14 @@ const ctx = (overrides: Partial<MenuContext> = {}): MenuContext => ({
 
 type SlideMenu = Extract<ContextMenu, { kind: 'on-slide' }>
 
-/** An `on-slide` menu at the origin, picker collapsed, with no fit check
- * and no notice — override only the fields a test is about. */
+/** An `on-slide` menu at the origin, picker collapsed, with no fit check —
+ * override only the fields a test is about. */
 const onSlide = (fields: Partial<SlideMenu> & Pick<SlideMenu, 'index'>): SlideMenu => ({
   kind: 'on-slide',
   x: 0,
   y: 0,
   layoutPickerOpen: false,
   layoutFit: { kind: 'unavailable' },
-  layoutNotice: null,
   comment: null,
   ...fields,
 })
@@ -280,7 +276,7 @@ describe('Change Layout picker examples', () => {
   })
 
   test.each(layoutChoiceExamples.automated.map(example => [example.id, example] as const))('example: %s', (_id, example) => {
-    expect(chooseLayout(example.state, example.event.layout)).toEqual(example.expect)
+    expect(chooseLayout(example.state)).toEqual(example.expect)
   })
 
   test('example: every fit-answer example is automated or manual with a reason', () => {
@@ -293,9 +289,9 @@ describe('Change Layout picker examples', () => {
 })
 
 describe('openOnSlide', () => {
-  test('spec: opens collapsed, with no notice, waiting on the given fit check', () => {
+  test('spec: opens collapsed, waiting on the given fit check', () => {
     expect(openOnSlide(2, 30, 40, 9)).toEqual({
-      kind: 'on-slide', index: 2, x: 30, y: 40, layoutPickerOpen: false, layoutFit: { kind: 'checking', requestId: 9 }, layoutNotice: null, comment: null,
+      kind: 'on-slide', index: 2, x: 30, y: 40, layoutPickerOpen: false, layoutFit: { kind: 'checking', requestId: 9 }, comment: null,
     })
   })
 
@@ -327,17 +323,6 @@ describe('withLayoutFitResult', () => {
     expect(settled).toEqual({ ...opened, layoutFit: { kind: 'checked', verdicts: VERDICTS } })
   })
 
-  test('spec: the answer clears the "still checking" notice a too-early click left behind', () => {
-    const early = withLayoutNotice(openOnSlide(1, 10, 20, 5), CHECKING_NOTICE)
-    expect(layoutNoticeOf(withLayoutFitResult(early, 5, VERDICTS))).toBeNull()
-    expect(layoutNoticeOf(withLayoutFitResult(early, 5, null))).toBeNull()
-  })
-
-  test('adversarial: a stale answer leaves the "still checking" notice in place', () => {
-    const early = withLayoutNotice(openOnSlide(1, 10, 20, 5), CHECKING_NOTICE)
-    expect(layoutNoticeOf(withLayoutFitResult(early, 4, VERDICTS))).toEqual(CHECKING_NOTICE)
-  })
-
   test('adversarial: an answer for another request returns the very same menu object', () => {
     const opened = openOnSlide(1, 10, 20, 5)
     expect(withLayoutFitResult(opened, 4, VERDICTS)).toBe(opened)
@@ -352,40 +337,33 @@ describe('withLayoutFitResult', () => {
   })
 })
 
-describe('layoutFitOf / layoutNoticeOf', () => {
-  test('spec: read the on-slide menu\'s own fields', () => {
-    const menu = withLayoutNotice(openOnSlide(0, 0, 0, 1), notice('why'))
-    expect(layoutFitOf(menu)).toEqual({ kind: 'checking', requestId: 1 })
-    expect(layoutNoticeOf(menu)).toEqual(notice('why'))
+describe('layoutFitOf', () => {
+  test('spec: reads the on-slide menu\'s own check', () => {
+    expect(layoutFitOf(openOnSlide(0, 0, 0, 1))).toEqual({ kind: 'checking', requestId: 1 })
   })
 
-  test('adversarial: closed and on-empty-space have no check and no notice', () => {
+  test('adversarial: closed and on-empty-space have no check', () => {
     const menus: ContextMenu[] = [{ kind: 'closed' }, { kind: 'on-empty-space', x: 0, y: 0 }]
-    for (const menu of menus) {
-      expect(layoutFitOf(menu)).toEqual({ kind: 'unavailable' })
-      expect(layoutNoticeOf(menu)).toBeNull()
-    }
+    for (const menu of menus) expect(layoutFitOf(menu)).toEqual({ kind: 'unavailable' })
   })
 })
 
-describe('withLayoutNotice', () => {
-  test('spec: a later notice replaces an earlier one', () => {
-    const menu = withLayoutNotice(withLayoutNotice(openOnSlide(0, 0, 0, 1), notice('first')), notice('second'))
-    expect(layoutNoticeOf(menu)).toEqual(notice('second'))
+describe('chooseLayout', () => {
+  test('adversarial: applies to the right-clicked slide whatever the check says, slide 0 included', () => {
+    const checks = [
+      { kind: 'checking', requestId: 1 },
+      { kind: 'unavailable' },
+      { kind: 'checked', verdicts: [] },
+      { kind: 'checked', verdicts: VERDICTS },
+    ] as const
+    for (const layoutFit of checks) {
+      expect(chooseLayout(onSlide({ index: 0, layoutFit }))).toEqual({ kind: 'apply', index: 0 })
+    }
   })
 
-  test('adversarial: a notice with an empty layout and reason is still a notice, not "no notice"', () => {
-    expect(layoutNoticeOf(withLayoutNotice(openOnSlide(0, 0, 0, 1), { kind: 'mismatch', layout: '', reason: '' }))).toEqual({ kind: 'mismatch', layout: '', reason: '' })
-  })
-
-  test('adversarial: a no-op outside on-slide', () => {
-    const closed: ContextMenu = { kind: 'closed' }
-    expect(withLayoutNotice(closed, notice('why'))).toBe(closed)
-  })
-
-  test('adversarial: the notice does not survive the menu being opened again', () => {
-    expect(layoutNoticeOf(withLayoutNotice(openOnSlide(0, 0, 0, 1), notice('why')))).toEqual(notice('why'))
-    expect(layoutNoticeOf(openOnSlide(0, 0, 0, 2))).toBeNull()
+  test('adversarial: closed and on-empty-space menus are ignored', () => {
+    expect(chooseLayout({ kind: 'closed' })).toEqual({ kind: 'ignore' })
+    expect(chooseLayout({ kind: 'on-empty-space', x: 0, y: 0 })).toEqual({ kind: 'ignore' })
   })
 })
 

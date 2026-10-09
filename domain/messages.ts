@@ -100,7 +100,6 @@ export interface Messages {
   hidePageNumber: string
   moveSlideUp: string
   moveSlideDown: string
-  layoutChecking: string
   layoutMismatch: (layout: string, reason: string) => string
 
   // Layout screen (the header's Slides / Layouts switch)
@@ -352,7 +351,6 @@ const en: Messages = {
   sectionStart: 'Section Start',
   moveSlideUp: 'Move Slide Up',
   moveSlideDown: 'Move Slide Down',
-  layoutChecking: 'Still checking which layouts fit this slide — try again in a moment.',
   layoutMismatch: (layout, reason) => `"${layout}" doesn't fit this slide: ${reason}`,
 
   studioModeSlides: 'Slides',
@@ -568,7 +566,6 @@ const ja: Messages = {
   sectionStart: 'セクションの開始',
   moveSlideUp: 'スライドを上へ移動',
   moveSlideDown: 'スライドを下へ移動',
-  layoutChecking: 'このスライドに合うレイアウトを確認しています。少し待ってからもう一度選んでください。',
   layoutMismatch: (layout, reason) => `「${layout}」はこのスライドに合いません: ${reason}`,
 
   studioModeSlides: 'スライド',

@@ -205,19 +205,34 @@ function markedDraft(text: string, config: PageConfig): string {
  * disk is no worse off for it — and never the slide the user is editing
  * (`editedIndex`): their own typing not building is the editor's state,
  * not the deck's, and stays unsaved until it builds. The one exception is
- * `handOff`: the user asked for their typing to go to the agent as it is
- * (todo/send-build-error-from-error-bar.md), so the slide they are
- * editing is isolated and saved broken, like a known one — still never a
- * slide the error doesn't name (nothing to isolate). `slideCount` is the
- * source being saved's, for `brokenSlideIndex`. */
-export function saveDecision(error: RenderErrorPayload, known: BrokenSlides, editedIndex: number | null, slideCount: number, handOff = false): 'isolate' | 'block' {
+ * `savedAsIs`, a slide the user asked to save as it is, broken or not: the
+ * slide they're editing when they hand their typing to the agent
+ * (todo/send-build-error-from-error-bar.md), or a slide they pinned to a
+ * layout it doesn't fit (yet) — it's isolated and saved broken, like a
+ * known one, still never a slide the error doesn't name (nothing to
+ * isolate). `slideCount` is the source being saved's, for
+ * `brokenSlideIndex`. */
+export function saveDecision(error: RenderErrorPayload, known: BrokenSlides, editedIndex: number | null, slideCount: number, savedAsIs: number | null = null): 'isolate' | 'block' {
   const index = brokenSlideIndex(error, slideCount)
   if (index === null) return 'block'
-  if (index === editedIndex) return handOff ? 'isolate' : 'block'
+  if (index === savedAsIs) return 'isolate'
+  if (index === editedIndex) return 'block'
   if (known.has(index)) return 'isolate'
   const key = error.slide?.key ?? null
   if (key !== null && [...known.values()].some(knownError => knownError.slide?.key === key)) return 'isolate'
   return 'block'
+}
+
+/** Whether a save whose render failed outright — nothing left to isolate,
+ * e.g. the deck's only slide that isn't a draft — is written all the same,
+ * the deck on disk then not building: on a `handOff`, whatever the error
+ * (the user asked for it to go to the agent as it is); otherwise only
+ * when the error is about `savedAsIs` itself, the slide the user asked to
+ * keep as it is (`saveDecision`). An error about any other slide, or about
+ * none, still refuses the save. */
+export function savesUnrendered(error: RenderErrorPayload, slideCount: number, savedAsIs: number | null, handOff = false): boolean {
+  if (handOff) return true
+  return savedAsIs !== null && brokenSlideIndex(error, slideCount) === savedAsIs
 }
 
 /** `known` re-keyed to where its slides sit once the slide at
