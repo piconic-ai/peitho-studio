@@ -1,5 +1,5 @@
 ---
-status: todo
+status: wip
 description: エラーバーの「コピー」をエージェントへの送信に置き換え、ビルドエラーは直るまで消さない。編集中の壊れたスライドはその場で壊れたまま保存して送る
 tags: [agent, crit, error-handling, editor]
 ---
@@ -202,8 +202,8 @@ deck.mdに書いてから、#187と同じ`[Build error]`コメントを送る**
 ## 完了条件
 
 自動で確認できる項目(ループが自分で判定してよい):
-- [ ] `bun test` / `bun run typecheck` グリーン
-- [ ] 上記e2e、`auto-report-build-error.e2e.ts`、
+- [x] `bun test` / `bun run typecheck` グリーン
+- [x] 上記e2e、`auto-report-build-error.e2e.ts`、
   `isolate-broken-slides.e2e.ts`、`open-broken-deck.e2e.ts`がグリーン
 
 人間の判断が必要な項目(ここに到達したら一旦止めて委ねる):
@@ -212,6 +212,25 @@ deck.mdに書いてから、#187と同じ`[Build error]`コメントを送る**
 - [ ] **設計判断**: 「エージェントに送る」を押した結果、壊れたデッキが
   ディスクに書かれる(`peitho build`が通らない状態になる)ことを
   ユーザーが分かる表示で十分か(ステータス文言だけ)。
+
+## 実装で決まったこと
+
+- 送信の本体は方針通り#187のまま。ボタンは「書く」(`commitChange`/
+  `commitSource`の`handOff`)と「重複除外を外して流す」
+  (`report-requested`)だけで、`disk-render-failed`が先に`send`を起こして
+  いれば`report-requested`は何も足さない(`busy`中は`agentReady`が
+  偽で`waiting-for-agent`に留まり、`sent`で空になる)。
+- 本文エディタから保存したスライドは`replaceSlideText`の並べ方で
+  行がずれる(e2eの`SOURCE`では`BROKEN`が8行目→保存後7行目)。
+  コメントはディスクの行に付くので、下書き中にエラーバーが示す行と
+  送られる行は一致しないことがある。
+- 壊れたまま保存されたスライドは、直前の描画があればそのサムネイルを
+  残してERRORバッジが付く(#186の挙動)。e2eはバッジだけを見る。
+- `shownBuildError`は文字列のまま。ボタンは`RenderErrorPayload`を
+  必要としない(ディスクに書いてから`diskBuildOf`で読み直す)。
+- `sourceCloseUnsaved`(閉じられない理由)も`showBuildError`経由なので
+  ボタンは「エージェントに送る」になり、押すとソースの下書きが
+  そのまま書かれる — 閉じる前に渡す、という意味で妥当とした。
 
 ## 先送り事項
 
