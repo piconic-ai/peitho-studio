@@ -45,6 +45,10 @@ export interface Messages {
   // Status bar
   copyError: string
   errorCopied: string
+  /** The error bar's button on a build error: it goes to the agent in
+   * crit, written to disk first when it is the editor's own typing
+   * (todo/send-build-error-from-error-bar.md). */
+  sendErrorToAgent: string
 
   // Slide editor
   speakerNotes: string
@@ -238,6 +242,9 @@ export interface Messages {
    * waiting in crit, with nothing for the user to do
    * (`domain/buildErrorReport.ts`). */
   buildErrorReported: string
+  /** The user asked for the build error to go to the agent, and none
+   * waits in crit yet: it goes when one does. */
+  buildErrorWaitingForAgent: string
   presenting: string
   presentingRehearsal: string
   externalChangeConfirm: string
@@ -302,6 +309,7 @@ const en: Messages = {
 
   copyError: 'Copy',
   errorCopied: 'Copied',
+  sendErrorToAgent: 'Send to agent',
 
   speakerNotes: 'Speaker Notes',
   speakerNotesPlaceholder: 'Notes for the presenter — not shown to the audience.',
@@ -455,6 +463,7 @@ const en: Messages = {
   mergedExternalChange: 'Deck changed on disk elsewhere — merged around your unsaved edit.',
   reloadedExternalChange: 'Reloaded — the deck changed on disk.',
   buildErrorReported: 'Sent the build error to the agent.',
+  buildErrorWaitingForAgent: 'Waiting for an agent to send the build error to.',
   presenting: 'Presenting…',
   presentingRehearsal: 'Presenting (rehearsal)…',
   externalChangeConfirm: 'This deck changed outside Peitho Studio (e.g. another editor). Reload it and discard your unsaved edits here?',
@@ -515,6 +524,7 @@ const ja: Messages = {
 
   copyError: 'コピー',
   errorCopied: 'コピーしました',
+  sendErrorToAgent: 'エージェントに送る',
 
   speakerNotes: 'スピーカーノート',
   speakerNotesPlaceholder: '発表者用のメモ — 聴衆には表示されません。',
@@ -668,6 +678,7 @@ const ja: Messages = {
   mergedExternalChange: 'デッキがほかの場所で変更されました — 未保存の編集はそのまま残し、それ以外を反映しました。',
   reloadedExternalChange: 'デッキがほかの場所で変更されたため、読み込み直しました。',
   buildErrorReported: 'ビルドエラーをエージェントに送りました。',
+  buildErrorWaitingForAgent: 'エージェントの接続を待っています。接続したらビルドエラーを送ります。',
   presenting: '発表中…',
   presentingRehearsal: '発表中(リハーサル)…',
   externalChangeConfirm: 'このデッキはPeitho Studioの外(ほかのエディタなど)で変更されました。読み込み直して、ここでの未保存の編集を破棄しますか?',

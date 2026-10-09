@@ -15,6 +15,9 @@ export type StatusMessage =
   // The deck on disk doesn't build: its errors went to the agent
   // (`domain/buildErrorReport.ts`).
   | { kind: 'build-error-reported' }
+  // The user asked for the build error to go to the agent, and none is
+  // waiting yet: it goes when one does.
+  | { kind: 'build-error-waiting' }
   | { kind: 'presenting'; rehearsal: boolean }
   | { kind: 'importing-images'; count: number }
   | { kind: 'imported-images'; count: number }
@@ -40,6 +43,7 @@ export function statusText(messages: Messages, status: StatusMessage): string {
     case 'merged-external-change': return messages.mergedExternalChange
     case 'reloaded-external-change': return messages.reloadedExternalChange
     case 'build-error-reported': return messages.buildErrorReported
+    case 'build-error-waiting': return messages.buildErrorWaitingForAgent
     case 'presenting': return status.rehearsal ? messages.presentingRehearsal : messages.presenting
     case 'importing-images': return messages.importingImages(status.count)
     case 'imported-images': return messages.importedImages(status.count)
