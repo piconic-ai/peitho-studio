@@ -46,6 +46,7 @@ const STATUS = 'footer'
 const ERROR_BAR = '.bg-destructive\\/10'
 const SEND = '[data-error-action="send"]'
 const COPY = '[data-error-action="copy"]'
+const FIXING = '[data-error-action="fixing"]'
 const ERROR_BADGE = '[data-slide-status="error"]'
 const THUMBNAIL_CANVAS = '[data-slide-row] [data-slide-canvas-key]'
 const SOURCE_TOGGLE = '[data-source-toggle]'
@@ -89,6 +90,7 @@ test('Given typing that does not build, when nothing is done for longer than the
   await expect(page.locator(ERROR_BAR)).toBeVisible()
   await expect(page.locator(ERROR_BAR)).toContainText(SLIDE_TWO_MESSAGE)
   await expect(page.locator(SEND)).toBeVisible()
+  await expect(page.locator(SEND)).toHaveText('Send to AI')
   await expect(page.locator(COPY)).toBeHidden()
 
   await fillEditor(page, '# Two\n\nFixed')
@@ -117,12 +119,21 @@ test('Given an agent waiting and typing that does not build, when the error is s
   await page.waitForTimeout(500)
   expect(methods(crit).filter(method => method === 'finish')).toHaveLength(1)
 
-  // The error stays shown, as the deck's own now, with the button still
-  // there for another send.
+  // The error stays shown, as the deck's own now, and the AI — at work on
+  // it since the round was finished — is said to be fixing it, in the
+  // button's place.
   await expect(page.locator(ERROR_BAR)).toContainText("1 slide doesn't build")
-  await expect(page.locator(SEND)).toBeVisible()
+  await expect(page.locator(FIXING)).toBeVisible()
+  await expect(page.locator(FIXING)).toHaveText('AI is fixing…')
+  await expect(page.locator(SEND)).toBeHidden()
   await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
   await expect(page.locator('[data-review-row="unsent-comment"]')).toHaveCount(0)
+
+  // The AI comes back to wait with the error still there: the button is
+  // back, to send it again.
+  crit.agentConnects()
+  await expect(page.locator(SEND)).toBeVisible()
+  await expect(page.locator(FIXING)).toBeHidden()
 })
 
 test('Given no agent waiting, when the error is sent, then it is written and waits, the status bar says so, and it goes when the agent comes', async ({ page }) => {
@@ -151,10 +162,12 @@ test('Given the deck on disk was reported already, when the user sends its error
   await expect.poll(() => methods(crit)).toContain('finish')
   expect(sentComments(crit)).toEqual([slideTwoComment(8)])
   await expect(page.locator(ERROR_BAR)).toContainText("1 slide doesn't build")
+  await expect(page.locator(FIXING)).toBeVisible()
 
   // The agent's next round: it waits again, with the deck unchanged — the
-  // report of its own sends nothing more.
+  // report of its own sends nothing more, and the button is back.
   crit.agentConnects()
+  await expect(page.locator(SEND)).toBeVisible()
   await page.waitForTimeout(500)
   expect(sentComments(crit)).toHaveLength(1)
 
