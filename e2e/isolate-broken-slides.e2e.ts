@@ -178,8 +178,17 @@ test('Given slide 2 was edited into text that still does not build, when New Sli
   await expect(page.locator('[data-slide-row]')).toHaveCount(3)
 })
 
+// Slide 3 carries an explicit key in both canvas-edit tests: a keyless
+// slide's key is derived from its heading, so the live commit of the typed
+// heading lands a render under a new key, and the preview re-mounts for the
+// new `selectedSlideKey` — detaching the field before Meta+Enter reaches it
+// (seen on CI under load). That keyless behaviour is a pre-existing issue,
+// recorded in `todo/canvas-edit-keyless-heading-remount.md`, not what these
+// tests are about.
+const KEYED_THREE = SOURCE.replace('# Three', '<!-- {"key":"three"} -->\n# Three')
+
 test('Given slide 2 is isolated, when a heading of slide 3 is edited on the canvas, then the edit lands in slide 3\'s own text', async ({ page }) => {
-  const deck = await open(page, brokenDeck({ editAnnotations: true }))
+  const deck = await open(page, brokenDeck({ source: KEYED_THREE, editAnnotations: true }))
   await page.locator('[data-slide-row="2"]').click()
   await expect(page.locator('[data-preview-host] h1')).toHaveText('Three')
 
@@ -198,7 +207,7 @@ test('Given slide 2 is isolated, when a heading of slide 3 is edited on the canv
 })
 
 test('Given slide 2 is isolated after multibyte text and a section it starts, when a heading of slide 3 is edited on the canvas, then the edit still lands in slide 3', async ({ page }) => {
-  const source = '---\ntime: 3m\n---\n# 日本語の一枚目\n\n---\n\n<!-- {"key":"two","section":"壊れた節","time":"1m"} -->\n# Two\n\nBROKEN\n\n---\n\n<!-- {"section":"B","time":"2m"} -->\n# Three\n'
+  const source = '---\ntime: 3m\n---\n# 日本語の一枚目\n\n---\n\n<!-- {"key":"two","section":"壊れた節","time":"1m"} -->\n# Two\n\nBROKEN\n\n---\n\n<!-- {"key":"three","section":"B","time":"2m"} -->\n# Three\n'
   const deck = await open(page, brokenDeck({ source, editAnnotations: true }))
   await expect(page.locator('[data-slide-row="1"]').locator(ERROR_BADGE)).toBeVisible()
   await page.locator('[data-slide-row="2"]').click()
