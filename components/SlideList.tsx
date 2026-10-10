@@ -103,8 +103,12 @@ function canvasSourceFor(entry: SlideListEntry, canvasFragmentOf: (key: string) 
 
 export function SlideList(props: SlideListProps) {
   return (
+    // `flex-1 min-h-0`, not `shrink-0`: the slides panel lays this out in a
+    // column, so it must take the panel's height and let the inner list
+    // scroll, rather than grow to fit every thumbnail and spill over the
+    // error and status bars below.
     <div
-      className="shrink-0 flex flex-col border-r border-border min-h-0"
+      className="flex-1 flex flex-col border-r border-border min-h-0"
       style={`width: ${String(props.slideListWidth)}px`}
     >
       <div
