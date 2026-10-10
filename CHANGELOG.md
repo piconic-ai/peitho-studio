@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.1.8](https://github.com/piconic-ai/peitho-studio/compare/v0.1.7...v0.1.8) - 2026-10-10
+
+- Let a slide take a layout it doesn't fit yet by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/191
+- Keep the slide list inside its panel so it scrolls by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/193
+
 ## [v0.1.7](https://github.com/piconic-ai/peitho-studio/compare/v0.1.6...v0.1.7) - 2026-10-09
 
 - Open a deck that doesn't build, with peitho-core's error in view by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/185
