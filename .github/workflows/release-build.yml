@@ -20,6 +20,9 @@
 # a Release whose `latest.json` is still missing. `workflow_dispatch`
 # re-runs it by hand for an existing tag (e.g. a prerelease cut to try
 # this workflow out); publishing an already published Release is a no-op.
+# Dispatch it from that tag (`gh workflow run release-build.yml --ref vX.Y.Z
+# -f tag=vX.Y.Z`): the provenance records the commit the run was started
+# from, so build-macos refuses to build any other commit.
 #
 # Signed with a Developer ID Application certificate and notarized with an
 # App Store Connect API key, so Gatekeeper opens the app without asking the
@@ -74,6 +77,17 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
           persist-credentials: false
+      # actions/attest names the commit of the run (GITHUB_SHA) as the source,
+      # not what was checked out. Called from tagpr.yml they are the same
+      # commit; a dispatch from another ref would attest the wrong source.
+      - name: Check the tag is the commit the run was started from
+        run: |
+          head=$(git rev-parse HEAD)
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "$TAG is $head, but this run was started from $GITHUB_SHA ($GITHUB_REF)." >&2
+            echo "Dispatch it from the tag: gh workflow run release-build.yml --ref $TAG -f tag=$TAG" >&2
+            exit 1
+          fi
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: rustup target add "$TARGET"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
