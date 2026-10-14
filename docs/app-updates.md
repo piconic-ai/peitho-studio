@@ -48,6 +48,9 @@ CI は鍵が未設定なら配布を失敗させる。
 署名鍵を変更すると既存アプリは新しい署名を検証できないので、鍵の切り替えは別途移行が必要。
 
 CI は署名・公証済み DMG に加えて updater 用の `.app.tar.gz` と `.sig` を公開する。
+DMG と `.app.tar.gz` には build provenance の attestation を付ける（`gh attestation verify` で検証できる）。
+ビルド・署名・公証をする `build-macos` ジョブはリポジトリへの書き込み権限を持たず、
+アップロードと manifest の署名、Release の公開は書き込み権限を持つ `publish` ジョブが行う。
 updater アーカイブは `Peitho-Studio_<version>_aarch64.app.tar.gz` という空白なしの名前で
 アップロードする（GitHub はスペースを含む asset 名をドットに書き換えるため、
 ローカルのファイル名から組み立てた URL は 404 になる）。
