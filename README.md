@@ -32,7 +32,7 @@ brew install --cask piconic-ai/tap/peitho-studio
 
 You can also download a macOS build from [GitHub Releases](https://github.com/piconic-ai/peitho-studio/releases/latest) and move Peitho Studio to Applications.
 
-Releases after v0.1.8: the dmg and the updater archive carry a build provenance attestation. To check that a download was built from this repository by its release workflow:
+In releases after v0.1.8, the dmg and the updater archive carry a build provenance attestation. To check that a download was built from this repository by its release workflow:
 
 ```sh
 gh attestation verify Peitho-Studio_<version>_aarch64.dmg --repo piconic-ai/peitho-studio \
