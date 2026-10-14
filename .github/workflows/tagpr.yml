@@ -31,6 +31,10 @@ jobs:
     if: needs.tagpr.outputs.tag != ''
     permissions:
       contents: write
+      # For release-build.yml to attest the build provenance.
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     uses: ./.github/workflows/release-build.yml
     # The signing and notarization secrets release-build.yml reads.
     secrets: inherit
