@@ -1,6 +1,17 @@
 # Builds the macOS .dmg for a release tag and attaches it to that tag's
 # GitHub Release.
 #
+# Two jobs, so that the one holding the Apple signing secrets cannot write
+# to the repository and the one that can write never sees them:
+#   - build-macos (contents: read) builds, signs and notarizes the app and
+#     attests the build provenance of the dmg and the updater archive. It
+#     hands them on as a workflow artifact.
+#   - publish (contents: write) uploads them to the draft Release, writes
+#     and signs the updater manifest, and publishes the Release.
+# The provenance names this file as the signer, so a download can be
+# checked with `gh attestation verify <file> --repo piconic-ai/peitho-studio
+# --signer-workflow piconic-ai/peitho-studio/.github/workflows/release-build.yml`.
+#
 # Called from tagpr.yml once tagpr has tagged (and created the Release as
 # a draft, see .tagpr), rather than triggered by `release: published`:
 # tagpr creates the Release with GITHUB_TOKEN, and events caused by
@@ -9,6 +20,9 @@
 # a Release whose `latest.json` is still missing. `workflow_dispatch`
 # re-runs it by hand for an existing tag (e.g. a prerelease cut to try
 # this workflow out); publishing an already published Release is a no-op.
+# Dispatch it from that tag (`gh workflow run release-build.yml --ref vX.Y.Z
+# -f tag=vX.Y.Z`): the provenance records the commit the run was started
+# from, so build-macos refuses to build any other commit.
 #
 # Signed with a Developer ID Application certificate and notarized with an
 # App Store Connect API key, so Gatekeeper opens the app without asking the
@@ -39,11 +53,20 @@ on:
         description: Release tag to build and upload to (e.g. v0.1.0)
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-macos:
-    runs-on: macos-latest
+    # Pinned rather than macos-latest, so a new runner image (Xcode, SDK)
+    # never changes what a release is built with unannounced.
+    runs-on: macos-26
+    permissions:
+      contents: read
+      # Build provenance: id-token signs it through Sigstore, attestations and
+      # artifact-metadata store it on GitHub for `gh attestation verify`.
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     # Notarization alone took ~50 minutes on the first submission.
     timeout-minutes: 120
     env:
@@ -54,6 +77,17 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
           persist-credentials: false
+      # actions/attest names the commit of the run (GITHUB_SHA) as the source,
+      # not what was checked out. Called from tagpr.yml they are the same
+      # commit; a dispatch from another ref would attest the wrong source.
+      - name: Check the tag is the commit the run was started from
+        run: |
+          head=$(git rev-parse HEAD)
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "$TAG is $head, but this run was started from $GITHUB_SHA ($GITHUB_REF)." >&2
+            echo "Dispatch it from the tag: gh workflow run release-build.yml --ref $TAG -f tag=$TAG" >&2
+            exit 1
+          fi
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: rustup target add "$TARGET"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -150,60 +184,91 @@ jobs:
           # bundle_dmg's Finder step saves the window layout in .DS_Store.
           test -f "$mnt/.background/background.tiff"
           test -f "$mnt/.DS_Store"
-      - name: Upload the dmg to the release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      # Release asset names: GitHub rewrites an asset name containing a space
+      # ("Peitho Studio.app.tar.gz" was stored as "Peitho.Studio.app.tar.gz"),
+      # and the manifest URL must match the stored name exactly, so both get
+      # a fixed, space-free name.
+      - name: Collect the release files
         run: |
           version="${TAG#v}"
           dmgs=(src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg)
+          archives=(src-tauri/target/"$TARGET"/release/bundle/macos/*.app.tar.gz)
           if [ "${#dmgs[@]}" -ne 1 ] || [ ! -f "${dmgs[0]}" ]; then
             echo "expected exactly one dmg, found: ${dmgs[*]}" >&2
             exit 1
           fi
-          dest="Peitho-Studio_${version}_aarch64.dmg"
-          cp "${dmgs[0]}" "$dest"
-          gh release upload "$TAG" "$dest" --clobber --repo "$GITHUB_REPOSITORY"
-
-      # All archives are uploaded first. Publish the signed manifest last;
-      # RCs have artifacts but never become the stable update channel.
-      - name: Upload updater archive and publish signed stable manifest
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          archives=(src-tauri/target/"$TARGET"/release/bundle/macos/*.app.tar.gz)
           if [ "${#archives[@]}" -ne 1 ] || [ ! -f "${archives[0]}.sig" ]; then
             echo "Expected one signed updater archive" >&2
             exit 1
           fi
+          dist="$RUNNER_TEMP/release"
+          mkdir -p "$dist"
+          cp "${dmgs[0]}" "$dist/Peitho-Studio_${version}_aarch64.dmg"
+          cp "${archives[0]}" "$dist/Peitho-Studio_${version}_aarch64.app.tar.gz"
+          cp "${archives[0]}.sig" "$dist/Peitho-Studio_${version}_aarch64.app.tar.gz.sig"
+      - name: Attest build provenance of the dmg and the updater archive
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/release/*.dmg
+            ${{ runner.temp }}/release/*.app.tar.gz
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: ${{ runner.temp }}/release/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build-macos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      # For the tauri CLI that signs the manifest.
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: ${{ runner.temp }}/release
+      - name: Upload the dmg and the updater archive to the release
+        run: gh release upload "$TAG" "$RUNNER_TEMP"/release/* --clobber
+
+      # All archives are uploaded first. Publish the signed manifest last;
+      # RCs have artifacts but never become the stable update channel.
+      - name: Publish signed stable manifest
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
           version="${TAG#v}"
-          # GitHub rewrites an asset name containing a space ("Peitho
-          # Studio.app.tar.gz" was stored as "Peitho.Studio.app.tar.gz"), and
-          # the manifest URL must match the stored name exactly, so upload
-          # under a fixed, space-free name like the dmg.
-          archive="Peitho-Studio_${version}_aarch64.app.tar.gz"
-          cp "${archives[0]}" "$archive"
-          cp "${archives[0]}.sig" "$archive.sig"
-          gh release upload "$TAG" "$archive" "$archive.sig" --clobber --repo "$GITHUB_REPOSITORY"
           if [[ "$version" == *-* ]]; then
             exit 0
           fi
-          gh release view "$TAG" --json body --jq .body --repo "$GITHUB_REPOSITORY" > release-notes.txt
+          archive="$RUNNER_TEMP/release/Peitho-Studio_${version}_aarch64.app.tar.gz"
+          gh release view "$TAG" --json body --jq .body > release-notes.txt
           bun run scripts/create-update-manifest.ts "$version" "$archive" release-notes.txt latest.json
           bunx tauri signer sign latest.json
-          gh release upload "$TAG" latest.json latest.json.sig --clobber --repo "$GITHUB_REPOSITORY"
+          gh release upload "$TAG" latest.json latest.json.sig --clobber
 
       # Only now does `releases/latest` resolve to this tag. Publishing is
       # what makes the assets downloadable without a token, so
       # homebrew-cask.yml (which refuses drafts) must run after this.
       - name: Publish the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+        run: gh release edit "$TAG" --draft=false
 
   update-homebrew-cask:
-    needs: build-macos
+    needs: publish
     permissions:
       contents: read
     uses: ./.github/workflows/homebrew-cask.yml
