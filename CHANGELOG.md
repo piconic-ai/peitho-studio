@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.1.9](https://github.com/piconic-ai/peitho-studio/compare/v0.1.8...v0.1.9) - 2026-10-14
+
+- Attest release builds and keep signing secrets out of the publish job by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/194
+
 ## [v0.1.8](https://github.com/piconic-ai/peitho-studio/compare/v0.1.7...v0.1.8) - 2026-10-10
 
 - Let a slide take a layout it doesn't fit yet by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/191
