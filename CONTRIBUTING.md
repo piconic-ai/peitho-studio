@@ -29,6 +29,11 @@ bun run test:e2e
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
+The `complexity` job runs with every test workflow. Existing complexity allowances
+live in `complexity-baseline.json`; new exceedances or increased scores fail CI.
+After reducing complexity, run `bun run complexity --update-baseline` and include
+the reduced baseline in your PR. See [the complexity plan](docs/complexity.md).
+
 The browser e2e suite uses a mocked Tauri bridge. Native verification is described in [the Tauri Playwright guide](docs/tauri-playwright-spike.md). For site changes, run `bun run typecheck`, `bun run test` and `bun run build` inside `site/`.
 
 ## Build
@@ -36,6 +41,25 @@ The browser e2e suite uses a mocked Tauri bridge. Native verification is describ
 ```sh
 bunx tauri build
 ```
+
+### Scheduled dependency updates
+
+`update-bundled-dependencies` checks the latest stable peitho and crit releases every
+Monday at 01:23 UTC, or when run manually. It opens or refreshes one PR on
+`maintenance/bundled-dependencies`. No update produces no PR. It synchronizes the
+peitho tag, Cargo lockfile, matching CLI version and vendored built-in layout and
+theme. It also verifies both crit binaries against the release checksums before
+pinning their hashes and copying the license.
+
+The workflow uses `GITHUB_TOKEN`. Enable **Allow GitHub Actions to create and approve
+pull requests** in the repository's Actions settings. It explicitly dispatches the
+`test` workflow on the update branch, including its complexity measurement job,
+so it runs automatically without waiting for approval of a bot-created PR run.
+Check that run before merging the PR. Updates are never merged automatically.
+
+To inspect an update locally without changing files, run
+`python3 -B scripts/update-bundled-dependencies.py --dry-run` with authenticated
+`gh`. Omit `--dry-run` to write the pins and resolve the Cargo lockfile.
 
 ### Updating the bundled crit
 

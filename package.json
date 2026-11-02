@@ -13,6 +13,7 @@
     "test": "bun test",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
+    "complexity": "python3 scripts/complexity.py",
     "icons": "bun run scripts/build-brand.ts"
   },
   "dependencies": {
