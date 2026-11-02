@@ -37,6 +37,25 @@ The browser e2e suite uses a mocked Tauri bridge. Native verification is describ
 bunx tauri build
 ```
 
+### Scheduled dependency updates
+
+`update-bundled-dependencies` checks the latest stable peitho and crit releases every
+Monday at 01:23 UTC, or when run manually. It opens or refreshes one PR on
+`maintenance/bundled-dependencies`. No update produces no PR. It synchronizes the
+peitho tag, Cargo lockfile, matching CLI version and vendored built-in layout and
+theme. It also verifies both crit binaries against the release checksums before
+pinning their hashes and copying the license.
+
+The workflow uses `GITHUB_TOKEN`. Enable **Allow GitHub Actions to create and approve
+pull requests** in the repository's Actions settings. It explicitly dispatches the
+`test` and `complexity` workflows on the update branch, so they run automatically
+without waiting for approval of a bot-created PR run.
+Check those runs before merging the PR. Updates are never merged automatically.
+
+To inspect an update locally without changing files, run
+`python3 -B scripts/update-bundled-dependencies.py --dry-run` with authenticated
+`gh`. Omit `--dry-run` to write the pins and resolve the Cargo lockfile.
+
 ### Updating the bundled crit
 
 The version lives only in `src-tauri/crit-release.json`, together with the SHA-256 of each macOS binary:

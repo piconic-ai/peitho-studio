@@ -63,10 +63,10 @@ Rust の `#[cfg(test)] mod tests` は本番コードと同一ファイルにあ�
 
 ## 計測スナップショット
 
-2026-11-02、ベースコミット `b5a846d` に計測ツールを追加した作業ツリーで測定した。
+2026-11-02、ベースコミット `b5a846d` に計測ツールと依存更新ワークフローを追加した作業ツリーで測定した。
 以下は `bun run complexity` の出力。
 
-Measured 185 files and 3961 functions. Parse errors: 0.
+Measured 186 files and 3972 functions. Parse errors: 0.
 
 Cognitive > 15: 30 functions. Cyclomatic > 10: 59 functions. Either threshold: 60 functions in 31 files.
 

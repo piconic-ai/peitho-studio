@@ -1,0 +1,78 @@
+name: update-bundled-dependencies
+
+on:
+  schedule:
+    - cron: '23 1 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: update-bundled-dependencies
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UPDATE_BRANCH: maintenance/bundled-dependencies
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare stable dependency updates
+        run: python3 -B scripts/update-bundled-dependencies.py
+      - name: Open or update the dependency pull request
+        run: |
+          if git diff --quiet; then
+            echo "Bundled dependencies are current"
+            exit 0
+          fi
+          gh auth setup-git
+          git fetch origin '+refs/heads/*:refs/remotes/origin/*'
+          if git show-ref --verify --quiet "refs/remotes/origin/$UPDATE_BRANCH"; then
+            if git log "origin/main..origin/$UPDATE_BRANCH" --format='%ae' | grep -v -x '41898282+github-actions\[bot\]@users.noreply.github.com'; then
+              echo "The update branch contains commits from another contributor; preserve them and resolve manually" >&2
+              exit 1
+            fi
+          fi
+          git switch -c "$UPDATE_BRANCH"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/crit-release.json \
+            src-tauri/licenses/crit/LICENSE src-tauri/src/engine/builtin/title-body-code.html \
+            src-tauri/src/engine/builtin/base.css CONTRIBUTING.md
+          if git show-ref --verify --quiet "refs/remotes/origin/$UPDATE_BRANCH" &&
+             git diff --cached --quiet "origin/$UPDATE_BRANCH"; then
+            echo "The existing update branch already has this content"
+          else
+            git commit -m 'Update bundled peitho and crit dependencies'
+            git push --force-with-lease origin "HEAD:refs/heads/$UPDATE_BRANCH"
+          fi
+          cat > "$RUNNER_TEMP/dependency-pr.md" <<EOF
+          ## Why
+
+          Keep the bundled peitho engine and crit review tool on their latest stable releases.
+
+          Updates the peitho Git tag and Cargo lockfile, matching CLI documentation, vendored layout and theme, and crit version, verified binary hashes and license as needed.
+
+          The full test workflow is explicitly dispatched for this branch so it runs automatically without waiting for approval of a bot-created PR run. Review its result before merging.
+
+          [Update workflow run](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)
+          EOF
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$UPDATE_BRANCH" --base main --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then
+            gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$UPDATE_BRANCH" \
+              --title 'Update bundled peitho and crit dependencies' --body-file "$RUNNER_TEMP/dependency-pr.md"
+          else
+            gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/dependency-pr.md"
+          fi
+          gh workflow run test.yml --repo "$GITHUB_REPOSITORY" --ref "$UPDATE_BRANCH"
+          gh workflow run complexity.yml --repo "$GITHUB_REPOSITORY" --ref "$UPDATE_BRANCH"
