@@ -275,6 +275,30 @@ function layoutsOf(source: string): unknown[] {
   return slideConfigs(source).map(config => (config as { layout?: string }).layout)
 }
 
+test('Escape cannot cancel a layout deletion while its backend operation is running', async ({ page }) => {
+  let releaseDeletion = () => {}
+  const deleteLayoutGate = new Promise<void>(resolve => { releaseDeletion = resolve })
+  const deck = deckOf({ deleteLayoutGate })
+  await openLayoutScreen(page, deck)
+  await act(page, 'delete', 'quote')
+  await page.locator('[data-confirm-delete-layout]').click()
+  const panel = page.locator('[data-delete-layout-panel]')
+  try {
+    await expect.poll(() => deck.invokedCommands).toContain('delete_layout')
+    await expect(panel).toBeVisible()
+    expect(await page.evaluate(() => {
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      window.dispatchEvent(event)
+      return event.defaultPrevented
+    })).toBe(false)
+    await expect(panel).toBeVisible()
+  } finally {
+    releaseDeletion()
+  }
+  await expect(panel).toBeHidden()
+  await expect(row(page, 'quote')).toHaveCount(0)
+})
+
 test('Given a layout two slides use, when it is deleted, then a layout to move them to must be picked, and confirming moves both slides and deletes it', async ({ page }) => {
   const deck = deckOf()
   await openLayoutScreen(page, deck)

@@ -4223,52 +4223,50 @@ export function Studio() {
       void setDeckSetting(payload)
     })
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (updateBlocksEditing(updateStatus())) { event.preventDefault(); return }
-      // While the settings panel is open, Escape closes it and every other
-      // shortcut waits, since Delete or an arrow key would otherwise act on
-      // the slides behind it.
+    const handleBlockingPanels = (event: KeyboardEvent): boolean => {
+      if (updateBlocksEditing(updateStatus())) { event.preventDefault(); return true }
       if (settings.panelOpen()) {
         if (event.key === 'Escape') {
           event.preventDefault()
           closeSettings()
         }
-        return
+        return true
       }
-      // While the phone shape menu is open, Escape closes it and every other
-      // shortcut waits: arrows would move the selection, and Delete or Cmd+X
-      // would act on a slide behind the open menu.
       if (ui.phoneShapeMenuOpen()) {
         if (event.key === 'Escape') {
           event.preventDefault()
           ui.closePhoneShapeMenu()
         }
-        return
+        return true
       }
-      // The layout screen's modals: Escape cancels, as their Cancel button
-      // does (not while a delete runs).
-      if (event.key === 'Escape' && ui.studioMode() === 'layouts' && layouts.newLayoutOpen()) {
+      return false
+    }
+    const handleModalEscape = (event: KeyboardEvent): boolean => {
+      if (event.key !== 'Escape') return false
+      if (ui.studioMode() === 'layouts' && layouts.newLayoutOpen()) {
         event.preventDefault()
         layouts.closeNewLayout()
-        return
+        return true
       }
-      if (event.key === 'Escape' && ui.studioMode() === 'layouts' && (layouts.deleteFlow().kind === 'confirming' || layouts.deleteFlow().kind === 'choosing-replacement')) {
+      if (ui.studioMode() === 'layouts' && (layouts.deleteFlow().kind === 'confirming' || layouts.deleteFlow().kind === 'choosing-replacement')) {
         event.preventDefault()
         layouts.cancelDeleteFlow()
-        return
+        return true
       }
-      // Like the slide menu just below: also when focus stayed in an editor
-      // through the right-click (see vim-mode.e2e.ts).
-      if (event.key === 'Escape' && layouts.menu().kind !== 'closed') {
+      if (layouts.menu().kind !== 'closed') {
         event.preventDefault()
         layouts.closeMenu()
-        return
+        return true
       }
-      if (event.key === 'Escape' && ui.contextMenu().kind !== 'closed') {
+      if (ui.contextMenu().kind !== 'closed') {
         event.preventDefault()
         ui.closeContextMenu()
-        return
+        return true
       }
+      return false
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (handleBlockingPanels(event) || handleModalEscape(event)) return
       if (isTypingInField()) return
       if (document.activeElement?.closest('[data-panel="preview"]')) return
       // The slide shortcuts (arrows, Delete, Cmd+X/C/V…) would act on slides

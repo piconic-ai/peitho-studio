@@ -6,6 +6,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 import { editorContent, editorText, moveToEditorEnd } from './helpers/codeEditor'
+import { initialUpdateStatus } from '../domain/updates'
 
 const TWO_SLIDES = '<!-- {"key":"one"} -->\n# Slide One\n\n---\n\n<!-- {"key":"two"} -->\n# Slide Two\n'
 
@@ -30,6 +31,14 @@ async function chooseSettingsMenu(page: Page, toWindow = 'main'): Promise<void> 
 
 function settingsPanel(page: Page) {
   return page.getByRole('dialog', { name: 'Settings' })
+}
+
+async function dispatchKey(page: Page, key: string): Promise<boolean> {
+  return page.evaluate(key => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    window.dispatchEvent(event)
+    return event.defaultPrevented
+  }, key)
 }
 
 test.describe('functional', () => {
@@ -90,6 +99,43 @@ test.describe('functional', () => {
 })
 
 test.describe('robustness', () => {
+  test('settings precede the phone menu, swallow slide keys without preventing defaults, and yield to a blocking update', async ({ page }) => {
+    const deck: MockDeck = { source: TWO_SLIDES }
+    await openDeck(page, deck)
+    await page.locator('[data-panel="preview"] [data-viewport-toggle]').click()
+    await page.locator('[data-panel="preview"] [data-phone-shape-menu-button]').click()
+    const phoneMenu = page.locator('[data-panel="preview"] [data-phone-shape-menu]')
+    await expect(phoneMenu).toBeVisible()
+    await chooseSettingsMenu(page)
+    await expect(settingsPanel(page)).toBeVisible()
+    const slidesToggle = page.locator('[data-panel="slides"] [data-panel-toggle="slides"]')
+    await slidesToggle.focus()
+    await expect(slidesToggle).toBeFocused()
+    expect(await page.evaluate(() => !!document.activeElement?.closest('[data-panel="slides"]'))).toBe(true)
+
+    for (const key of ['Delete', 'ArrowDown']) expect(await dispatchKey(page, key)).toBe(false)
+    await expect(page.locator('[data-preview-host]')).toHaveAttribute('data-slide-canvas-key', 'one')
+    expect(deck.source).toBe(TWO_SLIDES)
+
+    await emit(page, 'updates:changed', { ...initialUpdateStatus(), phase: 'saving' })
+    for (const key of ['ArrowDown', 'Escape']) expect(await dispatchKey(page, key)).toBe(true)
+    await expect(settingsPanel(page)).toBeVisible()
+    await expect(phoneMenu).toBeVisible()
+    await emit(page, 'updates:changed', initialUpdateStatus())
+
+    expect(await dispatchKey(page, 'Escape')).toBe(true)
+    await expect(settingsPanel(page)).toBeHidden()
+    await expect(phoneMenu).toBeVisible()
+    await slidesToggle.focus()
+    await expect(slidesToggle).toBeFocused()
+    expect(await page.evaluate(() => !!document.activeElement?.closest('[data-panel="slides"]'))).toBe(true)
+    for (const key of ['Delete', 'ArrowDown']) expect(await dispatchKey(page, key)).toBe(false)
+    await expect(page.locator('[data-preview-host]')).toHaveAttribute('data-slide-canvas-key', 'one')
+    expect(deck.source).toBe(TWO_SLIDES)
+    expect(await dispatchKey(page, 'Escape')).toBe(true)
+    await expect(phoneMenu).toBeHidden()
+  })
+
   test('Given the settings panel is open, when Delete or an arrow key is pressed, then the slides behind it are left alone', async ({ page }) => {
     const deck: MockDeck = { source: TWO_SLIDES }
     await openDeck(page, deck)
