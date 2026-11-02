@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page, type Locator } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 import { splitSlides, extractNote, extractPageComment } from '../domain/slides'
 import { editorText, fillEditor } from './helpers/codeEditor'
@@ -629,6 +629,110 @@ test('one click edits text, Escape selects the object, and empty canvas never de
   await expect(page.locator('[data-preview-comment-mode], [data-preview-add-image]')).toHaveCount(0)
   await page.locator(`${PREVIEW} .peitho-slide`).click({ button: 'right', position: { x: 5, y: 5 } })
   await expect(page.locator('[data-preview-add-image-menu]')).toBeVisible()
+})
+
+async function objectKeyOutcome(object: Locator, init: Pick<KeyboardEventInit, 'key' | 'metaKey' | 'ctrlKey'>) {
+  return object.evaluate((element, init) => {
+    const root = element.getRootNode()
+    if (!(root instanceof ShadowRoot) || root.activeElement !== element || !element.isConnected) throw new Error('Expected focused connected object')
+    let outside = 0
+    const receive = () => { outside++ }
+    document.addEventListener('keydown', receive)
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F8', bubbles: true }))
+      const control = outside
+      outside = 0
+      const event = new KeyboardEvent('keydown', { ...init, bubbles: true, composed: true, cancelable: true })
+      element.dispatchEvent(event)
+      return { prevented: event.defaultPrevented, outside, control }
+    } finally { document.removeEventListener('keydown', receive) }
+  }, init)
+}
+
+test('inactive text object Enter reopens and a character synchronously replaces its contents', async ({ page }) => {
+  const deck = await open(page, SOURCE + '\n::: {slot=left}\n\nOriginal text\n\n:::\n')
+  const paragraph = page.locator(`${PREVIEW} p`)
+  await paragraph.click()
+  await page.keyboard.press('Escape')
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  expect(await objectKeyOutcome(paragraph, { key: 'Enter' })).toEqual({ prevented: true, outside: 0, control: 1 })
+  await expect(page.locator(FIELD)).toHaveText('Original text')
+  await page.keyboard.press('Escape')
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  const immediate = await paragraph.evaluate(element => {
+    const root = element.getRootNode()
+    if (!(root instanceof ShadowRoot) || root.activeElement !== element) throw new Error('Expected inactive focused text')
+    element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Z', bubbles: true, composed: true, cancelable: true }))
+    return root.querySelector('[data-studio-edit]')?.textContent
+  })
+  expect(immediate).toBe('Z')
+  await page.keyboard.press('Meta+Enter')
+  await expect.poll(() => deck.source).toContain('\n\nZ\n\n')
+  expect(deck.source).not.toContain('Original text')
+})
+
+test('invalid text command metadata consumes commands while text unknown keys stop and paste stays native', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\nText object\n\n:::\n'
+  const deck = await open(page, source)
+  const paragraph = page.locator(`${PREVIEW} p`)
+  await paragraph.click()
+  await page.keyboard.press('Escape')
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  deck.clipboardText = 'untouched clipboard'
+  for (const attribute of ['data-peitho-src', 'data-peitho-md']) {
+    const original = await paragraph.getAttribute(attribute)
+    expect(original).not.toBeNull()
+    await paragraph.evaluate((element, attribute) => element.removeAttribute(attribute), attribute)
+    try {
+      for (const init of [{ key: 'c', metaKey: true }, { key: 'x', ctrlKey: true }, { key: 'Delete' }, { key: 'Backspace' }]) {
+        expect(await objectKeyOutcome(paragraph, init)).toEqual({ prevented: true, outside: 0, control: 1 })
+      }
+      expect(deck.source).toBe(source)
+      expect(deck.clipboardText).toBe('untouched clipboard')
+    } finally {
+      await paragraph.evaluate((element, args) => element.setAttribute(args.attribute, args.original!), { attribute, original })
+    }
+  }
+  expect(await objectKeyOutcome(paragraph, { key: 'F8' })).toEqual({ prevented: false, outside: 0, control: 1 })
+  deck.clipboardText = ''
+  for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
+    expect(await objectKeyOutcome(paragraph, { key: 'v', ...modifier })).toEqual({ prevented: false, outside: 0, control: 1 })
+  }
+  expect(deck.source).toBe(source)
+})
+
+test('focused image unknown keys bubble and paste shortcuts remain unprevented', async ({ page }) => {
+  const deck = await open(page)
+  await page.locator('[data-preview-image-input]').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64') })
+  const image = page.locator(`${PREVIEW} [data-studio-image]`)
+  await image.click({ position: { x: 20, y: 20 } })
+  expect(await objectKeyOutcome(image, { key: 'F8' })).toEqual({ prevented: false, outside: 1, control: 1 })
+  const source = deck.source
+  deck.clipboardText = ''
+  for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
+    expect(await objectKeyOutcome(image, { key: 'v', ...modifier })).toEqual({ prevented: false, outside: 0, control: 1 })
+  }
+  expect(deck.source).toBe(source)
+})
+
+test('active text fields and native controls retain their command key handling', async ({ page }) => {
+  const deck = await open(page)
+  await page.locator(`${PREVIEW} h1`).click()
+  expect(await objectKeyOutcome(page.locator(FIELD), { key: 'Backspace' })).toEqual({ prevented: false, outside: 0, control: 1 })
+  await expect(page.locator(FIELD)).toHaveText('Title')
+  await page.keyboard.press('Escape')
+  const title = page.locator(`${PREVIEW} h1`)
+  await title.evaluate(element => {
+    const control = document.createElement('input')
+    control.dataset.objectKeyControl = ''; control.value = 'Native'
+    element.append(control); control.focus()
+  })
+  const control = page.locator(`${PREVIEW} [data-object-key-control]`)
+  try {
+    expect(await objectKeyOutcome(control, { key: 'Delete' })).toEqual({ prevented: false, outside: 1, control: 1 })
+    await expect(control).toHaveValue('Native')
+    expect(deck.source).toBe(SOURCE)
+  } finally { await control.evaluate(element => element.remove()) }
 })
 
 test('an emptied free-text object stays hidden while a hidden footnotes wrapper is revealed', async ({ page }) => {
