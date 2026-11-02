@@ -100,12 +100,14 @@ test.describe('functional', () => {
   test('Given an open deck in English, when Japanese is chosen, then the editor pane, the status bar and the notes placeholder switch too', async ({ page }) => {
     await openDeck(page, { source: TWO_SLIDES })
     await expect(page.locator('footer')).toHaveText(/^Opened /)
+    await expect(page.locator('[data-panel="editor"] [data-panel-toggle]')).toHaveAttribute('aria-label', 'Editor: Close')
     await expect(page.locator('[data-editor="note"] .cm-placeholder')).toHaveText('Notes for the presenter — not shown to the audience.')
 
     await chooseLanguage(page, '日本語')
     await page.keyboard.press('Escape')
 
     await expect(page.getByText('スピーカーノート', { exact: true })).toBeVisible()
+    await expect(page.locator('[data-panel="editor"] [data-panel-toggle]')).toHaveAttribute('aria-label', 'エディターを閉じる')
     await expect(page.locator('[data-editor="note"] .cm-placeholder')).toHaveText('発表者用のメモ — 聴衆には表示されません。')
     await expect(page.locator('footer')).toHaveText(/を開きました$/)
   })
