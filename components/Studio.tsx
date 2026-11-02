@@ -4265,69 +4265,54 @@ export function Studio() {
       }
       return false
     }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (handleBlockingPanels(event) || handleModalEscape(event)) return
-      if (isTypingInField()) return
-      if (document.activeElement?.closest('[data-panel="preview"]')) return
-      // The slide shortcuts (arrows, Delete, Cmd+X/C/V…) would act on slides
-      // out of sight while the layout screen shows.
-      if (ui.studioMode() === 'layouts') return
-      // Cmd+Z / Cmd+Shift+Z aren't handled here: left alone, they reach the
-      // Edit menu's Undo/Redo accelerators, the one path for both keyboard
-      // and mouse (see `onMenuHistory` above).
-      const key = event.key.toLowerCase()
-      if ((['Delete', 'Backspace'].includes(event.key) || (event.metaKey || event.ctrlKey) && ['x', 'c', 'v'].includes(key)) && !document.activeElement?.closest('[data-panel="slides"]')) return
-      // `slideEntries().length`, not `manifest.slideCount`/`manifest.slides.length`
-      // — the latter excludes drafts, which would leave ArrowUp/ArrowDown
-      // permanently unable to reach a draft placeholder (or anything past
-      // it) once a deck has one, even though it's reachable by click.
-      const count = slideEntries().length
-      if (count === 0) return
-      const current = editor.selectedIndex()
-      if (current !== null) {
-        if (event.metaKey && event.shiftKey && event.key === 'ArrowUp') {
-          event.preventDefault()
-          void moveSlide(current, -1)
-          return
-        }
-        if (event.metaKey && event.shiftKey && event.key === 'ArrowDown') {
-          event.preventDefault()
-          void moveSlide(current, 1)
-          return
-        }
-        if (event.metaKey && event.key === 'Enter') {
-          event.preventDefault()
-          void addSlide(current)
-          return
-        }
-        if (event.metaKey && key === 'x') {
+    const handleSlideStructureShortcut = (event: KeyboardEvent, current: number): boolean => {
+      if (event.metaKey && event.shiftKey && event.key === 'ArrowUp') {
+        event.preventDefault()
+        void moveSlide(current, -1)
+        return true
+      }
+      if (event.metaKey && event.shiftKey && event.key === 'ArrowDown') {
+        event.preventDefault()
+        void moveSlide(current, 1)
+        return true
+      }
+      if (event.metaKey && event.key === 'Enter') {
+        event.preventDefault()
+        void addSlide(current)
+        return true
+      }
+      return false
+    }
+    const handleSlideEditShortcut = (event: KeyboardEvent, current: number): boolean => {
+      switch (event.metaKey ? event.key.toLowerCase() : '') {
+        case 'x':
           event.preventDefault()
           void cutSlide(current)
-          return
-        }
-        if (event.metaKey && key === 'c') {
+          return true
+        case 'c':
           // A slide stays "selected" (and this handler active) the whole
           // time a deck is open, so Cmd+C over an ordinary text selection
           // elsewhere (the deck path, an error message, ...) hit this
           // unconditionally and stole it — `preventDefault` here blocks
           // the native Edit-menu Copy from ever running. Only intercept
           // when there's no real text selection to defer to.
-          if ((window.getSelection()?.toString().length ?? 0) > 0) return
+          if ((window.getSelection()?.toString().length ?? 0) > 0) return true
           event.preventDefault()
           copySlide(current)
-          return
-        }
-        if (event.metaKey && key === 'v') {
+          return true
+        case 'v':
           event.preventDefault()
           void pasteSlideAfter(current)
-          return
-        }
-        if (event.key === 'Delete' || event.key === 'Backspace') {
-          event.preventDefault()
-          void deleteSlide(current)
-          return
-        }
+          return true
       }
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault()
+        void deleteSlide(current)
+        return true
+      }
+      return false
+    }
+    const handleSlideNavigation = (event: KeyboardEvent, current: number | null, count: number): void => {
       const base = current ?? 0
       if (event.key === 'ArrowDown') {
         event.preventDefault()
@@ -4336,6 +4321,24 @@ export function Studio() {
         event.preventDefault()
         void selectSlide(Math.max(base - 1, 0))
       }
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (handleBlockingPanels(event) || handleModalEscape(event)) return
+      if (isTypingInField()) return
+      if (document.activeElement?.closest('[data-panel="preview"]')) return
+      if (ui.studioMode() === 'layouts') return
+      // Cmd+Z / Cmd+Shift+Z aren't handled here: left alone, they reach the
+      // Edit menu's Undo/Redo accelerators, the one path for both keyboard
+      // and mouse (see `onMenuHistory` above).
+      const key = event.key.toLowerCase()
+      if ((['Delete', 'Backspace'].includes(event.key) || (event.metaKey || event.ctrlKey) && ['x', 'c', 'v'].includes(key)) && !document.activeElement?.closest('[data-panel="slides"]')) return
+      const count = slideEntries().length
+      if (count === 0) return
+      const current = editor.selectedIndex()
+      if (current !== null) {
+        if (handleSlideStructureShortcut(event, current) || handleSlideEditShortcut(event, current)) return
+      }
+      handleSlideNavigation(event, current, count)
     }
     // Escape closes an open right-click menu before anything under it hears
     // the key: an editor keeps focus through the right-click, and vim would

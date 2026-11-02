@@ -74,9 +74,9 @@
       "path": "components/Studio.tsx",
       "name": "Studio / <anonymous> / onKeyDown",
       "occurrence": 1,
-      "line": 4268,
-      "cognitive": 40,
-      "cyclomatic": 37
+      "line": 4325,
+      "cognitive": 15,
+      "cyclomatic": 17
     },
     {
       "path": "components/Studio.tsx",
