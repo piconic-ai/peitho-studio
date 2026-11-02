@@ -1057,3 +1057,66 @@ test('cancelling a prepared list edit prevents Redo from reviving its private la
   }
   expect(deck.source).toBe(source)
 })
+
+
+for (const scenario of [
+  {
+    name: 'zero ordered start', list: true,
+    html: '<ol start="0"><li>Zero</li><li>Next</li></ol>',
+    expected: "# Title\n\n::: {slot=left}\n\n0. Zero\n1. Next\n\n:::"
+  },
+  {
+    name: 'empty text BR sibling and unlisted block runs', list: true,
+    html: '<ul><li>a<br data-empty-sibling></li><li data-studio-unlisted>Free<p>Block</p>end</li><li>\n <b>x</b> \t&nbsp;</li><li> \t<b>y</b></li></ul>',
+    expected: "# Title\n\n::: {slot=left}\n\n- a  \n  \n\nFree\n\nBlock\n\nend\n\n- **x** \t\u00a0\n-  \t**y**\n\n:::"
+  },
+  {
+    name: 'mixed nested lists and block runs', list: true,
+    html: '<ul>\n<li>Lead<p>Paragraph <b>bold</b></p>between<div>Block</div><ol start="3"><li>Ordered<ul><li>Deep</li></ul></li></ol>tail</li>\n<li></li></ul>',
+    expected: "# Title\n\n::: {slot=left}\n\n- Lead\n  \n  Paragraph **bold**\n  \n  between\n  \n  Block\n  \n  3. Ordered\n     \n     - Deep\n  \n  tail\n- &#160;\n\n:::"
+  },
+  {
+    name: 'list formatting whitespace and BR siblings', list: true,
+    html: '<ul> \t&nbsp;\n<li> A \t&nbsp;\n<br>\nB<br>\n\nC<br><!--comment--></li><li>x<br></li><li data-studio-unlisted><br></li><li> \t&nbsp;</li><li>a\n \t<b>b</b>\n<span>c</span> \t&nbsp;</li></ul>',
+    expected: "# Title\n\n::: {slot=left}\n\n-  A \t\u00a0\n    \n  B  \n  \n  C  \n  \n- x\n\n&#160;\n\n- &#160;\n- a\n   \t**b**c \t\u00a0\n\n:::"
+  },
+  {
+    name: 'zero ordered starts and non-item children', list: true,
+    html: '<ol start="0"><span>prefix</span><li>Zero</li><li>Next</li></ol>',
+    expected: "# Title\n\n::: {slot=left}\n\nprefix\n1. Zero\n2. Next\n\n:::"
+  },
+  {
+    name: 'negative ordered starts', list: true,
+    html: '<ol start="-2"><li>Negative</li><li>Next</li></ol>',
+    expected: "# Title\n\n::: {slot=left}\n\n-2. Negative\n-1. Next\n\n:::"
+  },
+  {
+    name: 'invalid ordered starts', list: true,
+    html: '<ol start="invalid"><li>Invalid</li><li>Next</li></ol>',
+    expected: "# Title\n\n::: {slot=left}\n\nNaN. Invalid\nNaN. Next\n\n:::"
+  },
+  {
+    name: 'inline aliases raw code links and live checkbox state', list: false,
+    html: '<strong>S</strong><b>B</b><em>E</em><i>I</i><s>S</s><del>D</del><code>a`<b>*raw*</b></code><a href="https://example.test/a">link</a><a>missing</a><unknown-tag>unknown</unknown-tag><svg><text>svg</text></svg><!--omit--><input type="checkbox" checked><input type="checkbox"><input type="CHECKBOX" checked><input type="text">',
+    expected: "# Title\n\n::: {slot=left}\n\n**S****B***E**I*~~S~~~~D~~``a`*raw*``[link](https://example.test/a)[missing]()unknownsvg[ ] [x] \n\n:::"
+  },
+  {
+    name: 'non-list placeholder and post-BR line feeds', list: false,
+    html: 'A<br>\nB<br>\n\nC<div><br></div><p><br></p><div>D</div><p>E</p>',
+    expected: "# Title\n\n::: {slot=left}\n\nA  \nB  \n\u00a0  \nC  \n\u00a0  \n\u00a0  \nD  \nE\n\n:::"
+  },
+]) {
+  test(`serializer characterization: ${scenario.name}`, async ({ page }) => {
+    await open(page, SOURCE + '\n::: {slot=left}\n\n' + (scenario.list ? '- Seed' : 'Seed') + '\n\n:::\n')
+    await page.locator(`${PREVIEW} [data-studio-slot="left"] ${scenario.list ? 'li' : 'p'}`).first().click()
+    await page.locator(FIELD).evaluate((field, html) => {
+      field.innerHTML = html
+      field.querySelector('[data-empty-sibling]')?.after(document.createTextNode(''))
+      const inputs = field.querySelectorAll('input')
+      if (inputs[0]) inputs[0].checked = false
+      if (inputs[1]) inputs[1].checked = true
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    }, scenario.html)
+    await expect.poll(() => editorText(page)).toBe(scenario.expected)
+  })
+}
