@@ -296,18 +296,10 @@
     },
     {
       "path": "domain/layoutDraftPreview.ts",
-      "name": "readFamily",
-      "occurrence": 1,
-      "line": 91,
-      "cognitive": 17,
-      "cyclomatic": 9
-    },
-    {
-      "path": "domain/layoutDraftPreview.ts",
       "name": "shorthandFamilyStart",
       "occurrence": 1,
       "line": 139,
-      "cognitive": 18,
+      "cognitive": 14,
       "cyclomatic": 12
     },
     {

@@ -79,6 +79,25 @@ describe('previewDraftCss', () => {
 })
 
 describe('fontFaceFamily / aliasFontFamilies', () => {
+  test('spec: Given empty quoted names and literal backslashes, Then names are decoded and aliases escape them again', () => {
+    for (const quoted of ['""', "''"]) {
+      const css = `.x { font-family: ${quoted}; }`
+      expect(fontFaceFamily(css)).toBe('')
+      expect(aliasFontFamilies(css, new Set(['']))).toBe(`.x { font-family: "${DRAFT_FAMILY_SUFFIX}"; }`)
+    }
+    const css = String.raw`.x { font-family: "Deck\\Face"; }`
+    expect(fontFaceFamily(css)).toBe(String.raw`deck\face`)
+    expect(aliasFontFamilies(css, new Set([String.raw`deck\face`]))).toBe(String.raw`.x { font-family: "Deck\\Face${DRAFT_FAMILY_SUFFIX}"; }`)
+  })
+
+  test('adversarial: Given malformed quoted names, Then they have no family and remain unchanged', () => {
+    for (const name of ['"Deck Face', "'Deck Face", '"Deck Face" extra', '"Deck Face\\', String.raw`"Deck Face\"`]) {
+      const css = `.x { font-family: ${name}; }`
+      expect(fontFaceFamily(css)).toBeNull()
+      expect(aliasFontFamilies(css, new Set(['deck face', '']))).toBe(css)
+    }
+  })
+
   test('spec: Given faces quoted, single-quoted or bare, Then the family is read lower-cased; none without one', () => {
     expect(fontFaceFamily('@font-face { font-family: "Deck Face"; }')).toBe('deck face')
     expect(fontFaceFamily("@font-face { font-family: 'X' }")).toBe('x')
@@ -99,6 +118,19 @@ describe('fontFaceFamily / aliasFontFamilies', () => {
 describe('aliasFontFamilies: parsing declarations', () => {
   const DECK = new Set(['deck face'])
   const A = `"Deck Face${DRAFT_FAMILY_SUFFIX}"`
+
+  test('spec: Given attached, separated or empty attached line-height suffixes, Then only the following family changes', () => {
+    for (const prefix of ['2rem/1.5', '2rem / 1.5', '2rem/ 1.5', '2rem/unknown', '2rem / unknown', '2rem/ unknown', '2rem']) {
+      expect(aliasFontFamilies(`.x { font: ${prefix} Deck Face, serif; }`, DECK)).toBe(`.x { font: ${prefix} ${A}, serif; }`)
+    }
+  })
+
+  test('adversarial: Given an incomplete suffix or parentheses in a shorthand, Then the declaration stays unchanged', () => {
+    for (const value of ['2rem/', '2rem /', '2rem/ Deck Face', '2rem "Deck (Face)"', 'calc(2rem) Deck Face']) {
+      const css = `.x { font: ${value}; }`
+      expect(aliasFontFamilies(css, new Set(['deck face', 'deck (face)']))).toBe(css)
+    }
+  })
 
   test('adversarial: Given !important with or without spaces, Then the family is renamed and the flag kept byte for byte', () => {
     expect(aliasFontFamilies('.x { font-family: "Deck Face" !important; }', DECK)).toBe(`.x { font-family: ${A} !important; }`)
