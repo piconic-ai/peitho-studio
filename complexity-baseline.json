@@ -1,0 +1,490 @@
+{
+  "schema_version": 1,
+  "cccc_version": "cccc 1.8.5",
+  "thresholds": {
+    "cognitive": 15,
+    "cyclomatic": 10
+  },
+  "functions": [
+    {
+      "path": "components/DeckHeader.tsx",
+      "name": "DeckHeader",
+      "occurrence": 1,
+      "line": 37,
+      "cognitive": 11,
+      "cyclomatic": 12
+    },
+    {
+      "path": "components/LayoutScreen.tsx",
+      "name": "LayoutScreen",
+      "occurrence": 1,
+      "line": 185,
+      "cognitive": 21,
+      "cyclomatic": 22
+    },
+    {
+      "path": "components/ReviewPanel.tsx",
+      "name": "ReviewPanel",
+      "occurrence": 1,
+      "line": 79,
+      "cognitive": 19,
+      "cyclomatic": 19
+    },
+    {
+      "path": "components/ReviewPanel.tsx",
+      "name": "ReviewPanel / <anonymous>",
+      "occurrence": 3,
+      "line": 183,
+      "cognitive": 37,
+      "cyclomatic": 36
+    },
+    {
+      "path": "components/SlideContextMenu.tsx",
+      "name": "SlideContextMenu",
+      "occurrence": 1,
+      "line": 56,
+      "cognitive": 17,
+      "cyclomatic": 15
+    },
+    {
+      "path": "components/SlideList.tsx",
+      "name": "SlideList / <anonymous>",
+      "occurrence": 2,
+      "line": 144,
+      "cognitive": 35,
+      "cyclomatic": 28
+    },
+    {
+      "path": "components/SlidePreview.tsx",
+      "name": "SlidePreview",
+      "occurrence": 1,
+      "line": 74,
+      "cognitive": 12,
+      "cyclomatic": 13
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio",
+      "occurrence": 1,
+      "line": 138,
+      "cognitive": 51,
+      "cyclomatic": 40
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio / <anonymous> / onKeyDown",
+      "occurrence": 1,
+      "line": 4226,
+      "cognitive": 54,
+      "cyclomatic": 51
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio / commitChange",
+      "occurrence": 1,
+      "line": 2462,
+      "cognitive": 34,
+      "cyclomatic": 24
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio / dropFiles",
+      "occurrence": 1,
+      "line": 981,
+      "cognitive": 11,
+      "cyclomatic": 19
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio / pasteElement",
+      "occurrence": 1,
+      "line": 1790,
+      "cognitive": 17,
+      "cyclomatic": 25
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio / placePreviewImages",
+      "occurrence": 1,
+      "line": 905,
+      "cognitive": 11,
+      "cyclomatic": 14
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio / renderDraftPreview",
+      "occurrence": 1,
+      "line": 740,
+      "cognitive": 12,
+      "cyclomatic": 12
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio / runEditorClipboard",
+      "occurrence": 1,
+      "line": 1929,
+      "cognitive": 11,
+      "cyclomatic": 12
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio / runElementAction",
+      "occurrence": 1,
+      "line": 1821,
+      "cognitive": 34,
+      "cyclomatic": 41
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio / runLayoutMenuAction",
+      "occurrence": 1,
+      "line": 3650,
+      "cognitive": 7,
+      "cyclomatic": 11
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio / selectSlide",
+      "occurrence": 1,
+      "line": 2584,
+      "cognitive": 11,
+      "cyclomatic": 11
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio / startSlideTextEdit",
+      "occurrence": 1,
+      "line": 793,
+      "cognitive": 16,
+      "cyclomatic": 22
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio / startSlideTextEdit / commit",
+      "occurrence": 1,
+      "line": 832,
+      "cognitive": 14,
+      "cyclomatic": 19
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio / startSlideTextEdit / commit / <anonymous>",
+      "occurrence": 1,
+      "line": 845,
+      "cognitive": 8,
+      "cyclomatic": 11
+    },
+    {
+      "path": "components/Studio.tsx",
+      "name": "Studio / syncEditorFields",
+      "occurrence": 1,
+      "line": 397,
+      "cognitive": 13,
+      "cyclomatic": 14
+    },
+    {
+      "path": "dom/previewComments.ts",
+      "name": "clickOf",
+      "occurrence": 1,
+      "line": 69,
+      "cognitive": 13,
+      "cyclomatic": 16
+    },
+    {
+      "path": "dom/slideEditing.ts",
+      "name": "watchSlideEditing / <anonymous>",
+      "occurrence": 2,
+      "line": 138,
+      "cognitive": 8,
+      "cyclomatic": 14
+    },
+    {
+      "path": "dom/slideEditing.ts",
+      "name": "watchSlideEditing / <anonymous>",
+      "occurrence": 3,
+      "line": 176,
+      "cognitive": 44,
+      "cyclomatic": 39
+    },
+    {
+      "path": "dom/slideEditing.ts",
+      "name": "watchSlideEditing / markEmpty",
+      "occurrence": 1,
+      "line": 88,
+      "cognitive": 39,
+      "cyclomatic": 35
+    },
+    {
+      "path": "dom/slideEditing.ts",
+      "name": "watchSlideEditing / paste",
+      "occurrence": 1,
+      "line": 443,
+      "cognitive": 14,
+      "cyclomatic": 18
+    },
+    {
+      "path": "dom/slideEditing.ts",
+      "name": "watchSlideEditing / startTextEditing",
+      "occurrence": 1,
+      "line": 214,
+      "cognitive": 55,
+      "cyclomatic": 61
+    },
+    {
+      "path": "dom/slideEditing.ts",
+      "name": "watchSlideEditing / startTextEditing / keydown",
+      "occurrence": 1,
+      "line": 351,
+      "cognitive": 68,
+      "cyclomatic": 51
+    },
+    {
+      "path": "dom/slideEditing.ts",
+      "name": "watchSlideEditing / startTextEditing / markdown",
+      "occurrence": 1,
+      "line": 304,
+      "cognitive": 49,
+      "cyclomatic": 50
+    },
+    {
+      "path": "domain/buildErrorReport.ts",
+      "name": "decideBuildErrorReport",
+      "occurrence": 1,
+      "line": 132,
+      "cognitive": 24,
+      "cyclomatic": 20
+    },
+    {
+      "path": "domain/contextMenu.ts",
+      "name": "menuItems",
+      "occurrence": 1,
+      "line": 72,
+      "cognitive": 11,
+      "cyclomatic": 16
+    },
+    {
+      "path": "domain/deckLifecycle.ts",
+      "name": "decide",
+      "occurrence": 1,
+      "line": 51,
+      "cognitive": 14,
+      "cyclomatic": 18
+    },
+    {
+      "path": "domain/editorHistory.ts",
+      "name": "stepPinsLayout",
+      "occurrence": 1,
+      "line": 372,
+      "cognitive": 4,
+      "cyclomatic": 11
+    },
+    {
+      "path": "domain/editorSession.ts",
+      "name": "reconcileAfterCommit",
+      "occurrence": 1,
+      "line": 143,
+      "cognitive": 10,
+      "cyclomatic": 12
+    },
+    {
+      "path": "domain/frontmatter.ts",
+      "name": "setFrontmatterKey",
+      "occurrence": 1,
+      "line": 89,
+      "cognitive": 19,
+      "cyclomatic": 15
+    },
+    {
+      "path": "domain/layoutDraftPreview.ts",
+      "name": "readFamily",
+      "occurrence": 1,
+      "line": 91,
+      "cognitive": 17,
+      "cyclomatic": 9
+    },
+    {
+      "path": "domain/layoutDraftPreview.ts",
+      "name": "shorthandFamilyStart",
+      "occurrence": 1,
+      "line": 139,
+      "cognitive": 18,
+      "cyclomatic": 12
+    },
+    {
+      "path": "domain/layoutDraftPreview.ts",
+      "name": "splitFamilyList",
+      "occurrence": 1,
+      "line": 114,
+      "cognitive": 13,
+      "cyclomatic": 11
+    },
+    {
+      "path": "domain/reviewComment.ts",
+      "name": "layoutTargetOfComment",
+      "occurrence": 1,
+      "line": 258,
+      "cognitive": 10,
+      "cyclomatic": 15
+    },
+    {
+      "path": "domain/reviewComment.ts",
+      "name": "previewPinsOf",
+      "occurrence": 1,
+      "line": 726,
+      "cognitive": 19,
+      "cyclomatic": 16
+    },
+    {
+      "path": "domain/reviewComment.ts",
+      "name": "reviewStatusText",
+      "occurrence": 1,
+      "line": 673,
+      "cognitive": 7,
+      "cyclomatic": 11
+    },
+    {
+      "path": "domain/reviewPanel.ts",
+      "name": "reviewRows / <anonymous>",
+      "occurrence": 1,
+      "line": 117,
+      "cognitive": 12,
+      "cyclomatic": 11
+    },
+    {
+      "path": "domain/slideCommands.ts",
+      "name": "validate",
+      "occurrence": 1,
+      "line": 104,
+      "cognitive": 15,
+      "cyclomatic": 16
+    },
+    {
+      "path": "domain/slideEdit.ts",
+      "name": "slotTextInsertion",
+      "occurrence": 1,
+      "line": 58,
+      "cognitive": 18,
+      "cyclomatic": 15
+    },
+    {
+      "path": "domain/slideEdit.ts",
+      "name": "textEditFor",
+      "occurrence": 1,
+      "line": 20,
+      "cognitive": 18,
+      "cyclomatic": 22
+    },
+    {
+      "path": "domain/slides.ts",
+      "name": "splitSlides",
+      "occurrence": 1,
+      "line": 27,
+      "cognitive": 17,
+      "cyclomatic": 14
+    },
+    {
+      "path": "domain/statusMessage.ts",
+      "name": "statusText",
+      "occurrence": 1,
+      "line": 35,
+      "cognitive": 3,
+      "cyclomatic": 22
+    },
+    {
+      "path": "scripts/critRelease.ts",
+      "name": "parseCritRelease",
+      "occurrence": 1,
+      "line": 26,
+      "cognitive": 12,
+      "cyclomatic": 12
+    },
+    {
+      "path": "scripts/updateManifest.ts",
+      "name": "makeUpdateManifest",
+      "occurrence": 1,
+      "line": 8,
+      "cognitive": 16,
+      "cyclomatic": 17
+    },
+    {
+      "path": "site/src/domain/releases.ts",
+      "name": "detectArch",
+      "occurrence": 1,
+      "line": 53,
+      "cognitive": 9,
+      "cyclomatic": 11
+    },
+    {
+      "path": "site/src/domain/releases.ts",
+      "name": "recommendedAssets",
+      "occurrence": 1,
+      "line": 105,
+      "cognitive": 11,
+      "cyclomatic": 11
+    },
+    {
+      "path": "src-tauri/src/crit.rs",
+      "name": "read_events",
+      "occurrence": 1,
+      "line": 399,
+      "cognitive": 13,
+      "cyclomatic": 12
+    },
+    {
+      "path": "src-tauri/src/engine/serve.rs",
+      "name": "respond",
+      "occurrence": 1,
+      "line": 164,
+      "cognitive": 30,
+      "cyclomatic": 18
+    },
+    {
+      "path": "src-tauri/src/engine/slide_edit.rs",
+      "name": "image_canvas_edit",
+      "occurrence": 1,
+      "line": 107,
+      "cognitive": 33,
+      "cyclomatic": 23
+    },
+    {
+      "path": "src-tauri/src/lib.rs",
+      "name": "run / <closure>",
+      "occurrence": 2,
+      "line": 248,
+      "cognitive": 22,
+      "cyclomatic": 18
+    },
+    {
+      "path": "src-tauri/src/updates.rs",
+      "name": "check",
+      "occurrence": 1,
+      "line": 202,
+      "cognitive": 22,
+      "cyclomatic": 20
+    },
+    {
+      "path": "src-tauri/src/updates.rs",
+      "name": "initialize",
+      "occurrence": 1,
+      "line": 495,
+      "cognitive": 41,
+      "cyclomatic": 12
+    },
+    {
+      "path": "src-tauri/src/updates.rs",
+      "name": "intercept_exit",
+      "occurrence": 1,
+      "line": 422,
+      "cognitive": 15,
+      "cyclomatic": 14
+    },
+    {
+      "path": "state/renderStore.ts",
+      "name": "createRenderStore / applyRenderPayload / <anonymous>",
+      "occurrence": 1,
+      "line": 196,
+      "cognitive": 14,
+      "cyclomatic": 14
+    }
+  ]
+}
