@@ -1,0 +1,20 @@
+languages = ["es", "rust", "python", "swift"]
+exclude = [
+  ".claude/**",
+  "**/node_modules/**",
+  "**/dist/**",
+  "**/target/**",
+  "**/gen/**",
+  "**/fixtures/**",
+  "e2e/**",
+  "e2e-tauri/**",
+  "test/**",
+  "src-tauri/examples/**",
+  "*.test.ts",
+  "*.test.tsx",
+  "*.e2e.ts",
+  "test_*.py",
+]
+
+[ext]
+es = ["ts", "tsx"]

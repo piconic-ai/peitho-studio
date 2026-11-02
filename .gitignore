@@ -33,3 +33,6 @@ yarn-error.log*
 # Rust build output (src-tauri/.gitignore also covers this from within src-tauri)
 src-tauri/target/
 src-tauri/gen/schemas/
+
+/complexity-results/
+__pycache__/
