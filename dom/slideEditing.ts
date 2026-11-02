@@ -168,6 +168,31 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
 
   `
   root.append(style)
+  const ensureImageHandles = (image: HTMLElement) => {
+    if (image.querySelector('[data-studio-handle]')) return
+    for (const [direction, x, y] of [['nw', 0, 0], ['n', 50, 0], ['ne', 100, 0], ['w', 0, 50], ['e', 100, 50], ['sw', 0, 100], ['s', 50, 100], ['se', 100, 100]] as const) {
+      const handle = document.createElement('span'); handle.dataset.studioHandle = direction
+      handle.style.left = `${x}%`; handle.style.top = `${y}%`
+      handle.style.cursor = `${direction}-resize`
+      image.append(handle)
+    }
+  }
+  const updateSlotPlaceholder = (element: HTMLElement, accepts: string) => {
+    const ja = state.callbacks.language() === 'ja'
+    const labels: Record<string, string> = ja ? { title: 'タイトルを入力', body: '本文を入力', left: '左の文章を入力', right: '右の文章を入力', subtitle: 'サブタイトルを入力', footnotes: '脚注を追加' } : { title: 'Add a title', body: 'Add text', left: 'Add left column text', right: 'Add right column text', subtitle: 'Add a subtitle', footnotes: 'Add a footnote' }
+    element.dataset.studioPlaceholder = accepts === 'image' ? (ja ? '画像を追加' : 'Add an image') : (labels[element.dataset.studioSlot ?? ''] ?? (ja ? 'クリックして入力' : 'Click to add text'))
+  }
+  const isEmptySlot = (element: HTMLElement, accepts: string): boolean =>
+    ['inline', 'blocks', 'list', 'image'].includes(accepts) && element.textContent?.trim() === '' && !element.querySelector('img,svg,video,canvas')
+  const refreshSlotMarkers = (element: HTMLElement) => {
+    const accepts = element.dataset.studioAccepts ?? ''
+    const empty = isEmptySlot(element, accepts)
+    element.toggleAttribute('data-studio-empty', Boolean(empty) && state.callbacks.enabled())
+    const freeText = element.closest<HTMLElement>('[data-studio-text]')
+    if (freeText) freeText.hidden = Boolean(empty) && !freeText.querySelector('[data-studio-edit]')
+    if (state.callbacks.enabled() && !freeText?.hidden && (empty || element.matches('[data-studio-edit], :has([data-studio-edit])'))) revealHiddenAncestors(element)
+    updateSlotPlaceholder(element, accepts)
+  }
   const markEmpty = () => {
     host.toggleAttribute('data-studio-editing', state.callbacks.enabled())
     if (!style.isConnected) root.append(style)
@@ -179,27 +204,9 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     for (const element of root.querySelectorAll<HTMLElement>('[data-peitho-src], [data-studio-empty]')) element.toggleAttribute('data-studio-selected', element === selectedText)
     const images = Array.from(root.querySelectorAll<HTMLElement>('[data-studio-image]'))
     for (const image of images) image.toggleAttribute('data-studio-selected', image === selectedImage)
-    for (const image of root.querySelectorAll<HTMLElement>('[data-studio-image]')) {
-      if (image.querySelector('[data-studio-handle]')) continue
-      for (const [direction, x, y] of [['nw', 0, 0], ['n', 50, 0], ['ne', 100, 0], ['w', 0, 50], ['e', 100, 50], ['sw', 0, 100], ['s', 50, 100], ['se', 100, 100]] as const) {
-        const handle = document.createElement('span'); handle.dataset.studioHandle = direction
-        handle.style.left = `${x}%`; handle.style.top = `${y}%`
-        handle.style.cursor = `${direction}-resize`
-        image.append(handle)
-      }
-    }
+    for (const image of root.querySelectorAll<HTMLElement>('[data-studio-image]')) ensureImageHandles(image)
     for (const element of root.querySelectorAll<HTMLElement>('[data-studio-reveal]')) element.removeAttribute('data-studio-reveal')
-    for (const element of root.querySelectorAll<HTMLElement>('[data-studio-slot]')) {
-      const accepts = element.dataset.studioAccepts ?? ''
-      const empty = ['inline', 'blocks', 'list', 'image'].includes(accepts) && element.textContent?.trim() === '' && !element.querySelector('img,svg,video,canvas')
-      element.toggleAttribute('data-studio-empty', Boolean(empty) && state.callbacks.enabled())
-      const freeText = element.closest<HTMLElement>('[data-studio-text]')
-      if (freeText) freeText.hidden = Boolean(empty) && !freeText.querySelector('[data-studio-edit]')
-      if (state.callbacks.enabled() && !freeText?.hidden && (empty || element.matches('[data-studio-edit], :has([data-studio-edit])'))) revealHiddenAncestors(element)
-      const ja = state.callbacks.language() === 'ja'
-      const labels: Record<string, string> = ja ? { title: 'タイトルを入力', body: '本文を入力', left: '左の文章を入力', right: '右の文章を入力', subtitle: 'サブタイトルを入力', footnotes: '脚注を追加' } : { title: 'Add a title', body: 'Add text', left: 'Add left column text', right: 'Add right column text', subtitle: 'Add a subtitle', footnotes: 'Add a footnote' }
-      element.dataset.studioPlaceholder = accepts === 'image' ? (ja ? '画像を追加' : 'Add an image') : (labels[element.dataset.studioSlot ?? ''] ?? (ja ? 'クリックして入力' : 'Click to add text'))
-    }
+    for (const element of root.querySelectorAll<HTMLElement>('[data-studio-slot]')) refreshSlotMarkers(element)
   }
   // A layout may hide a slot's wrapper while the slot is empty (base.css
   // hides `.footnotes` via `data-empty-slots`), which would hide its
