@@ -75,4 +75,3 @@ jobs:
             gh pr edit "$pr" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/dependency-pr.md"
           fi
           gh workflow run test.yml --repo "$GITHUB_REPOSITORY" --ref "$UPDATE_BRANCH"
-          gh workflow run complexity.yml --repo "$GITHUB_REPOSITORY" --ref "$UPDATE_BRANCH"

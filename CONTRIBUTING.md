@@ -48,9 +48,9 @@ pinning their hashes and copying the license.
 
 The workflow uses `GITHUB_TOKEN`. Enable **Allow GitHub Actions to create and approve
 pull requests** in the repository's Actions settings. It explicitly dispatches the
-`test` and `complexity` workflows on the update branch, so they run automatically
-without waiting for approval of a bot-created PR run.
-Check those runs before merging the PR. Updates are never merged automatically.
+`test` workflow on the update branch, including its complexity measurement job,
+so it runs automatically without waiting for approval of a bot-created PR run.
+Check that run before merging the PR. Updates are never merged automatically.
 
 To inspect an update locally without changing files, run
 `python3 -B scripts/update-bundled-dependencies.py --dry-run` with authenticated
