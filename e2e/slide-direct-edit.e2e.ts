@@ -171,6 +171,58 @@ test('adding and moving an image keeps the column layout and supports Undo', asy
   expect(deck.source).toContain('slot=studio-image-1')
 })
 
+for (const keys of ['same', 'different', 'absent'] as const) {
+  test(`image markers preserve handle sentinels and reconcile a detached slide with ${keys} keys`, async ({ page }) => {
+    await open(page)
+    await page.locator('[data-preview-image-input]').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64') })
+    const image = page.locator(`${PREVIEW} [data-studio-image]`)
+    const handles = image.locator('[data-studio-handle]')
+    await expect(handles).toHaveCount(8)
+    expect(await handles.evaluateAll(nodes => nodes.map(node => node instanceof HTMLElement ? [node.dataset.studioHandle, node.style.left, node.style.top, node.style.cursor] : []))).toEqual([
+      ['nw', '0%', '0%', 'nw-resize'], ['n', '50%', '0%', 'n-resize'], ['ne', '100%', '0%', 'ne-resize'],
+      ['w', '0%', '50%', 'w-resize'], ['e', '100%', '50%', 'e-resize'], ['sw', '0%', '100%', 'sw-resize'],
+      ['s', '50%', '100%', 's-resize'], ['se', '100%', '100%', 'se-resize'],
+    ])
+    await image.evaluate(element => {
+      for (const handle of Array.from(element.querySelectorAll('[data-studio-handle]')).slice(1)) handle.remove()
+      const root = element.getRootNode()
+      if (root instanceof ShadowRoot) root.host.dispatchEvent(new Event('studio-edit-mode'))
+    })
+    await expect(handles).toHaveCount(1)
+    await expect(handles).toHaveAttribute('data-studio-handle', 'nw')
+    await image.click({ position: { x: 20, y: 20 } })
+    await expect(image).toHaveAttribute('data-studio-selected', '')
+    await image.evaluate((element, keys) => {
+      const slide = element.closest('.peitho-slide')!
+      if (keys === 'absent') slide.removeAttribute('data-slide-key')
+      const replacement = slide.cloneNode(true)
+      if (!(replacement instanceof HTMLElement)) throw new Error('Expected slide element')
+      if (keys === 'different') replacement.dataset.slideKey = 'another-slide'
+      if (keys !== 'different') for (const selected of replacement.querySelectorAll('[data-studio-selected]')) selected.removeAttribute('data-studio-selected')
+      const root = element.getRootNode()
+      slide.replaceWith(replacement)
+      if (root instanceof ShadowRoot) root.host.dispatchEvent(new Event('studio-edit-mode'))
+    }, keys)
+    if (keys === 'different') await expect(image).not.toHaveAttribute('data-studio-selected')
+    else await expect(image).toHaveAttribute('data-studio-selected', '')
+    expect(await image.evaluate(element => { const root = element.getRootNode(); return root instanceof ShadowRoot && root.activeElement === element })).toBe(false)
+    await expect(handles).toHaveCount(1)
+  })
+}
+
+test('a detached selected text node loses its selection marker on the replacement slide', async ({ page }) => {
+  await open(page)
+  await page.locator(`${PREVIEW} h1`).click()
+  await page.keyboard.press('Escape')
+  const selected = page.locator(`${PREVIEW} [data-studio-selected]`)
+  await expect(selected).toHaveCount(1)
+  await selected.evaluate(element => {
+    const slide = element.closest('.peitho-slide')!
+    slide.replaceWith(slide.cloneNode(true))
+  })
+  await expect(selected).toHaveCount(0)
+})
+
 test('a failed image move restores the displayed position and keeps the saved source', async ({ page }) => {
   const deck = await open(page)
   await page.locator('[data-preview-image-input]').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64') })
