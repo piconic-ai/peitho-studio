@@ -724,6 +724,157 @@ async function listCaret(page: Page, itemIndex: number, end = false) {
   }, { itemIndex, end })
 }
 
+test('list key composition and modifier guards preserve the active edit and stop propagation', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\n- One\n\n:::\n'
+  const deck = await open(page, source)
+  await page.locator(`${PREVIEW} li`).click()
+  await listCaret(page, 0)
+  const guarded = await page.locator(FIELD).evaluate(field => {
+    const root = field.getRootNode()
+    let propagated = 0
+    const observe = () => { propagated++ }
+    root.addEventListener('keydown', observe)
+    const control = document.createElement('span'); field.parentElement!.append(control)
+    control.dispatchEvent(new KeyboardEvent('keydown', { key: 'Unidentified', bubbles: true, cancelable: true, composed: true }))
+    control.remove()
+    const baseline = propagated
+    const prevented: boolean[] = []
+    for (const mode of ['event', 'session']) {
+      if (mode === 'session') field.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      for (const key of ['Escape', 'Enter', 'Backspace']) {
+        const event = new KeyboardEvent('keydown', { key, isComposing: mode === 'event', bubbles: true, cancelable: true, composed: true })
+        field.dispatchEvent(event); prevented.push(event.defaultPrevented)
+      }
+      if (mode === 'session') field.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    }
+    for (const modifier of ['metaKey', 'ctrlKey', 'altKey', 'shiftKey']) {
+      const event = new KeyboardEvent('keydown', { key: 'Backspace', [modifier]: true, bubbles: true, cancelable: true, composed: true })
+      field.dispatchEvent(event); prevented.push(event.defaultPrevented)
+    }
+    for (const modifier of ['altKey', 'shiftKey']) {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', [modifier]: true, bubbles: true, cancelable: true, composed: true })
+      field.dispatchEvent(event); prevented.push(event.defaultPrevented)
+    }
+    root.removeEventListener('keydown', observe)
+    return { baseline, propagated, prevented }
+  })
+  expect(guarded).toEqual({ baseline: 1, propagated: 1, prevented: Array(12).fill(false) })
+  await expect(page.locator(FIELD)).toHaveCount(1)
+  await expect(page.locator(`${FIELD} li`)).not.toHaveAttribute('data-studio-unlisted')
+  expect(deck.source).toBe(source)
+  for (const modifier of ['ctrlKey', 'metaKey']) {
+    const prevented = await page.locator(FIELD).evaluate((field, modifier) => {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', [modifier]: true, bubbles: true, cancelable: true, composed: true })
+      field.dispatchEvent(event)
+      return event.defaultPrevented
+    }, modifier)
+    expect(prevented).toBe(true)
+    await expect(page.locator(FIELD)).toHaveCount(0)
+    if (modifier === 'ctrlKey') await page.locator(`${PREVIEW} li`).click()
+  }
+})
+
+test('list actions distinguish selected text, empty selection, repeated unlisting and a rejected commit', async ({ page }) => {
+  const deck = await open(page, SOURCE + '\n::: {slot=left}\n\n- One\n- Two\n\n:::\n')
+  await page.locator(`${PREVIEW} li`).first().click()
+  const selected = await page.locator(FIELD).evaluate(field => {
+    const item = field.querySelector('li')!
+    const selection = window.getSelection()!
+    const range = document.createRange(); range.selectNodeContents(item)
+    selection.removeAllRanges(); selection.addRange(range)
+    const event = new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true, composed: true })
+    field.dispatchEvent(event)
+    return { prevented: event.defaultPrevented, text: item.textContent, unlisted: item.hasAttribute('data-studio-unlisted') }
+  })
+  expect(selected).toEqual({ prevented: false, text: 'One', unlisted: false })
+  const emptied = await page.locator(FIELD).evaluate(field => {
+    const item = field.querySelector('li')!; item.textContent = '  '
+    const selection = window.getSelection()!
+    const range = document.createRange(); range.selectNodeContents(item)
+    selection.removeAllRanges(); selection.addRange(range)
+    const collapsed = selection.isCollapsed
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, composed: true })
+    field.dispatchEvent(event)
+    return { collapsed, prevented: event.defaultPrevented, unlisted: item.hasAttribute('data-studio-unlisted'), style: item.style.listStyleType }
+  })
+  expect(emptied).toEqual({ collapsed: false, prevented: true, unlisted: true, style: 'none' })
+  await expect.poll(() => deck.source).toContain('&#160;\n\n- Two')
+  const saved = deck.source
+  const repeated = await page.locator(FIELD).evaluate(field => {
+    const item = field.querySelector('li')!; item.textContent = 'Not committed again'
+    const range = document.createRange(); range.selectNodeContents(item); range.collapse(true)
+    const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range)
+    return ['Backspace', 'Enter'].map(key => {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, composed: true })
+      field.dispatchEvent(event)
+      return { prevented: event.defaultPrevented, error: field.hasAttribute('data-studio-edit-error') }
+    })
+  })
+  expect(repeated).toEqual([{ prevented: false, error: false }, { prevented: false, error: false }])
+  expect(await editorText(page)).not.toContain('Not committed again')
+  await page.locator(`${FIELD} li`).last().evaluate(item => { item.textContent = '---' })
+  await listCaret(page, 1)
+  const rejected = await page.locator(FIELD).evaluate(field => {
+    const event = new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true, composed: true })
+    field.dispatchEvent(event)
+    return event.defaultPrevented
+  })
+  expect(rejected).toBe(true)
+  await expect(page.locator(FIELD)).toHaveAttribute('data-studio-edit-error', '')
+  await expect(page.locator(`${FIELD} li`).last()).toHaveAttribute('data-studio-unlisted', '')
+  expect(deck.source).toBe(saved)
+})
+
+test('list boundary normalization publishes only native Enter and uses immediate list items', async ({ page }) => {
+  await open(page, SOURCE + '\n::: {slot=left}\n\n- One\n- Two\n\n:::\n')
+  await page.locator(`${PREVIEW} li`).first().click()
+  const cases = await page.locator(FIELD).evaluate(field => {
+    Object.defineProperty(field.getRootNode(), 'getSelection', { value: undefined })
+    const selection = window.getSelection()!
+    const list = field.querySelector('ul')!, original = list.innerHTML
+    const remove = selection.removeAllRanges.bind(selection), add = selection.addRange.bind(selection)
+    let removed = 0, added = 0
+    selection.removeAllRanges = () => { removed++; remove() }
+    selection.addRange = range => { added++; add(range) }
+    const results = []
+    try {
+      for (const kind of ['start-backspace', 'end-backspace', 'trailing-enter', 'adjacent-enter', 'nested-enter', 'unlisted-enter', 'outside-enter']) {
+        list.innerHTML = original; field.replaceChildren(list)
+        const last = list.lastElementChild!
+        const target = kind === 'adjacent-enter' ? list.firstElementChild! : last
+        if (kind === 'adjacent-enter') field.append(target)
+        if (kind === 'nested-enter') last.insertAdjacentHTML('beforeend', '<ul><li>Nested</li></ul>')
+        if (kind === 'unlisted-enter') last.setAttribute('data-studio-unlisted', '')
+        field.append(document.createTextNode('\n'))
+        const range = document.createRange(); range.selectNodeContents(field); range.collapse(kind === 'start-backspace')
+        const outside = document.createElement('li'); outside.textContent = 'Outside'
+        if (kind === 'outside-enter') {
+          field.parentElement!.append(outside); range.selectNodeContents(outside); range.collapse(false)
+        }
+        remove(); add(range); removed = 0; added = 0
+        const event = new KeyboardEvent('keydown', { key: kind.endsWith('backspace') ? 'Backspace' : 'Enter', bubbles: true, cancelable: true, composed: true })
+        field.dispatchEvent(event)
+        const composed = selection.getComposedRanges({ shadowRoots: [field.getRootNode() as ShadowRoot] })[0]
+        results.push({ kind, prevented: event.defaultPrevented, removed, added,
+          unlisted: Array.from(field.querySelectorAll('li')).map(item => item.hasAttribute('data-studio-unlisted')),
+          atTargetEnd: composed?.startContainer === target && composed.startOffset === target.childNodes.length })
+        outside.remove()
+      }
+    } finally { selection.removeAllRanges = remove; selection.addRange = add }
+    return results
+  })
+  expect(cases).toEqual([
+    { kind: 'start-backspace', prevented: true, removed: 0, added: 0, unlisted: [false, true], atTargetEnd: false },
+    { kind: 'end-backspace', prevented: false, removed: 0, added: 0, unlisted: [false, false], atTargetEnd: true },
+    { kind: 'trailing-enter', prevented: false, removed: 1, added: 1, unlisted: [false, false], atTargetEnd: true },
+    { kind: 'adjacent-enter', prevented: false, removed: 1, added: 1, unlisted: [false, false], atTargetEnd: true },
+    { kind: 'nested-enter', prevented: false, removed: 1, added: 1, unlisted: [false, false, false], atTargetEnd: true },
+    { kind: 'unlisted-enter', prevented: false, removed: 0, added: 0, unlisted: [false, true], atTargetEnd: true },
+    { kind: 'outside-enter', prevented: false, removed: 0, added: 0, unlisted: [false, false], atTargetEnd: false },
+  ])
+  await expect(page.locator(FIELD)).toHaveCount(1)
+})
+
 test('Enter creates new list items, empty Enter and line-start Backspace remove bullets, and Undo restores the list', async ({ page }) => {
   const deck = await open(page, SOURCE + '\n::: {slot=left}\n\n- One\n- Two\n\n:::\n')
   await page.locator(`${PREVIEW} li`).first().click()
