@@ -218,7 +218,7 @@
       "path": "dom/slideEditing.ts",
       "name": "watchSlideEditing / paste",
       "occurrence": 1,
-      "line": 460,
+      "line": 469,
       "cognitive": 14,
       "cyclomatic": 18
     },
@@ -234,7 +234,7 @@
       "path": "dom/slideEditing.ts",
       "name": "watchSlideEditing / startTextEditing / keydown",
       "occurrence": 1,
-      "line": 400,
+      "line": 409,
       "cognitive": 13,
       "cyclomatic": 16
     },
@@ -242,9 +242,9 @@
       "path": "dom/slideEditing.ts",
       "name": "watchSlideEditing / startTextEditing / markdown",
       "occurrence": 1,
-      "line": 304,
-      "cognitive": 49,
-      "cyclomatic": 50
+      "line": 330,
+      "cognitive": 13,
+      "cyclomatic": 25
     },
     {
       "path": "domain/buildErrorReport.ts",

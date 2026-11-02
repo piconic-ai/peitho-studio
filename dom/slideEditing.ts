@@ -301,31 +301,40 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       if (listHost) listHost.replaceWith(...Array.from(listHost.childNodes))
       markEmpty()
     }
+    const markdownText = (node: Node): string => {
+      if (node.parentElement?.matches('ul,ol') && !node.textContent?.trim()) return ''
+      return literalSlideText(node.previousSibling instanceof Element && node.previousSibling.tagName === 'BR' ? (node.textContent ?? '').replace(/^\n/, '') : node.textContent ?? '')
+    }
+    const isListFormattingWhitespace = (node: Node): boolean => node.nodeType === Node.TEXT_NODE && node.textContent?.trim() === '' && node.textContent.includes('\n')
+    const listItemContent = (node: Element): string => {
+      const blocks: string[] = []
+      let inline = ''
+      const flush = () => { if (inline !== '') { blocks.push(inline); inline = '' } }
+      for (const child of node.childNodes) {
+        if (child instanceof Element && ['P', 'DIV', 'UL', 'OL'].includes(child.tagName)) {
+          flush()
+          blocks.push(child.matches('p,div') ? Array.from(child.childNodes).map(markdown).join('') : markdown(child).replace(/^\n+|\n+$/g, ''))
+        } else if (!isListFormattingWhitespace(child)) inline += markdown(child)
+      }
+      flush()
+      return blocks.join('\n\n')
+    }
+    const listItemMarkdown = (node: Element): string => {
+      const content = listItemContent(node)
+      if (node.hasAttribute('data-studio-unlisted')) return `\n\n${content.trim() === '' ? '&#160;' : content}\n\n`
+      const marker = node.parentElement?.tagName === 'OL' ? `${Number(node.parentElement.getAttribute('start') ?? 1) + Array.from(node.parentElement.children).indexOf(node)}. ` : '- '
+      const indentation = ' '.repeat(marker.length)
+      return `\n${marker}${content.trim() === '' ? '&#160;' : content.replace(/\n/g, `\n${indentation}`)}`
+    }
+    const listAwareLineBreak = (node: Element): string => list ? !node.nextSibling ? '' : '  \n' : '\n'
     const markdown = (node: Node): string => {
-      if (node.nodeType === Node.TEXT_NODE && node.parentElement?.matches('ul,ol') && !node.textContent?.trim()) return ''
-      if (node.nodeType === Node.TEXT_NODE) return literalSlideText(node.previousSibling instanceof Element && node.previousSibling.tagName === 'BR' ? (node.textContent ?? '').replace(/^\n/, '') : node.textContent ?? '')
+      if (node.nodeType === Node.TEXT_NODE) return markdownText(node)
       if (!(node instanceof Element)) return ''
       const text = Array.from(node.childNodes).map(markdown).join('')
       switch (node.tagName) {
-        case 'LI': {
-          const blocks: string[] = []
-          let inline = ''
-          const flush = () => { if (inline !== '') { blocks.push(inline); inline = '' } }
-          for (const child of node.childNodes) {
-            if (child instanceof Element && ['P', 'DIV', 'UL', 'OL'].includes(child.tagName)) {
-              flush()
-              blocks.push(child.matches('p,div') ? Array.from(child.childNodes).map(markdown).join('') : markdown(child).replace(/^\n+|\n+$/g, ''))
-            } else if (!(child.nodeType === Node.TEXT_NODE && child.textContent?.trim() === '' && child.textContent.includes('\n'))) inline += markdown(child)
-          }
-          flush()
-          const content = blocks.join('\n\n')
-          if (node.hasAttribute('data-studio-unlisted')) return `\n\n${content.trim() === '' ? '&#160;' : content}\n\n`
-          const marker = node.parentElement?.tagName === 'OL' ? `${Number(node.parentElement.getAttribute('start') ?? 1) + Array.from(node.parentElement.children).indexOf(node)}. ` : '- '
-          const indentation = ' '.repeat(marker.length)
-          return `\n${marker}${content.trim() === '' ? '&#160;' : content.replace(/\n/g, `\n${indentation}`)}`
-        }
+        case 'LI': return listItemMarkdown(node)
         case 'UL': case 'OL': return text
-        case 'BR': return list ? !node.nextSibling ? '' : '  \n' : '\n'
+        case 'BR': return listAwareLineBreak(node)
         case 'INPUT': return node.getAttribute('type') === 'checkbox' ? `[${(node as HTMLInputElement).checked ? 'x' : ' '}] ` : ''
         case 'CODE': return slideInlineCode(node.textContent ?? '')
         case 'STRONG': case 'B': return `**${text}**`
