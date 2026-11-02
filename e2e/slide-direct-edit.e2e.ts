@@ -1286,3 +1286,131 @@ for (const freeText of [false, true]) {
     await expect.poll(() => preparedSlots).toEqual([freeText ? 'preferred' : 'left'])
   })
 }
+
+test('field mechanics promote the outermost list, filter annotations, and restore the original source', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\n- First\n- Second\n\n:::\n'
+  const deck = await open(page, source)
+  await page.locator(`${PREVIEW} [data-studio-slot="left"] ul`).evaluate(list => {
+    const [first, second] = list.querySelectorAll('li')
+    const nested = document.createElement('ol'); nested.append(second); first.append(nested)
+    list.setAttribute('data-outer-list', '')
+    list.style.whiteSpace = 'pre-wrap'
+    for (const invalid of ['span', 'quote']) {
+      const extra = document.createElement('span'); extra.dataset.peithoSrc = invalid === 'span' ? 'broken' : second.getAttribute('data-peitho-src') ?? ''
+      if (invalid === 'span') extra.dataset.peithoMd = 'bad span'
+      list.append(extra)
+    }
+    second.setAttribute('data-original-source', '')
+    second.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }))
+  })
+  await expect(page.locator(`${FIELD} > [data-outer-list]`)).toHaveCount(1)
+  await expect(page.locator(FIELD)).toHaveCSS('white-space', 'pre-wrap')
+  await page.locator(FIELD).press('Escape')
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  await expect(page.locator(`${PREVIEW} [data-studio-selected]`)).toHaveAttribute('data-original-source', '')
+  await expect(page.locator(`${PREVIEW} [data-outer-list]`)).not.toHaveAttribute('contenteditable')
+  expect(deck.source).toBe(source)
+  await page.locator(`${PREVIEW} [data-original-source]`).dispatchEvent('click')
+  await page.locator(FIELD).fill('Replacement')
+  await expect.poll(() => editorText(page)).toContain('Replacement')
+  await expect.poll(() => editorText(page)).not.toContain('First')
+  expect(await editorText(page)).not.toContain('Second')
+})
+
+test('field mechanics keep list ancestry without promotion for an empty slot', async ({ page }) => {
+  const deck = await open(page)
+  await page.locator(`${PREVIEW} [data-studio-slot="left"]`).evaluate(slot => {
+    const list = document.createElement('ul'), item = document.createElement('li')
+    list.style.whiteSpace = 'pre-line'
+    slot.before(list); list.append(item); item.append(slot)
+    slot.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }))
+  })
+  await expect(page.locator(`${PREVIEW} li > [data-studio-edit]`)).toHaveCount(1)
+  await expect(page.locator(`${FIELD} ul`)).toHaveCount(0)
+  await expect(page.locator(FIELD)).toHaveCSS('white-space', 'pre-line')
+  await page.locator(FIELD).press('Escape')
+  await expect(page.locator(`${PREVIEW} li > [data-studio-slot="left"]`)).toHaveCount(1)
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  expect(deck.source).toBe(SOURCE)
+})
+
+test('field mechanics consume active-field clicks through composition and rejected commits', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\nBody\n\n:::\n'
+  const deck = await open(page, source)
+  const outsideClick = () => page.locator(`${PREVIEW} h1`).evaluate(heading => {
+    const source = heading.querySelector('[data-peitho-src]') ?? heading
+    source.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }))
+  })
+  await page.locator(`${PREVIEW} [data-studio-slot="left"] p`).click()
+  await page.locator(FIELD).evaluate(field => {
+    field.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+    field.textContent = 'Pending composition'
+    field.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true }))
+    field.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }))
+  })
+  await outsideClick()
+  await expect(page.locator(FIELD)).toHaveText('Pending composition')
+  expect(deck.source).toBe(source)
+  await page.locator(FIELD).evaluate(field => field.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })))
+  await expect.poll(() => deck.source).toContain('Pending composition')
+  await expect(page.locator(FIELD)).toHaveText('Pending composition')
+  const saved = deck.source
+  await page.locator(FIELD).evaluate(field => { field.textContent = '---' })
+  await outsideClick()
+  await expect(page.locator(FIELD)).toHaveAttribute('data-studio-edit-error', '')
+  await expect(page.locator(FIELD)).toHaveText('---')
+  expect(deck.source).toBe(saved)
+  await page.locator(FIELD).evaluate(field => { field.textContent = 'Accepted' })
+  await outsideClick()
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  await expect.poll(() => deck.source).toContain('Accepted')
+})
+
+for (const caret of ['standard', 'vendor', 'null', 'outside'] as const) {
+  test(`field mechanics place the caret with ${caret} browser API results`, async ({ page }) => {
+    await open(page)
+    const actual = await page.locator(`${PREVIEW} h1`).evaluate((heading, caret) => {
+      const root = heading.getRootNode()
+      if (!(root instanceof ShadowRoot)) throw new Error('Missing shadow root')
+      const source = heading.matches('[data-peitho-src]') ? heading : heading.querySelector('[data-peitho-src]')
+      if (!source?.firstChild) throw new Error('Missing text source')
+      const text = source.firstChild, selection = window.getSelection()!
+      const saved = [Object.getOwnPropertyDescriptor(document, 'caretPositionFromPoint'), Object.getOwnPropertyDescriptor(document, 'caretRangeFromPoint'), Object.getOwnPropertyDescriptor(root, 'getSelection')]
+      const calls: string[] = []
+      let observed = { atText: false, atEnd: false, offset: -1, collapsed: false }
+      const add = selection.addRange
+      const position = (x: number, y: number, options: { shadowRoots: ShadowRoot[] }) => {
+        calls.push(`standard:${x},${y}:${options.shadowRoots[0] === root}`)
+        return caret === 'vendor' || caret === 'null' ? null : { offsetNode: caret === 'outside' ? document.body : text, offset: 1 }
+      }
+      const vendor = () => {
+        calls.push('vendor')
+        if (caret === 'null') return null
+        const range = document.createRange(); range.setStart(text, 2); range.collapse(true); return range
+      }
+      try {
+        Object.defineProperty(document, 'caretPositionFromPoint', { configurable: true, value: position })
+        Object.defineProperty(document, 'caretRangeFromPoint', { configurable: true, value: vendor })
+        Object.defineProperty(root, 'getSelection', { configurable: true, value: () => { calls.push('selection'); return selection } })
+        selection.addRange = range => {
+          observed = { atText: range.startContainer === text, atEnd: range.startContainer === source && range.startOffset === source.childNodes.length, offset: range.startOffset, collapsed: range.collapsed }
+          add.call(selection, range)
+        }
+        const event = new MouseEvent('click', { bubbles: true, composed: true, cancelable: true, clientX: 17, clientY: 23 })
+        source.dispatchEvent(event)
+        return { calls, observed, prevented: event.defaultPrevented, editable: source.getAttribute('contenteditable') }
+      } finally {
+        selection.addRange = add
+        for (const [index, [object, key]] of ([[document, 'caretPositionFromPoint'], [document, 'caretRangeFromPoint'], [root, 'getSelection']] as const).entries()) {
+          const descriptor = saved[index]
+          if (descriptor) Object.defineProperty(object, key, descriptor)
+          else Reflect.deleteProperty(object, key)
+        }
+      }
+    }, caret)
+    expect(actual.calls).toEqual(caret === 'vendor' || caret === 'null' ? ['standard:17,23:true', 'vendor', 'selection'] : ['standard:17,23:true', 'selection'])
+    expect(actual.observed).toEqual({ atText: caret === 'standard' || caret === 'vendor', atEnd: caret === 'null' || caret === 'outside', offset: caret === 'vendor' ? 2 : 1, collapsed: true })
+    expect(actual.prevented).toBe(true)
+    expect(actual.editable).toBe('true')
+  })
+}
