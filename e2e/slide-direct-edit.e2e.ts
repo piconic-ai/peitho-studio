@@ -1120,3 +1120,169 @@ for (const scenario of [
     await expect.poll(() => editorText(page)).toBe(scenario.expected)
   })
 }
+
+for (const invalid of ['span', 'quote', 'code', 'pre'] as const) {
+  test(`invalid direct source (${invalid}) clears selection without empty-slot fallback`, async ({ page }) => {
+    await open(page)
+    await page.locator(`${PREVIEW} h1`).click()
+    await page.locator(FIELD).press('Escape')
+    await page.locator(`${PREVIEW} [data-studio-selected]`).evaluate((selected, invalid) => {
+      if (!(selected instanceof HTMLElement)) throw new Error('Missing selected text')
+      const slot = selected.closest('[data-studio-slot]')
+      if (!slot) throw new Error('Missing title slot')
+      selected.textContent = ''
+      if (invalid === 'span') selected.setAttribute('data-peitho-src', 'broken')
+      if (invalid === 'quote') selected.removeAttribute('data-peitho-md')
+      if (invalid === 'code' || invalid === 'pre') {
+        const code = document.createElement(invalid); selected.before(code); code.append(selected)
+      }
+      slot.setAttribute('data-studio-empty', '')
+      selected.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }))
+    }, invalid)
+    await expect(page.locator(FIELD)).toHaveCount(0)
+    await expect(page.locator(`${PREVIEW} [data-studio-selected]`)).toHaveCount(0)
+  })
+}
+
+for (const clickTarget of ['source', 'heading'] as const) {
+  test(`a ${clickTarget} click keeps direct-source versus heading-descendant precedence`, async ({ page }) => {
+    await open(page)
+    await page.locator(`${PREVIEW} h1`).evaluate((heading, clickTarget) => {
+      const original = heading.matches('[data-peitho-src]') ? heading : heading.querySelector('[data-peitho-src]')
+      if (!original) throw new Error('Missing title source')
+      const first = document.createElement('span')
+      const second = document.createElement('span')
+      for (const [index, element] of [first, second].entries()) {
+        element.setAttribute('data-peitho-src', original.getAttribute('data-peitho-src') ?? '')
+        element.setAttribute('data-peitho-md', original.getAttribute('data-peitho-md') ?? '')
+        element.dataset.entryCandidate = String(index); element.textContent = 'Title'
+      }
+      heading.removeAttribute('data-peitho-src'); heading.removeAttribute('data-peitho-md')
+      heading.replaceChildren(first, second)
+      const target = clickTarget === 'source' ? second : heading
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }))
+    }, clickTarget)
+    await expect(page.locator(FIELD)).toHaveAttribute('data-entry-candidate', clickTarget === 'source' ? '1' : '0')
+  })
+}
+
+for (const container of ['slide', 'single-slot-wrapper'] as const) {
+  test(`whitespace on ${container} preserves the single contained-slot rule`, async ({ page }) => {
+    await open(page)
+    await page.locator(`${PREVIEW} .peitho-slide`).evaluate((slide, container) => {
+      const title = slide.querySelector('h1')
+      if (!title) throw new Error('Missing title')
+      const wrapper = document.createElement('div'); wrapper.append(title)
+      slide.replaceChildren(wrapper)
+      const target = container === 'slide' ? slide : wrapper
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }))
+    }, container)
+    await expect(page.locator(FIELD)).toHaveCount(container === 'slide' ? 0 : 1)
+  })
+}
+
+for (const direct of [false, true]) {
+  test(`IMG source filtering distinguishes ${direct ? 'direct' : 'whitespace'} resolution`, async ({ page }) => {
+    await open(page)
+    await page.locator(`${PREVIEW} h1`).evaluate((heading, direct) => {
+      const source = heading.matches('[data-peitho-src]') ? heading : heading.querySelector('[data-peitho-src]')
+      const slot = source?.closest('[data-studio-slot]')
+      if (!source || !slot) throw new Error('Missing title source slot')
+      const image = document.createElement('img')
+      image.setAttribute('data-peitho-src', source.getAttribute('data-peitho-src') ?? '')
+      image.setAttribute('data-peitho-md', source.getAttribute('data-peitho-md') ?? '')
+      const text = source.cloneNode(true)
+      if (!(text instanceof HTMLElement)) throw new Error('Missing text source')
+      image.dataset.entryCandidate = 'image'; text.dataset.entryCandidate = 'text'
+      const wrapper = document.createElement('div')
+      const replacementSlot = document.createElement('div')
+      replacementSlot.setAttribute('data-studio-slot', slot.getAttribute('data-studio-slot') ?? '')
+      for (const tag of ['pre', 'code', 'div']) {
+        const excluded = document.createElement(tag)
+        if (tag === 'div') excluded.dataset.studioImage = 'excluded'
+        const excludedSource = text.cloneNode(true)
+        if (!(excludedSource instanceof Element)) throw new Error('Missing excluded source')
+        excludedSource.setAttribute('data-entry-candidate', `excluded-${tag}`)
+        excluded.append(excludedSource); replacementSlot.append(excluded)
+      }
+      replacementSlot.append(image, text); wrapper.append(replacementSlot)
+      heading.replaceWith(wrapper)
+      const target = direct ? image : replacementSlot
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }))
+    }, direct)
+    await expect(page.locator(FIELD)).toHaveAttribute('data-entry-candidate', direct ? 'image' : 'text')
+  })
+}
+
+for (const tie of [false, true]) {
+  test(`whitespace distance preserves ${tie ? 'DOM-order ties' : 'nearest rectangle'}`, async ({ page }) => {
+    await open(page)
+    await page.locator(`${PREVIEW} h1`).evaluate((heading, tie) => {
+      const original = heading.matches('[data-peitho-src]') ? heading : heading.querySelector('[data-peitho-src]')
+      if (!original) throw new Error('Missing title source')
+      const slot = document.createElement('div'); slot.dataset.studioSlot = 'title'
+      for (const index of [0, 1]) {
+        const source = original.cloneNode(true)
+        if (!(source instanceof HTMLElement)) throw new Error('Missing source clone')
+        source.dataset.entryCandidate = String(index)
+        source.getBoundingClientRect = () => new DOMRect(tie ? 100 : index * 100, 0, 10, 10)
+        slot.append(source)
+      }
+      heading.replaceWith(slot)
+      slot.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true, clientX: 105, clientY: 5 }))
+    }, tie)
+    await expect(page.locator(FIELD)).toHaveAttribute('data-entry-candidate', tie ? '0' : '1')
+  })
+}
+
+for (const destination of ['image', 'none', 'rejected'] as const) {
+  test(`a ${destination} destination preserves its selection behavior`, async ({ page }) => {
+    const deck = await open(page)
+    await page.locator(`${PREVIEW} h1`).click()
+    await page.locator(FIELD).press('Escape')
+    const chooser = destination === 'image' ? page.waitForEvent('filechooser') : null
+    await page.locator(`${PREVIEW} .peitho-slide`).evaluate((slide, destination) => {
+      const selected = slide.querySelector('[data-studio-selected]')
+      if (!selected) throw new Error('Missing preceding selection')
+      selected.setAttribute('data-entry-candidate', 'previous')
+      const target = document.createElement('div')
+      target.dataset.entryCandidate = 'destination'
+      if (destination === 'image') {
+        target.dataset.studioSlot = 'image'; target.dataset.studioAccepts = 'image'
+      }
+      if (destination === 'rejected') {
+        target.dataset.peithoSrc = selected.getAttribute('data-peitho-src') ?? ''
+        target.dataset.peithoMd = 'not the rendered source'; target.textContent = 'Unresolvable text'
+      }
+      slide.append(target)
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }))
+    }, destination)
+    if (chooser) await chooser
+    await expect(page.locator(FIELD)).toHaveCount(0)
+    const selected = page.locator(`${PREVIEW} [data-studio-selected]`)
+    if (destination === 'none') await expect(selected).toHaveCount(0)
+    else {
+      await expect(selected).toHaveAttribute('data-entry-candidate', destination === 'image' ? 'previous' : 'destination')
+      await expect(selected).toHaveAttribute('tabindex', '0')
+    }
+    expect(deck.source).toBe(SOURCE)
+  })
+}
+
+for (const freeText of [false, true]) {
+  test(`list edit resolves the ${freeText ? 'free-text ancestor before' : 'ordinary'} slot`, async ({ page }) => {
+    const deck = await open(page, SOURCE + '\n::: {slot=left}\n\n- First\n- Second\n\n:::\n')
+    const preparedSlots: unknown[] = []
+    deck.commandError = (command, args) => {
+      if (command === 'create_image_canvas') preparedSlots.push(args.textSlot)
+      return null
+    }
+    if (freeText) await page.locator(`${PREVIEW} [data-studio-slot="left"]`).evaluate(slot => {
+      const wrapper = document.createElement('div'); wrapper.dataset.studioText = 'preferred'
+      slot.before(wrapper); wrapper.append(slot)
+    })
+    await page.locator(`${PREVIEW} [data-studio-slot="left"] li`).first().click()
+    await page.locator(FIELD).fill('Changed list')
+    await expect.poll(() => preparedSlots).toEqual([freeText ? 'preferred' : 'left'])
+  })
+}
