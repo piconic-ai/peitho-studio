@@ -209,3 +209,30 @@ test('list editing covers the whole annotated list including markers, without to
   const unlisted = textEditInsertion(edit, body, '- One\n\nTwo')!
   expect(body.slice(0, unlisted.from) + unlisted.insert + body.slice(unlisted.to)).toBe('# Title\n\n- One\n\nTwo\n\nKeep')
 })
+
+test('a stale list member refuses the whole list edit', () => {
+  const body = '- One\n- Two'
+  const first = { quote: 'One', byteSpan: { start: 2, end: 5 } }
+  const stale = { quote: 'Two', byteSpan: { start: 2, end: 5 } }
+  expect(textEditFor({ kind: 'text', text: 'One', ...first, listItems: [first, stale] }, body, body, 0)).toBeNull()
+})
+
+test('a raw source mismatch refuses an otherwise matching draft quote', () => {
+  const body = '# Title\n\nSame'
+  const source = '# Other\n\nSame'
+  const start = source.indexOf('Same')
+  expect(textEditFor({ kind: 'text', text: 'Same', quote: 'Same', byteSpan: { start, end: start + 4 } }, source, body, 0, body)).toBeNull()
+})
+
+test('a missing title appends a heading and preserves title CRLF formatting', () => {
+  for (const body of ['', 'Existing body']) {
+    const insertion = slotTextInsertion(body, 'title', 'inline', ' First\r\nSecond\rThird ')!
+    expect(body.slice(0, insertion.from) + insertion.insert + body.slice(insertion.to)).toBe(body + (body ? '\n\n' : '') + '# First\r Second\rThird\n')
+  }
+})
+
+test('an empty title replacement preserves heading spacing and CRLF formatting', () => {
+  const body = '\r\n  #   \r\n\r\nExisting body'
+  const insertion = slotTextInsertion(body, 'title', 'inline', ' First\r\nSecond\rThird ')!
+  expect(body.slice(0, insertion.from) + insertion.insert + body.slice(insertion.to)).toBe('\r\n  #   First\r Second\rThird\r\n\r\nExisting body')
+})

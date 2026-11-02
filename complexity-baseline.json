@@ -360,19 +360,11 @@
     },
     {
       "path": "domain/slideEdit.ts",
-      "name": "slotTextInsertion",
-      "occurrence": 1,
-      "line": 58,
-      "cognitive": 18,
-      "cyclomatic": 15
-    },
-    {
-      "path": "domain/slideEdit.ts",
       "name": "textEditFor",
       "occurrence": 1,
       "line": 20,
-      "cognitive": 18,
-      "cyclomatic": 22
+      "cognitive": 13,
+      "cyclomatic": 18
     },
     {
       "path": "domain/slides.ts",

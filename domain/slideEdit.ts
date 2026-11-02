@@ -20,14 +20,7 @@ export interface SlideTextEdit {
 export function textEditFor(target: Extract<SlideEditTarget, { kind: 'text' }>, renderedSource: string, body: string, bodyStart: number, rawBody?: string): SlideTextEdit | null {
   if (target.listItems?.length) {
     const items = target.listItems.map(item => textEditFor({ ...target, ...item, listItems: undefined }, renderedSource, body, bodyStart, rawBody))
-    if (items.some(item => item === null)) return null
-    const first = Math.min(...items.map(item => item!.from))
-    const from = body.lastIndexOf('\n', first - 1) + 1
-    const to = Math.max(...items.map(item => item!.to))
-    const value = body.slice(from, to)
-    if (!/^[ \t]*(?:[-+*]|\d+[.)])[ \t]+/.test(value)) return null
-    const suffix = /\n+$/.exec(value)?.[0] ?? ''
-    return { body, from, to, value: value.slice(0, value.length - suffix.length), prefix: '', suffix, heading: false }
+    return listTextEdit(body, items)
   }
   const span = annotatedSpan(renderedSource, target.byteSpan, target.quote)
   if (span === null) return null
@@ -45,6 +38,17 @@ export function textEditFor(target: Extract<SlideEditTarget, { kind: 'text' }>, 
   return { body, from: local.start, to: local.end, value: target.quote.slice(prefix.length, target.quote.length - suffix.length), prefix, suffix, heading: target.heading ?? prefix.startsWith('#') }
 }
 
+function listTextEdit(body: string, items: (SlideTextEdit | null)[]): SlideTextEdit | null {
+  if (!items.every(item => item !== null)) return null
+  const first = Math.min(...items.map(item => item.from))
+  const from = body.lastIndexOf('\n', first - 1) + 1
+  const to = Math.max(...items.map(item => item.to))
+  const value = body.slice(from, to)
+  if (!/^[ \t]*(?:[-+*]|\d+[.)])[ \t]+/.test(value)) return null
+  const suffix = /\n+$/.exec(value)?.[0] ?? ''
+  return { body, from, to, value: value.slice(0, value.length - suffix.length), prefix: '', suffix, heading: false }
+}
+
 export function textEditInsertion(edit: SlideTextEdit, currentBody: string, value: string): TextInsertion | null {
   if (currentBody !== edit.body) return null
   if (edit.heading) value = slideHeadingText(value)
@@ -57,12 +61,7 @@ export function textEditInsertion(edit: SlideTextEdit, currentBody: string, valu
  * to know the two-column layout's left/right names or Markdown syntax. */
 export function slotTextInsertion(body: string, slot: string, accepts: string, value: string): TextInsertion | null {
   if (!/^[a-z][a-z0-9-]*$/.test(slot) || !['inline', 'blocks', 'list'].includes(accepts) || value.trim() === '') return null
-  let content = value.trim().replace(/\r\n?/g, '\n')
-  if (accepts === 'inline') content = `## ${content.replace(/\n/g, ' ')}`
-  if (accepts === 'list' && !/^\s*(?:[-+*]|\d+[.)])\s/.test(content)) content = content.split('\n').map(line => `- ${line}`).join('\n')
-  if (slot === 'title') content = `# ${value.trim().replace(/\n/g, ' ')}`
-  // Loose blocks after the heading already route to `body`.
-  else if (slot !== 'body') content = `::: {slot=${slot}}\n\n${content}\n\n:::`
+  const content = slotTextContent(slot, accepts, value)
   if (slot === 'title') {
     const heading = /^(?:[ \t]*\r?\n)*[ \t]{0,3}#(?:[ \t]+([^\r\n]*)|(?=\r?\n|$))/.exec(body)
     if (heading) {
@@ -75,6 +74,15 @@ export function slotTextInsertion(body: string, slot: string, accepts: string, v
   }
   const insert = (body.trim() === '' ? '' : '\n\n') + content + '\n'
   return { from: body.length, to: body.length, insert, cursor: body.length + insert.length }
+}
+
+function slotTextContent(slot: string, accepts: string, value: string): string {
+  let content = value.trim().replace(/\r\n?/g, '\n')
+  if (accepts === 'inline') content = `## ${content.replace(/\n/g, ' ')}`
+  if (accepts === 'list' && !/^\s*(?:[-+*]|\d+[.)])\s/.test(content)) content = content.split('\n').map(line => `- ${line}`).join('\n')
+  if (slot === 'title') content = `# ${value.trim().replace(/\n/g, ' ')}`
+  else if (slot !== 'body') content = `::: {slot=${slot}}\n\n${content}\n\n:::`
+  return content
 }
 
 export function removeImageSlot(body: string, slot: string): string | null {
