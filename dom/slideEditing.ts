@@ -20,6 +20,63 @@ export interface SlideEditingCallbacks {
 const watched = new WeakMap<ShadowRoot, { callbacks: SlideEditingCallbacks; close: () => void }>()
 const CONTROLS = 'button,input,textarea,select,summary,a,video,audio,[contenteditable],[role="button"]'
 
+type DOMEditTarget =
+  | { kind: 'none' }
+  | { kind: 'image'; slot: string | null }
+  | { kind: 'edit'; element: HTMLElement; target: SlideEditTarget }
+
+function sourceDistance(element: HTMLElement, point: Pick<MouseEvent, 'clientX' | 'clientY'>): number {
+  const rect = element.getBoundingClientRect()
+  return Math.max(rect.left - point.clientX, 0, point.clientX - rect.right) ** 2
+    + Math.max(rect.top - point.clientY, 0, point.clientY - rect.bottom) ** 2
+}
+
+function nearestSlotSource(target: Element, slide: Element, point: Pick<MouseEvent, 'clientX' | 'clientY'>): HTMLElement | null {
+  const containedSlots = target === slide ? [] : target.querySelectorAll('[data-studio-slot]')
+  const slot = target.closest('[data-studio-slot], [data-studio-text]')
+    ?? (containedSlots.length === 1 ? containedSlots[0] : null)
+  const candidates = Array.from(slot?.querySelectorAll<HTMLElement>('[data-peitho-src]') ?? [])
+    .filter(element => !element.closest('pre,code,[data-studio-image]') && element.tagName !== 'IMG')
+  return candidates.sort((a, b) => sourceDistance(a, point) - sourceDistance(b, point))[0] ?? null
+}
+
+function sourceElementAtPoint(target: Element, slide: Element, point: Pick<MouseEvent, 'clientX' | 'clientY'>): HTMLElement | null {
+  return target.closest<HTMLElement>('[data-peitho-src]')
+    ?? target.closest('h1,h2,h3,h4,h5,h6')?.querySelector<HTMLElement>('[data-peitho-src]')
+    ?? nearestSlotSource(target, slide, point)
+}
+
+function textDescriptorForElement(element: HTMLElement): Extract<SlideEditTarget, { kind: 'text' }> | null {
+  const byteSpan = parseSourceSpan(element.getAttribute('data-peitho-src'))
+  const quote = element.getAttribute('data-peitho-md')
+  if (!byteSpan || quote === null || element.closest('pre,code')) return null
+  return {
+    kind: 'text',
+    slot: element.closest<HTMLElement>('[data-studio-text]')?.dataset.studioText
+      ?? element.closest<HTMLElement>('[data-studio-slot]')?.dataset.studioSlot,
+    byteSpan,
+    quote,
+    text: element.textContent ?? '',
+    heading: Boolean(element.closest('h1,h2,h3,h4,h5,h6')),
+  }
+}
+
+function resolveDOMEditTarget(target: Element, slide: Element, point: Pick<MouseEvent, 'clientX' | 'clientY'>): DOMEditTarget {
+  const source = sourceElementAtPoint(target, slide, point)
+  if (source) {
+    const descriptor = textDescriptorForElement(source)
+    return descriptor ? { kind: 'edit', element: source, target: descriptor } : { kind: 'none' }
+  }
+  const empty = target.closest<HTMLElement>('[data-studio-empty]')
+  if (!empty) return { kind: 'none' }
+  if (empty.dataset.studioAccepts === 'image') return { kind: 'image', slot: empty.dataset.studioSlot ?? null }
+  return {
+    kind: 'edit',
+    element: empty,
+    target: { kind: 'slot', slot: empty.dataset.studioSlot ?? '', accepts: empty.dataset.studioAccepts ?? '' },
+  }
+}
+
 /** Edit the rendered element in place. Commit on leaving it, preserving
  * the slide typography and one CodeMirror Undo transaction per session. */
 export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCallbacks): void {
@@ -220,30 +277,17 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     const slide = target.closest('.peitho-slide')
     if (!slide) return
     if (box) { if (box.contains(target)) return; if (!composing && commit?.()) close(); return }
-    let element = target.closest<HTMLElement>('[data-peitho-src]') ?? target.closest('h1,h2,h3,h4,h5,h6')?.querySelector<HTMLElement>('[data-peitho-src]') ?? null
-    if (!element) {
-      const containedSlots = target === slide ? [] : target.querySelectorAll('[data-studio-slot]')
-      const slot = target.closest('[data-studio-slot], [data-studio-text]') ?? (containedSlots.length === 1 ? containedSlots[0] : null)
-      const candidates = Array.from(slot?.querySelectorAll<HTMLElement>('[data-peitho-src]') ?? []).filter(el => !el.closest('pre,code,[data-studio-image]') && el.tagName !== 'IMG')
-      const distance = (el: HTMLElement) => {
-        const rect = el.getBoundingClientRect()
-        return Math.max(rect.left - event.clientX, 0, event.clientX - rect.right) ** 2 + Math.max(rect.top - event.clientY, 0, event.clientY - rect.bottom) ** 2
-      }
-      element = candidates.sort((a, b) => distance(a) - distance(b))[0] ?? null
+    const destination = resolveDOMEditTarget(target, slide, event)
+    if (destination.kind === 'image') {
+      state.callbacks.image(destination.slot)
+      return
     }
-    let editTarget: SlideEditTarget | null = null
-    if (element) {
-      const byteSpan = parseSourceSpan(element.getAttribute('data-peitho-src'))
-      const quote = element.getAttribute('data-peitho-md')
-      if (byteSpan && quote !== null && !element.closest('pre,code')) editTarget = { kind: 'text', slot: element.closest<HTMLElement>('[data-studio-text]')?.dataset.studioText ?? element.closest<HTMLElement>('[data-studio-slot]')?.dataset.studioSlot, byteSpan, quote, text: element.textContent ?? '', heading: Boolean(element.closest('h1,h2,h3,h4,h5,h6')) }
-    } else {
-      element = target.closest<HTMLElement>('[data-studio-empty]')
-      if (element) {
-        if (element.dataset.studioAccepts === 'image') { state.callbacks.image(element.dataset.studioSlot ?? null); return }
-        editTarget = { kind: 'slot', slot: element.dataset.studioSlot ?? '', accepts: element.dataset.studioAccepts ?? '' }
-      }
+    if (destination.kind === 'none') {
+      selectedText = null
+      markEmpty()
+      return
     }
-    if (!element || !editTarget) { selectedText = null; markEmpty(); return }
+    let { element, target: editTarget } = destination
     const selectedElement = element
     let list = element.closest<HTMLElement>('ul,ol')
     while (list?.parentElement?.closest<HTMLElement>('ul,ol')) list = list.parentElement.closest<HTMLElement>('ul,ol')
