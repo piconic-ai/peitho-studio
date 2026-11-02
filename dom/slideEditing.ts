@@ -348,42 +348,59 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     const input = () => { if (!composing) commit?.() }
     const compositionStart = () => { composing = true }
     const compositionEnd = () => { composing = false; const ok = commit?.(); if (root.activeElement !== field && ok) close() }
+    const closestItem = (node: Node): HTMLElement | null => {
+      const element = node instanceof Element ? node : node.parentElement
+      return element?.closest<HTMLElement>('li') ?? null
+    }
+    const normalizeListCaret = (caret: Range, list: HTMLElement): HTMLElement | null => {
+      // WebKit can put the caret on the list container after its formatting newline.
+      const child = caret.startContainer === field ? field.childNodes[Math.max(0, caret.startOffset - 1)] : caret.startContainer
+      const adjacent = child instanceof Element ? child : child?.previousSibling
+      const adjacentItem = adjacent instanceof Element ? adjacent.closest<HTMLElement>('li') : null
+      const item = adjacentItem ?? Array.from(list.children).filter((el): el is HTMLElement => el instanceof HTMLElement && el.tagName === 'LI').at(-1) ?? null
+      if (!item) return null
+      const atBeginning = caret.startContainer === field && caret.startOffset === 0
+      caret.selectNodeContents(item); caret.collapse(atBeginning)
+      return item
+    }
+    const isListKey = (e: KeyboardEvent) => (e.key === 'Enter' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey
+    const handleListKey = (e: KeyboardEvent, list: HTMLElement): boolean => {
+      if (!isListKey(e)) return false
+      const selection = getSelection()
+      if (!selection?.rangeCount) return false
+      const caret = selectionRange(selection)
+      if (!caret) return true
+      let item = closestItem(caret.startContainer)
+      let normalizedCaret = false
+      if (!item && selection.isCollapsed && field.contains(caret.startContainer)) {
+        item = normalizeListCaret(caret, list)
+        normalizedCaret = item !== null
+      }
+      if (!item || !field.contains(item)) return false
+      const handleItemKey = (item: HTMLElement): boolean => {
+        const before = caret.cloneRange(); before.selectNodeContents(item); before.setEnd(caret.startContainer, caret.startOffset)
+        const atStart = selection.isCollapsed && before.toString() === ''
+        if (item.hasAttribute('data-studio-unlisted')) return false
+        const unlist = e.key === 'Backspace' ? atStart : item.textContent?.trim() === ''
+        if (unlist) {
+          e.preventDefault()
+          item.setAttribute('data-studio-unlisted', '')
+          item.style.listStyleType = 'none'
+          commit?.()
+          return true
+        }
+        if (e.key !== 'Enter') return false
+        // Keep the native Enter action: cancelling it or splitting DOM
+        // nodes ourselves prevents WKWebView from accepting further input.
+        if (normalizedCaret) { selection.removeAllRanges(); selection.addRange(caret) }
+        return true
+      }
+      return handleItemKey(item)
+    }
     const keydown = (e: KeyboardEvent) => {
       e.stopPropagation()
       if (e.isComposing || composing) return
-      if (list && (e.key === 'Enter' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-        const selection = getSelection()
-        if (selection?.rangeCount) {
-          const caret = selectionRange(selection)
-          if (!caret) return
-          let normalizedCaret = false
-          let item = (caret.startContainer instanceof Element ? caret.startContainer : caret.startContainer.parentElement)?.closest<HTMLElement>('li')
-          // WebKit can put the caret on the list container (after its final
-          // formatting newline), rather than inside the last item.
-          if (!item && selection.isCollapsed && field.contains(caret.startContainer)) {
-            const child = caret.startContainer === field ? field.childNodes[Math.max(0, caret.startOffset - 1)] : caret.startContainer
-            item = (child instanceof Element ? child : child?.previousSibling instanceof Element ? child.previousSibling : null)?.closest<HTMLElement>('li') ?? Array.from(list.children).filter((el): el is HTMLElement => el instanceof HTMLElement && el.tagName === 'LI').at(-1) ?? null
-            if (item) { normalizedCaret = true; const atBeginning = caret.startContainer === field && caret.startOffset === 0; caret.selectNodeContents(item); caret.collapse(atBeginning) }
-          }
-          if (item && field.contains(item)) {
-            const before = caret.cloneRange(); before.selectNodeContents(item); before.setEnd(caret.startContainer, caret.startOffset)
-            const atStart = selection.isCollapsed && before.toString() === ''
-            if (!item.hasAttribute('data-studio-unlisted') && ((e.key === 'Backspace' && atStart) || (e.key === 'Enter' && item.textContent?.trim() === ''))) {
-              e.preventDefault()
-              item.setAttribute('data-studio-unlisted', '')
-              item.style.listStyleType = 'none'
-              commit?.()
-              return
-            }
-            if (e.key === 'Enter' && !item.hasAttribute('data-studio-unlisted')) {
-              // Keep the native Enter action: cancelling it or splitting DOM
-              // nodes ourselves prevents WKWebView from accepting further input.
-              if (normalizedCaret) { selection.removeAllRanges(); selection.addRange(caret) }
-              return
-            }
-          }
-        }
-      }
+      if (list && handleListKey(e, list)) return
       if (e.key === 'Escape') { e.preventDefault(); if (session.cancel()) { close(); selectedText?.focus() } }
       if (e.key === 'Enter' && (editTarget?.kind === 'text' && editTarget.heading || e.metaKey || e.ctrlKey)) {
         e.preventDefault(); if (commit?.()) close()

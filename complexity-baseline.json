@@ -218,7 +218,7 @@
       "path": "dom/slideEditing.ts",
       "name": "watchSlideEditing / paste",
       "occurrence": 1,
-      "line": 443,
+      "line": 460,
       "cognitive": 14,
       "cyclomatic": 18
     },
@@ -234,9 +234,9 @@
       "path": "dom/slideEditing.ts",
       "name": "watchSlideEditing / startTextEditing / keydown",
       "occurrence": 1,
-      "line": 351,
-      "cognitive": 68,
-      "cyclomatic": 51
+      "line": 400,
+      "cognitive": 13,
+      "cyclomatic": 16
     },
     {
       "path": "dom/slideEditing.ts",
