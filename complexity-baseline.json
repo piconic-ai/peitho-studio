@@ -202,9 +202,9 @@
       "path": "dom/slideEditing.ts",
       "name": "watchSlideEditing / <anonymous>",
       "occurrence": 3,
-      "line": 266,
-      "cognitive": 44,
-      "cyclomatic": 39
+      "line": 300,
+      "cognitive": 10,
+      "cyclomatic": 15
     },
     {
       "path": "dom/slideEditing.ts",
@@ -218,7 +218,7 @@
       "path": "dom/slideEditing.ts",
       "name": "watchSlideEditing / paste",
       "occurrence": 1,
-      "line": 536,
+      "line": 549,
       "cognitive": 14,
       "cyclomatic": 18
     },
@@ -226,7 +226,7 @@
       "path": "dom/slideEditing.ts",
       "name": "watchSlideEditing / startTextEditing",
       "occurrence": 1,
-      "line": 315,
+      "line": 328,
       "cognitive": 14,
       "cyclomatic": 17
     },
@@ -234,7 +234,7 @@
       "path": "dom/slideEditing.ts",
       "name": "watchSlideEditing / startTextEditing / keydown",
       "occurrence": 1,
-      "line": 484,
+      "line": 497,
       "cognitive": 13,
       "cyclomatic": 16
     },
@@ -242,7 +242,7 @@
       "path": "dom/slideEditing.ts",
       "name": "watchSlideEditing / startTextEditing / markdown",
       "occurrence": 1,
-      "line": 405,
+      "line": 418,
       "cognitive": 13,
       "cyclomatic": 25
     },

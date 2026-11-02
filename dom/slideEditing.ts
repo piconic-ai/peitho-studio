@@ -263,38 +263,51 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     }
     document.addEventListener('mousemove', move); document.addEventListener('mouseup', up)
   })
+  function handleTextObjectCommand(event: KeyboardEvent, target: Extract<SlideEditTarget, { kind: 'text' }> | null): boolean {
+    if ((event.metaKey || event.ctrlKey) && ['c', 'x'].includes(event.key.toLowerCase()) || ['Delete', 'Backspace'].includes(event.key)) {
+      event.preventDefault(); event.stopPropagation()
+      if (target) state.callbacks.textAction(target, ['Delete', 'Backspace'].includes(event.key) ? 'delete' : event.key.toLowerCase() === 'x' ? 'cut' : 'copy')
+      return true
+    }
+    return false
+  }
+  function startTextObjectEditing(element: HTMLElement, event: KeyboardEvent): void {
+    event.preventDefault(); event.stopPropagation()
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, detail: 2 }))
+    if (event.key === 'Enter' || !box) return
+    const range = document.createRange(); range.selectNodeContents(box)
+    const selection = getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+    document.execCommand('insertText', false, event.key)
+  }
+  function handleTextObjectKey(element: HTMLElement, event: KeyboardEvent): void {
+    const target = targetForText(element)
+    if (handleTextObjectCommand(event, target)) return
+    if (event.key === 'Enter' || event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      startTextObjectEditing(element, event)
+      return
+    }
+    event.stopPropagation()
+  }
+  function handleImageObjectKey(element: HTMLElement, event: KeyboardEvent): void {
+    if ((event.metaKey || event.ctrlKey) && ['c', 'x'].includes(event.key.toLowerCase())) {
+      event.preventDefault(); event.stopPropagation()
+      state.callbacks.imageClipboard(element.dataset.studioImage ?? '', event.key.toLowerCase() === 'x' ? 'cut' : 'copy')
+    } else if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault(); event.stopPropagation()
+      state.callbacks.removeImage(element.dataset.studioImage ?? '')
+    }
+  }
   root.addEventListener('keydown', event => {
     if (!(event instanceof KeyboardEvent) || !state.callbacks.enabled() || box || event.target instanceof Element && event.target.closest(CONTROLS)) return
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
       keyboardPaste(); event.stopPropagation(); return
     }
     if (selectedText?.isConnected && root.activeElement === selectedText) {
-      const target = targetForText(selectedText)
-      if ((event.metaKey || event.ctrlKey) && ['c', 'x'].includes(event.key.toLowerCase()) || ['Delete', 'Backspace'].includes(event.key)) {
-        event.preventDefault(); event.stopPropagation()
-        if (target) state.callbacks.textAction(target, ['Delete', 'Backspace'].includes(event.key) ? 'delete' : event.key.toLowerCase() === 'x' ? 'cut' : 'copy')
-        return
-      }
-      if (event.key === 'Enter' || event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
-        event.preventDefault(); event.stopPropagation()
-        selectedText.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, detail: 2 }))
-        if (event.key !== 'Enter' && box) {
-          const range = document.createRange(); range.selectNodeContents(box)
-          const selection = getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
-          document.execCommand('insertText', false, event.key)
-        }
-        return
-      }
-      event.stopPropagation(); return
+      handleTextObjectKey(selectedText, event)
+      return
     }
     if (!selectedImage?.isConnected || root.activeElement !== selectedImage) { event.stopPropagation(); return }
-    if ((event.metaKey || event.ctrlKey) && ['c', 'x'].includes(event.key.toLowerCase())) {
-      event.preventDefault(); event.stopPropagation()
-      state.callbacks.imageClipboard(selectedImage.dataset.studioImage ?? '', event.key.toLowerCase() === 'x' ? 'cut' : 'copy')
-    } else if (event.key === 'Delete' || event.key === 'Backspace') {
-      event.preventDefault(); event.stopPropagation()
-      state.callbacks.removeImage(selectedImage.dataset.studioImage ?? '')
-    }
+    handleImageObjectKey(selectedImage, event)
   })
   function targetForText(element: HTMLElement): Extract<SlideEditTarget, { kind: 'text' }> | null {
     const byteSpan = parseSourceSpan(element.getAttribute('data-peitho-src'))
