@@ -113,6 +113,7 @@ import { DeckHeader } from './DeckHeader'
 import { ScriptTrustBanner } from './ScriptTrustBanner'
 import { StatusBar } from './StatusBar'
 import { SlidePreview } from './SlidePreview'
+import { SlidesEditorColumn } from './SlidesEditorColumn'
 import { SlideEditor } from './SlideEditor'
 import { SlideContextMenu } from './SlideContextMenu'
 import { SlideList } from './SlideList'
@@ -4524,12 +4525,14 @@ export function Studio() {
           onMouseDown={startColumnResize(ui.slideListWidth, ui.setSlideListWidth, 1)}
         />
 
-        <div data-panel="editor" hidden={!ui.editorOpen()} className="studio-panel" style={ui.editorOpen() && !ui.previewOpen() ? 'flex: 1; min-width: 0' : ''}>
-          <PanelToggle panel="editor" language={settings.language()} open={true} onToggle={() => ui.setEditorOpen(!ui.editorOpen())} />
-          <div id="panel-editor"
-            className={ui.editorOpen() ? 'panel-content border-r border-border' : 'hidden'}
-            style={ui.previewOpen() ? `width: ${ui.editorWidth()}px` : 'width: 100%'}
-          >
+        <SlidesEditorColumn
+          language={settings.language()}
+          editorOpen={ui.editorOpen()}
+          previewOpen={ui.previewOpen()}
+          editorWidth={ui.editorWidth()}
+          onToggle={() => ui.setEditorOpen(!ui.editorOpen())}
+          onResize={startColumnResize(ui.editorWidth, ui.setEditorWidth, 1)}
+        >
             <SlideEditor
               language={settings.language()}
               hasSelection={editor.selectedRange() !== null}
@@ -4540,14 +4543,7 @@ export function Studio() {
               onToggleSource={toggleSourceEditor}
               onSourceHost={onSourceEditorHost}
             />
-          </div>
-        </div>
-
-        <div
-          hidden={!ui.editorOpen() || !ui.previewOpen()}
-          className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"
-          onMouseDown={startColumnResize(ui.editorWidth, ui.setEditorWidth, 1)}
-        />
+        </SlidesEditorColumn>
 
         <div data-panel="preview" hidden={!ui.previewOpen()} className="studio-panel preview-panel">
           <PanelToggle panel="preview" language={settings.language()} open={true} onToggle={() => { ui.closePhoneShapeMenu(); review.closeBox(); ui.setPreviewOpen(!ui.previewOpen()) }} />
