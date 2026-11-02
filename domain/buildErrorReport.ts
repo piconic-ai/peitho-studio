@@ -125,21 +125,37 @@ function settled(reported: readonly string[]): BuildErrorReport {
   return reported.length > 0 ? { kind: 'sent', reported } : { kind: 'idle' }
 }
 
+function diskRenderFailed(
+  state: BuildErrorReport,
+  event: Extract<BuildErrorReportEvent, { type: 'disk-render-failed' }>,
+  agentReady: boolean,
+): BuildErrorReportDecision {
+  const reported = reportedOf(state)
+  const errors = unreported(event.errors, reported)
+  if (errors.length === 0) return { next: settled(reported) }
+  const next: BuildErrorReport = { kind: 'waiting-for-agent', errors, source: event.source, reported }
+  return agentReady ? { next, effect: { kind: 'send', errors, source: event.source } } : { next }
+}
+
+function errorsSent(
+  state: BuildErrorReport,
+  event: Extract<BuildErrorReportEvent, { type: 'sent' }>,
+): BuildErrorReportDecision {
+  if (state.kind === 'idle') return { next: state }
+  const reported = [...new Set([...state.reported, ...event.identities])]
+  if (state.kind === 'sent') return { next: { kind: 'sent', reported } }
+  const errors = unreported(state.errors, reported)
+  return { next: errors.length === 0 ? { kind: 'sent', reported } : { ...state, kind: 'waiting-for-agent', errors, reported } }
+}
+
 /** The one transition table for reporting build errors. `agentReady`: an
  * agent waits in the session and no send is in flight — only then does a
  * decision ask to send. Every caller goes through this and runs the
  * effect it names; none decides `next` for itself. */
 export function decideBuildErrorReport(state: BuildErrorReport, event: BuildErrorReportEvent, agentReady: boolean): BuildErrorReportDecision {
   switch (event.type) {
-    case 'disk-render-failed': {
-      const reported = reportedOf(state)
-      const errors = unreported(event.errors, reported)
-      // Nothing new: the errors still there were sent, and any waiting to
-      // be sent are gone (fixed before an agent came).
-      if (errors.length === 0) return { next: settled(reported) }
-      const next: BuildErrorReport = { kind: 'waiting-for-agent', errors, source: event.source, reported }
-      return agentReady ? { next, effect: { kind: 'send', errors, source: event.source } } : { next }
-    }
+    case 'disk-render-failed':
+      return diskRenderFailed(state, event, agentReady)
     case 'disk-render-ok':
       // Built once: whatever breaks it next is news again.
       return { next: { kind: 'idle' } }
@@ -154,14 +170,8 @@ export function decideBuildErrorReport(state: BuildErrorReport, event: BuildErro
       const next: BuildErrorReport = { kind: 'waiting-for-agent', errors: state.errors, source: state.source, reported: state.reported }
       return agentReady ? { next, effect: { kind: 'send', errors: state.errors, source: state.source } } : { next }
     }
-    case 'sent': {
-      if (state.kind === 'idle') return { next: state }
-      const reported = [...new Set([...state.reported, ...event.identities])]
-      if (state.kind === 'sent') return { next: { kind: 'sent', reported } }
-      // The deck changed under the send: what it added stays to be sent.
-      const errors = unreported(state.errors, reported)
-      return { next: errors.length === 0 ? { kind: 'sent', reported } : { ...state, kind: 'waiting-for-agent', errors, reported } }
-    }
+    case 'sent':
+      return errorsSent(state, event)
     case 'send-failed':
       // Kept, not dropped and not retried on a timer: the deck's next
       // render on disk (`disk-render-failed`, with the errors as they are

@@ -250,9 +250,9 @@
       "path": "domain/buildErrorReport.ts",
       "name": "decideBuildErrorReport",
       "occurrence": 1,
-      "line": 132,
-      "cognitive": 24,
-      "cyclomatic": 20
+      "line": 155,
+      "cognitive": 14,
+      "cyclomatic": 15
     },
     {
       "path": "domain/contextMenu.ts",

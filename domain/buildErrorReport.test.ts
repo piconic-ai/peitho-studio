@@ -252,6 +252,16 @@ describe('decideBuildErrorReport', () => {
       expect(decideBuildErrorReport(fixed, { type: 'sent', identities: [id(SLIDE_TWO)] }, false)).toEqual({ next: idle })
     })
 
+    test('adversarial: a late acknowledgement retains the current source and error objects', () => {
+      const moved = { ...SLIDE_FOUR, line: 25 }
+      const changed = decideBuildErrorReport(waiting, { type: 'disk-render-failed', errors: [SLIDE_TWO, moved], source: 'new source' }, false).next
+      const decision = decideBuildErrorReport(changed, { type: 'sent', identities: [id(SLIDE_TWO)] }, true)
+      expect(decision).toEqual({ next: { kind: 'waiting-for-agent', errors: [moved], source: 'new source', reported: [id(SLIDE_TWO)] } })
+      if (decision.next.kind !== 'waiting-for-agent') throw new Error('expected pending errors')
+      expect(decision.next.errors[0]).toBe(moved)
+      expect(decideBuildErrorReport(decision.next, { type: 'agent-waiting' }, true).effect).toEqual({ kind: 'send', errors: [moved], source: 'new source' })
+    })
+
     test('adversarial: Given errors were sent, When the deck fails with other errors while waiting and those get fixed too, Then the state settles on what was sent', () => {
       const sent: BuildErrorReport = { kind: 'sent', reported: [id(SLIDE_TWO)] }
       const more = decideBuildErrorReport(sent, failed(SLIDE_TWO, SLIDE_FOUR), false).next
@@ -306,6 +316,18 @@ describe('decideBuildErrorReport: the user asks for the errors to go', () => {
     const sent: BuildErrorReport = { kind: 'sent', reported: [id(SLIDE_TWO)] }
     expect(decideBuildErrorReport(idle, requested(), true)).toEqual({ next: idle })
     expect(decideBuildErrorReport(sent, requested(), true)).toEqual({ next: sent })
+  })
+
+  test('adversarial: an empty manual request preserves pending and failed states by reference', () => {
+    const waiting: BuildErrorReport = { kind: 'waiting-for-agent', errors: [SLIDE_TWO], source: SOURCE, reported: [id(SLIDE_FOUR)] }
+    const held: BuildErrorReport = { ...waiting, kind: 'send-failed' }
+    for (const state of [waiting, held]) {
+      for (const ready of [false, true]) {
+        const decision = decideBuildErrorReport(state, requested(), ready)
+        expect(decision.next).toBe(state)
+        expect(decision.effect).toBeUndefined()
+      }
+    }
   })
 
   test('adversarial: Given a failed send holding an error, When the user asks for it, Then it goes now (or waits as waiting-for-agent, not send-failed)', () => {
