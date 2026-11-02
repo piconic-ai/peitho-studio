@@ -77,6 +77,32 @@ function resolveDOMEditTarget(target: Element, slide: Element, point: Pick<Mouse
   }
 }
 
+function listEditContext(element: HTMLElement, target: SlideEditTarget): { element: HTMLElement; target: SlideEditTarget; selectedElement: HTMLElement; list: HTMLElement | null } {
+  const selectedElement = element
+  let list = element.closest<HTMLElement>('ul,ol')
+  while (list?.parentElement?.closest<HTMLElement>('ul,ol')) list = list.parentElement.closest<HTMLElement>('ul,ol')
+  if (list && target.kind === 'text') {
+    const listItems = Array.from(list.querySelectorAll<HTMLElement>('[data-peitho-src]')).flatMap(item => {
+      const byteSpan = parseSourceSpan(item.getAttribute('data-peitho-src'))
+      const quote = item.getAttribute('data-peitho-md')
+      return byteSpan && quote !== null ? [{ byteSpan, quote }] : []
+    })
+    if (listItems.length) { target = { ...target, listItems }; element = list }
+  }
+  return { element, target, selectedElement, list }
+}
+
+function placeEditingCaret(field: HTMLElement, point: Pick<MouseEvent, 'clientX' | 'clientY'>, root: ShadowRoot, getSelection: () => Selection | null): void {
+  const doc = document as Document & { caretPositionFromPoint?: (x: number, y: number, options?: { shadowRoots: ShadowRoot[] }) => { offsetNode: Node; offset: number } | null; caretRangeFromPoint?: (x: number, y: number) => Range | null }
+  const position = doc.caretPositionFromPoint?.(point.clientX, point.clientY, { shadowRoots: [root] })
+  let range = position ? document.createRange() : doc.caretRangeFromPoint?.(point.clientX, point.clientY)
+  if (position && range) { range.setStart(position.offsetNode, position.offset); range.collapse(true) }
+  if (!range || !field.contains(range.startContainer)) {
+    range = document.createRange(); range.selectNodeContents(field); range.collapse(false)
+  }
+  const selection = getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+}
+
 /** Edit the rendered element in place. Commit on leaving it, preserving
  * the slide typography and one CodeMirror Undo transaction per session. */
 export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCallbacks): void {
@@ -268,6 +294,17 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     const quote = element.getAttribute('data-peitho-md')
     return byteSpan && quote !== null ? { kind: 'text', slot: element.closest<HTMLElement>('[data-studio-text]')?.dataset.studioText, byteSpan, quote, text: element.textContent ?? '', heading: Boolean(element.closest('h1,h2,h3,h4,h5,h6')) } : null
   }
+  const handleActiveFieldClick = (target: Element): void => {
+    if (!box || box.contains(target)) return
+    if (!composing && commit?.()) close()
+  }
+  const configureEditingField = (field: HTMLElement, empty: boolean, session: SlideEditSession): void => {
+    if (empty) field.textContent = session.value
+    field.dataset.studioEdit = ''
+    field.contentEditable = 'true'
+    field.setAttribute('role', 'textbox')
+    field.setAttribute('aria-label', state.callbacks.language() === 'ja' ? 'スライドのテキスト' : 'Slide text')
+  }
   const startTextEditing = (event: Event) => {
     if (!state.callbacks.enabled() || !(event instanceof MouseEvent) || event.button !== 0) return
     const target = event.target instanceof Element ? event.target : null
@@ -276,7 +313,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     if (target.closest('.peitho-slide') && !target.closest('[data-peitho-src], [data-studio-slot]')) { host.tabIndex = 0; host.focus() }
     const slide = target.closest('.peitho-slide')
     if (!slide) return
-    if (box) { if (box.contains(target)) return; if (!composing && commit?.()) close(); return }
+    if (box) { handleActiveFieldClick(target); return }
     const destination = resolveDOMEditTarget(target, slide, event)
     if (destination.kind === 'image') {
       state.callbacks.image(destination.slot)
@@ -287,18 +324,9 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       markEmpty()
       return
     }
-    let { element, target: editTarget } = destination
-    const selectedElement = element
-    let list = element.closest<HTMLElement>('ul,ol')
-    while (list?.parentElement?.closest<HTMLElement>('ul,ol')) list = list.parentElement.closest<HTMLElement>('ul,ol')
-    if (list && editTarget.kind === 'text') {
-      const listItems = Array.from(list.querySelectorAll<HTMLElement>('[data-peitho-src]')).flatMap(item => {
-        const byteSpan = parseSourceSpan(item.getAttribute('data-peitho-src'))
-        const quote = item.getAttribute('data-peitho-md')
-        return byteSpan && quote !== null ? [{ byteSpan, quote }] : []
-      })
-      if (listItems.length) { editTarget = { ...editTarget, listItems }; element = list }
-    }
+    const context = listEditContext(destination.element, destination.target)
+    let { element, target: editTarget } = context
+    const { selectedElement, list } = context
     selectedText = element; element.tabIndex = 0; markEmpty()
     const session = state.callbacks.edit(editTarget)
     if (!session) return
@@ -323,11 +351,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     const field = element
     const original = field.innerHTML
     const empty = editTarget.kind === 'slot'
-    if (empty) field.textContent = session.value
-    field.dataset.studioEdit = ''
-    field.contentEditable = 'true'
-    field.setAttribute('role', 'textbox')
-    field.setAttribute('aria-label', state.callbacks.language() === 'ja' ? 'スライドのテキスト' : 'Slide text')
+    configureEditingField(field, empty, session)
     restore = () => {
       session.finish()
       field.innerHTML = original
@@ -466,15 +490,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     field.addEventListener('keydown', keydown)
     field.addEventListener('blur', blur)
     field.focus()
-    // A real click places the caret at the clicked character; empty boxes start at the end.
-    const doc = document as Document & { caretPositionFromPoint?: (x: number, y: number, options?: { shadowRoots: ShadowRoot[] }) => { offsetNode: Node; offset: number } | null; caretRangeFromPoint?: (x: number, y: number) => Range | null }
-    const position = doc.caretPositionFromPoint?.(event.clientX, event.clientY, { shadowRoots: [root] })
-    let range = position ? document.createRange() : doc.caretRangeFromPoint?.(event.clientX, event.clientY)
-    if (position && range) { range.setStart(position.offsetNode, position.offset); range.collapse(true) }
-    if (!range || !field.contains(range.startContainer)) {
-      range = document.createRange(); range.selectNodeContents(field); range.collapse(false)
-    }
-    const selection = getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+    placeEditingCaret(field, event, root, getSelection)
 
   }
   // Make the field editable during the first mouse gesture, before the
