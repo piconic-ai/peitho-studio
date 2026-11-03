@@ -2,7 +2,7 @@
 // `{errorMessage ? <div/> : null}` conditional-mount pattern, whose later
 // branch (only reachable once `errorMessage` transitions from `null` to a
 // string well after mount) sometimes never rendered — the same BarefootJS
-// ternary-mounting gap CLAUDE.md's Pitfalls section had marked "Unresolved
+// ternary-mounting gap AGENTS.md's Pitfalls section had marked "Unresolved
 // — watch out" for. This made every commitChange failure (e.g. a real
 // peitho-core "slide matches multiple layouts" build error hit via New
 // Slide on a deck with more than one layout) invisible: errorMessage() was

@@ -18,7 +18,7 @@ bunx tauri dev
 
 ## Making a pull request
 
-Keep changes focused and explain the problem, resulting behavior and validation in your PR. Include screenshots for UI changes. Follow [the architecture guide](docs/architecture.md) and [project design rules](CLAUDE.md): keep pure domain logic separate from state, DOM and IPC code, and cover changed logic with typical and boundary cases.
+Keep changes focused and explain the problem, resulting behavior and validation in your PR. Include screenshots for UI changes. Follow [the architecture guide](docs/architecture.md) and [project design rules](AGENTS.md): keep pure domain logic separate from state, DOM and IPC code, and cover changed logic with typical and boundary cases.
 
 Run the checks relevant to your change:
 

@@ -67,7 +67,7 @@ export function WelcomeScreen(props: WelcomeScreenProps) {
             surrounding buttons. */}
         <div className="h-4 text-xs text-muted-foreground">{props.isBusy ? messagesFor(props.language).opening : ''}</div>
         {/* Always mounted, visibility toggled by `hidden` rather than
-            `{errorMessage ? <div/> : null}` — see CLAUDE.md's BarefootJS
+            `{errorMessage ? <div/> : null}` — see AGENTS.md's BarefootJS
             pitfalls (a failed open/create while this screen stays mounted
             is exactly the null-to-string, well-after-mount transition that
             pattern silently drops). */}

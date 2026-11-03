@@ -9,7 +9,7 @@ export interface FileTreeProps {
   rows: FileTreeRow[]
   /** The folders the user closed. A row's own open/closed look reads this
    * rather than its `expanded` field: a keyed row kept across an update
-   * may hold the field it was first rendered with (CLAUDE.md's BarefootJS
+   * may hold the field it was first rendered with (AGENTS.md's BarefootJS
    * pitfalls). */
   collapsed: string[]
   /** The file shown in the editor, highlighted. */

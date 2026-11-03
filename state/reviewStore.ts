@@ -210,7 +210,7 @@ export function createReviewStore(now: () => string = () => new Date().toISOStri
   }
 
   // One count signal per slide key, set only when that slide's count
-  // changes — every thumbnail row reads its own (see CLAUDE.md's
+  // changes — every thumbnail row reads its own (see AGENTS.md's
   // "Don't hold an entire Map/Record in a single signal/memo").
   const countSignals = new Map<string, [() => number, (value: number) => void]>()
   function countSignal(key: string): [() => number, (value: number) => void] {

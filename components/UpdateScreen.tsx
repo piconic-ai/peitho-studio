@@ -62,7 +62,7 @@ export function UpdateScreen() {
         <h1 className="text-base font-semibold">{updateMessages(settings.language()).title}</h1>
       </div>
       <p role="status" data-update-status className="text-sm whitespace-pre-wrap">{updateStatusText(status(), settings.language())}</p>
-      {/* Always mounted and hidden when empty — see CLAUDE.md's BarefootJS
+      {/* Always mounted and hidden when empty — see AGENTS.md's BarefootJS
           pitfalls on conditional branches. */}
       <p data-update-security hidden={!status().security} className="text-sm font-medium whitespace-pre-wrap">{status().security ?? ''}</p>
       <p role="alert" data-update-error hidden={!status().error} className="text-xs text-destructive whitespace-pre-wrap">{status().error ?? ''}</p>

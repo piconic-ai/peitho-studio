@@ -1,5 +1,5 @@
 // Regression tests for the same "invisible error" bug fixed in StatusBar
-// (see error-banner-visibility.e2e.ts and CLAUDE.md's BarefootJS
+// (see error-banner-visibility.e2e.ts and AGENTS.md's BarefootJS
 // pitfalls), found by Pullfrog's review of that fix in two other
 // components sharing the same `errorMessage` signal: WelcomeScreen (a
 // failed `open_deck`, e.g. a stale Recent entry) and NewDeckModal (a

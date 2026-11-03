@@ -5,7 +5,7 @@ import { LANGUAGES, type Language } from '../domain/language'
 import { LANGUAGE_NAMES, messagesFor } from '../domain/messages'
 
 // The app-wide settings, as an in-app modal opened from the app menu's
-// "Settings…" (Cmd+,) — not a native dialog (CLAUDE.md, Tauri pitfalls)
+// "Settings…" (Cmd+,) — not a native dialog (AGENTS.md, Tauri pitfalls)
 // and not a window of its own: each window opens its own copy, and a change
 // saved from one reaches the others through `settings:changed`.
 //
@@ -91,7 +91,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
               checked={props.vimMode}
               // `checked` writes to the DOM only when `props.vimMode` changes,
               // and a failed save leaves it as it was, so put the box back
-              // by hand (CLAUDE.md, BarefootJS pitfalls: input bindings).
+              // by hand (AGENTS.md, BarefootJS pitfalls: input bindings).
               onChange={e => {
                 const box = e.target as HTMLInputElement
                 void props.onVimModeChange(box.checked).then(saved => { if (!saved) box.checked = props.vimMode })

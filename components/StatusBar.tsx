@@ -33,7 +33,7 @@ export function StatusBar(props: StatusBarProps) {
       {/* Always mounted, visibility toggled by `hidden` rather than
           `{errorMessage ? <div/> : null}` — confirmed via Playwright that
           the conditional-mount form left `errorMessage()` correctly set,
-          threw no error, but never painted (see CLAUDE.md's BarefootJS
+          threw no error, but never painted (see AGENTS.md's BarefootJS
           pitfalls; the exact trigger wasn't isolated down to a minimal
           repro, so treat any JSX shaped like this with the same
           suspicion). `errorMessage` starts `null` and only turns into a

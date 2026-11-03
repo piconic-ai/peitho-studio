@@ -282,7 +282,7 @@ export function Studio() {
   // of `todo/archive/studio-tsx-refactoring.md`) showed the exact same factory
   // shape updating correctly via BarefootJS's dynamic (wrap-by-default)
   // reactivity tracking, which `bf debug graph`'s static analysis doesn't
-  // capture. See CLAUDE.md's BarefootJS pitfalls for the full account.
+  // capture. See AGENTS.md's BarefootJS pitfalls for the full account.
   const ui = createUiStore()
   // The layout screen (the header's Layouts mode) — see
   // `state/layoutScreenStore.ts`; its file operations run from here.
@@ -1283,7 +1283,7 @@ export function Studio() {
     mountSlideCanvas(el, draw.css === null ? layoutPreviewStylesheet : layoutDraftStylesheet, draw.fragment, canvas, 'thumbnail')
     observeCanvasScale(el, canvas)
   }
-  // A keyed row's `ref` never runs again (CLAUDE.md's BarefootJS
+  // A keyed row's `ref` never runs again (AGENTS.md's BarefootJS
   // pitfalls), so a draft arriving, changing or going away redraws the
   // rows concerned from here: the row drawing a draft now, and the one that
   // drew it before (back to its saved files). Tracks the drawn draft object

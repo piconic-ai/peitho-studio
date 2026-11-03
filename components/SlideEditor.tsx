@@ -17,7 +17,7 @@ import { messagesFor } from '../domain/messages'
 // Every host stays mounted even with no slide selected or the source
 // editor open — only a `hidden` class toggles. A `ref` inside a
 // conditional branch re-runs on every re-entry while the branch's cleanup
-// never runs (CLAUDE.md, BarefootJS pitfalls), which would create a new
+// never runs (AGENTS.md, BarefootJS pitfalls), which would create a new
 // editor per re-entry and leave the old one alive.
 export interface SlideEditorProps {
   /** The UI language every label here is shown in. */
@@ -40,7 +40,7 @@ export function SlideEditor(props: SlideEditorProps) {
         <span className="flex-1 text-muted-foreground">{messagesFor(props.language).deckSourceHint}</span>
         {/* One expression picks the label: a `? :` text child in a component
             mounted inside a branch can leave that branch half-entered
-            (CLAUDE.md, BarefootJS pitfalls). */}
+            (AGENTS.md, BarefootJS pitfalls). */}
         <button
           type="button"
           data-source-toggle

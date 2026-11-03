@@ -71,7 +71,7 @@ export function LayoutEditorColumn(props: LayoutEditorColumnProps) {
         </div>
         <p role="alert" data-layout-editor-message hidden={props.editorMessage === ''} className="shrink-0 px-3 py-2 text-xs text-destructive whitespace-pre-wrap break-words border-b border-border">{props.editorMessage}</p>
         {/* The file changed on disk under unsaved edits: an in-app choice
-            (never `window.confirm`, CLAUDE.md), permanently mounted. */}
+            (never `window.confirm`, AGENTS.md), permanently mounted. */}
         <div role="alert" data-layout-conflict className={(props.editorConflict ? 'flex' : 'hidden') + ' shrink-0 flex-wrap items-center gap-2 px-3 py-2 text-xs border-b border-border bg-accent'}>
           <span className="flex-1 min-w-0">{messagesFor(props.language).layoutConflict}</span>
           <button type="button" data-layout-conflict-load disabled={props.editorSaving} onClick={() => props.onLoadExternal()} className="px-2 py-0.5 rounded-md bg-primary text-primary-foreground disabled:opacity-40">
@@ -83,7 +83,7 @@ export function LayoutEditorColumn(props: LayoutEditorColumnProps) {
         </div>
         <p data-layout-no-file hidden={props.activePath !== null} className="shrink-0 px-3 py-6 text-xs text-muted-foreground text-center">{messagesFor(props.language).noFileOpen}</p>
         {/* Hidden, not disabled, while the file isn't open: an editor can't
-            be typed into then. Permanently mounted (CLAUDE.md's BarefootJS
+            be typed into then. Permanently mounted (AGENTS.md's BarefootJS
             pitfalls on branches). */}
         <div
           ref={el => props.onEditorHost(el)}
