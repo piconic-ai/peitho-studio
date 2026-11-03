@@ -15,7 +15,6 @@ import { ViewportToggle } from './ViewportToggle'
 /** Where a delete stands, as the screen shows it (`domain/layoutDelete.ts`). */
 export type LayoutDeleteView = 'idle' | 'confirming' | 'choosing-replacement' | 'deleting'
 
-// Props are values, not signal getters (BF044) — see `WelcomeScreen.tsx`.
 export interface LayoutScreenProps {
   language: Language
   /** The screen stays mounted; this hides it while the slides show. */
@@ -102,9 +101,8 @@ export interface LayoutScreenProps {
   onContextMenu: (name: string | null, event: MouseEvent) => void
   /** Layout `name`'s small thumbnail host, once its row mounts:
    * `Studio.tsx` draws the layout into it — the saved files' preview, or
-   * for the layout being edited, its unsaved draft — and draws it again as
-   * the draft changes. A keyed row's `ref` runs only once (AGENTS.md's
-   * BarefootJS pitfalls), so the redraw can't happen here. */
+   * for the layout being edited, its unsaved draft. Studio.tsx also
+   * redraws this host when the draft changes. */
   onThumbnailHost: (el: HTMLElement, name: string) => void
   /** The canvas layout `name`'s thumbnail is drawn on (the PC / Phone
    * switch's, `viewportCanvas`), for its box's proportion. */
@@ -177,8 +175,8 @@ function confirmLabel(messages: Messages, view: LayoutDeleteView): string {
  * slide; a right-click in the editor opens one on the lines selected.
  * Every operation on a layout is in the list's right-click menu
  * (`ContextMenu.tsx`); New Layout and Delete open the modals at the
- * end. Every part is permanently mounted and shown or hidden by class —
- * see AGENTS.md's BarefootJS pitfalls on branches. */
+ * end. The screen stays mounted so switching screens preserves its
+ * editors and their drafts. */
 export function LayoutScreen(props: LayoutScreenProps) {
   return (
     <div data-layout-screen className={(props.hidden ? 'hidden' : 'flex') + ' flex-1 min-w-0 min-h-0'}>
@@ -274,10 +272,7 @@ export function LayoutScreen(props: LayoutScreenProps) {
             data-layout-rows
             // `pb-16`: room below the last row to right-click for New Layout.
             className="flex-1 min-h-0 overflow-y-auto p-2 pb-16 grid grid-cols-2 gap-2 content-start"
-            // A row's own handler is delegated to this same element, so both
-            // fire for a right-click on a row and `stopPropagation()` can't
-            // tell them apart (barefootjs#2930, see `SlideList.tsx`): this one
-            // skips a click that landed in a row.
+            // This handler opens the empty-space menu; rows open their own.
             onContextMenu={e => {
               if ((e.target as Element).closest('[data-layout-row]')) return
               props.onContextMenu(null, e)

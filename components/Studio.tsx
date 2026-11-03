@@ -273,16 +273,7 @@ export function Studio() {
   // (`startSlideDrag` ending in `reorderSlides`, `openContextMenu` also
   // calling `selectSlide`) stays here in the composition root rather than
   // moving into the store itself.
-  //
-  // A previous version of this comment claimed a `createXxxStore()`
-  // factory couldn't work here — that a signal declared inside a function
-  // called from this component, rather than with `createSignal` literally
-  // written in this file, showed `deps: []` in `bf debug graph` and never
-  // updated the DOM. That was wrong: a later, more careful repro (Step 9
-  // of `todo/archive/studio-tsx-refactoring.md`) showed the exact same factory
-  // shape updating correctly via BarefootJS's dynamic (wrap-by-default)
-  // reactivity tracking, which `bf debug graph`'s static analysis doesn't
-  // capture. See AGENTS.md's BarefootJS pitfalls for the full account.
+
   const ui = createUiStore()
   // The layout screen (the header's Layouts mode) — see
   // `state/layoutScreenStore.ts`; its file operations run from here.
@@ -1283,12 +1274,10 @@ export function Studio() {
     mountSlideCanvas(el, draw.css === null ? layoutPreviewStylesheet : layoutDraftStylesheet, draw.fragment, canvas, 'thumbnail')
     observeCanvasScale(el, canvas)
   }
-  // A keyed row's `ref` never runs again (AGENTS.md's BarefootJS
-  // pitfalls), so a draft arriving, changing or going away redraws the
-  // rows concerned from here: the row drawing a draft now, and the one that
-  // drew it before (back to its saved files). Tracks the drawn draft object
-  // itself, which a failed later draft or a new request leaves as it is —
-  // so neither redraws anything.
+  // A draft arriving, changing, or going away redraws the affected hosts:
+  // the row drawing a draft now, and the one that drew it before. Track
+  // the shown draft object so a failed later draft or new request does
+  // not redraw the unchanged preview.
   const draftedLayoutName = createMemo(() => draftedLayout(layouts.draftPreview()))
   const draftedLayoutShown = createMemo(() => layouts.draftPreview().shown)
   let layoutRowDrawingDraft: string | null = null
@@ -2988,20 +2977,6 @@ export function Studio() {
 
   function openContextMenu(index: number | null, event: MouseEvent): void {
     event.preventDefault()
-    // `stopPropagation()` here does NOT stop `SlideList.tsx`'s own
-    // container-level `onContextMenu` from also firing for the same
-    // right-click: a `.map()` row's handler is compiled as a delegated
-    // listener on the container (not a real per-element listener), so the
-    // container's own directly-authored handler ends up as a *second*
-    // listener on that identical node — `stopPropagation()` only blocks
-    // reaching other elements, never a sibling listener already registered
-    // on the same one (see piconic-ai/barefootjs#2930). Confirmed by
-    // logging both calls landing (`index` then `null`) for one physical
-    // click. `SlideList.tsx`'s container handler guards against this
-    // itself, by skipping the `null` call whenever the click actually
-    // landed inside a row — so by the time this function runs at all,
-    // `index` reflects that row (or truly is empty space) and doesn't get
-    // overwritten afterward.
     event.stopPropagation()
     if (index === null) {
       ui.setContextMenu({ kind: 'on-empty-space', x: event.clientX, y: event.clientY })
@@ -3020,12 +2995,8 @@ export function Studio() {
     return loadLayoutPreviews()
   }
 
-  // The error bar's "choose a layout that fits": the context menu on slide
-  // `index`, its picker expanded. Expanded only once the previews are in —
-  // entered while it still shows "loading", the picker's branch never
-  // renders the list that replaces it (confirmed with Playwright), so
-  // this waits the way a user's own click on Change Layout usually does.
-  // Skipped if the menu was closed or moved to another slide meanwhile.
+  // Open the error bar's layout picker once its previews are ready.
+  // Skip expansion if the menu closed or moved to another slide meanwhile.
   async function openLayoutPickerOn(index: number, at: { x: number; y: number }): Promise<void> {
     await openSlideMenu(index, at.x, at.y)
     const menu = ui.contextMenu()

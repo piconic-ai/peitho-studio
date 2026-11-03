@@ -3,8 +3,6 @@
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
 
-// Props here are values, not signal getters — see `components/
-// WelcomeScreen.tsx` for why (BF044).
 export interface ScriptTrustBannerProps {
   /** The UI language every label here is shown in. */
   language: Language

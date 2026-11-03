@@ -82,9 +82,8 @@ export function LayoutEditorColumn(props: LayoutEditorColumnProps) {
           </button>
         </div>
         <p data-layout-no-file hidden={props.activePath !== null} className="shrink-0 px-3 py-6 text-xs text-muted-foreground text-center">{messagesFor(props.language).noFileOpen}</p>
-        {/* Hidden, not disabled, while the file isn't open: an editor can't
-            be typed into then. Permanently mounted (AGENTS.md's BarefootJS
-            pitfalls on branches). */}
+        {/* Keep the editor instance mounted, and hide its host while no
+            file is open. */}
         <div
           ref={el => props.onEditorHost(el)}
           data-editor={props.editorName}

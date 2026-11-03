@@ -41,9 +41,7 @@ export function AboutScreen() {
         <dd data-about="version" className="m-0 text-left font-mono">{info().version}</dd>
         <dt className="text-right text-muted-foreground">{settings.messages().aboutBuild}</dt>
         <dd data-about="build" className="m-0 text-left font-mono">{info().build}</dd>
-        {/* Always mounted and hidden when there's no commit (a build
-            outside a git checkout) — see AGENTS.md's BarefootJS pitfalls
-            on conditional branches. */}
+        {/* Builds outside a git checkout have no commit to show. */}
         <dt hidden={info().commit === ''} className="text-right text-muted-foreground">{settings.messages().aboutCommit}</dt>
         <dd hidden={info().commit === ''} className="m-0 text-left">
           <button

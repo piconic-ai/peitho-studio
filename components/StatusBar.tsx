@@ -3,8 +3,6 @@
 import { type ImageSlotFix, imageSlotFixLabel } from '../domain/imageSlot'
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
-// Props here are values, not signal getters — see `components/
-// WelcomeScreen.tsx` for why (BF044).
 export interface StatusBarProps {
   /** The UI language every label here is shown in. */
   language: Language
@@ -30,21 +28,13 @@ export interface StatusBarProps {
 export function StatusBar(props: StatusBarProps) {
   return (
     <>
-      {/* Always mounted, visibility toggled by `hidden` rather than
-          `{errorMessage ? <div/> : null}` — confirmed via Playwright that
-          the conditional-mount form left `errorMessage()` correctly set,
-          threw no error, but never painted (see AGENTS.md's BarefootJS
-          pitfalls; the exact trigger wasn't isolated down to a minimal
-          repro, so treat any JSX shaped like this with the same
-          suspicion). `errorMessage` starts `null` and only turns into a
-          string well after mount, on the first `commitChange`/`runOpen`/
-          etc. failure, so it always hit this. */}
+      {/* Keep controls mounted: conditional mounting freezes their later
+          disabled/hidden updates on BarefootJS 0.40.2. */}
       <div
         hidden={props.errorMessage === null}
         className="px-3 py-1.5 bg-destructive/10 text-destructive text-xs shrink-0 border-t border-destructive/30 flex items-start gap-2"
       >
         <span className="flex-1 select-text">{props.errorMessage}</span>
-        {/* Always mounted too, for the same reason as the bar itself. */}
         <button
           type="button"
           data-image-slot-fix={props.imageSlotFix}
@@ -55,9 +45,6 @@ export function StatusBar(props: StatusBarProps) {
         >
           {imageSlotFixLabel(messagesFor(props.language), props.imageSlotFix, props.imageLayoutAdding)}
         </button>
-        {/* One element per action, all always mounted (as above), the
-            others hidden: a build error is handed to the AI, or is with it
-            already, and anything else is copied. */}
         <button
           type="button"
           data-error-action="send"

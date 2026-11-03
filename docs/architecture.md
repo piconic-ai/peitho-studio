@@ -71,66 +71,32 @@ trimmed further in the future, there are two options:
 Neither was chosen this time; the status quo stands, with `Studio.tsx`
 serving both roles — "composition root" and "orchestration" — at once.
 
-## Invariants BarefootJS's constraints impose on the layer structure
+## BarefootJS conventions for the layer structure
 
-(See `AGENTS.md`'s "Pitfalls hit with BarefootJS" for details on each
-individual pitfall. This section only covers how they influenced this
-layer structure's **design decisions**.)
+These are project conventions. They keep state ownership explicit without
+relying on historical compiler restrictions. Current runtime checks and
+remaining caveats are documented in [the BarefootJS upgrade audit](barefootjs-upgrade.md).
 
-- **The Context API can't cross files** (`createContext()` produces a
-  different Symbol per bundle), so it isn't used. Parent → child is
-  **props**; child → parent is **callback props**.
-- **A child never receives a setter.** It only receives a callback
-  describing "what happened" (`onSelect(i)`, not `setSelectedIndex`).
-  This confines which function writes which signal to a single place —
-  the store — preventing an implicit contract from scattering across
-  multiple locations.
-- **Pass a read-only prop the called value, not the `Memo<T>` getter
-  itself** (`isBusy={isBusy()}`, not `isBusy={isBusy}`) — the latter is a
-  compiler build error, `BF044` (`Signal/Memo getter passed without
-  calling it`). BarefootJS's props reactivity follows the same model as
-  SolidJS: `value={count()}` is lowered into a getter property,
-  `{ get value() { return count() } }`. The child reads it directly as
-  `props.xxx` (destructuring triggers the `BF043` warning — mute it
-  explicitly with `@bf-ignore props-destructuring` if the intent really
-  is to use it once as an initial value). `bf debug graph` often doesn't
-  put a `props.xxx`-style read's dependency on the static graph (`no
-  tracked deps`), but as with other `no tracked deps` cases, dynamic
-  tracking (wrap-by-default) actually updates it correctly — confirmed
-  on a real device (Playwright) when extracting
-  `components/WelcomeScreen.tsx`.
-- **`Map`/`Set`/`Function` types can't be passed as props** (BF049).
-  Instead of passing a collection, pass an accessor function like
-  `(key) => Getter`.
-- **JSX can't be written inside a local function** (BF045). You can't
-  split things out in the shape of "a render helper function containing
-  JSX." Splitting must always be done with a real subcomponent.
-- **Don't rely on a single module-scope signal.** Each `.tsx` is an
-  independent build chunk, so state sharing calls a factory at the
-  composition root, and tests also explicitly own/dispose it via
-  `createRoot`.
-- **Don't destructure a signal's getter out with `const { x } =
-  store`** (BarefootJS's compiler identifier extraction doesn't see
-  through destructuring, so `x` is treated as an "undeclared variable"
-  and throws a runtime `ReferenceError` — the factory shape in
-  `state/xxxStore.ts` returning `{ draggedIndex, ... }` is itself fine.
-  Confirmed, by reproducing it exactly as implemented in `domain/drag.ts`,
-  that receiving it as `const store = createXxxStore()` and calling it
-  via the property on the JSX side, `store.draggedIndex()`, works
-  correctly — note that this section once mistakenly stated the opposite
-  lesson here, that "going through a factory breaks it." In reality,
-  dynamic reactivity tracking (wrap-by-default) covers a wider range than
-  `bf debug graph`'s static analysis (which can report `no tracked
-  deps`) — don't jump straight to "this breaks on a real device" from
-  `bf debug graph`'s output alone; when in doubt, actually run it in a
-  browser and check).
-- **When splitting a keyed `.map()`'s row out into a child component,
-  verify the freshness of the `index` prop with a spike before settling
-  on the split** (because of past closure-staleness bugs, #2859/#2861).
-- **Don't write view switching as nested ternaries** (a breeding ground
-  for the unresolved rendering bug above). Write it as sibling standalone
-  conditions (lining up `{kind() === 'x' ? <X/> : null}`) or as permanent
-  mounting + a `hidden` class toggle.
+- Pass data from parent to child through props, and report child actions
+  through callback props.
+- Give children callbacks describing what happened (`onSelect(i)`) rather
+  than store setters (`setSelectedIndex`). The store owns signal writes.
+- Use values for read-only props (`isBusy={isBusy()}`), and read them as
+  `props.isBusy` in the child. This keeps the component's API independent
+  of the caller's signal representation. Callable props are allowed when
+  the API needs an accessor or callback.
+- Use per-key accessors when a collection's consumers need independent
+  subscriptions. Keep shared objects such as `CSSStyleSheet` behind a
+  stable accessor so prop reads preserve their identity.
+- Extract substantial JSX into subcomponents to keep ownership and
+  component interfaces visible.
+- Create shared stores at the composition root. Tests explicitly own and
+  dispose their reactive roots through `createRoot`.
+- Choose conditional mounting or `hidden` according to lifecycle needs.
+  Editor and canvas hosts can stay mounted when their instances should
+  survive a view change.
+- Verify reactive behavior in the browser. A missing dependency in
+  `bf debug graph` does not establish a runtime failure.
 
 ## State flow: ADT → store → memo projection → props
 
@@ -229,9 +195,8 @@ it undermines an AI agent's autonomy).
   that it "always returns a valid result" (never throws or returns
   `undefined`).
 - **IR tests** (`@barefootjs/test`): compile every `.tsx` and pin down
-  zero diagnostics, the signal list, and event wiring as code. Catches
-  regressions against BarefootJS's compiler constraints (BF021/BF045/
-  BF049, etc.) in CI.
+  zero diagnostics, the signal list, and event wiring as code. Browser
+  regression tests verify the runtime behavior of compiled components.
 - **Architecture tests**: mechanically forbid imports that cross the
   layers described above.
 

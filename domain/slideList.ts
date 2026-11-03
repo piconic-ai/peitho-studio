@@ -39,23 +39,9 @@ export interface RenderedSlideEntry {
  * a badge. `title` is pulled directly out of the raw Markdown (no build
  * required).
  *
- * `key` is this row's `.map()` key: always `placeholder:<sourceIndex>`,
- * deliberately *never* the slide's own PageComment `key` (even when it set
- * one) — a slide commonly keeps the *same* explicit key across a draft
- * toggle, which would otherwise hand this row the exact key its `rendered`
- * counterpart used right before (or will use right after). BarefootJS's
- * keyed `.map()` doesn't correctly re-run a row's canvas `ref` when a key
- * *returns* to the `rendered` branch after a stint as `placeholder` on
- * that same key (confirmed by direct browser reproduction, not just
- * `bf debug graph`'s static analysis — see AGENTS.md's BarefootJS
- * pitfalls): the canvas host element exists in the DOM but never gets
- * `mountSlideCanvas` run against it, leaving the thumbnail permanently
- * blank until the whole deck is reopened. A key that can never coincide
- * with any real slide's key — before, during, or after the toggle — makes
- * every `rendered` <-> `placeholder` transition a fresh key as far as the
- * `.map()` is concerned, which mounts correctly (the already-working,
- * exercised-everywhere case). Losing DOM-node reuse for this rare,
- * short-lived state isn't a concern.
+ * `key` identifies the placeholder row by source position as
+ * `placeholder:<sourceIndex>`. It differs from the rendered row's key,
+ * so changing between placeholder and rendered states mounts a fresh row.
  *
  * `lastRenderedKey` is a *different* key: the slide's own explicit
  * PageComment `key`, when it set one (`null` otherwise). It exists purely

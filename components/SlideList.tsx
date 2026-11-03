@@ -12,10 +12,7 @@ import { SlideSectionHeader } from './SlideSectionHeader'
 import { SlideStatusOverlay } from './SlideStatusOverlay'
 import { slideRowClass } from './slideRow'
 
-// Every prop here is a called value or a plain callback (never a signal
-// getter or a setter) — see `components/WelcomeScreen.tsx` for the BF044
-// rationale and `docs/architecture.md`'s "children never receive a setter"
-// rule. Row identity, drag handling, visibility and canvas mounting stay
+// Row identity, drag handling, visibility and canvas mounting stay
 // together in the keyed map; section controls own only header presentation.
 export interface SlideListProps {
   /** The UI language every label here is shown in. */
@@ -108,34 +105,11 @@ export function SlideList(props: SlideListProps) {
     >
       <div
         className="flex-1 overflow-y-auto p-2"
-        // Skip when the click landed inside a row: that row's own
-        // `onContextMenu` below already reports the real index, but a
-        // `.map()` row's handler compiles to a delegated listener on this
-        // very container element, so this directly-authored handler ends
-        // up as a *second*, separate listener on that same node —
-        // `event.stopPropagation()` in the row's handler can't stop a
-        // sibling listener already registered on the same element (see
-        // piconic-ai/barefootjs#2930), so this one still runs right after
-        // it. Unguarded, it silently overwrote the just-set `on-slide` menu
-        // state with `on-empty-space`, which is why Cut/Copy/Delete looked
-        // permanently disabled no matter which thumbnail was right-clicked.
-        // `closest` only needs to detect *whether* the click was inside a
-        // row, not read `data-slide-row`'s value, so it's unaffected by
-        // that attribute's own staleness risk after a keyed reorder (see
-        // AGENTS.md's keyed-`.map()` pitfall).
-        onContextMenu={e => {
-          if ((e.target as Element).closest('[data-slide-row]')) return
-          props.onContextMenu(null, e)
-        }}
+        onContextMenu={e => props.onContextMenu(null, e)}
       >
         {!props.deckOpen ? (
           <p className="text-sm text-muted-foreground">{messagesFor(props.language).openDeckToSeeSlides}</p>
         ) : (
-          // The `.map()` callback below must stay an expression body (a
-          // block body is a compile error, BF021 — see AGENTS.md's
-          // BarefootJS pitfalls), so every reference below re-reads
-          // `entry.sourceIndex` directly rather than destructuring it into
-          // a local first.
           props.entries.map(entry => (
               <div
                 key={entry.kind === 'rendered' ? entry.slide.key : entry.key}

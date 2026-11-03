@@ -64,9 +64,7 @@ export interface ReviewPanelProps {
   onCopyCommand: () => void
 }
 
-// A click on a row opens its slide, except on the row's own controls: a
-// `.map()` row's handlers are delegated, so the button's own click reaches
-// the row's too (AGENTS.md, barefootjs#2930).
+// Editing, replying, and other row controls keep the current slide open.
 function isRowControl(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('button, textarea, [data-review-reply-box], [data-review-edit-box]') !== null
 }

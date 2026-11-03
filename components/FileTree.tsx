@@ -2,15 +2,11 @@
 
 import { type FileTreeRow } from '../domain/deckFiles'
 
-// Props are values, not signal getters (BF044) — see `WelcomeScreen.tsx`.
 export interface FileTreeProps {
   /** The rows shown (`fileTreeRows`): folders closed by the user hide what
    * is in them. */
   rows: FileTreeRow[]
-  /** The folders the user closed. A row's own open/closed look reads this
-   * rather than its `expanded` field: a keyed row kept across an update
-   * may hold the field it was first rendered with (AGENTS.md's BarefootJS
-   * pitfalls). */
+  /** The folders the user closed, used for each row's expanded state. */
   collapsed: string[]
   /** The file shown in the editor, highlighted. */
   activePath: string | null
