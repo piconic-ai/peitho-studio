@@ -116,6 +116,8 @@ test('Given an open deck, when "Skip in Present" is turned on and then off from 
   await skipToggle.click()
   await expect(row.locator('[data-slide-status]')).toHaveCount(0, { timeout: 5_000 })
   await expect.poll(() => deck.source).not.toContain('"skip":true')
+  await row.click({ button: 'right' })
+  await expect(skipToggle).not.toContainText('✓')
 })
 
 test('Given a deck whose middle slide is marked draft, when the deck opens, then that thumbnail shows a DRAFT badge and its title instead of a rendered canvas, and its neighbors are unaffected', async ({ page }) => {

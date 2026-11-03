@@ -42,9 +42,9 @@
       "path": "components/SlideContextMenu.tsx",
       "name": "SlideContextMenu",
       "occurrence": 1,
-      "line": 56,
-      "cognitive": 17,
-      "cyclomatic": 15
+      "line": 57,
+      "cognitive": 13,
+      "cyclomatic": 11
     },
     {
       "path": "components/SlideList.tsx",

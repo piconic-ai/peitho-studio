@@ -8,6 +8,7 @@ import { COMMENT_ACTION, commentItemLabel } from '../domain/menuComment'
 import { entryTitle, isMismatch, type LayoutFitCheck } from '../domain/layoutFit'
 import { layoutDisplayName } from '../domain/standardLayouts'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
+import { MenuCheckmark } from './MenuCheckmark'
 
 export interface SlideContextMenuProps {
   /** The UI language every label here is shown in. */
@@ -244,7 +245,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).markAsDraft}</span>
-          {menuItemChecked(props.menuItems, 'toggle-draft') ? <span aria-hidden="true">✓</span> : null}
+          <MenuCheckmark checked={menuItemChecked(props.menuItems, 'toggle-draft')} />
         </button>
         <button
           type="button"
@@ -253,7 +254,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).skipInPresent}</span>
-          {menuItemChecked(props.menuItems, 'toggle-skip') ? <span aria-hidden="true">✓</span> : null}
+          <MenuCheckmark checked={menuItemChecked(props.menuItems, 'toggle-skip')} />
         </button>
         <button
           type="button"
@@ -262,7 +263,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).sectionStart}</span>
-          {menuItemChecked(props.menuItems, 'toggle-section') ? <span aria-hidden="true">✓</span> : null}
+          <MenuCheckmark checked={menuItemChecked(props.menuItems, 'toggle-section')} />
         </button>
         <button
           type="button"
@@ -271,7 +272,7 @@ export function SlideContextMenu(props: SlideContextMenuProps) {
           className="w-full flex items-center justify-between pl-9 pr-3 py-1.5 hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <span>{messagesFor(props.language).hidePageNumber}</span>
-          {menuItemChecked(props.menuItems, 'toggle-page-number') ? <span aria-hidden="true">✓</span> : null}
+          <MenuCheckmark checked={menuItemChecked(props.menuItems, 'toggle-page-number')} />
         </button>
         <div className="my-1 border-t border-border" />
         <button
