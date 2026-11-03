@@ -119,6 +119,7 @@ jobs:
       - run: bun install --frozen-lockfile
       # playwright.config.ts uses `channel: 'chrome'`, which the runner
       # image's preinstalled Google Chrome satisfies — nothing to install.
+      - run: bun run test:barefoot
       - run: bun run test:e2e
       - if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

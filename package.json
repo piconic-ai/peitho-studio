@@ -14,12 +14,13 @@
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
     "complexity": "bun run scripts/complexity.js",
-    "icons": "bun run scripts/build-brand.ts"
+    "icons": "bun run scripts/build-brand.ts",
+    "test:barefoot": "bun scripts/check-barefoot-regressions.ts"
   },
   "dependencies": {
-    "@barefootjs/client": "^0.39.1",
-    "@barefootjs/jsx": "^0.39.1",
-    "@barefootjs/shared": "^0.39.1",
+    "@barefootjs/client": "^0.40.2",
+    "@barefootjs/jsx": "^0.40.2",
+    "@barefootjs/shared": "^0.40.2",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.13",
@@ -30,9 +31,9 @@
     "dompurify": "^3.4.16"
   },
   "devDependencies": {
-    "@barefootjs/cli": "^0.39.1",
-    "@barefootjs/test": "^0.39.1",
-    "@barefootjs/vite": "^0.39.1",
+    "@barefootjs/cli": "^0.40.2",
+    "@barefootjs/test": "^0.40.2",
+    "@barefootjs/vite": "^0.40.2",
     "@fontsource/charis-sil": "5.3.0",
     "@playwright/test": "^1.63.0",
     "@srsholmes/tauri-playwright": "^0.4.1",
