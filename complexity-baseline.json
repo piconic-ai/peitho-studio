@@ -448,14 +448,6 @@
     },
     {
       "path": "src-tauri/src/updates.rs",
-      "name": "initialize",
-      "occurrence": 1,
-      "line": 495,
-      "cognitive": 41,
-      "cyclomatic": 12
-    },
-    {
-      "path": "src-tauri/src/updates.rs",
       "name": "intercept_exit",
       "occurrence": 1,
       "line": 422,
