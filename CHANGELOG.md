@@ -1,5 +1,39 @@
 # Changelog
 
+## [v0.1.10](https://github.com/piconic-ai/peitho-studio/compare/v0.1.9...v0.1.10) - 2026-11-03
+
+- chore(maintenance): track complexity and schedule bundled dependency updates by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/196
+- refactor(review): separate build error report transitions by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/198
+- refactor(canvas): separate list edits and slot content formatting by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/199
+- refactor(preview): flatten font family parsing by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/201
+- refactor(studio): separate modal keyboard handling by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/202
+- refactor(studio): separate slide keyboard commands by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/203
+- refactor(dom): separate list keyboard handling by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/204
+- refactor(dom): separate Markdown serialization helpers by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/205
+- refactor(dom): separate edit target resolution by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/206
+- refactor(dom): separate editing field mechanics by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/207
+- refactor(dom): separate edit marker policies by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/208
+- refactor(dom): separate object keyboard policies by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/209
+- refactor(studio): extract editor column shell by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/210
+- refactor(studio): extract shared review column shell by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/211
+- refactor: simplify updater startup recovery by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/212
+- refactor: simplify Markdown source maintenance by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/213
+- refactor: simplify preview editing and paste guards by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/214
+- refactor: extract update metadata validation policies by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/215
+- refactor: separate canvas edit policies by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/216
+- refactor: reuse menu checked indicators by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/217
+- refactor: isolate the layout editor column by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/218
+- refactor: separate Studio workspace chrome by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/219
+- refactor: separate review send feedback by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/220
+- refactor: separate preview font and asset responses by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/221
+- refactor: separate native menu resource actions by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/222
+- refactor: separate review thread row presentation by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/223
+- refactor: separate slide section header controls by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/224
+- refactor: isolate slide row appearance and status overlays by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/225
+- refactor: separate edit actions and commit bookkeeping by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/226
+- ci: gate complexity on cognitive scores only by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/227
+- ci: replace the Python baseline checker with JavaScript by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/228
+
 ## [v0.1.9](https://github.com/piconic-ai/peitho-studio/compare/v0.1.8...v0.1.9) - 2026-10-14
 
 - Attest release builds and keep signing secrets out of the publish job by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/194
