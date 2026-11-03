@@ -1,6 +1,6 @@
 # Type checks and tests on every PR and on main.
 #
-# - complexity: cccc measurement, summary and report artifact.
+# - complexity: cognitive-only gate, cccc summary and report artifact.
 # - frontend: `bun run typecheck` and `bun test` (pure logic only).
 # - rust: `cargo test` on macOS, the only platform the app ships for, so no
 #   webkit2gtk etc. to install and the same toolchain as the release build.

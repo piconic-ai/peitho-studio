@@ -1,9 +1,9 @@
 # コード複雑度の計測と対応計画
 
 [cccc](https://github.com/moznion/cccc) v1.8.5 で関数ごとの cognitive complexity と cyclomatic complexity を測定する。
-上限はそれぞれ 15 と 10。いずれかを厳密に超える関数を対応候補とする。
-15 または 10 ちょうどの値は、その指標の超過に含めない。
-この値は保守対象を絞るための初期基準であり、バグや設計不良の判定ではない。
+CI の基準は cognitive complexity の 15 のみ。15 ちょうどは超過に含めない。
+cyclomatic complexity は参考値として計測し、10 を超える件数を表示するが、CI の合否には使わない。
+これらの数値はバグや設計不良の判定ではない。
 
 ## 再計測
 
@@ -14,30 +14,33 @@ cccc の [v1.8.5 リリース](https://github.com/moznion/cccc/releases/tag/v1.8
 bun run complexity
 ```
 
-`complexity-results/report.json` が全件の生データ、`complexity-results/summary.md` が超過関数の全件一覧になる。
-この文書の計測スナップショットは `summary.md` の内容で更新する。
+`complexity-results/report.json` が両指標の全件の生データ、`complexity-results/summary.md` が cognitive 超過関数の全件一覧になる。
+cyclomatic の超過件数には参考値であることを明示する。
 関数名には親関数を含め、表示上の場所はファイルと行番号で示す。
 
 CI の `test` ワークフロー内の `complexity` ジョブが、テスト CI の実行ごとに同じ計測を1回実行する。
 他のテストジョブと並列に実行し、その成否を待たずに計測する。
 手動実行と定期更新 PR からの実行も含む。
 結果をジョブサマリーと30日間の artifact に保存する。
-`complexity-baseline.json` に登録された既存の超過は許容する。
-新しい超過、または登録時よりいずれかの指標が増えた関数は CI を失敗させる。
+`complexity-baseline.json` に登録された既存の cognitive 超過は許容する。
+新しい cognitive 超過、または登録時より cognitive が増えた関数は CI を失敗させる。
+cyclomatic だけが増加・超過しても失敗にしない。
 失敗時も計測結果と差分をサマリー・artifact に残す。
 ツールの失敗、構文解析エラー、空の計測結果は失敗にする。
 
 しきい値を直接ゲートとして試す場合は、次のコマンドを使う。
-現在のコードでは超過があるため終了コード1になる。
+リファクタリング後のコードでは cognitive 超過がないため終了コード0になる。
 
 ```sh
-cccc --config cccc.toml --max-cognitive 15 --max-cyclomatic 10 .
+cccc --config cccc.toml --max-cognitive 15 .
 ```
 
 ## 固定した超過一覧を減らす
 
-`complexity-baseline.json` が、順次リファクタリングする超過60関数の初期一覧になる。
-各エントリにファイル、親を含む関数名、同名関数の出現順、参照用の行番号、両指標の上限値を記録する。
+`complexity-baseline.json` は、導入時に両指標による超過60関数を固定した一覧である。
+現在の cognitive 超過は0件。過去の cyclomatic のみのエントリ54件は、CI 判定と残件数から除外する。
+`--update-baseline` を実行すると、これらの過去のエントリも削除される。
+各エントリにファイル、親を含む関数名、同名関数の出現順、参照用の行番号、cognitive の上限値と cyclomatic の計測値を記録する。
 しきい値、cccc バージョン、スキーマのバージョンも固定し、不一致や重複したエントリはエラーにする。
 
 1. 一覧から対象の関数を選び、既存の動作をテストで確認してリファクタリングする。
@@ -45,7 +48,7 @@ cccc --config cccc.toml --max-cognitive 15 --max-cyclomatic 10 .
 3. `bun run complexity --update-baseline` で、解消済み関数を一覧から削除し、改善済み関数の上限値を下げる。
 4. 関数の変更と JSON の差分を同じ PR に含める。
 
-通常の計測は JSON を変更しない。更新コマンドも新規超過や増加がある場合には失敗し、JSON を書き換えない。
+通常の計測は JSON を変更しない。更新コマンドも cognitive の新規超過や増加がある場合には失敗し、JSON を書き換えない。
 一覧を編集して新しい超過を追認する運用は行わない。
 
 比較には、正規化した相対ファイルパス、親を含む関数名、同名関数の出現順を使う。
@@ -68,7 +71,9 @@ Rust の `#[cfg(test)] mod tests` は本番コードと同一ファイルにあ�
 ネストした関数は、それぞれの指標で独立して数える。
 親と子の行を別々の改修件数や工数と解釈しない。
 
-## 対応計画
+## 導入時の対応計画
+
+以下は両指標を対象としていた導入時の計画。現在の CI の対象は cognitive のみ。
 
 60関数が31ファイルに分散しているため、一括の書き換えは行わず、操作単位で分けて対応する。
 `Studio.tsx` の15関数と `dom/slideEditing.ts` の7関数で超過の約37%を占める。

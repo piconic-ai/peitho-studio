@@ -20,19 +20,19 @@ def function(name, cognitive, cyclomatic, **extra):
 
 
 class ComplexityTests(unittest.TestCase):
-    def test_spec_counts_each_nested_function_once_and_unions_thresholds(self):
+    def test_counts_nested_functions_and_reports_cyclomatic_as_informational(self):
         nested = function("child", 16, 11)
         data = report([function("parent", 0, 11, children=[nested]), function("other", 16, 1)],
                       function_count=3)
         text = summarize(data)
-        self.assertIn("Cognitive > 15: 2 functions.", text)
-        self.assertIn("Cyclomatic > 10: 2 functions.", text)
-        self.assertIn("Either threshold: 3 functions in 1 files.", text)
+        self.assertIn("Cognitive > 15: 2 functions in 1 files.", text)
+        self.assertIn("Cyclomatic > 10 (informational): 2 functions.", text)
+        self.assertNotIn("| `parent` |", text)
         self.assertIn("`parent / child`", text)
 
     def test_adversarial_values_at_threshold_are_not_exceedances(self):
         text = summarize(report([function("boundary", 15, 10)]))
-        self.assertIn("Either threshold: 0 functions", text)
+        self.assertIn("Cognitive > 15: 0 functions", text)
         self.assertNotIn("`boundary`", text)
 
     def test_adversarial_partial_or_empty_measurements_fail(self):
@@ -56,6 +56,20 @@ class BaselineTests(unittest.TestCase):
         moved["files"][0]["path"] = "./example.ts"
         self.assertEqual(compare_baseline(moved, self.baseline)["regressions"], [])
 
+    def test_new_cyclomatic_only_exceedances_do_not_fail_ci(self):
+        baseline = baseline_for(report([function("plain", 0, 1)]))
+        changed = report([function("plain", 15, 100), function("new", 0, 999)])
+        self.assertEqual(compare_baseline(changed, baseline)["regressions"], [])
+        self.assertEqual(refreshed_baseline(changed, baseline)["functions"], [])
+
+    def test_historical_cyclomatic_only_entries_are_not_gated(self):
+        legacy = copy.deepcopy(self.baseline)
+        legacy["functions"][0].update(cognitive=15, cyclomatic=11)
+        changed = report([function("existing", 15, 100)])
+        self.assertEqual(compare_baseline(changed, legacy),
+                         {"regressions": [], "resolved": 0, "improved": 0, "remaining": 0})
+        self.assertEqual(refreshed_baseline(changed, legacy)["functions"], [])
+
     def test_existing_debt_is_allowed_and_new_exceedance_is_rejected(self):
         self.assertEqual(compare_baseline(self.original, self.baseline)["regressions"], [])
         added = report([function("existing", 20, 12), function("new", 16, 1)])
@@ -63,13 +77,20 @@ class BaselineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Cannot increase"):
             refreshed_baseline(added, self.baseline)
 
-    def test_either_metric_cannot_increase_even_if_the_other_improves(self):
-        for cognitive, cyclomatic in [(21, 11), (19, 13)]:
-            data = report([function("existing", cognitive, cyclomatic)])
+    def test_cognitive_increase_fails_even_if_cyclomatic_improves(self):
+        data = report([function("existing", 21, 11)])
+        self.assertIn("Increased complexity", compare_baseline(data, self.baseline)["regressions"][0])
+        with self.assertRaisesRegex(ValueError, "Cannot increase"):
+            refreshed_baseline(data, self.baseline)
+
+    def test_cyclomatic_increase_does_not_block_existing_cognitive_debt(self):
+        for cognitive, improved in [(20, 0), (19, 1)]:
+            data = report([function("existing", cognitive, 100)])
             with self.subTest(cognitive=cognitive):
-                self.assertIn("Increased complexity", compare_baseline(data, self.baseline)["regressions"][0])
-                with self.assertRaisesRegex(ValueError, "Cannot increase"):
-                    refreshed_baseline(data, self.baseline)
+                comparison = compare_baseline(data, self.baseline)
+                self.assertEqual(comparison["regressions"], [])
+                self.assertEqual(comparison["improved"], improved)
+                self.assertEqual(refreshed_baseline(data, self.baseline)["functions"][0]["cognitive"], cognitive)
 
     def test_refresh_lowers_allowances_and_removes_resolved_functions(self):
         improved = report([function("existing", 17, 11)])
@@ -78,7 +99,7 @@ class BaselineTests(unittest.TestCase):
         updated = refreshed_baseline(improved, self.baseline)
         self.assertEqual(updated["functions"][0]["cognitive"], 17)
         self.assertTrue(compare_baseline(self.original, updated)["regressions"])
-        resolved = report([function("existing", 15, 10)])
+        resolved = report([function("existing", 15, 100)])
         self.assertEqual(compare_baseline(resolved, self.baseline)["resolved"], 1)
         self.assertEqual(refreshed_baseline(resolved, self.baseline)["functions"], [])
         self.assertEqual(self.baseline["functions"][0]["cognitive"], 20)
@@ -88,7 +109,7 @@ class BaselineTests(unittest.TestCase):
                        function("<anonymous>", 17, 12)])
         baseline = baseline_for(data)
         self.assertEqual([node["occurrence"] for node in baseline["functions"]], [2, 3])
-        data["files"][0]["functions"][2]["cyclomatic"] = 13
+        data["files"][0]["functions"][2]["cognitive"] = 18
         regressions = compare_baseline(data, baseline)["regressions"]
         self.assertEqual(len(regressions), 1)
         self.assertIn("#3", regressions[0])

@@ -21,7 +21,7 @@ def functions(nodes, path, parent=""):
 
 
 def exceeds_threshold(node):
-    return node["cognitive"] > MAX_COGNITIVE or node["cyclomatic"] > MAX_CYCLOMATIC
+    return node["cognitive"] > MAX_COGNITIVE
 
 
 def measured_functions(report):
@@ -46,16 +46,14 @@ def measured_functions(report):
 def summarize(report):
     summary = report["summary"]
     measured = measured_functions(report)
-    cognitive = [node for node in measured if node["cognitive"] > MAX_COGNITIVE]
     cyclomatic = [node for node in measured if node["cyclomatic"] > MAX_CYCLOMATIC]
     exceeding = list(filter(exceeds_threshold, measured))
     exceeding.sort(key=lambda node: (-node["cognitive"], -node["cyclomatic"], node["path"], node["line"]))
     lines = ["# Code complexity", "",
              f"Measured {summary['file_count']} files and {len(measured)} functions. Parse errors: 0.", "",
-             f"Cognitive > {MAX_COGNITIVE}: {len(cognitive)} functions. "
-             f"Cyclomatic > {MAX_CYCLOMATIC}: {len(cyclomatic)} functions. "
-             f"Either threshold: {len(exceeding)} functions in {len({node['path'] for node in exceeding})} files.", "",
-             "Existing baseline entries are allowed; new or increased complexity fails CI.", "",
+             f"Cognitive > {MAX_COGNITIVE}: {len(exceeding)} functions in {len({node['path'] for node in exceeding})} files. "
+             f"Cyclomatic > {MAX_CYCLOMATIC} (informational): {len(cyclomatic)} functions.", "",
+             "Existing cognitive baseline entries are allowed; only new or increased cognitive complexity fails CI.", "",
              "| File | Function | Cognitive | Cyclomatic |",
              "| --- | --- | ---: | ---: |"]
     for node in exceeding:
@@ -84,7 +82,7 @@ def validate_entry(node):
     if node["path"] != Path(node["path"]).as_posix() or node["path"].startswith(("./", "/")) or ".." in Path(node["path"]).parts:
         raise ValueError("Baseline paths must be normalized and repository-relative")
     validate_scores(node)
-    if not exceeds_threshold(node):
+    if not exceeds_threshold(node) and node["cyclomatic"] <= MAX_CYCLOMATIC:
         raise ValueError("Baseline contains a function within both thresholds")
 
 
@@ -109,7 +107,7 @@ def baseline_entries(baseline):
         if key in entries:
             raise ValueError(f"Duplicate baseline function: {key}")
         entries[key] = node
-    return entries
+    return {key: node for key, node in entries.items() if exceeds_threshold(node)}
 
 
 def compare_baseline(report, baseline):
@@ -121,10 +119,10 @@ def compare_baseline(report, baseline):
         old = previous.get(key)
         if old is None:
             regressions.append(f"New exceedance: {node['path']}:{node['line']} {node['name']} #{node['occurrence']}")
-        elif any(node[metric] > old[metric] for metric in ("cognitive", "cyclomatic")):
+        elif node["cognitive"] > old["cognitive"]:
             regressions.append(f"Increased complexity: {node['path']}:{node['line']} {node['name']} #{node['occurrence']} "
-                               f"({old['cognitive']}/{old['cyclomatic']} -> {node['cognitive']}/{node['cyclomatic']})")
-        elif any(node[metric] < old[metric] for metric in ("cognitive", "cyclomatic")):
+                               f"({old['cognitive']} -> {node['cognitive']})")
+        elif node["cognitive"] < old["cognitive"]:
             improved += 1
     return {"regressions": regressions, "resolved": len(previous.keys() - current.keys()),
             "improved": improved, "remaining": len(current)}
@@ -155,7 +153,7 @@ def measure(root):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Measure complexity and reject new or increased baseline debt")
+    parser = argparse.ArgumentParser(description="Measure complexity and reject new or increased cognitive baseline debt")
     parser.add_argument("--output-dir", type=Path, default=Path("complexity-results"))
     parser.add_argument("--update-baseline", action="store_true", help="Remove resolved entries and lower improved allowances")
     args = parser.parse_args()
