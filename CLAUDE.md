@@ -11,13 +11,21 @@ The frontend's layer structure (domain/state/ipc/dom/components), the
 principle of eliminating unrepresentable states via ADTs, writing specs as
 Given-When-Then, and the approach to finding bugs are detailed in
 `docs/architecture.md` (established during the `components/Studio.tsx`
-refactoring). In-flight migration plans and progress live under `todo/`
-(delete once done, or move to `todo/archive/` if it has reference value,
-e.g. a record of how a correction was arrived at). Each file carries a
-`status` frontmatter field (`inbox`/`todo`/`wip`/`done`/`rejected` — see
-`todo/_TEMPLATE.md`, written via the `write-improvement-todo` skill). To
-see every file's status at a glance:
-`for f in todo/*.md; do echo "$f: $(grep '^status:' "$f" | head -1)"; done`
+refactoring). Track improvement plans and progress in
+[GitHub Issues](https://github.com/piconic-ai/peitho-studio/issues).
+Search existing open and closed issues before creating a plan, and update
+an existing issue when it covers the same outcome. Write plans in Japanese
+with the goal, scope and exclusions, investigation findings, approach,
+layer ownership, tests, and acceptance criteria. Keep automated checks and
+items requiring human judgment separate. For an unrefined idea, record only
+what is known and identify the open questions.
+
+When implementing an issue, read its full body and comments, follow its
+scope, and link the implementation PR to the issue. Keep the issue open
+while acceptance criteria or human checks remain. Close it only when all
+criteria are met, or record why the work was rejected before closing it.
+Do not recreate the retired `todo/` ledger. Historical references to its
+files in this document refer to Git history, not active planning inputs.
 
 - **Prefer pure functions.** Default to functions whose output is
   determined by their input, and confine dependence on side effects/state
