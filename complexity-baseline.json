@@ -26,7 +26,7 @@
       "path": "components/ReviewPanel.tsx",
       "name": "ReviewPanel",
       "occurrence": 1,
-      "line": 80,
+      "line": 82,
       "cognitive": 11,
       "cyclomatic": 12
     },
@@ -34,9 +34,9 @@
       "path": "components/ReviewPanel.tsx",
       "name": "ReviewPanel / <anonymous>",
       "occurrence": 3,
-      "line": 184,
-      "cognitive": 37,
-      "cyclomatic": 36
+      "line": 186,
+      "cognitive": 13,
+      "cyclomatic": 13
     },
     {
       "path": "components/SlideContextMenu.tsx",
