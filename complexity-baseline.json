@@ -410,9 +410,9 @@
       "path": "src-tauri/src/lib.rs",
       "name": "run / <closure>",
       "occurrence": 2,
-      "line": 248,
-      "cognitive": 22,
-      "cyclomatic": 18
+      "line": 267,
+      "cognitive": 8,
+      "cyclomatic": 11
     },
     {
       "path": "src-tauri/src/updates.rs",
