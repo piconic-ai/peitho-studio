@@ -276,3 +276,29 @@ test('Given text typed into the slide body and the phone shape menu open, when E
   await menu(page, 'undo')
   await expect.poll(() => editorText(page)).not.toMatch(/typed/)
 })
+
+test('a structural save finishing after navigation preserves the newly selected slide', async ({ page }) => {
+  const deck: MockDeck = { source: TWO_SLIDES }
+  await openDeck(page, deck)
+  await page.locator('[data-slide-row="1"]').click()
+  await page.evaluate(() => {
+    const w = window as unknown as { __mockInvoke: (cmd: string, args: unknown) => Promise<unknown>; __releaseSave?: () => void; __saveFinished?: boolean }
+    const invoke = w.__mockInvoke
+    w.__mockInvoke = async (cmd, args) => {
+      if (cmd !== 'save_deck_source') return invoke(cmd, args)
+      w.__mockInvoke = invoke
+      await new Promise<void>(resolve => { w.__releaseSave = resolve })
+      const result = await invoke(cmd, args)
+      w.__saveFinished = true
+      return result
+    }
+  })
+  await rightClickMenu(page, 1, 'New Slide')
+  await page.waitForFunction(() => Boolean((window as unknown as { __releaseSave?: () => void }).__releaseSave))
+  await page.locator('[data-slide-row="0"]').click()
+  await expect.poll(() => editorText(page)).toBe('# Slide One')
+  await page.evaluate(() => (window as unknown as { __releaseSave: () => void }).__releaseSave())
+  await page.waitForFunction(() => Boolean((window as unknown as { __saveFinished?: boolean }).__saveFinished))
+  await expect.poll(() => deck.source).toContain('# New Slide')
+  await expect.poll(() => editorText(page)).toBe('# Slide One')
+})

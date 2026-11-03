@@ -48,7 +48,7 @@ import { fileNameOf, partitionDroppedPaths } from '../domain/images'
 import { previewDevice, scaledDownPercent, viewportCanvas } from '../domain/viewport'
 import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
-import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
+import { type EditorSession, type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, indexAfterCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
 import { type FrontmatterStep, type HistoryStep, type LayoutPinsStep, type PageNumbersStep, type SlideChange, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyLayoutPinsStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inverseLayoutPinsStep, inversePageNumbersStep, historyPinsLayout, layoutPinnedSlide, layoutPinsStepFor, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
 import { type DeckSettingsState, frontmatterValueOf, pickChangesNothing, readDeckSettings, resolveDeckSettingPick, sameDeckSettings } from '../domain/deckSettings'
@@ -2498,62 +2498,59 @@ export function Studio() {
       if (result.kind === 'failed' && !savesUnrendered(result.error, slideCount, asIs, handOff)) throw new RenderFailure(result.error)
       if (result.kind === 'rendered') render.applyRenderPayload(result.payload, nextSource, result.broken)
       await deckIpc.saveDeckSource(nextSource)
-      // Only now is the render the disk's: a write that fails leaves the
-      // file as it was, however well the draft rendered. The disk's render
-      // of a hand-off is the user's ask (`handOffSource`).
-      if (handOff) handOffSource = nextSource
-      if (result.kind === 'rendered') {
-        render.markDiskRendered(nextSource, result.broken)
-      } else {
-        // Known not to build as written: not rendered again until it changes.
-        persistedFailedSource = nextSource
-        render.markRenderFailed(result.error, nextSource)
-      }
-      editor.setFullSource(nextSource)
-      const ranges = splitSlides(nextSource)
-      editor.setSlideRanges(ranges)
-      if (cmd) slideStates.shift(cmd)
-      // `reconcileAfterCommit` only moves the selection/refreshes `saved`
-      // if the user hasn't already navigated elsewhere themselves while
-      // this was in flight — every caller passes a `SelectionPlan` naming
-      // its own intent (`keep` for `handleSave`/`commitSectionEdit`/
-      // `updateSlideConfig`, which never move anything; `follow-move` for
-      // `reorderSlides`, which keeps the open slide's own position even
-      // when the slide it moved isn't the one that's open;
-      // `select`/`clamp-after-delete` for insert/paste/delete) — never the
-      // position of whatever the change actually touched, or this would
-      // drag the selection there regardless of what the user had open.
-      const now = editor.editorSession()
-      const next = reconcileAfterCommit(before, now, ranges, plan, expectedDraft)
-      editor.setEditorSession(next)
-      // `next === now` means the user moved on (a different selection, or
-      // no change resolved) and this deliberately left it alone — nothing
-      // to push into the editors. Otherwise `saved` refreshed and/or
-      // `draft` synced to it, so re-sync (a no-op if `draft` itself didn't
-      // actually change, e.g. the user kept typing through the gap).
-      if (next !== now) {
-        if (opensSameSlide(plan)) {
-          syncEditorFields({ kind: 'same-slide' })
-        } else {
-          const left = before.kind === 'editing' ? before.index : null
-          syncEditorFields({
-            kind: 'switch',
-            from: left !== null && cmd ? indexAfterCommand(left, cmd) : left,
-            to: next.kind === 'editing' ? next.index : null,
-          })
-        }
-      }
+      recordSavedRender(nextSource, result, handOff)
+      reconcileSavedChange(nextSource, before, plan, expectedDraft, cmd)
       setStatusMessage({ kind: 'saved' })
       saved = true
       return true
     } catch (err) {
-      if (err instanceof RenderFailure) showBuildError(err.message)
-      else setErrorMessage(String(err))
+      if (err instanceof RenderFailure) {
+        showBuildError(err.message)
+        return false
+      }
+      setErrorMessage(String(err))
       return false
     } finally {
       finishSave(saved)
       setActiveSaveCount(saves.pendingCount())
     }
+  }
+
+  // Only a completed write makes the render the disk's. A failed write
+  // must leave disk-render tracking and hand-off identity untouched.
+  function recordSavedRender(source: string, result: Awaited<ReturnType<typeof renderIsolating>>, handOff: boolean): void {
+    if (handOff) handOffSource = source
+    if (result.kind === 'rendered') {
+      render.markDiskRendered(source, result.broken)
+      return
+    }
+    // Known not to build as written: not rendered again until it changes.
+    persistedFailedSource = source
+    render.markRenderFailed(result.error, source)
+  }
+
+  // Reconcile with the live selection after saving; a user who navigated or
+  // kept typing while the write was pending retains that newer editor state.
+  function reconcileSavedChange(source: string, before: EditorSession, plan: SelectionPlan, expectedDraft: { body: string; note: string } | undefined, cmd: SlideCommand | undefined): void {
+    editor.setFullSource(source)
+    const ranges = splitSlides(source)
+    editor.setSlideRanges(ranges)
+    if (cmd) slideStates.shift(cmd)
+    const now = editor.editorSession()
+    const next = reconcileAfterCommit(before, now, ranges, plan, expectedDraft)
+    editor.setEditorSession(next)
+    // An unchanged session means no fields should be pushed to the editors.
+    if (next === now) return
+    if (opensSameSlide(plan)) {
+      syncEditorFields({ kind: 'same-slide' })
+      return
+    }
+    const left = before.kind === 'editing' ? before.index : null
+    syncEditorFields({
+      kind: 'switch',
+      from: left !== null && cmd ? indexAfterCommand(left, cmd) : left,
+      to: next.kind === 'editing' ? next.index : null,
+    })
   }
 
   // The saved text for a slide, unless it's the one currently open with
