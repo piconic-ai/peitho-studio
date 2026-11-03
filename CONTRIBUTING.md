@@ -29,10 +29,10 @@ bun run test:e2e
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-The `complexity` job runs with every test workflow. Existing complexity allowances
-live in `complexity-baseline.json`; new exceedances or increased scores fail CI.
-After reducing complexity, run `bun run complexity --update-baseline` and include
-the reduced baseline in your PR. See [the complexity plan](docs/complexity.md).
+The `complexity` job runs with every test workflow. Run `bun run complexity`
+locally; any function with cognitive complexity above 15 fails CI, with no
+baseline exemptions. Cyclomatic complexity is informational. See
+[the complexity guide](docs/complexity.md).
 
 The browser e2e suite uses a mocked Tauri bridge. Native verification is described in [the Tauri Playwright guide](docs/tauri-playwright-spike.md). For site changes, run `bun run typecheck`, `bun run test` and `bun run build` inside `site/`.
 
