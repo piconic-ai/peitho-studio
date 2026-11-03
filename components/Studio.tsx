@@ -12,8 +12,10 @@ import { initialUpdateStatus, updateBlocksEditing, updateMessages, type UpdateSt
 import { createTauriSettingsIpc } from '../ipc/settingsIpc'
 import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
+import { elementActionFor } from '../domain/elementAction'
+import { previewElementPlacement } from '../dom/elementPlacement'
 import { editorTextChange } from '../domain/editorText'
-import { clearedSlideText, removeSlideText, imageSlotContent, textEditFor, textEditInsertion, slotTextInsertion, looseBodyEdit, removeImageSlot, type SlideEditTarget, type SlideEditSession } from '../domain/slideEdit'
+import { clearedSlideText, textEditFor, textEditInsertion, slotTextInsertion, looseBodyEdit, removeImageSlot, type SlideEditTarget, type SlideEditSession } from '../domain/slideEdit'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
   REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentKeyOf, commentTargetOf, layoutClickTarget, layoutTargetLabel, layoutTargetOfComment, lineSelectionOf, newLayoutComment, newReviewComment, pollsForAgent,
@@ -1836,32 +1838,19 @@ export function Studio() {
     const before = currentSlideText(index)
     const epoch = slidePositionsEpoch
     const body = editor.bodyDraft()
-    const range = splitSlides(render.renderedSource())[index]
-    const renderedBody = range ? extractPageComment(extractNote(range.text).rest).rest : null
-    if (renderedBody !== body.trim()) return
-    const rawBody = extractPageComment(extractNote(range!.text, true).rest, true).rest
-    const bodyStart = range!.start + range!.text.indexOf(rawBody)
-    const edit = click.image ? null : click.hit?.byteSpan ? textEditFor({ ...click.hit, kind: 'text', byteSpan: click.hit.byteSpan, heading: click.hit.kind === 'heading' }, render.renderedSource(), body, bodyStart, rawBody) : null
+    const element = elementActionFor(click, render.renderedSource(), index, body)
+    if (!element) return
     const copiedDeckPath = deck.deckPath()
-    const previewRoot = document.querySelector('[data-preview-host]')?.shadowRoot
-    const imageElement = click.image ? Array.from(previewRoot?.querySelectorAll<HTMLElement>('[data-studio-image]') ?? []).find(element => element.dataset.studioImage === click.image?.slot) : Array.from(previewRoot?.querySelectorAll<HTMLElement>('[data-peitho-src]') ?? []).find(element => element.getAttribute('data-peitho-md') === click.hit?.quote && element.getAttribute('data-peitho-src') === `${click.hit?.byteSpan?.start}-${click.hit?.byteSpan?.end}`)?.closest<HTMLElement>('[data-studio-text],h1,h2,h3,h4,h5,h6,p,li')
-    const slideRect = imageElement?.closest('.peitho-slide')?.getBoundingClientRect()
-    const imageRect = imageElement?.getBoundingClientRect()
-    const placement = slideRect && imageRect ? { x: (imageRect.x - slideRect.x) / slideRect.width, y: (imageRect.y - slideRect.y) / slideRect.height, width: imageRect.width / slideRect.width, height: imageRect.height / slideRect.height } : undefined
-    const copied = click.image ? imageSlotContent(body, click.image.slot) : edit ? (edit.heading ? '# ' : '') + edit.value : null
-    if (copied === null) return
+    const placement = previewElementPlacement(click)
     try {
       if (action !== 'delete') {
-        await editorIpc.writeClipboardText(copied)
+        await editorIpc.writeClipboardText(element.markdown)
         setPasteSerial(0)
-        setElementClipboard({ markdown: copied, image: Boolean(click.image), deckPath: copiedDeckPath, placement })
+        setElementClipboard({ markdown: element.markdown, image: element.image, deckPath: copiedDeckPath, placement })
       }
       if (action === 'copy' || editor.selectedIndex() !== index || slidePositionsEpoch !== epoch || currentSlideText(index) !== before) return
-      if (click.image || click.textSlot) { await removePreviewImage(click.image?.slot ?? click.textSlot!); return }
-      if (edit && bodyEditor) {
-        const change = editorTextChange(body, removeSlideText(edit))
-        if (change) insertIntoCodeEditor(bodyEditor, { ...change, cursor: change.from }, 'delete.cut')
-      }
+      if (element.kind === 'slot') { await removePreviewImage(element.slot); return }
+      if (element.change && bodyEditor) insertIntoCodeEditor(bodyEditor, element.change, 'delete.cut')
     } catch (err) { setErrorMessage(String(err)) }
   }
 

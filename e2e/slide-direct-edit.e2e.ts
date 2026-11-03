@@ -1608,3 +1608,34 @@ for (const caret of ['standard', 'vendor', 'null', 'outside'] as const) {
     expect(actual.editable).toBe('true')
   })
 }
+
+for (const change of ['selection', 'draft'] as const) {
+  test(`a cut awaiting the clipboard preserves a changed ${change}`, async ({ page }) => {
+    const source = SOURCE + '\n::: {slot=left}\n\nKeep **formatting**\n\n:::\n\n---\n<!-- {"key":"second","layout":"two-column"} -->\n# Second\n'
+    const deck = await open(page, source)
+    await page.evaluate(() => {
+      const w = window as unknown as { __mockInvoke: (cmd: string, args: unknown) => Promise<unknown>; __releaseCut?: () => void }
+      const invoke = w.__mockInvoke
+      w.__mockInvoke = async (cmd, args) => {
+        if (cmd === 'plugin:clipboard-manager|write_text') {
+          w.__mockInvoke = invoke
+          await new Promise<void>(resolve => { w.__releaseCut = resolve })
+        }
+        return invoke(cmd, args)
+      }
+    })
+    await page.locator(`${PREVIEW} p`).click({ button: 'right' })
+    await page.locator('[data-slide-menu]').getByRole('button', { name: /^Cut/ }).click()
+    await page.waitForFunction(() => Boolean((window as unknown as { __releaseCut?: () => void }).__releaseCut))
+    if (change === 'selection') {
+      await page.locator('[data-slide-row="1"]').click()
+      await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Second')
+    } else {
+      await fillEditor(page, '# Title\n\nNew typing\n\nKeep **formatting**')
+    }
+    await page.evaluate(() => (window as unknown as { __releaseCut: () => void }).__releaseCut())
+    await expect.poll(() => deck.clipboardText).toBe('Keep **formatting**')
+    if (change === 'selection') expect(deck.source).toBe(source)
+    else await expect.poll(() => editorText(page)).toContain('New typing\n\nKeep **formatting**')
+  })
+}
