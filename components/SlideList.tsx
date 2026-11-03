@@ -9,6 +9,8 @@ import { messagesFor } from '../domain/messages'
 import { commentKeyOf } from '../domain/reviewComment'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
 import { SlideSectionHeader } from './SlideSectionHeader'
+import { SlideStatusOverlay } from './SlideStatusOverlay'
+import { slideRowClass } from './slideRow'
 
 // Every prop here is a called value or a plain callback (never a signal
 // getter or a setter) — see `components/WelcomeScreen.tsx` for the BF044
@@ -140,27 +142,14 @@ export function SlideList(props: SlideListProps) {
                 data-slide-row={String(entry.sourceIndex)}
                 onMouseDown={props.onDragStart(entry.sourceIndex)}
                 onContextMenu={e => props.onContextMenu(entry.sourceIndex, e)}
-                className={
-                  // `relative z-10` lifts the dragged row above its
-                  // siblings while `style`'s `translateY` below carries
-                  // it past them — without a stacking order bump it
-                  // would slide *under* whichever row it's currently
-                  // overlapping instead of visibly floating over it.
-                  (props.draggedIndex === entry.sourceIndex ? 'relative z-10 opacity-60 shadow-lg rounded-md ' : '')
-                  + (props.draggedIndex !== null && props.dragOverGap === entry.sourceIndex ? 'border-t-2 border-t-primary ' : '')
-                  // The gap after the whole list is marked on the last row
-                  // that shows at all: the very last row may sit inside a
-                  // collapsed section.
-                  + (props.draggedIndex !== null && props.dragOverGap === props.entries.length && entry.sourceIndex === props.lastVisibleRow ? 'border-b-2 border-b-primary ' : '')
-                  // A collapsed section's rows stay mounted and are only
-                  // hidden: unmounting and remounting a row's canvas host
-                  // runs into piconic-ai/barefootjs#2927/#3009 (see
-                  // CLAUDE.md). A hidden row has an all-zero bounding box,
-                  // so `dom/dragGesture.ts`'s `gapUnderCursor` never picks
-                  // it as a drop gap.
-                  + (props.rowVisibility[entry.sourceIndex] === 'hidden' ? 'hidden ' : '')
-                  + 'cursor-grab'
-                }
+                className={slideRowClass({
+                  index: entry.sourceIndex,
+                  draggedIndex: props.draggedIndex,
+                  dragOverGap: props.dragOverGap,
+                  entryCount: props.entries.length,
+                  lastVisibleRow: props.lastVisibleRow,
+                  visibility: props.rowVisibility[entry.sourceIndex],
+                })}
                 // `scale` lives here instead of a `scale-95` class
                 // because `transform` doesn't merge across a class and
                 // an inline style — whichever is specified in `style`
@@ -251,28 +240,7 @@ export function SlideList(props: SlideListProps) {
                           <span className="text-xs text-muted-foreground text-center line-clamp-3">{entry.kind === 'placeholder' ? (entry.title || messagesFor(props.language).slideFallbackTitle(entry.sourceIndex + 1)) : ''}</span>
                         </div>
                       )}
-                      {/* Laid over the thumbnail (canvas or placeholder)
-                          rather than replacing it, so the slide stays
-                          recognizable underneath (`domain/slideStatus.ts`'s
-                          `slideEntryBadge` decided which, as `entry.badge`). */}
-                      {entry.badge !== null ? (
-                        <span
-                          data-slide-status={entry.badge}
-                          className="absolute top-0 right-0 bottom-0 left-0 flex items-start justify-end p-1 bg-black/40 pointer-events-none"
-                        >
-                          {/* DRAFT and SKIP share the same subdued, dark
-                              treatment — SKIP used to be a solid destructive
-                              red, which read as an error/alert rather than
-                              an ordinary editorial state, easily the most
-                              eye-catching thing on the whole slide list.
-                              ERROR is exactly that alert — the slide was
-                              left out of the render for not building — so
-                              it alone takes the destructive color. */}
-                          <span className={(entry.badge === 'error' ? 'bg-destructive text-destructive-foreground' : 'bg-muted text-foreground') + ' rounded-sm px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide'}>
-                            {messagesFor(props.language)[entry.badge === 'error' ? 'errorBadge' : entry.badge === 'draft' ? 'draftBadge' : 'skipBadge']}
-                          </span>
-                        </span>
-                      ) : null}
+                      <SlideStatusOverlay badge={entry.badge} language={props.language} />
                       {/* The slide's comments for the agent (unsent, and
                           unresolved in crit). Kept mounted and hidden at
                           zero rather than branched in, like the canvas
