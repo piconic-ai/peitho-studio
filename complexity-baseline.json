@@ -50,9 +50,9 @@
       "path": "components/SlideList.tsx",
       "name": "SlideList / <anonymous>",
       "occurrence": 2,
-      "line": 144,
-      "cognitive": 35,
-      "cyclomatic": 28
+      "line": 137,
+      "cognitive": 27,
+      "cyclomatic": 24
     },
     {
       "path": "components/SlidePreview.tsx",

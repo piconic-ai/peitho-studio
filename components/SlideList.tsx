@@ -1,27 +1,20 @@
 'use client'
 
 import { type ManifestSection, type SectionDraft } from '../domain/render'
-import { type DurationPart, formatDurationMs, msToMinutesSeconds } from '../domain/slides'
+import { type DurationPart } from '../domain/slides'
 import { type SlideListEntry } from '../domain/slideList'
 import { type RowVisibility } from '../domain/sectionCollapse'
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
 import { commentKeyOf } from '../domain/reviewComment'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
-import { isFocusMovingWithinSectionHeader, showCanonicalValue } from '../dom/sectionHeader'
+import { SlideSectionHeader } from './SlideSectionHeader'
 
 // Every prop here is a called value or a plain callback (never a signal
 // getter or a setter) — see `components/WelcomeScreen.tsx` for the BF044
 // rationale and `docs/architecture.md`'s "children never receive a setter"
-// rule. This is the largest and most delicate extraction in this stack: the
-// `.map()` over `entries` stays entirely inside this one component (rows
-// are NOT split into further per-row child components) because
-// BarefootJS's compiler fuses a whole `.map()` row's dynamic attributes into
-// one shared `createEffect` per row — see the comment above the canvas
-// host's own `ref` below for why that fusion is load-bearing here, and
-// `todo/archive/studio-tsx-refactoring.md`'s Step 19 entry for why a per-row
-// component split was deliberately avoided without a spike to validate it
-// first.
+// rule. Row identity, drag handling, visibility and canvas mounting stay
+// together in the keyed map; section controls own only header presentation.
 export interface SlideListProps {
   /** The UI language every label here is shown in. */
   language: Language
@@ -178,97 +171,18 @@ export function SlideList(props: SlideListProps) {
                 style={props.draggedIndex === entry.sourceIndex ? `transform: translateY(${String(props.dragDeltaY)}px) scale(0.95)` : ''}
               >
                 {props.sectionStartByIndex[entry.sourceIndex] ? (
-                  <div className="flex items-center gap-2 pt-3 pb-1">
-                    {/* Folds the section's slides away (or back) — separate
-                        from the summary button beside it, which opens the
-                        header's name/time editor instead. One SVG chevron
-                        rotated for the collapsed state, not the ▾/▸ text
-                        glyphs: those two differ in size and baseline from
-                        font to font, so the icon visibly jumped on toggle.
-                        `w-4` matches the slide rows' number column so the
-                        chevron and the header text line up with it. */}
-                    <button
-                      type="button"
-                      aria-label={props.rowVisibility[entry.sourceIndex] === 'header-only' ? messagesFor(props.language).expandSection : messagesFor(props.language).collapseSection}
-                      aria-expanded={props.rowVisibility[entry.sourceIndex] === 'header-only' ? 'false' : 'true'}
-                      onClick={() => props.onToggleSectionCollapse(entry.sourceIndex)}
-                      className="shrink-0 w-4 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground"
-                    >
-                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" className={props.rowVisibility[entry.sourceIndex] === 'header-only' ? 'block w-3 h-3 -rotate-90' : 'block w-3 h-3'}>
-                        <path d="m6 9 6 6 6-6" />
-                      </svg>
-                    </button>
-                    <div className="min-w-0 flex-1">
-                      {props.editingSectionIndex === entry.sourceIndex ? (
-                        // The time is edited with two number spinners instead of
-                        // free text in peitho's `1m30s` format, so no input can
-                        // produce a time peitho rejects (see `domain/slides.ts`'s
-                        // `withDurationPart`). The header saves — and collapses
-                        // back to its plain summary below — once focus leaves
-                        // it, not on each input's own blur (see
-                        // `isFocusMovingWithinSectionHeader`).
-                        <div data-section-header="" className="flex items-center gap-1">
-                          <input
-                            aria-label={messagesFor(props.language).sectionName}
-                            // Focused on opening by Studio.tsx (`focusSectionNameInput`),
-                            // not by a `ref` here: a `ref` in this branch runs only
-                            // when the row first mounts.
-                            value={props.sectionDraftOf(entry.sourceIndex).name}
-                            onInput={e => props.onSectionNameInput(entry.sourceIndex, e.target.value)}
-                            onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
-                            onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                            className="min-w-0 flex-1 bg-transparent outline-none text-xs font-semibold text-foreground/80"
-                          />
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            aria-label={messagesFor(props.language).sectionMinutes}
-                            value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes)}
-                            onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'minutes', e.target.valueAsNumber)}
-                            onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes))}
-                            onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
-                            onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                            className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
-                          />
-                          <span className="shrink-0 text-xs text-muted-foreground">{messagesFor(props.language).minutesUnit}</span>
-                          {/* No `min`/`max` on the seconds spinner, so its arrows
-                              step past 59 and below 0 and carry into or borrow
-                              from the minutes. */}
-                          <input
-                            type="number"
-                            step="1"
-                            aria-label={messagesFor(props.language).sectionSeconds}
-                            value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds)}
-                            onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'seconds', e.target.valueAsNumber)}
-                            onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds))}
-                            onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
-                            onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                            className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
-                          />
-                          <span className="shrink-0 text-xs text-muted-foreground">{messagesFor(props.language).secondsUnit}</span>
-                        </div>
-                      ) : (
-                        // Collapsed by default: the native spinner arrows
-                        // permanently sitting in an otherwise plain list read as
-                        // an unstyled form, not a slide list, so they only
-                        // appear once someone actually asks to edit this header.
-                        <button
-                          type="button"
-                          aria-label={messagesFor(props.language).editSection}
-                          onClick={() => props.onEditSection(entry.sourceIndex)}
-                          className="w-full flex items-center gap-1 text-left"
-                        >
-                          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground/80">
-                            {props.sectionDraftOf(entry.sourceIndex).name}
-                          </span>
-                          <span className="shrink-0 text-xs text-muted-foreground">
-                            {formatDurationMs(props.sectionDraftOf(entry.sourceIndex).timeMs)}
-                          </span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  <SlideSectionHeader
+                    language={props.language}
+                    index={entry.sourceIndex}
+                    collapsed={props.rowVisibility[entry.sourceIndex] === 'header-only'}
+                    editing={props.editingSectionIndex === entry.sourceIndex}
+                    draft={props.sectionDraftOf(entry.sourceIndex)}
+                    onToggleSectionCollapse={props.onToggleSectionCollapse}
+                    onEditSection={props.onEditSection}
+                    onSectionNameInput={props.onSectionNameInput}
+                    onSectionTimeInput={props.onSectionTimeInput}
+                    onCommitSectionEdit={props.onCommitSectionEdit}
+                  />
                 ) : null}
                 <button
                   type="button"
