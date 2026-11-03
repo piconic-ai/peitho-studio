@@ -18,9 +18,9 @@
       "path": "components/LayoutScreen.tsx",
       "name": "LayoutScreen",
       "occurrence": 1,
-      "line": 185,
-      "cognitive": 21,
-      "cyclomatic": 22
+      "line": 182,
+      "cognitive": 15,
+      "cyclomatic": 16
     },
     {
       "path": "components/ReviewPanel.tsx",
