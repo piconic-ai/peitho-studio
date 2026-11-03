@@ -646,6 +646,19 @@ describe('previewPinsOf', () => {
     expect(pins.map(p => p.id)).toEqual(['sent:c2'])
   })
 
+  test('adversarial: resolved duplicates consume their saved position and known spots never invoke quote fallback', () => {
+    const sentPins = { same: [
+      { slideKey: 'a', pin: spot(0.1, 0.1) },
+      { slideKey: 'a', pin: spot(0.9, 0.9) },
+      { slideKey: 'b', pin: spot(0.5, 0.5) },
+    ] }
+    const comments = [inCrit('c1', 'same', true), inCrit('c2', 'same'), inCrit('c3', 'same')]
+    const pins = previewPinsOf('a', comments, sentPins, [], { kind: 'closed' }, () => {
+      throw new Error('Known or resolved comments do not need quote fallback')
+    })
+    expect(pins).toEqual([{ id: 'sent:c2', ...spot(0.9, 0.9), sent: true, number: 1 }])
+  })
+
   test('adversarial: Given a comment body like an object property name, Then it is not taken for a known pin', () => {
     expect(previewPinsOf('a', [inCrit('c1', 'constructor')], {}, [], { kind: 'closed' })).toEqual([])
   })

@@ -88,7 +88,7 @@ export function readFrontmatterKey(source: string, key: string): string | null {
  * follows the closing `---` line's ending. */
 export function setFrontmatterKey(source: string, key: string, value: string | null): string {
   if (key === '') return source
-  const line = value === null ? null : value === '' ? `${key}:` : `${key}: ${value}`
+  const line = frontmatterKeyLine(key, value)
   const block = frontmatterBlock(source)
   if (block === null) {
     if (line === null || source.split('\n')[0]?.trim() === '---') return source
@@ -97,13 +97,7 @@ export function setFrontmatterKey(source: string, key: string, value: string | n
   }
   const { lines, closeIndex } = block
   const location = locateKey(block, key)
-  if (line === null) {
-    if (location === null) return source
-    lines.splice(location.start, location.end - location.start)
-    const newCloseIndex = closeIndex - (location.end - location.start)
-    const emptied = lines.slice(1, newCloseIndex).every(l => l.trim() === '' || l.trim().startsWith('#'))
-    return (emptied ? lines.slice(newCloseIndex + 1) : lines).join('\n')
-  }
+  if (line === null) return removeFrontmatterKey(source, block, location)
   if (location === null) {
     const cr = lines[closeIndex].endsWith('\r') ? '\r' : ''
     lines.splice(closeIndex, 0, `${line}${cr}`)
@@ -112,6 +106,21 @@ export function setFrontmatterKey(source: string, key: string, value: string | n
   const cr = lines[location.start].endsWith('\r') ? '\r' : ''
   lines.splice(location.start, location.end - location.start, `${line}${cr}`)
   return lines.join('\n')
+}
+
+function frontmatterKeyLine(key: string, value: string | null): string | null {
+  if (value === null) return null
+  return value === '' ? `${key}:` : `${key}: ${value}`
+}
+
+function removeFrontmatterKey(source: string, block: FrontmatterBlock, location: KeyLocation | null): string {
+  if (location === null) return source
+  const { lines, closeIndex } = block
+  const removed = location.end - location.start
+  lines.splice(location.start, removed)
+  const newCloseIndex = closeIndex - removed
+  const emptied = lines.slice(1, newCloseIndex).every(l => l.trim() === '' || l.trim().startsWith('#'))
+  return (emptied ? lines.slice(newCloseIndex + 1) : lines).join('\n')
 }
 
 /** The frontmatter key holding a deck's page-number setting. */

@@ -33,11 +33,7 @@ export function splitSlides(source: string): SlideRange[] {
     offset += line.length + 1
   }
 
-  let contentStartLine = 0
-  if (lines[0]?.trim() === '---') {
-    const closeIndex = lines.findIndex((line, i) => i > 0 && line.trim() === '---')
-    if (closeIndex !== -1) contentStartLine = closeIndex + 1
-  }
+  const contentStartLine = lineAfterFrontmatter(lines)
 
   const boundaries: number[] = []
   let inFence = false
@@ -64,6 +60,12 @@ export function splitSlides(source: string): SlideRange[] {
     ranges.push({ start, end, text })
   }
   return ranges
+}
+
+function lineAfterFrontmatter(lines: readonly string[]): number {
+  if (lines[0]?.trim() !== '---') return 0
+  const closeIndex = lines.findIndex((line, i) => i > 0 && line.trim() === '---')
+  return closeIndex === -1 ? 0 : closeIndex + 1
 }
 
 // A slide's PageComment config (`<!-- {"key":...} -->`) and its speaker note

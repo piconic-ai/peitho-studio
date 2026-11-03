@@ -291,8 +291,8 @@
       "name": "setFrontmatterKey",
       "occurrence": 1,
       "line": 89,
-      "cognitive": 19,
-      "cyclomatic": 15
+      "cognitive": 12,
+      "cyclomatic": 11
     },
     {
       "path": "domain/layoutDraftPreview.ts",
@@ -323,8 +323,8 @@
       "name": "previewPinsOf",
       "occurrence": 1,
       "line": 726,
-      "cognitive": 19,
-      "cyclomatic": 16
+      "cognitive": 13,
+      "cyclomatic": 12
     },
     {
       "path": "domain/reviewComment.ts",
@@ -363,8 +363,8 @@
       "name": "splitSlides",
       "occurrence": 1,
       "line": 27,
-      "cognitive": 17,
-      "cyclomatic": 14
+      "cognitive": 14,
+      "cyclomatic": 11
     },
     {
       "path": "domain/statusMessage.ts",

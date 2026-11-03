@@ -169,6 +169,12 @@ describe('setFrontmatterKey', () => {
     expect(setFrontmatterKey('---\r\na: 1\r\nb: 2\r\n---\r\n# T\r\n', 'a', null)).toBe('---\r\nb: 2\r\n---\r\n# T\r\n')
   })
 
+  test('adversarial: mixed endings follow the replaced key or closing delimiter while preserving surrounding whitespace', () => {
+    const source = ' --- \r\na: old\n\tb: nested\r\nc: keep  \r\n ---\r\n# T'
+    expect(setFrontmatterKey(source, 'a', '')).toBe(' --- \r\na:\nc: keep  \r\n ---\r\n# T')
+    expect(setFrontmatterKey(source, 'd', 'new')).toBe(' --- \r\na: old\n\tb: nested\r\nc: keep  \r\nd: new\r\n ---\r\n# T')
+  })
+
   test('property: setting then reading a key gives the value back', () => {
     const value = fc.stringMatching(/^[a-z_0-9]{1,12}$/)
     const source = fc.constantFrom('', '# T\n', '---\ntime: 1m\n---\n# T\n', '---\npage_numbers: both\n---\n# T\n')
