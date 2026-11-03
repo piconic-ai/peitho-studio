@@ -26,15 +26,15 @@
       "path": "components/ReviewPanel.tsx",
       "name": "ReviewPanel",
       "occurrence": 1,
-      "line": 79,
-      "cognitive": 19,
-      "cyclomatic": 19
+      "line": 80,
+      "cognitive": 11,
+      "cyclomatic": 12
     },
     {
       "path": "components/ReviewPanel.tsx",
       "name": "ReviewPanel / <anonymous>",
       "occurrence": 3,
-      "line": 183,
+      "line": 184,
       "cognitive": 37,
       "cyclomatic": 36
     },

@@ -4,6 +4,7 @@ import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
 import { type LayoutCommentTarget } from '../domain/reviewComment'
 import { type PanelRow } from '../domain/reviewPanel'
+import { ReviewSendContent } from './ReviewSendContent'
 
 export interface ReviewPanelProps {
   language: Language
@@ -391,21 +392,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
           onClick={() => props.onSend()}
           className={(props.working || props.sending ? 'disabled:opacity-100 ' : 'disabled:opacity-50 ') + 'shrink-0 flex items-center gap-2 px-3 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90'}
         >
-          {/* Sending: a spinner. The agent at work: its icon, breathing. */}
-          <svg aria-hidden="true" viewBox="0 0 24 24" className={props.sending ? 'w-4 h-4 animate-spin' : 'hidden'} fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-            <path d="M12 3a9 9 0 1 1-9 9" />
-          </svg>
-          <svg aria-hidden="true" viewBox="0 0 24 24" className={props.working && !props.sending ? 'w-4 h-4 animate-pulse' : 'hidden'} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="4" y="8" width="16" height="11" rx="3" />
-            <path d="M12 8V4.5" />
-            <circle cx="12" cy="3.5" r="1" />
-            <circle cx="9" cy="13.5" r="1.2" fill="currentColor" stroke="none" />
-            <circle cx="15" cy="13.5" r="1.2" fill="currentColor" stroke="none" />
-          </svg>
-          {/* One expression picking the text, not a `? :` of two texts: a
-              conditional text child here left `Studio.tsx`'s deck-open
-              branch half-entered (its "Loading deck…" never went away). */}
-          <span className={props.working && !props.sending ? 'animate-pulse' : ''}>{messagesFor(props.language)[props.sending ? 'sendingToAgent' : props.working ? 'agentThinking' : 'sendToAgent']}</span>
+          <ReviewSendContent language={props.language} sending={props.sending} working={props.working} />
           <span
             data-review-send-count=""
             hidden={props.sendCount === 0 || props.sending || props.working}
