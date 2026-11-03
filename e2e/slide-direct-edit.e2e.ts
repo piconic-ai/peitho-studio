@@ -603,6 +603,44 @@ test('copied and cut elements paste as separate canvas objects via menu and keyb
 })
 
 
+for (const pauseAt of ['clipboard', 'canvas', 'placement']) {
+  test(`switching slides during ${pauseAt} preparation discards a pending element paste`, async ({ page }) => {
+    const source = SOURCE + '\n::: {slot=left}\n\nCopied text\n\n:::\n\n---\n<!-- {"key":"second","layout":"two-column"} -->\n# Second\n'
+    const deck = await open(page, source)
+    const menu = page.locator('[data-slide-menu]')
+    await page.locator(`${PREVIEW} p`).click({ button: 'right' })
+    await menu.getByRole('button', { name: /^Copy/ }).click()
+    await page.evaluate(pauseAt => {
+      const w = window as unknown as { __mockInvoke: (cmd: string, args: unknown) => Promise<unknown>; __releasePaste?: () => void }
+      const invoke = w.__mockInvoke
+      let canvases = 0
+      w.__mockInvoke = async (cmd, args) => {
+        if (cmd === 'create_image_canvas') canvases++
+        const pause = pauseAt === 'clipboard' ? cmd === 'plugin:clipboard-manager|read_text' : cmd === 'create_image_canvas' && canvases === (pauseAt === 'canvas' ? 1 : 2)
+        if (pause) {
+          w.__mockInvoke = invoke
+          await new Promise<void>(resolve => { w.__releasePaste = resolve })
+        }
+        return invoke(cmd, args)
+      }
+    }, pauseAt)
+    await page.locator(`${PREVIEW} .peitho-slide`).click({ button: 'right', position: { x: 5, y: 5 } })
+    await menu.getByRole('button', { name: /^Paste/ }).click()
+    await page.waitForFunction(() => Boolean((window as unknown as { __releasePaste?: () => void }).__releasePaste))
+    await page.locator('[data-slide-row="1"]').click()
+    await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Second')
+    await page.evaluate(() => (window as unknown as { __releasePaste: () => void }).__releasePaste())
+    // The next paste proves the discarded attempt also releases its busy state.
+    await page.locator(`${PREVIEW} .peitho-slide`).click({ button: 'right', position: { x: 5, y: 5 } })
+    await expect(menu.getByRole('button', { name: /^Paste/ })).toBeEnabled()
+    expect(deck.source).toBe(source)
+    await menu.getByRole('button', { name: /^Paste/ }).click()
+    await expect(page.locator(`${PREVIEW} [data-studio-text]`)).toHaveCount(1)
+    expect(splitSlides(deck.source)[0].text).toBe(splitSlides(source)[0].text)
+  })
+}
+
+
 test('one click edits text, Escape selects the object, and empty canvas never deletes a slide', async ({ page }) => {
   const deck = await open(page, SOURCE + '\n::: {slot=left}\n\nText object\n\n:::\n')
   await page.locator(`${PREVIEW} p`).click()

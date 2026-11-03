@@ -803,7 +803,9 @@ export function Studio() {
     if (renderedBody === null || (renderedBody !== before.replace(/\n{3,}/g, '\n\n').trim() && !recovery)) return null
     const rawBody = range ? extractPageComment(extractNote(range.text, true).rest, true).rest : ''
     const bodyStart = (range?.start ?? 0) + (range?.text.indexOf(rawBody) ?? 0)
-    const edit = target.kind === 'text' ? textEditFor(target, render.renderedSource(), before, bodyStart, rawBody) : recovery ? looseBodyEdit(before, target.slot, target.accepts) : null
+    let edit: ReturnType<typeof textEditFor> = null
+    if (target.kind === 'text') edit = textEditFor(target, render.renderedSource(), before, bodyStart, rawBody)
+    else if (recovery) edit = looseBodyEdit(before, target.slot, target.accepts)
     if (target.kind === 'text' && edit === null) return null
     let currentBody = before
     let historyStarted = false
@@ -1798,21 +1800,22 @@ export function Studio() {
     ui.closeContextMenu()
     const before = currentSlideText(index)
     const epoch = slidePositionsEpoch
+    const isCurrentSlide = (): boolean => editor.selectedIndex() === index && currentSlideText(index) === before && slidePositionsEpoch === epoch
     const { rest, note } = extractNote(before)
     const fields = extractPageComment(rest)
     const base = fields.config.layout ?? render.slideLayouts()[selectedSlideKey() ?? ''] ?? DEFAULT_LAYOUT
     setPreviewImageBusy(true)
     try {
       const text = await editorIpc.readClipboardText()
-      if (text !== copied.markdown || editor.selectedIndex() !== index || currentSlideText(index) !== before || slidePositionsEpoch !== epoch) return
+      if (text !== copied.markdown || !isCurrentSlide()) return
       const source = syncedSource(currentSlideTexts())
       let canvas = await imageIpc.createImageCanvas(source, base, copied.image ? 1 : 0, [], [], undefined, undefined, copied.image ? 0 : 1)
-      if (editor.selectedIndex() !== index || currentSlideText(index) !== before || slidePositionsEpoch !== epoch) return
+      if (!isCurrentSlide()) return
       if (copied.placement) {
         const rect = copied.placement
         canvas = await imageIpc.createImageCanvas(source, canvas.layout, 0, [{ slot: canvas.slots[0], ...rect, x: Math.min(1 - rect.width, rect.x + .02 * (pasteSerial() + 1)), y: Math.min(1 - rect.height, rect.y + .02 * (pasteSerial() + 1)) }]).then(positioned => ({ ...positioned, slots: canvas.slots }))
       }
-      if (editor.selectedIndex() !== index || currentSlideText(index) !== before || slidePositionsEpoch !== epoch) return
+      if (!isCurrentSlide()) return
       const body = `${fields.rest}\n\n::: {slot=${canvas.slots[0]}}\n\n${copied.markdown}\n\n:::`
       await perform({ kind: 'slides', cmd: { type: 'replace', index, text: buildSlideText({ ...fields.config, layout: canvas.layout }, body, note) } })
       setPasteSerial(pasteSerial() + 1)
