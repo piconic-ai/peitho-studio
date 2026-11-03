@@ -66,15 +66,15 @@
       "path": "components/Studio.tsx",
       "name": "Studio",
       "occurrence": 1,
-      "line": 140,
-      "cognitive": 29,
-      "cyclomatic": 30
+      "line": 143,
+      "cognitive": 15,
+      "cyclomatic": 20
     },
     {
       "path": "components/Studio.tsx",
       "name": "Studio / <anonymous> / onKeyDown",
       "occurrence": 1,
-      "line": 4330,
+      "line": 4333,
       "cognitive": 15,
       "cyclomatic": 17
     },
@@ -82,7 +82,7 @@
       "path": "components/Studio.tsx",
       "name": "Studio / commitChange",
       "occurrence": 1,
-      "line": 2467,
+      "line": 2470,
       "cognitive": 34,
       "cyclomatic": 24
     },
@@ -90,7 +90,7 @@
       "path": "components/Studio.tsx",
       "name": "Studio / dropFiles",
       "occurrence": 1,
-      "line": 985,
+      "line": 988,
       "cognitive": 11,
       "cyclomatic": 19
     },
@@ -98,7 +98,7 @@
       "path": "components/Studio.tsx",
       "name": "Studio / pasteElement",
       "occurrence": 1,
-      "line": 1794,
+      "line": 1797,
       "cognitive": 15,
       "cyclomatic": 19
     },
@@ -106,7 +106,7 @@
       "path": "components/Studio.tsx",
       "name": "Studio / placePreviewImages",
       "occurrence": 1,
-      "line": 909,
+      "line": 912,
       "cognitive": 11,
       "cyclomatic": 14
     },
@@ -114,7 +114,7 @@
       "path": "components/Studio.tsx",
       "name": "Studio / renderDraftPreview",
       "occurrence": 1,
-      "line": 742,
+      "line": 745,
       "cognitive": 12,
       "cyclomatic": 12
     },
@@ -122,7 +122,7 @@
       "path": "components/Studio.tsx",
       "name": "Studio / runEditorClipboard",
       "occurrence": 1,
-      "line": 1934,
+      "line": 1937,
       "cognitive": 11,
       "cyclomatic": 12
     },
@@ -130,7 +130,7 @@
       "path": "components/Studio.tsx",
       "name": "Studio / runElementAction",
       "occurrence": 1,
-      "line": 1826,
+      "line": 1829,
       "cognitive": 34,
       "cyclomatic": 41
     },
@@ -138,7 +138,7 @@
       "path": "components/Studio.tsx",
       "name": "Studio / runLayoutMenuAction",
       "occurrence": 1,
-      "line": 3655,
+      "line": 3658,
       "cognitive": 7,
       "cyclomatic": 11
     },
@@ -146,7 +146,7 @@
       "path": "components/Studio.tsx",
       "name": "Studio / selectSlide",
       "occurrence": 1,
-      "line": 2589,
+      "line": 2592,
       "cognitive": 11,
       "cyclomatic": 11
     },
@@ -154,7 +154,7 @@
       "path": "components/Studio.tsx",
       "name": "Studio / startSlideTextEdit",
       "occurrence": 1,
-      "line": 795,
+      "line": 798,
       "cognitive": 15,
       "cyclomatic": 22
     },
@@ -162,7 +162,7 @@
       "path": "components/Studio.tsx",
       "name": "Studio / startSlideTextEdit / commit",
       "occurrence": 1,
-      "line": 836,
+      "line": 839,
       "cognitive": 14,
       "cyclomatic": 19
     },
@@ -170,7 +170,7 @@
       "path": "components/Studio.tsx",
       "name": "Studio / startSlideTextEdit / commit / <anonymous>",
       "occurrence": 1,
-      "line": 849,
+      "line": 852,
       "cognitive": 8,
       "cyclomatic": 11
     },
@@ -178,7 +178,7 @@
       "path": "components/Studio.tsx",
       "name": "Studio / syncEditorFields",
       "occurrence": 1,
-      "line": 399,
+      "line": 402,
       "cognitive": 13,
       "cyclomatic": 14
     },

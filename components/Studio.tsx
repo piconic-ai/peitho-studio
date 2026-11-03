@@ -8,7 +8,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
 import { createTauriUpdateIpc } from '../ipc/updateIpc'
-import { initialUpdateStatus, canPrepareUpdate, showUpdateNotice, updateBlocksEditing, updateMessages, updateStatusText, type UpdateStatus } from '../domain/updates'
+import { initialUpdateStatus, updateBlocksEditing, updateMessages, type UpdateStatus } from '../domain/updates'
 import { createTauriSettingsIpc } from '../ipc/settingsIpc'
 import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
@@ -31,6 +31,9 @@ import { focusCommentBox, focusUnsentEdit, placePreviewPins, revealReviewThread,
 import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
 import { PanelToggle } from './PanelToggle'
+import { SlidesWorkspace } from './SlidesWorkspace'
+import { SlidesListDivider, StudioPanelColumn } from './StudioPanelColumn'
+import { UpdateNotices } from './UpdateNotices'
 import { ReviewPanel } from './ReviewPanel'
 import { ReviewColumn } from './ReviewColumn'
 import { type ManifestSlide, type RenderErrorPayload, type RenderPayload, type SectionDraft, brokenSlideIndex, renderFailureMessage } from '../domain/render'
@@ -4479,16 +4482,26 @@ export function Studio() {
       <div className="flex-1 flex min-h-0">
         {/* The slides screen: its four panels, hidden (not unmounted) while
             the layout screen shows, so the editors keep their state. */}
-        <div data-slides-screen className={ui.studioMode() === 'slides' ? 'contents' : 'hidden'}>
-        <div data-panel-rail="" className="panel-rail" hidden={ui.slidesOpen() && ui.editorOpen() && ui.previewOpen() && (ui.reviewOpen() || !render.assetBaseUrl())}>
-          <PanelToggle panel="slides" language={settings.language()} hidden={ui.slidesOpen()} open={false} onToggle={() => ui.setSlidesOpen(true)} />
-          <PanelToggle panel="editor" language={settings.language()} hidden={ui.editorOpen()} open={false} onToggle={() => ui.setEditorOpen(true)} />
-          <PanelToggle panel="preview" language={settings.language()} hidden={ui.previewOpen()} open={false} onToggle={() => ui.setPreviewOpen(true)} />
-          <PanelToggle panel="review" language={settings.language()} hidden={ui.reviewOpen() || !render.assetBaseUrl()} open={false} onToggle={() => ui.setReviewOpen(true)} />
-        </div>
-        <div data-panel="slides" hidden={!ui.slidesOpen()} className="studio-panel">
-          <PanelToggle panel="slides" language={settings.language()} open={true} onToggle={() => { ui.closeContextMenu(); ui.setSlidesOpen(!ui.slidesOpen()) }} />
-          <div id="panel-slides" className={ui.slidesOpen() ? 'panel-content' : 'hidden'}>
+        <SlidesWorkspace
+          language={settings.language()}
+          mode={ui.studioMode()}
+          slidesOpen={ui.slidesOpen()}
+          editorOpen={ui.editorOpen()}
+          previewOpen={ui.previewOpen()}
+          reviewOpen={ui.reviewOpen()}
+          assetBaseUrl={render.assetBaseUrl()}
+          onOpenSlides={() => ui.setSlidesOpen(true)}
+          onOpenEditor={() => ui.setEditorOpen(true)}
+          onOpenPreview={() => ui.setPreviewOpen(true)}
+          onOpenReview={() => ui.setReviewOpen(true)}
+        >
+        <StudioPanelColumn
+          panel="slides"
+          className="studio-panel"
+          language={settings.language()}
+          open={ui.slidesOpen()}
+          onToggle={() => { ui.closeContextMenu(); ui.setSlidesOpen(!ui.slidesOpen()) }}
+        >
             <SlideList
               language={settings.language()}
               deckOpen={deck.deckPath() !== null}
@@ -4520,14 +4533,9 @@ export function Studio() {
               onSectionTimeInput={onSectionTimeInput}
               onCommitSectionEdit={closeSectionEditor}
             />
-          </div>
-        </div>
+        </StudioPanelColumn>
 
-        <div
-          hidden={!ui.slidesOpen()}
-          className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"
-          onMouseDown={startColumnResize(ui.slideListWidth, ui.setSlideListWidth, 1)}
-        />
+        <SlidesListDivider open={ui.slidesOpen()} onResize={startColumnResize(ui.slideListWidth, ui.setSlideListWidth, 1)} />
 
         <SlidesEditorColumn
           language={settings.language()}
@@ -4549,9 +4557,13 @@ export function Studio() {
             />
         </SlidesEditorColumn>
 
-        <div data-panel="preview" hidden={!ui.previewOpen()} className="studio-panel preview-panel">
-          <PanelToggle panel="preview" language={settings.language()} open={true} onToggle={() => { ui.closePhoneShapeMenu(); review.closeBox(); ui.setPreviewOpen(!ui.previewOpen()) }} />
-          <div id="panel-preview" className={ui.previewOpen() ? 'panel-content' : 'hidden'}>
+        <StudioPanelColumn
+          panel="preview"
+          language={settings.language()}
+          open={ui.previewOpen()}
+          className="studio-panel preview-panel"
+          onToggle={() => { ui.closePhoneShapeMenu(); review.closeBox(); ui.setPreviewOpen(!ui.previewOpen()) }}
+        >
             <SlidePreview
               language={settings.language()}
               selectedSlideKey={selectedSlideKey()}
@@ -4586,10 +4598,9 @@ export function Studio() {
               onImageClipboard={(slot, action) => { void runElementAction(action, { hit: null, pin: null, at: { x: 0, y: 0 }, image: { slot, order: [] } }) }}
               onRemoveImage={slot => { void removePreviewImage(slot) }}
             />
-          </div>
-        </div>
+        </StudioPanelColumn>
 
-        </div>
+        </SlidesWorkspace>
         {/* The layout screen's rail, leftmost like the slides screen's: a
             folded column's icon reopens it, the comments column's too. */}
         <div data-layout-panel-rail="" className="panel-rail" hidden={ui.studioMode() !== 'layouts' || !layoutRailShown(layoutColumns())}>
@@ -4827,19 +4838,12 @@ export function Studio() {
         onConfirm={() => void dispatch({ type: 'create-confirmed' })}
       />
 
-      <div role="status" data-update-notice hidden={!showUpdateNotice(updateStatus())}
-        className="fixed bottom-10 right-4 z-30 max-w-sm rounded-lg border border-border bg-popover text-popover-foreground p-3 shadow-lg">
-        <p className="text-sm font-medium">{updateStatusText(updateStatus(), settings.language())}</p>
-        <p className="text-xs whitespace-pre-wrap mt-2" hidden={!updateStatus().security}>{updateStatus().security ?? ''}</p>
-        <p role="alert" className="text-xs text-destructive mt-2" hidden={!updateStatus().error}>{updateStatus().error ?? ''}</p>
-        <div className="flex gap-3 mt-2 text-sm">
-          <button type="button" hidden={!canPrepareUpdate(updateStatus())} onClick={() => void runUpdateAction('prepare')} className="underline">{updateMessages(settings.language()).prepare}</button>
-          <button type="button" hidden={updateStatus().security !== null} onClick={() => void runUpdateAction('dismiss')}>{updateMessages(settings.language()).later}</button>
-        </div>
-      </div>
-      <div role="alert" hidden={!updateBlocksEditing(updateStatus())} className="fixed top-0 right-0 bottom-0 left-0 z-50 bg-popover text-popover-foreground flex items-center justify-center">
-        <p>{updateStatusText(updateStatus(), settings.language())}</p>
-      </div>
+      <UpdateNotices
+        status={updateStatus()}
+        language={settings.language()}
+        onPrepare={() => void runUpdateAction('prepare')}
+        onDismiss={() => void runUpdateAction('dismiss')}
+      />
       <SettingsPanel
         isOpen={settings.panelOpen()}
         language={settings.language()}
