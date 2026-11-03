@@ -383,14 +383,6 @@
       "cyclomatic": 12
     },
     {
-      "path": "scripts/updateManifest.ts",
-      "name": "makeUpdateManifest",
-      "occurrence": 1,
-      "line": 8,
-      "cognitive": 16,
-      "cyclomatic": 17
-    },
-    {
       "path": "site/src/domain/releases.ts",
       "name": "detectArch",
       "occurrence": 1,
@@ -442,15 +434,15 @@
       "path": "src-tauri/src/updates.rs",
       "name": "check",
       "occurrence": 1,
-      "line": 202,
-      "cognitive": 22,
-      "cyclomatic": 20
+      "line": 222,
+      "cognitive": 15,
+      "cyclomatic": 15
     },
     {
       "path": "src-tauri/src/updates.rs",
       "name": "intercept_exit",
       "occurrence": 1,
-      "line": 422,
+      "line": 435,
       "cognitive": 15,
       "cyclomatic": 14
     },

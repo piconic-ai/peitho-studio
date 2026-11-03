@@ -199,6 +199,26 @@ async fn fetch_signed_manifest(public_key: &str) -> Result<(serde_json::Value, S
     Ok((manifest, SignedManifest { bytes, signature }))
 }
 
+fn validate_offered_archive(raw_json: Option<&serde_json::Value>, manifest: &serde_json::Value, announced: &Version, current: &Version) -> Result<(), String> {
+    if let Some(raw_json) = raw_json {
+        if raw_json != manifest { return Err("Update information changed during verification. Please retry.".into()); }
+    } else if announced > current {
+        return Err("The announced update is not available for this app".into());
+    }
+    Ok(())
+}
+
+fn checked_status(version: Option<&str>, notes: Option<&str>, security: Option<String>, announced: &Version, dismissed_version: Option<&str>) -> UpdateStatus {
+    UpdateStatus {
+        phase: if version.is_some() { UpdatePhase::Available } else { UpdatePhase::Current },
+        version: version.map(str::to_owned),
+        notes: notes.map(str::to_owned),
+        dismissed: security.is_none() && dismissed_version.is_some_and(|v| v == announced.to_string()),
+        security,
+        ..Default::default()
+    }
+}
+
 async fn check(app: &AppHandle, automatic: bool) -> Result<UpdateStatus, String> {
     let state = app.state::<AppUpdates>();
     // Share an in-flight check/download rather than start another request.
@@ -260,20 +280,13 @@ async fn check(app: &AppHandle, automatic: bool) -> Result<UpdateStatus, String>
         persist(app);
         publish(app);
         let update = app.updater_builder().timeout(Duration::from_secs(30)).build().map_err(|err| err.to_string())?.check().await.map_err(|err| err.to_string())?;
-        if let Some(update) = &update {
-            if update.raw_json != manifest { return Err("Update information changed during verification. Please retry.".into()); }
-        } else if version > *current {
-            return Err("The announced update is not available for this app".into());
-        }
+        validate_offered_archive(update.as_ref().map(|u| &u.raw_json), &manifest, &version, current)?;
         let mut inner = state.inner.lock().unwrap();
-        inner.status = UpdateStatus {
-            phase: if update.is_some() { UpdatePhase::Available } else { UpdatePhase::Current },
-            version: update.as_ref().map(|u| u.version.clone()),
-            notes: update.as_ref().and_then(|u| u.body.clone()),
-            dismissed: security.is_none() && inner.dismissed_version.as_ref().is_some_and(|v| v == &version.to_string()),
-            security,
-            ..Default::default()
-        };
+        inner.status = checked_status(
+            update.as_ref().map(|u| u.version.as_str()),
+            update.as_ref().and_then(|u| u.body.as_deref()),
+            security, &version, inner.dismissed_version.as_deref(),
+        );
         inner.update = update;
         inner.manifest = Some(signed);
         Ok::<(), String>(())
@@ -620,6 +633,61 @@ mod tests {
         }
         assert!(security_reason(&json!({}), &current, &current).unwrap().is_none());
     }
+    #[test]
+    fn offered_archive_must_match_the_authenticated_manifest_even_without_a_newer_announcement() {
+        let announced = Version::parse("1.1.0").unwrap();
+        let manifest = json!({"version":"1.1.0", "notes":"Signed notes"});
+        let changed = json!({"version":"1.1.0", "notes":"Changed notes"});
+        for current in ["1.0.0", "1.1.0", "1.2.0"] {
+            let current = Version::parse(current).unwrap();
+            assert!(validate_offered_archive(Some(&manifest), &manifest, &announced, &current).is_ok());
+            assert_eq!(validate_offered_archive(Some(&changed), &manifest, &announced, &current).unwrap_err(),
+                "Update information changed during verification. Please retry.");
+        }
+    }
+
+    #[test]
+    fn missing_archive_only_fails_for_a_newer_announcement() {
+        let announced = Version::parse("1.1.0").unwrap();
+        let manifest = json!({"version":"1.1.0"});
+        assert_eq!(validate_offered_archive(None, &manifest, &announced, &Version::parse("1.0.0").unwrap()).unwrap_err(),
+            "The announced update is not available for this app");
+        for current in ["1.1.0", "1.2.0"] {
+            assert!(validate_offered_archive(None, &manifest, &announced, &Version::parse(current).unwrap()).is_ok());
+        }
+    }
+
+    #[test]
+    fn checked_status_preserves_archive_fields_and_security_overrides_remembered_dismissal() {
+        let announced = Version::parse("1.1.0").unwrap();
+        let status = checked_status(Some("1.1.0"), Some("Archive notes"), None, &announced, Some("1.1.0"));
+        assert!(status.phase == UpdatePhase::Available);
+        assert_eq!(status.version.as_deref(), Some("1.1.0"));
+        assert_eq!(status.notes.as_deref(), Some("Archive notes"));
+        assert!(status.dismissed);
+        for reason in ["Security fix", ""] {
+            let status = checked_status(Some("1.1.0"), None, Some(reason.into()), &announced, Some("1.1.0"));
+            assert_eq!(status.security.as_deref(), Some(reason));
+            assert!(!status.dismissed);
+        }
+        assert!(!checked_status(Some("1.1.0"), None, None, &announced, Some("1.0.0")).dismissed);
+        assert!(!checked_status(Some("1.1.0"), None, None, &announced, None).dismissed);
+    }
+
+    #[test]
+    fn checked_current_status_still_uses_the_announced_version_for_dismissal() {
+        let announced = Version::parse("1.1.0").unwrap();
+        let status = checked_status(None, None, None, &announced, Some("1.1.0"));
+        assert!(status.phase == UpdatePhase::Current);
+        assert!(status.dismissed);
+        assert_eq!(status.version, None);
+        assert_eq!(status.notes, None);
+        assert_eq!(status.downloaded, 0);
+        assert_eq!(status.total, None);
+        assert_eq!(status.error, None);
+        assert!(!status.install_on_exit);
+    }
+
     #[test]
     fn scheduler_boundaries_and_clock_rollback() {
         assert!(due(0, 1));
