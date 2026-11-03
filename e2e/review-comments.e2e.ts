@@ -293,11 +293,20 @@ test('Given an unsent reply, When its thread is resolved, Then the reply is not 
 
 test('Given a comment sent while no agent waited, When the agent comes back, Then Send hands it over again', async ({ page }) => {
   const crit = createFakeCritIpc()
+  const finish = crit.finish
+  let resumeFinish = () => {}
+  const sending = new Promise<void>(resolve => { resumeFinish = resolve })
+  crit.finish = async () => { await sending; await finish() }
   await openDeck(page, crit)
   await comment(page, 'h1', 'Make it bigger')
   const count = page.locator('[data-review-send-count]')
   await expect(count).toHaveText('1')
   await page.locator(SEND).click()
+  await expect(page.locator(SEND)).toHaveAttribute('data-review-send-state', 'sending')
+  await expect(page.locator(SEND)).toHaveAccessibleName('Sending…')
+  await expect(page.locator(SEND).locator('svg.animate-spin')).toBeVisible()
+  await expect(page.locator(SEND).locator('svg')).toHaveCount(2)
+  resumeFinish()
   await expect(page.locator('[data-review-row="comment"]')).toHaveCount(1)
   // Handed to nobody: the agent never answers, and while it's away Send
   // stays closed — and the panel says it's at work, not that it's missing.
@@ -306,9 +315,23 @@ test('Given a comment sent while no agent waited, When the agent comes back, The
   await expect(page.locator(CONNECT)).toBeHidden()
   // The agent's work shows on the Send button, not as a line.
   await expect(page.locator(SEND)).toHaveAttribute('data-review-send-state', 'thinking')
-  await expect(page.locator(SEND)).toContainText('Thinking…')
+  await expect(page.locator(SEND)).toHaveAccessibleName('Thinking…')
+  await expect(page.locator(SEND).locator('svg.animate-pulse')).toBeVisible()
+  await page.evaluate(() => {
+    (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, toWindow?: string) => void })
+      .__mockEmitTauriEvent('menu:settings', null, 'main')
+  })
+  await page.getByRole('radio', { name: '日本語' }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.locator(SEND)).toHaveAccessibleName('考え中…')
   await expect(page.locator('[data-review-say]')).toBeHidden()
 
+  await page.evaluate(() => {
+    (window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown, toWindow?: string) => void })
+      .__mockEmitTauriEvent('menu:settings', null, 'main')
+  })
+  await page.getByRole('radio', { name: 'English' }).click()
+  await page.keyboard.press('Escape')
   crit.agentConnects()
 
   await expect(page.locator(SEND)).toBeEnabled()
@@ -320,7 +343,11 @@ test('Given a comment sent while no agent waited, When the agent comes back, The
   crit.reply('c_1', 'Made it bigger')
   crit.agentConnects()
   await expect(count).toBeHidden()
-  await expect(page.locator(SEND).locator('span').first()).toHaveText('Send')
+  await expect(page.locator(SEND)).toHaveAttribute('data-review-send-state', 'idle')
+  await expect(page.locator(SEND)).toHaveAccessibleName('Send')
+  await expect(page.locator(SEND).locator('svg')).toHaveCount(2)
+  await expect(page.locator(SEND).locator('svg').first()).toBeHidden()
+  await expect(page.locator(SEND).locator('svg').last()).toBeHidden()
   await expect(page.locator(SEND)).toBeDisabled()
 })
 
@@ -523,6 +550,8 @@ test('Given an unsent comment, When it is edited in place, Then Save puts the ne
   await openDeck(page, crit)
   await comment(page, 'h1', 'Make it bigger')
   const row = page.locator('[data-review-row="unsent-comment"]')
+  const mountedRow = await row.elementHandle()
+  const mountedEditor = await row.locator('[data-review-edit-box] textarea').elementHandle()
   await page.locator('[data-slide-row="1"]').click()
   await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Second')
 
@@ -530,9 +559,18 @@ test('Given an unsent comment, When it is edited in place, Then Save puts the ne
   await expect(row.locator('[data-review-bubble]')).toBeHidden()
   await expect(row.locator('[data-review-edit-box] textarea')).toBeFocused()
   await expect(row.locator('[data-review-edit-box] textarea')).toHaveValue('Make it bigger')
+  expect(await row.evaluate((node, mounted) => node === mounted, mountedRow)).toBe(true)
+  expect(await row.locator('[data-review-edit-box] textarea').evaluate((node, mounted) => node === mounted, mountedEditor)).toBe(true)
   await row.locator('[data-review-edit-box] textarea').fill('Make it much bigger')
+  await crit.addComments([{ startLine: 5, endLine: 5, body: 'An unrelated thread', quote: 'Hello', author: 'Agent' }])
+  crit.agentConnects()
+  await expect(page.locator('[data-review-row="comment"]')).toContainText('An unrelated thread')
+  await expect(row.locator('[data-review-edit-box] textarea')).toBeFocused()
+  await expect(row.locator('[data-review-edit-box] textarea')).toHaveValue('Make it much bigger')
+  expect(await row.evaluate((node, mounted) => node === mounted, mountedRow)).toBe(true)
   await row.locator('[data-review-edit-save]').click()
   await expect(row.locator('[data-review-bubble]')).toHaveText('Make it much bigger')
+  expect(await row.evaluate((node, mounted) => node === mounted, mountedRow)).toBe(true)
   await expect(row.locator('[data-review-edit-box]')).toBeHidden()
   // The editor's own buttons are not a click on the row.
   await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Second')

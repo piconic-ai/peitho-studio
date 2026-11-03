@@ -144,6 +144,7 @@ test('Given Body (the last section) collapsed, when a slide is dragged below eve
   await page.mouse.move(from.x + from.width / 2, header.y + header.height + 5, { steps: 5 })
 
   await expect(row(page, 2)).toHaveClass(/border-b-primary/)
+  await expect(row(page, 2)).toHaveCSS('border-bottom-width', '2px')
 
   await page.mouse.up()
   await expect.poll(() => deck.source.trimEnd().endsWith('# Agenda')).toBe(true)

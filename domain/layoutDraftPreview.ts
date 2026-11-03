@@ -91,22 +91,22 @@ const IDENTIFIERS = /^-?[A-Za-z_\u0080-￿][\w\-\u0080-￿]*(?:\s+-?[A-Za-z_\u00
 function readFamily(part: string): string | null {
   const text = part.trim()
   const quote = text[0]
-  if (quote === '"' || quote === "'") {
-    let name = ''
-    let i = 1
-    for (; i < text.length; i++) {
-      const c = text[i]
-      if (c === '\\') {
-        i++
-        if (i < text.length) name += text[i]
-        continue
-      }
-      if (c === quote) break
-      name += c
-    }
-    return i === text.length - 1 ? name : null
+  if (quote !== '"' && quote !== "'") {
+    return IDENTIFIERS.test(text) ? text.split(/\s+/).join(' ') : null
   }
-  return IDENTIFIERS.test(text) ? text.split(/\s+/).join(' ') : null
+  let name = ''
+  let i = 1
+  for (; i < text.length; i++) {
+    const c = text[i]
+    if (c === '\\') {
+      i++
+      if (i < text.length) name += text[i]
+      continue
+    }
+    if (c === quote) break
+    name += c
+  }
+  return i === text.length - 1 ? name : null
 }
 
 /** `list` split on its top-level commas (not inside quotes or brackets),
@@ -143,16 +143,11 @@ function shorthandFamilyStart(value: string): number | null {
     if (text.startsWith('"') || text.startsWith("'")) return null
     const [size, lineHeight] = text.split('/', 2) as [string, string | undefined]
     if (!SIZE_KEYWORDS.has(size.toLowerCase()) && !SIZE_LENGTH.test(size)) continue
-    let end = (token.index ?? 0) + text.length
-    const rest = value.slice(end)
-    if (lineHeight === undefined) {
-      const slash = /^\s*\/\s*[^\s,]+/.exec(rest)
-      if (slash) end += slash[0].length
-    } else if (lineHeight === '') {
-      const after = /^\s*[^\s,]+/.exec(rest)
-      if (after) end += after[0].length
-    }
-    return end
+    const end = (token.index ?? 0) + text.length
+    if (lineHeight) return end
+    const pattern = lineHeight === undefined ? /^\s*\/\s*[^\s,]+/ : /^\s*[^\s,]+/
+    const match = pattern.exec(value.slice(end))
+    return end + (match?.[0].length ?? 0)
   }
   return null
 }

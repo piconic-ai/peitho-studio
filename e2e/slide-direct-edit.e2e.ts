@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page, type Locator } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 import { splitSlides, extractNote, extractPageComment } from '../domain/slides'
 import { editorText, fillEditor } from './helpers/codeEditor'
@@ -169,6 +169,58 @@ test('adding and moving an image keeps the column layout and supports Undo', asy
   await expect(page.locator(`${PREVIEW} .peitho-slide`)).toHaveAttribute('data-template', 'title-only')
   await expect(image).toBeVisible()
   expect(deck.source).toContain('slot=studio-image-1')
+})
+
+for (const keys of ['same', 'different', 'absent'] as const) {
+  test(`image markers preserve handle sentinels and reconcile a detached slide with ${keys} keys`, async ({ page }) => {
+    await open(page)
+    await page.locator('[data-preview-image-input]').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64') })
+    const image = page.locator(`${PREVIEW} [data-studio-image]`)
+    const handles = image.locator('[data-studio-handle]')
+    await expect(handles).toHaveCount(8)
+    expect(await handles.evaluateAll(nodes => nodes.map(node => node instanceof HTMLElement ? [node.dataset.studioHandle, node.style.left, node.style.top, node.style.cursor] : []))).toEqual([
+      ['nw', '0%', '0%', 'nw-resize'], ['n', '50%', '0%', 'n-resize'], ['ne', '100%', '0%', 'ne-resize'],
+      ['w', '0%', '50%', 'w-resize'], ['e', '100%', '50%', 'e-resize'], ['sw', '0%', '100%', 'sw-resize'],
+      ['s', '50%', '100%', 's-resize'], ['se', '100%', '100%', 'se-resize'],
+    ])
+    await image.evaluate(element => {
+      for (const handle of Array.from(element.querySelectorAll('[data-studio-handle]')).slice(1)) handle.remove()
+      const root = element.getRootNode()
+      if (root instanceof ShadowRoot) root.host.dispatchEvent(new Event('studio-edit-mode'))
+    })
+    await expect(handles).toHaveCount(1)
+    await expect(handles).toHaveAttribute('data-studio-handle', 'nw')
+    await image.click({ position: { x: 20, y: 20 } })
+    await expect(image).toHaveAttribute('data-studio-selected', '')
+    await image.evaluate((element, keys) => {
+      const slide = element.closest('.peitho-slide')!
+      if (keys === 'absent') slide.removeAttribute('data-slide-key')
+      const replacement = slide.cloneNode(true)
+      if (!(replacement instanceof HTMLElement)) throw new Error('Expected slide element')
+      if (keys === 'different') replacement.dataset.slideKey = 'another-slide'
+      if (keys !== 'different') for (const selected of replacement.querySelectorAll('[data-studio-selected]')) selected.removeAttribute('data-studio-selected')
+      const root = element.getRootNode()
+      slide.replaceWith(replacement)
+      if (root instanceof ShadowRoot) root.host.dispatchEvent(new Event('studio-edit-mode'))
+    }, keys)
+    if (keys === 'different') await expect(image).not.toHaveAttribute('data-studio-selected')
+    else await expect(image).toHaveAttribute('data-studio-selected', '')
+    expect(await image.evaluate(element => { const root = element.getRootNode(); return root instanceof ShadowRoot && root.activeElement === element })).toBe(false)
+    await expect(handles).toHaveCount(1)
+  })
+}
+
+test('a detached selected text node loses its selection marker on the replacement slide', async ({ page }) => {
+  await open(page)
+  await page.locator(`${PREVIEW} h1`).click()
+  await page.keyboard.press('Escape')
+  const selected = page.locator(`${PREVIEW} [data-studio-selected]`)
+  await expect(selected).toHaveCount(1)
+  await selected.evaluate(element => {
+    const slide = element.closest('.peitho-slide')!
+    slide.replaceWith(slide.cloneNode(true))
+  })
+  await expect(selected).toHaveCount(0)
 })
 
 test('a failed image move restores the displayed position and keeps the saved source', async ({ page }) => {
@@ -551,6 +603,44 @@ test('copied and cut elements paste as separate canvas objects via menu and keyb
 })
 
 
+for (const pauseAt of ['clipboard', 'canvas', 'placement']) {
+  test(`switching slides during ${pauseAt} preparation discards a pending element paste`, async ({ page }) => {
+    const source = SOURCE + '\n::: {slot=left}\n\nCopied text\n\n:::\n\n---\n<!-- {"key":"second","layout":"two-column"} -->\n# Second\n'
+    const deck = await open(page, source)
+    const menu = page.locator('[data-slide-menu]')
+    await page.locator(`${PREVIEW} p`).click({ button: 'right' })
+    await menu.getByRole('button', { name: /^Copy/ }).click()
+    await page.evaluate(pauseAt => {
+      const w = window as unknown as { __mockInvoke: (cmd: string, args: unknown) => Promise<unknown>; __releasePaste?: () => void }
+      const invoke = w.__mockInvoke
+      let canvases = 0
+      w.__mockInvoke = async (cmd, args) => {
+        if (cmd === 'create_image_canvas') canvases++
+        const pause = pauseAt === 'clipboard' ? cmd === 'plugin:clipboard-manager|read_text' : cmd === 'create_image_canvas' && canvases === (pauseAt === 'canvas' ? 1 : 2)
+        if (pause) {
+          w.__mockInvoke = invoke
+          await new Promise<void>(resolve => { w.__releasePaste = resolve })
+        }
+        return invoke(cmd, args)
+      }
+    }, pauseAt)
+    await page.locator(`${PREVIEW} .peitho-slide`).click({ button: 'right', position: { x: 5, y: 5 } })
+    await menu.getByRole('button', { name: /^Paste/ }).click()
+    await page.waitForFunction(() => Boolean((window as unknown as { __releasePaste?: () => void }).__releasePaste))
+    await page.locator('[data-slide-row="1"]').click()
+    await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Second')
+    await page.evaluate(() => (window as unknown as { __releasePaste: () => void }).__releasePaste())
+    // The next paste proves the discarded attempt also releases its busy state.
+    await page.locator(`${PREVIEW} .peitho-slide`).click({ button: 'right', position: { x: 5, y: 5 } })
+    await expect(menu.getByRole('button', { name: /^Paste/ })).toBeEnabled()
+    expect(deck.source).toBe(source)
+    await menu.getByRole('button', { name: /^Paste/ }).click()
+    await expect(page.locator(`${PREVIEW} [data-studio-text]`)).toHaveCount(1)
+    expect(splitSlides(deck.source)[0].text).toBe(splitSlides(source)[0].text)
+  })
+}
+
+
 test('one click edits text, Escape selects the object, and empty canvas never deletes a slide', async ({ page }) => {
   const deck = await open(page, SOURCE + '\n::: {slot=left}\n\nText object\n\n:::\n')
   await page.locator(`${PREVIEW} p`).click()
@@ -577,6 +667,110 @@ test('one click edits text, Escape selects the object, and empty canvas never de
   await expect(page.locator('[data-preview-comment-mode], [data-preview-add-image]')).toHaveCount(0)
   await page.locator(`${PREVIEW} .peitho-slide`).click({ button: 'right', position: { x: 5, y: 5 } })
   await expect(page.locator('[data-preview-add-image-menu]')).toBeVisible()
+})
+
+async function objectKeyOutcome(object: Locator, init: Pick<KeyboardEventInit, 'key' | 'metaKey' | 'ctrlKey'>) {
+  return object.evaluate((element, init) => {
+    const root = element.getRootNode()
+    if (!(root instanceof ShadowRoot) || root.activeElement !== element || !element.isConnected) throw new Error('Expected focused connected object')
+    let outside = 0
+    const receive = () => { outside++ }
+    document.addEventListener('keydown', receive)
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F8', bubbles: true }))
+      const control = outside
+      outside = 0
+      const event = new KeyboardEvent('keydown', { ...init, bubbles: true, composed: true, cancelable: true })
+      element.dispatchEvent(event)
+      return { prevented: event.defaultPrevented, outside, control }
+    } finally { document.removeEventListener('keydown', receive) }
+  }, init)
+}
+
+test('inactive text object Enter reopens and a character synchronously replaces its contents', async ({ page }) => {
+  const deck = await open(page, SOURCE + '\n::: {slot=left}\n\nOriginal text\n\n:::\n')
+  const paragraph = page.locator(`${PREVIEW} p`)
+  await paragraph.click()
+  await page.keyboard.press('Escape')
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  expect(await objectKeyOutcome(paragraph, { key: 'Enter' })).toEqual({ prevented: true, outside: 0, control: 1 })
+  await expect(page.locator(FIELD)).toHaveText('Original text')
+  await page.keyboard.press('Escape')
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  const immediate = await paragraph.evaluate(element => {
+    const root = element.getRootNode()
+    if (!(root instanceof ShadowRoot) || root.activeElement !== element) throw new Error('Expected inactive focused text')
+    element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Z', bubbles: true, composed: true, cancelable: true }))
+    return root.querySelector('[data-studio-edit]')?.textContent
+  })
+  expect(immediate).toBe('Z')
+  await page.keyboard.press('Meta+Enter')
+  await expect.poll(() => deck.source).toContain('\n\nZ\n\n')
+  expect(deck.source).not.toContain('Original text')
+})
+
+test('invalid text command metadata consumes commands while text unknown keys stop and paste stays native', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\nText object\n\n:::\n'
+  const deck = await open(page, source)
+  const paragraph = page.locator(`${PREVIEW} p`)
+  await paragraph.click()
+  await page.keyboard.press('Escape')
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  deck.clipboardText = 'untouched clipboard'
+  for (const attribute of ['data-peitho-src', 'data-peitho-md']) {
+    const original = await paragraph.getAttribute(attribute)
+    expect(original).not.toBeNull()
+    await paragraph.evaluate((element, attribute) => element.removeAttribute(attribute), attribute)
+    try {
+      for (const init of [{ key: 'c', metaKey: true }, { key: 'x', ctrlKey: true }, { key: 'Delete' }, { key: 'Backspace' }]) {
+        expect(await objectKeyOutcome(paragraph, init)).toEqual({ prevented: true, outside: 0, control: 1 })
+      }
+      expect(deck.source).toBe(source)
+      expect(deck.clipboardText).toBe('untouched clipboard')
+    } finally {
+      await paragraph.evaluate((element, args) => element.setAttribute(args.attribute, args.original!), { attribute, original })
+    }
+  }
+  expect(await objectKeyOutcome(paragraph, { key: 'F8' })).toEqual({ prevented: false, outside: 0, control: 1 })
+  deck.clipboardText = ''
+  for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
+    expect(await objectKeyOutcome(paragraph, { key: 'v', ...modifier })).toEqual({ prevented: false, outside: 0, control: 1 })
+  }
+  expect(deck.source).toBe(source)
+})
+
+test('focused image unknown keys bubble and paste shortcuts remain unprevented', async ({ page }) => {
+  const deck = await open(page)
+  await page.locator('[data-preview-image-input]').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64') })
+  const image = page.locator(`${PREVIEW} [data-studio-image]`)
+  await image.click({ position: { x: 20, y: 20 } })
+  expect(await objectKeyOutcome(image, { key: 'F8' })).toEqual({ prevented: false, outside: 1, control: 1 })
+  const source = deck.source
+  deck.clipboardText = ''
+  for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
+    expect(await objectKeyOutcome(image, { key: 'v', ...modifier })).toEqual({ prevented: false, outside: 0, control: 1 })
+  }
+  expect(deck.source).toBe(source)
+})
+
+test('active text fields and native controls retain their command key handling', async ({ page }) => {
+  const deck = await open(page)
+  await page.locator(`${PREVIEW} h1`).click()
+  expect(await objectKeyOutcome(page.locator(FIELD), { key: 'Backspace' })).toEqual({ prevented: false, outside: 0, control: 1 })
+  await expect(page.locator(FIELD)).toHaveText('Title')
+  await page.keyboard.press('Escape')
+  const title = page.locator(`${PREVIEW} h1`)
+  await title.evaluate(element => {
+    const control = document.createElement('input')
+    control.dataset.objectKeyControl = ''; control.value = 'Native'
+    element.append(control); control.focus()
+  })
+  const control = page.locator(`${PREVIEW} [data-object-key-control]`)
+  try {
+    expect(await objectKeyOutcome(control, { key: 'Delete' })).toEqual({ prevented: false, outside: 1, control: 1 })
+    await expect(control).toHaveValue('Native')
+    expect(deck.source).toBe(SOURCE)
+  } finally { await control.evaluate(element => element.remove()) }
 })
 
 test('an emptied free-text object stays hidden while a hidden footnotes wrapper is revealed', async ({ page }) => {
@@ -723,6 +917,157 @@ async function listCaret(page: Page, itemIndex: number, end = false) {
     const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
   }, { itemIndex, end })
 }
+
+test('list key composition and modifier guards preserve the active edit and stop propagation', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\n- One\n\n:::\n'
+  const deck = await open(page, source)
+  await page.locator(`${PREVIEW} li`).click()
+  await listCaret(page, 0)
+  const guarded = await page.locator(FIELD).evaluate(field => {
+    const root = field.getRootNode()
+    let propagated = 0
+    const observe = () => { propagated++ }
+    root.addEventListener('keydown', observe)
+    const control = document.createElement('span'); field.parentElement!.append(control)
+    control.dispatchEvent(new KeyboardEvent('keydown', { key: 'Unidentified', bubbles: true, cancelable: true, composed: true }))
+    control.remove()
+    const baseline = propagated
+    const prevented: boolean[] = []
+    for (const mode of ['event', 'session']) {
+      if (mode === 'session') field.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      for (const key of ['Escape', 'Enter', 'Backspace']) {
+        const event = new KeyboardEvent('keydown', { key, isComposing: mode === 'event', bubbles: true, cancelable: true, composed: true })
+        field.dispatchEvent(event); prevented.push(event.defaultPrevented)
+      }
+      if (mode === 'session') field.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    }
+    for (const modifier of ['metaKey', 'ctrlKey', 'altKey', 'shiftKey']) {
+      const event = new KeyboardEvent('keydown', { key: 'Backspace', [modifier]: true, bubbles: true, cancelable: true, composed: true })
+      field.dispatchEvent(event); prevented.push(event.defaultPrevented)
+    }
+    for (const modifier of ['altKey', 'shiftKey']) {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', [modifier]: true, bubbles: true, cancelable: true, composed: true })
+      field.dispatchEvent(event); prevented.push(event.defaultPrevented)
+    }
+    root.removeEventListener('keydown', observe)
+    return { baseline, propagated, prevented }
+  })
+  expect(guarded).toEqual({ baseline: 1, propagated: 1, prevented: Array(12).fill(false) })
+  await expect(page.locator(FIELD)).toHaveCount(1)
+  await expect(page.locator(`${FIELD} li`)).not.toHaveAttribute('data-studio-unlisted')
+  expect(deck.source).toBe(source)
+  for (const modifier of ['ctrlKey', 'metaKey']) {
+    const prevented = await page.locator(FIELD).evaluate((field, modifier) => {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', [modifier]: true, bubbles: true, cancelable: true, composed: true })
+      field.dispatchEvent(event)
+      return event.defaultPrevented
+    }, modifier)
+    expect(prevented).toBe(true)
+    await expect(page.locator(FIELD)).toHaveCount(0)
+    if (modifier === 'ctrlKey') await page.locator(`${PREVIEW} li`).click()
+  }
+})
+
+test('list actions distinguish selected text, empty selection, repeated unlisting and a rejected commit', async ({ page }) => {
+  const deck = await open(page, SOURCE + '\n::: {slot=left}\n\n- One\n- Two\n\n:::\n')
+  await page.locator(`${PREVIEW} li`).first().click()
+  const selected = await page.locator(FIELD).evaluate(field => {
+    const item = field.querySelector('li')!
+    const selection = window.getSelection()!
+    const range = document.createRange(); range.selectNodeContents(item)
+    selection.removeAllRanges(); selection.addRange(range)
+    const event = new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true, composed: true })
+    field.dispatchEvent(event)
+    return { prevented: event.defaultPrevented, text: item.textContent, unlisted: item.hasAttribute('data-studio-unlisted') }
+  })
+  expect(selected).toEqual({ prevented: false, text: 'One', unlisted: false })
+  const emptied = await page.locator(FIELD).evaluate(field => {
+    const item = field.querySelector('li')!; item.textContent = '  '
+    const selection = window.getSelection()!
+    const range = document.createRange(); range.selectNodeContents(item)
+    selection.removeAllRanges(); selection.addRange(range)
+    const collapsed = selection.isCollapsed
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, composed: true })
+    field.dispatchEvent(event)
+    return { collapsed, prevented: event.defaultPrevented, unlisted: item.hasAttribute('data-studio-unlisted'), style: item.style.listStyleType }
+  })
+  expect(emptied).toEqual({ collapsed: false, prevented: true, unlisted: true, style: 'none' })
+  await expect.poll(() => deck.source).toContain('&#160;\n\n- Two')
+  const saved = deck.source
+  const repeated = await page.locator(FIELD).evaluate(field => {
+    const item = field.querySelector('li')!; item.textContent = 'Not committed again'
+    const range = document.createRange(); range.selectNodeContents(item); range.collapse(true)
+    const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range)
+    return ['Backspace', 'Enter'].map(key => {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, composed: true })
+      field.dispatchEvent(event)
+      return { prevented: event.defaultPrevented, error: field.hasAttribute('data-studio-edit-error') }
+    })
+  })
+  expect(repeated).toEqual([{ prevented: false, error: false }, { prevented: false, error: false }])
+  expect(await editorText(page)).not.toContain('Not committed again')
+  await page.locator(`${FIELD} li`).last().evaluate(item => { item.textContent = '---' })
+  await listCaret(page, 1)
+  const rejected = await page.locator(FIELD).evaluate(field => {
+    const event = new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true, composed: true })
+    field.dispatchEvent(event)
+    return event.defaultPrevented
+  })
+  expect(rejected).toBe(true)
+  await expect(page.locator(FIELD)).toHaveAttribute('data-studio-edit-error', '')
+  await expect(page.locator(`${FIELD} li`).last()).toHaveAttribute('data-studio-unlisted', '')
+  expect(deck.source).toBe(saved)
+})
+
+test('list boundary normalization publishes only native Enter and uses immediate list items', async ({ page }) => {
+  await open(page, SOURCE + '\n::: {slot=left}\n\n- One\n- Two\n\n:::\n')
+  await page.locator(`${PREVIEW} li`).first().click()
+  const cases = await page.locator(FIELD).evaluate(field => {
+    Object.defineProperty(field.getRootNode(), 'getSelection', { value: undefined })
+    const selection = window.getSelection()!
+    const list = field.querySelector('ul')!, original = list.innerHTML
+    const remove = selection.removeAllRanges.bind(selection), add = selection.addRange.bind(selection)
+    let removed = 0, added = 0
+    selection.removeAllRanges = () => { removed++; remove() }
+    selection.addRange = range => { added++; add(range) }
+    const results = []
+    try {
+      for (const kind of ['start-backspace', 'end-backspace', 'trailing-enter', 'adjacent-enter', 'nested-enter', 'unlisted-enter', 'outside-enter']) {
+        list.innerHTML = original; field.replaceChildren(list)
+        const last = list.lastElementChild!
+        const target = kind === 'adjacent-enter' ? list.firstElementChild! : last
+        if (kind === 'adjacent-enter') field.append(target)
+        if (kind === 'nested-enter') last.insertAdjacentHTML('beforeend', '<ul><li>Nested</li></ul>')
+        if (kind === 'unlisted-enter') last.setAttribute('data-studio-unlisted', '')
+        field.append(document.createTextNode('\n'))
+        const range = document.createRange(); range.selectNodeContents(field); range.collapse(kind === 'start-backspace')
+        const outside = document.createElement('li'); outside.textContent = 'Outside'
+        if (kind === 'outside-enter') {
+          field.parentElement!.append(outside); range.selectNodeContents(outside); range.collapse(false)
+        }
+        remove(); add(range); removed = 0; added = 0
+        const event = new KeyboardEvent('keydown', { key: kind.endsWith('backspace') ? 'Backspace' : 'Enter', bubbles: true, cancelable: true, composed: true })
+        field.dispatchEvent(event)
+        const composed = selection.getComposedRanges({ shadowRoots: [field.getRootNode() as ShadowRoot] })[0]
+        results.push({ kind, prevented: event.defaultPrevented, removed, added,
+          unlisted: Array.from(field.querySelectorAll('li')).map(item => item.hasAttribute('data-studio-unlisted')),
+          atTargetEnd: composed?.startContainer === target && composed.startOffset === target.childNodes.length })
+        outside.remove()
+      }
+    } finally { selection.removeAllRanges = remove; selection.addRange = add }
+    return results
+  })
+  expect(cases).toEqual([
+    { kind: 'start-backspace', prevented: true, removed: 0, added: 0, unlisted: [false, true], atTargetEnd: false },
+    { kind: 'end-backspace', prevented: false, removed: 0, added: 0, unlisted: [false, false], atTargetEnd: true },
+    { kind: 'trailing-enter', prevented: false, removed: 1, added: 1, unlisted: [false, false], atTargetEnd: true },
+    { kind: 'adjacent-enter', prevented: false, removed: 1, added: 1, unlisted: [false, false], atTargetEnd: true },
+    { kind: 'nested-enter', prevented: false, removed: 1, added: 1, unlisted: [false, false, false], atTargetEnd: true },
+    { kind: 'unlisted-enter', prevented: false, removed: 0, added: 0, unlisted: [false, true], atTargetEnd: true },
+    { kind: 'outside-enter', prevented: false, removed: 0, added: 0, unlisted: [false, false], atTargetEnd: false },
+  ])
+  await expect(page.locator(FIELD)).toHaveCount(1)
+})
 
 test('Enter creates new list items, empty Enter and line-start Backspace remove bullets, and Undo restores the list', async ({ page }) => {
   const deck = await open(page, SOURCE + '\n::: {slot=left}\n\n- One\n- Two\n\n:::\n')
@@ -906,3 +1251,391 @@ test('cancelling a prepared list edit prevents Redo from reviving its private la
   }
   expect(deck.source).toBe(source)
 })
+
+
+for (const scenario of [
+  {
+    name: 'zero ordered start', list: true,
+    html: '<ol start="0"><li>Zero</li><li>Next</li></ol>',
+    expected: "# Title\n\n::: {slot=left}\n\n0. Zero\n1. Next\n\n:::"
+  },
+  {
+    name: 'empty text BR sibling and unlisted block runs', list: true,
+    html: '<ul><li>a<br data-empty-sibling></li><li data-studio-unlisted>Free<p>Block</p>end</li><li>\n <b>x</b> \t&nbsp;</li><li> \t<b>y</b></li></ul>',
+    expected: "# Title\n\n::: {slot=left}\n\n- a  \n  \n\nFree\n\nBlock\n\nend\n\n- **x** \t\u00a0\n-  \t**y**\n\n:::"
+  },
+  {
+    name: 'mixed nested lists and block runs', list: true,
+    html: '<ul>\n<li>Lead<p>Paragraph <b>bold</b></p>between<div>Block</div><ol start="3"><li>Ordered<ul><li>Deep</li></ul></li></ol>tail</li>\n<li></li></ul>',
+    expected: "# Title\n\n::: {slot=left}\n\n- Lead\n  \n  Paragraph **bold**\n  \n  between\n  \n  Block\n  \n  3. Ordered\n     \n     - Deep\n  \n  tail\n- &#160;\n\n:::"
+  },
+  {
+    name: 'list formatting whitespace and BR siblings', list: true,
+    html: '<ul> \t&nbsp;\n<li> A \t&nbsp;\n<br>\nB<br>\n\nC<br><!--comment--></li><li>x<br></li><li data-studio-unlisted><br></li><li> \t&nbsp;</li><li>a\n \t<b>b</b>\n<span>c</span> \t&nbsp;</li></ul>',
+    expected: "# Title\n\n::: {slot=left}\n\n-  A \t\u00a0\n    \n  B  \n  \n  C  \n  \n- x\n\n&#160;\n\n- &#160;\n- a\n   \t**b**c \t\u00a0\n\n:::"
+  },
+  {
+    name: 'zero ordered starts and non-item children', list: true,
+    html: '<ol start="0"><span>prefix</span><li>Zero</li><li>Next</li></ol>',
+    expected: "# Title\n\n::: {slot=left}\n\nprefix\n1. Zero\n2. Next\n\n:::"
+  },
+  {
+    name: 'negative ordered starts', list: true,
+    html: '<ol start="-2"><li>Negative</li><li>Next</li></ol>',
+    expected: "# Title\n\n::: {slot=left}\n\n-2. Negative\n-1. Next\n\n:::"
+  },
+  {
+    name: 'invalid ordered starts', list: true,
+    html: '<ol start="invalid"><li>Invalid</li><li>Next</li></ol>',
+    expected: "# Title\n\n::: {slot=left}\n\nNaN. Invalid\nNaN. Next\n\n:::"
+  },
+  {
+    name: 'inline aliases raw code links and live checkbox state', list: false,
+    html: '<strong>S</strong><b>B</b><em>E</em><i>I</i><s>S</s><del>D</del><code>a`<b>*raw*</b></code><a href="https://example.test/a">link</a><a>missing</a><unknown-tag>unknown</unknown-tag><svg><text>svg</text></svg><!--omit--><input type="checkbox" checked><input type="checkbox"><input type="CHECKBOX" checked><input type="text">',
+    expected: "# Title\n\n::: {slot=left}\n\n**S****B***E**I*~~S~~~~D~~``a`*raw*``[link](https://example.test/a)[missing]()unknownsvg[ ] [x] \n\n:::"
+  },
+  {
+    name: 'non-list placeholder and post-BR line feeds', list: false,
+    html: 'A<br>\nB<br>\n\nC<div><br></div><p><br></p><div>D</div><p>E</p>',
+    expected: "# Title\n\n::: {slot=left}\n\nA  \nB  \n\u00a0  \nC  \n\u00a0  \n\u00a0  \nD  \nE\n\n:::"
+  },
+]) {
+  test(`serializer characterization: ${scenario.name}`, async ({ page }) => {
+    await open(page, SOURCE + '\n::: {slot=left}\n\n' + (scenario.list ? '- Seed' : 'Seed') + '\n\n:::\n')
+    await page.locator(`${PREVIEW} [data-studio-slot="left"] ${scenario.list ? 'li' : 'p'}`).first().click()
+    await page.locator(FIELD).evaluate((field, html) => {
+      field.innerHTML = html
+      field.querySelector('[data-empty-sibling]')?.after(document.createTextNode(''))
+      const inputs = field.querySelectorAll('input')
+      if (inputs[0]) inputs[0].checked = false
+      if (inputs[1]) inputs[1].checked = true
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    }, scenario.html)
+    await expect.poll(() => editorText(page)).toBe(scenario.expected)
+  })
+}
+
+for (const invalid of ['span', 'quote', 'code', 'pre'] as const) {
+  test(`invalid direct source (${invalid}) clears selection without empty-slot fallback`, async ({ page }) => {
+    await open(page)
+    await page.locator(`${PREVIEW} h1`).click()
+    await page.locator(FIELD).press('Escape')
+    await page.locator(`${PREVIEW} [data-studio-selected]`).evaluate((selected, invalid) => {
+      if (!(selected instanceof HTMLElement)) throw new Error('Missing selected text')
+      const slot = selected.closest('[data-studio-slot]')
+      if (!slot) throw new Error('Missing title slot')
+      selected.textContent = ''
+      if (invalid === 'span') selected.setAttribute('data-peitho-src', 'broken')
+      if (invalid === 'quote') selected.removeAttribute('data-peitho-md')
+      if (invalid === 'code' || invalid === 'pre') {
+        const code = document.createElement(invalid); selected.before(code); code.append(selected)
+      }
+      slot.setAttribute('data-studio-empty', '')
+      selected.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }))
+    }, invalid)
+    await expect(page.locator(FIELD)).toHaveCount(0)
+    await expect(page.locator(`${PREVIEW} [data-studio-selected]`)).toHaveCount(0)
+  })
+}
+
+for (const clickTarget of ['source', 'heading'] as const) {
+  test(`a ${clickTarget} click keeps direct-source versus heading-descendant precedence`, async ({ page }) => {
+    await open(page)
+    await page.locator(`${PREVIEW} h1`).evaluate((heading, clickTarget) => {
+      const original = heading.matches('[data-peitho-src]') ? heading : heading.querySelector('[data-peitho-src]')
+      if (!original) throw new Error('Missing title source')
+      const first = document.createElement('span')
+      const second = document.createElement('span')
+      for (const [index, element] of [first, second].entries()) {
+        element.setAttribute('data-peitho-src', original.getAttribute('data-peitho-src') ?? '')
+        element.setAttribute('data-peitho-md', original.getAttribute('data-peitho-md') ?? '')
+        element.dataset.entryCandidate = String(index); element.textContent = 'Title'
+      }
+      heading.removeAttribute('data-peitho-src'); heading.removeAttribute('data-peitho-md')
+      heading.replaceChildren(first, second)
+      const target = clickTarget === 'source' ? second : heading
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }))
+    }, clickTarget)
+    await expect(page.locator(FIELD)).toHaveAttribute('data-entry-candidate', clickTarget === 'source' ? '1' : '0')
+  })
+}
+
+for (const container of ['slide', 'single-slot-wrapper'] as const) {
+  test(`whitespace on ${container} preserves the single contained-slot rule`, async ({ page }) => {
+    await open(page)
+    await page.locator(`${PREVIEW} .peitho-slide`).evaluate((slide, container) => {
+      const title = slide.querySelector('h1')
+      if (!title) throw new Error('Missing title')
+      const wrapper = document.createElement('div'); wrapper.append(title)
+      slide.replaceChildren(wrapper)
+      const target = container === 'slide' ? slide : wrapper
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }))
+    }, container)
+    await expect(page.locator(FIELD)).toHaveCount(container === 'slide' ? 0 : 1)
+  })
+}
+
+for (const direct of [false, true]) {
+  test(`IMG source filtering distinguishes ${direct ? 'direct' : 'whitespace'} resolution`, async ({ page }) => {
+    await open(page)
+    await page.locator(`${PREVIEW} h1`).evaluate((heading, direct) => {
+      const source = heading.matches('[data-peitho-src]') ? heading : heading.querySelector('[data-peitho-src]')
+      const slot = source?.closest('[data-studio-slot]')
+      if (!source || !slot) throw new Error('Missing title source slot')
+      const image = document.createElement('img')
+      image.setAttribute('data-peitho-src', source.getAttribute('data-peitho-src') ?? '')
+      image.setAttribute('data-peitho-md', source.getAttribute('data-peitho-md') ?? '')
+      const text = source.cloneNode(true)
+      if (!(text instanceof HTMLElement)) throw new Error('Missing text source')
+      image.dataset.entryCandidate = 'image'; text.dataset.entryCandidate = 'text'
+      const wrapper = document.createElement('div')
+      const replacementSlot = document.createElement('div')
+      replacementSlot.setAttribute('data-studio-slot', slot.getAttribute('data-studio-slot') ?? '')
+      for (const tag of ['pre', 'code', 'div']) {
+        const excluded = document.createElement(tag)
+        if (tag === 'div') excluded.dataset.studioImage = 'excluded'
+        const excludedSource = text.cloneNode(true)
+        if (!(excludedSource instanceof Element)) throw new Error('Missing excluded source')
+        excludedSource.setAttribute('data-entry-candidate', `excluded-${tag}`)
+        excluded.append(excludedSource); replacementSlot.append(excluded)
+      }
+      replacementSlot.append(image, text); wrapper.append(replacementSlot)
+      heading.replaceWith(wrapper)
+      const target = direct ? image : replacementSlot
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }))
+    }, direct)
+    await expect(page.locator(FIELD)).toHaveAttribute('data-entry-candidate', direct ? 'image' : 'text')
+  })
+}
+
+for (const tie of [false, true]) {
+  test(`whitespace distance preserves ${tie ? 'DOM-order ties' : 'nearest rectangle'}`, async ({ page }) => {
+    await open(page)
+    await page.locator(`${PREVIEW} h1`).evaluate((heading, tie) => {
+      const original = heading.matches('[data-peitho-src]') ? heading : heading.querySelector('[data-peitho-src]')
+      if (!original) throw new Error('Missing title source')
+      const slot = document.createElement('div'); slot.dataset.studioSlot = 'title'
+      for (const index of [0, 1]) {
+        const source = original.cloneNode(true)
+        if (!(source instanceof HTMLElement)) throw new Error('Missing source clone')
+        source.dataset.entryCandidate = String(index)
+        source.getBoundingClientRect = () => new DOMRect(tie ? 100 : index * 100, 0, 10, 10)
+        slot.append(source)
+      }
+      heading.replaceWith(slot)
+      slot.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true, clientX: 105, clientY: 5 }))
+    }, tie)
+    await expect(page.locator(FIELD)).toHaveAttribute('data-entry-candidate', tie ? '0' : '1')
+  })
+}
+
+for (const destination of ['image', 'none', 'rejected'] as const) {
+  test(`a ${destination} destination preserves its selection behavior`, async ({ page }) => {
+    const deck = await open(page)
+    await page.locator(`${PREVIEW} h1`).click()
+    await page.locator(FIELD).press('Escape')
+    const chooser = destination === 'image' ? page.waitForEvent('filechooser') : null
+    await page.locator(`${PREVIEW} .peitho-slide`).evaluate((slide, destination) => {
+      const selected = slide.querySelector('[data-studio-selected]')
+      if (!selected) throw new Error('Missing preceding selection')
+      selected.setAttribute('data-entry-candidate', 'previous')
+      const target = document.createElement('div')
+      target.dataset.entryCandidate = 'destination'
+      if (destination === 'image') {
+        target.dataset.studioSlot = 'image'; target.dataset.studioAccepts = 'image'
+      }
+      if (destination === 'rejected') {
+        target.dataset.peithoSrc = selected.getAttribute('data-peitho-src') ?? ''
+        target.dataset.peithoMd = 'not the rendered source'; target.textContent = 'Unresolvable text'
+      }
+      slide.append(target)
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }))
+    }, destination)
+    if (chooser) await chooser
+    await expect(page.locator(FIELD)).toHaveCount(0)
+    const selected = page.locator(`${PREVIEW} [data-studio-selected]`)
+    if (destination === 'none') await expect(selected).toHaveCount(0)
+    else {
+      await expect(selected).toHaveAttribute('data-entry-candidate', destination === 'image' ? 'previous' : 'destination')
+      await expect(selected).toHaveAttribute('tabindex', '0')
+    }
+    expect(deck.source).toBe(SOURCE)
+  })
+}
+
+for (const freeText of [false, true]) {
+  test(`list edit resolves the ${freeText ? 'free-text ancestor before' : 'ordinary'} slot`, async ({ page }) => {
+    const deck = await open(page, SOURCE + '\n::: {slot=left}\n\n- First\n- Second\n\n:::\n')
+    const preparedSlots: unknown[] = []
+    deck.commandError = (command, args) => {
+      if (command === 'create_image_canvas') preparedSlots.push(args.textSlot)
+      return null
+    }
+    if (freeText) await page.locator(`${PREVIEW} [data-studio-slot="left"]`).evaluate(slot => {
+      const wrapper = document.createElement('div'); wrapper.dataset.studioText = 'preferred'
+      slot.before(wrapper); wrapper.append(slot)
+    })
+    await page.locator(`${PREVIEW} [data-studio-slot="left"] li`).first().click()
+    await page.locator(FIELD).fill('Changed list')
+    await expect.poll(() => preparedSlots).toEqual([freeText ? 'preferred' : 'left'])
+  })
+}
+
+test('field mechanics promote the outermost list, filter annotations, and restore the original source', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\n- First\n- Second\n\n:::\n'
+  const deck = await open(page, source)
+  await page.locator(`${PREVIEW} [data-studio-slot="left"] ul`).evaluate(list => {
+    const [first, second] = list.querySelectorAll('li')
+    const nested = document.createElement('ol'); nested.append(second); first.append(nested)
+    list.setAttribute('data-outer-list', '')
+    list.style.whiteSpace = 'pre-wrap'
+    for (const invalid of ['span', 'quote']) {
+      const extra = document.createElement('span'); extra.dataset.peithoSrc = invalid === 'span' ? 'broken' : second.getAttribute('data-peitho-src') ?? ''
+      if (invalid === 'span') extra.dataset.peithoMd = 'bad span'
+      list.append(extra)
+    }
+    second.setAttribute('data-original-source', '')
+    second.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }))
+  })
+  await expect(page.locator(`${FIELD} > [data-outer-list]`)).toHaveCount(1)
+  await expect(page.locator(FIELD)).toHaveCSS('white-space', 'pre-wrap')
+  await page.locator(FIELD).press('Escape')
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  await expect(page.locator(`${PREVIEW} [data-studio-selected]`)).toHaveAttribute('data-original-source', '')
+  await expect(page.locator(`${PREVIEW} [data-outer-list]`)).not.toHaveAttribute('contenteditable')
+  expect(deck.source).toBe(source)
+  await page.locator(`${PREVIEW} [data-original-source]`).dispatchEvent('click')
+  await page.locator(FIELD).fill('Replacement')
+  await expect.poll(() => editorText(page)).toContain('Replacement')
+  await expect.poll(() => editorText(page)).not.toContain('First')
+  expect(await editorText(page)).not.toContain('Second')
+})
+
+test('field mechanics keep list ancestry without promotion for an empty slot', async ({ page }) => {
+  const deck = await open(page)
+  await page.locator(`${PREVIEW} [data-studio-slot="left"]`).evaluate(slot => {
+    const list = document.createElement('ul'), item = document.createElement('li')
+    list.style.whiteSpace = 'pre-line'
+    slot.before(list); list.append(item); item.append(slot)
+    slot.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }))
+  })
+  await expect(page.locator(`${PREVIEW} li > [data-studio-edit]`)).toHaveCount(1)
+  await expect(page.locator(`${FIELD} ul`)).toHaveCount(0)
+  await expect(page.locator(FIELD)).toHaveCSS('white-space', 'pre-line')
+  await page.locator(FIELD).press('Escape')
+  await expect(page.locator(`${PREVIEW} li > [data-studio-slot="left"]`)).toHaveCount(1)
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  expect(deck.source).toBe(SOURCE)
+})
+
+test('field mechanics consume active-field clicks through composition and rejected commits', async ({ page }) => {
+  const source = SOURCE + '\n::: {slot=left}\n\nBody\n\n:::\n'
+  const deck = await open(page, source)
+  const outsideClick = () => page.locator(`${PREVIEW} h1`).evaluate(heading => {
+    const source = heading.querySelector('[data-peitho-src]') ?? heading
+    source.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }))
+  })
+  await page.locator(`${PREVIEW} [data-studio-slot="left"] p`).click()
+  await page.locator(FIELD).evaluate(field => {
+    field.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+    field.textContent = 'Pending composition'
+    field.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true }))
+    field.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }))
+  })
+  await outsideClick()
+  await expect(page.locator(FIELD)).toHaveText('Pending composition')
+  expect(deck.source).toBe(source)
+  await page.locator(FIELD).evaluate(field => field.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })))
+  await expect.poll(() => deck.source).toContain('Pending composition')
+  await expect(page.locator(FIELD)).toHaveText('Pending composition')
+  const saved = deck.source
+  await page.locator(FIELD).evaluate(field => { field.textContent = '---' })
+  await outsideClick()
+  await expect(page.locator(FIELD)).toHaveAttribute('data-studio-edit-error', '')
+  await expect(page.locator(FIELD)).toHaveText('---')
+  expect(deck.source).toBe(saved)
+  await page.locator(FIELD).evaluate(field => { field.textContent = 'Accepted' })
+  await outsideClick()
+  await expect(page.locator(FIELD)).toHaveCount(0)
+  await expect.poll(() => deck.source).toContain('Accepted')
+})
+
+for (const caret of ['standard', 'vendor', 'null', 'outside'] as const) {
+  test(`field mechanics place the caret with ${caret} browser API results`, async ({ page }) => {
+    await open(page)
+    const actual = await page.locator(`${PREVIEW} h1`).evaluate((heading, caret) => {
+      const root = heading.getRootNode()
+      if (!(root instanceof ShadowRoot)) throw new Error('Missing shadow root')
+      const source = heading.matches('[data-peitho-src]') ? heading : heading.querySelector('[data-peitho-src]')
+      if (!source?.firstChild) throw new Error('Missing text source')
+      const text = source.firstChild, selection = window.getSelection()!
+      const saved = [Object.getOwnPropertyDescriptor(document, 'caretPositionFromPoint'), Object.getOwnPropertyDescriptor(document, 'caretRangeFromPoint'), Object.getOwnPropertyDescriptor(root, 'getSelection')]
+      const calls: string[] = []
+      let observed = { atText: false, atEnd: false, offset: -1, collapsed: false }
+      const add = selection.addRange
+      const position = (x: number, y: number, options: { shadowRoots: ShadowRoot[] }) => {
+        calls.push(`standard:${x},${y}:${options.shadowRoots[0] === root}`)
+        return caret === 'vendor' || caret === 'null' ? null : { offsetNode: caret === 'outside' ? document.body : text, offset: 1 }
+      }
+      const vendor = () => {
+        calls.push('vendor')
+        if (caret === 'null') return null
+        const range = document.createRange(); range.setStart(text, 2); range.collapse(true); return range
+      }
+      try {
+        Object.defineProperty(document, 'caretPositionFromPoint', { configurable: true, value: position })
+        Object.defineProperty(document, 'caretRangeFromPoint', { configurable: true, value: vendor })
+        Object.defineProperty(root, 'getSelection', { configurable: true, value: () => { calls.push('selection'); return selection } })
+        selection.addRange = range => {
+          observed = { atText: range.startContainer === text, atEnd: range.startContainer === source && range.startOffset === source.childNodes.length, offset: range.startOffset, collapsed: range.collapsed }
+          add.call(selection, range)
+        }
+        const event = new MouseEvent('click', { bubbles: true, composed: true, cancelable: true, clientX: 17, clientY: 23 })
+        source.dispatchEvent(event)
+        return { calls, observed, prevented: event.defaultPrevented, editable: source.getAttribute('contenteditable') }
+      } finally {
+        selection.addRange = add
+        for (const [index, [object, key]] of ([[document, 'caretPositionFromPoint'], [document, 'caretRangeFromPoint'], [root, 'getSelection']] as const).entries()) {
+          const descriptor = saved[index]
+          if (descriptor) Object.defineProperty(object, key, descriptor)
+          else Reflect.deleteProperty(object, key)
+        }
+      }
+    }, caret)
+    expect(actual.calls).toEqual(caret === 'vendor' || caret === 'null' ? ['standard:17,23:true', 'vendor', 'selection'] : ['standard:17,23:true', 'selection'])
+    expect(actual.observed).toEqual({ atText: caret === 'standard' || caret === 'vendor', atEnd: caret === 'null' || caret === 'outside', offset: caret === 'vendor' ? 2 : 1, collapsed: true })
+    expect(actual.prevented).toBe(true)
+    expect(actual.editable).toBe('true')
+  })
+}
+
+for (const change of ['selection', 'draft'] as const) {
+  test(`a cut awaiting the clipboard preserves a changed ${change}`, async ({ page }) => {
+    const source = SOURCE + '\n::: {slot=left}\n\nKeep **formatting**\n\n:::\n\n---\n<!-- {"key":"second","layout":"two-column"} -->\n# Second\n'
+    const deck = await open(page, source)
+    await page.evaluate(() => {
+      const w = window as unknown as { __mockInvoke: (cmd: string, args: unknown) => Promise<unknown>; __releaseCut?: () => void }
+      const invoke = w.__mockInvoke
+      w.__mockInvoke = async (cmd, args) => {
+        if (cmd === 'plugin:clipboard-manager|write_text') {
+          w.__mockInvoke = invoke
+          await new Promise<void>(resolve => { w.__releaseCut = resolve })
+        }
+        return invoke(cmd, args)
+      }
+    })
+    await page.locator(`${PREVIEW} p`).click({ button: 'right' })
+    await page.locator('[data-slide-menu]').getByRole('button', { name: /^Cut/ }).click()
+    await page.waitForFunction(() => Boolean((window as unknown as { __releaseCut?: () => void }).__releaseCut))
+    if (change === 'selection') {
+      await page.locator('[data-slide-row="1"]').click()
+      await expect(page.locator(`${PREVIEW} h1`)).toHaveText('Second')
+    } else {
+      await fillEditor(page, '# Title\n\nNew typing\n\nKeep **formatting**')
+    }
+    await page.evaluate(() => (window as unknown as { __releaseCut: () => void }).__releaseCut())
+    await expect.poll(() => deck.clipboardText).toBe('Keep **formatting**')
+    if (change === 'selection') expect(deck.source).toBe(source)
+    else await expect.poll(() => editorText(page)).toContain('New typing\n\nKeep **formatting**')
+  })
+}

@@ -8,12 +8,14 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { createTauriDeckIpc } from '../ipc/deckIpc'
 import { createTauriUpdateIpc } from '../ipc/updateIpc'
-import { initialUpdateStatus, canPrepareUpdate, showUpdateNotice, updateBlocksEditing, updateMessages, updateStatusText, type UpdateStatus } from '../domain/updates'
+import { initialUpdateStatus, updateBlocksEditing, updateMessages, type UpdateStatus } from '../domain/updates'
 import { createTauriSettingsIpc } from '../ipc/settingsIpc'
 import { createTauriEditorIpc } from '../ipc/editorIpc'
 import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
+import { elementActionFor } from '../domain/elementAction'
+import { previewElementPlacement } from '../dom/elementPlacement'
 import { editorTextChange } from '../domain/editorText'
-import { clearedSlideText, removeSlideText, imageSlotContent, textEditFor, textEditInsertion, slotTextInsertion, looseBodyEdit, removeImageSlot, type SlideEditTarget, type SlideEditSession } from '../domain/slideEdit'
+import { clearedSlideText, textEditFor, textEditInsertion, slotTextInsertion, looseBodyEdit, removeImageSlot, type SlideEditTarget, type SlideEditSession } from '../domain/slideEdit'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
   REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentKeyOf, commentTargetOf, layoutClickTarget, layoutTargetLabel, layoutTargetOfComment, lineSelectionOf, newLayoutComment, newReviewComment, pollsForAgent,
@@ -31,7 +33,11 @@ import { focusCommentBox, focusUnsentEdit, placePreviewPins, revealReviewThread,
 import { createReviewStore } from '../state/reviewStore'
 import { CommentBox } from './CommentBox'
 import { PanelToggle } from './PanelToggle'
+import { SlidesWorkspace } from './SlidesWorkspace'
+import { SlidesListDivider, StudioPanelColumn } from './StudioPanelColumn'
+import { UpdateNotices } from './UpdateNotices'
 import { ReviewPanel } from './ReviewPanel'
+import { ReviewColumn } from './ReviewColumn'
 import { type ManifestSlide, type RenderErrorPayload, type RenderPayload, type SectionDraft, brokenSlideIndex, renderFailureMessage } from '../domain/render'
 import { type BrokenSlides, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesAfterEdit, brokenSlidesSummary, isolateSlide, restoreEditAnnotations, saveDecision, savesUnrendered, sourceSaveDecision, startIsolation } from '../domain/brokenSlides'
 import { RenderFailure } from '../ipc/renderOutcome'
@@ -42,7 +48,7 @@ import { fileNameOf, partitionDroppedPaths } from '../domain/images'
 import { previewDevice, scaledDownPercent, viewportCanvas } from '../domain/viewport'
 import { hasFixedCanvas } from '../domain/slideFragment'
 import { type PageConfig } from '../domain/pageConfig'
-import { type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
+import { type EditorSession, type SelectionPlan, type SlideFields, opensSameSlide, reconcileAfterCommit, withRefreshedSaved, withDraftBody, withDraftNote } from '../domain/editorSession'
 import { type SlideCommand, applyCommand, indexAfterCommand, needsTimeResync, selectionPlanFor, validate } from '../domain/slideCommands'
 import { type FrontmatterStep, type HistoryStep, type LayoutPinsStep, type PageNumbersStep, type SlideChange, type StepOutcome, type StructuralStep, type TextField, type TextStep, applyFrontmatterStep, applyLayoutPinsStep, applyPageNumbersStep, commandForStep, inverseFrontmatterStep, inverseLayoutPinsStep, inversePageNumbersStep, historyPinsLayout, layoutPinnedSlide, layoutPinsStepFor, inverseStep, pageNumbersStepFor, selectionForReplay, slideConfigOfText } from '../domain/editorHistory'
 import { type DeckSettingsState, frontmatterValueOf, pickChangesNothing, readDeckSettings, resolveDeckSettingPick, sameDeckSettings } from '../domain/deckSettings'
@@ -113,6 +119,7 @@ import { DeckHeader } from './DeckHeader'
 import { ScriptTrustBanner } from './ScriptTrustBanner'
 import { StatusBar } from './StatusBar'
 import { SlidePreview } from './SlidePreview'
+import { SlidesEditorColumn } from './SlidesEditorColumn'
 import { SlideEditor } from './SlideEditor'
 import { SlideContextMenu } from './SlideContextMenu'
 import { SlideList } from './SlideList'
@@ -801,7 +808,9 @@ export function Studio() {
     if (renderedBody === null || (renderedBody !== before.replace(/\n{3,}/g, '\n\n').trim() && !recovery)) return null
     const rawBody = range ? extractPageComment(extractNote(range.text, true).rest, true).rest : ''
     const bodyStart = (range?.start ?? 0) + (range?.text.indexOf(rawBody) ?? 0)
-    const edit = target.kind === 'text' ? textEditFor(target, render.renderedSource(), before, bodyStart, rawBody) : recovery ? looseBodyEdit(before, target.slot, target.accepts) : null
+    let edit: ReturnType<typeof textEditFor> = null
+    if (target.kind === 'text') edit = textEditFor(target, render.renderedSource(), before, bodyStart, rawBody)
+    else if (recovery) edit = looseBodyEdit(before, target.slot, target.accepts)
     if (target.kind === 'text' && edit === null) return null
     let currentBody = before
     let historyStarted = false
@@ -1796,21 +1805,22 @@ export function Studio() {
     ui.closeContextMenu()
     const before = currentSlideText(index)
     const epoch = slidePositionsEpoch
+    const isCurrentSlide = (): boolean => editor.selectedIndex() === index && currentSlideText(index) === before && slidePositionsEpoch === epoch
     const { rest, note } = extractNote(before)
     const fields = extractPageComment(rest)
     const base = fields.config.layout ?? render.slideLayouts()[selectedSlideKey() ?? ''] ?? DEFAULT_LAYOUT
     setPreviewImageBusy(true)
     try {
       const text = await editorIpc.readClipboardText()
-      if (text !== copied.markdown || editor.selectedIndex() !== index || currentSlideText(index) !== before || slidePositionsEpoch !== epoch) return
+      if (text !== copied.markdown || !isCurrentSlide()) return
       const source = syncedSource(currentSlideTexts())
       let canvas = await imageIpc.createImageCanvas(source, base, copied.image ? 1 : 0, [], [], undefined, undefined, copied.image ? 0 : 1)
-      if (editor.selectedIndex() !== index || currentSlideText(index) !== before || slidePositionsEpoch !== epoch) return
+      if (!isCurrentSlide()) return
       if (copied.placement) {
         const rect = copied.placement
         canvas = await imageIpc.createImageCanvas(source, canvas.layout, 0, [{ slot: canvas.slots[0], ...rect, x: Math.min(1 - rect.width, rect.x + .02 * (pasteSerial() + 1)), y: Math.min(1 - rect.height, rect.y + .02 * (pasteSerial() + 1)) }]).then(positioned => ({ ...positioned, slots: canvas.slots }))
       }
-      if (editor.selectedIndex() !== index || currentSlideText(index) !== before || slidePositionsEpoch !== epoch) return
+      if (!isCurrentSlide()) return
       const body = `${fields.rest}\n\n::: {slot=${canvas.slots[0]}}\n\n${copied.markdown}\n\n:::`
       await perform({ kind: 'slides', cmd: { type: 'replace', index, text: buildSlideText({ ...fields.config, layout: canvas.layout }, body, note) } })
       setPasteSerial(pasteSerial() + 1)
@@ -1828,32 +1838,19 @@ export function Studio() {
     const before = currentSlideText(index)
     const epoch = slidePositionsEpoch
     const body = editor.bodyDraft()
-    const range = splitSlides(render.renderedSource())[index]
-    const renderedBody = range ? extractPageComment(extractNote(range.text).rest).rest : null
-    if (renderedBody !== body.trim()) return
-    const rawBody = extractPageComment(extractNote(range!.text, true).rest, true).rest
-    const bodyStart = range!.start + range!.text.indexOf(rawBody)
-    const edit = click.image ? null : click.hit?.byteSpan ? textEditFor({ ...click.hit, kind: 'text', byteSpan: click.hit.byteSpan, heading: click.hit.kind === 'heading' }, render.renderedSource(), body, bodyStart, rawBody) : null
+    const element = elementActionFor(click, render.renderedSource(), index, body)
+    if (!element) return
     const copiedDeckPath = deck.deckPath()
-    const previewRoot = document.querySelector('[data-preview-host]')?.shadowRoot
-    const imageElement = click.image ? Array.from(previewRoot?.querySelectorAll<HTMLElement>('[data-studio-image]') ?? []).find(element => element.dataset.studioImage === click.image?.slot) : Array.from(previewRoot?.querySelectorAll<HTMLElement>('[data-peitho-src]') ?? []).find(element => element.getAttribute('data-peitho-md') === click.hit?.quote && element.getAttribute('data-peitho-src') === `${click.hit?.byteSpan?.start}-${click.hit?.byteSpan?.end}`)?.closest<HTMLElement>('[data-studio-text],h1,h2,h3,h4,h5,h6,p,li')
-    const slideRect = imageElement?.closest('.peitho-slide')?.getBoundingClientRect()
-    const imageRect = imageElement?.getBoundingClientRect()
-    const placement = slideRect && imageRect ? { x: (imageRect.x - slideRect.x) / slideRect.width, y: (imageRect.y - slideRect.y) / slideRect.height, width: imageRect.width / slideRect.width, height: imageRect.height / slideRect.height } : undefined
-    const copied = click.image ? imageSlotContent(body, click.image.slot) : edit ? (edit.heading ? '# ' : '') + edit.value : null
-    if (copied === null) return
+    const placement = previewElementPlacement(click)
     try {
       if (action !== 'delete') {
-        await editorIpc.writeClipboardText(copied)
+        await editorIpc.writeClipboardText(element.markdown)
         setPasteSerial(0)
-        setElementClipboard({ markdown: copied, image: Boolean(click.image), deckPath: copiedDeckPath, placement })
+        setElementClipboard({ markdown: element.markdown, image: element.image, deckPath: copiedDeckPath, placement })
       }
       if (action === 'copy' || editor.selectedIndex() !== index || slidePositionsEpoch !== epoch || currentSlideText(index) !== before) return
-      if (click.image || click.textSlot) { await removePreviewImage(click.image?.slot ?? click.textSlot!); return }
-      if (edit && bodyEditor) {
-        const change = editorTextChange(body, removeSlideText(edit))
-        if (change) insertIntoCodeEditor(bodyEditor, { ...change, cursor: change.from }, 'delete.cut')
-      }
+      if (element.kind === 'slot') { await removePreviewImage(element.slot); return }
+      if (element.change && bodyEditor) insertIntoCodeEditor(bodyEditor, element.change, 'delete.cut')
     } catch (err) { setErrorMessage(String(err)) }
   }
 
@@ -2501,62 +2498,59 @@ export function Studio() {
       if (result.kind === 'failed' && !savesUnrendered(result.error, slideCount, asIs, handOff)) throw new RenderFailure(result.error)
       if (result.kind === 'rendered') render.applyRenderPayload(result.payload, nextSource, result.broken)
       await deckIpc.saveDeckSource(nextSource)
-      // Only now is the render the disk's: a write that fails leaves the
-      // file as it was, however well the draft rendered. The disk's render
-      // of a hand-off is the user's ask (`handOffSource`).
-      if (handOff) handOffSource = nextSource
-      if (result.kind === 'rendered') {
-        render.markDiskRendered(nextSource, result.broken)
-      } else {
-        // Known not to build as written: not rendered again until it changes.
-        persistedFailedSource = nextSource
-        render.markRenderFailed(result.error, nextSource)
-      }
-      editor.setFullSource(nextSource)
-      const ranges = splitSlides(nextSource)
-      editor.setSlideRanges(ranges)
-      if (cmd) slideStates.shift(cmd)
-      // `reconcileAfterCommit` only moves the selection/refreshes `saved`
-      // if the user hasn't already navigated elsewhere themselves while
-      // this was in flight — every caller passes a `SelectionPlan` naming
-      // its own intent (`keep` for `handleSave`/`commitSectionEdit`/
-      // `updateSlideConfig`, which never move anything; `follow-move` for
-      // `reorderSlides`, which keeps the open slide's own position even
-      // when the slide it moved isn't the one that's open;
-      // `select`/`clamp-after-delete` for insert/paste/delete) — never the
-      // position of whatever the change actually touched, or this would
-      // drag the selection there regardless of what the user had open.
-      const now = editor.editorSession()
-      const next = reconcileAfterCommit(before, now, ranges, plan, expectedDraft)
-      editor.setEditorSession(next)
-      // `next === now` means the user moved on (a different selection, or
-      // no change resolved) and this deliberately left it alone — nothing
-      // to push into the editors. Otherwise `saved` refreshed and/or
-      // `draft` synced to it, so re-sync (a no-op if `draft` itself didn't
-      // actually change, e.g. the user kept typing through the gap).
-      if (next !== now) {
-        if (opensSameSlide(plan)) {
-          syncEditorFields({ kind: 'same-slide' })
-        } else {
-          const left = before.kind === 'editing' ? before.index : null
-          syncEditorFields({
-            kind: 'switch',
-            from: left !== null && cmd ? indexAfterCommand(left, cmd) : left,
-            to: next.kind === 'editing' ? next.index : null,
-          })
-        }
-      }
+      recordSavedRender(nextSource, result, handOff)
+      reconcileSavedChange(nextSource, before, plan, expectedDraft, cmd)
       setStatusMessage({ kind: 'saved' })
       saved = true
       return true
     } catch (err) {
-      if (err instanceof RenderFailure) showBuildError(err.message)
-      else setErrorMessage(String(err))
+      if (err instanceof RenderFailure) {
+        showBuildError(err.message)
+        return false
+      }
+      setErrorMessage(String(err))
       return false
     } finally {
       finishSave(saved)
       setActiveSaveCount(saves.pendingCount())
     }
+  }
+
+  // Only a completed write makes the render the disk's. A failed write
+  // must leave disk-render tracking and hand-off identity untouched.
+  function recordSavedRender(source: string, result: Awaited<ReturnType<typeof renderIsolating>>, handOff: boolean): void {
+    if (handOff) handOffSource = source
+    if (result.kind === 'rendered') {
+      render.markDiskRendered(source, result.broken)
+      return
+    }
+    // Known not to build as written: not rendered again until it changes.
+    persistedFailedSource = source
+    render.markRenderFailed(result.error, source)
+  }
+
+  // Reconcile with the live selection after saving; a user who navigated or
+  // kept typing while the write was pending retains that newer editor state.
+  function reconcileSavedChange(source: string, before: EditorSession, plan: SelectionPlan, expectedDraft: { body: string; note: string } | undefined, cmd: SlideCommand | undefined): void {
+    editor.setFullSource(source)
+    const ranges = splitSlides(source)
+    editor.setSlideRanges(ranges)
+    if (cmd) slideStates.shift(cmd)
+    const now = editor.editorSession()
+    const next = reconcileAfterCommit(before, now, ranges, plan, expectedDraft)
+    editor.setEditorSession(next)
+    // An unchanged session means no fields should be pushed to the editors.
+    if (next === now) return
+    if (opensSameSlide(plan)) {
+      syncEditorFields({ kind: 'same-slide' })
+      return
+    }
+    const left = before.kind === 'editing' ? before.index : null
+    syncEditorFields({
+      kind: 'switch',
+      from: left !== null && cmd ? indexAfterCommand(left, cmd) : left,
+      to: next.kind === 'editing' ? next.index : null,
+    })
   }
 
   // The saved text for a slide, unless it's the one currently open with
@@ -4223,113 +4217,96 @@ export function Studio() {
       void setDeckSetting(payload)
     })
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (updateBlocksEditing(updateStatus())) { event.preventDefault(); return }
-      // While the settings panel is open, Escape closes it and every other
-      // shortcut waits, since Delete or an arrow key would otherwise act on
-      // the slides behind it.
+    const handleBlockingPanels = (event: KeyboardEvent): boolean => {
+      if (updateBlocksEditing(updateStatus())) { event.preventDefault(); return true }
       if (settings.panelOpen()) {
         if (event.key === 'Escape') {
           event.preventDefault()
           closeSettings()
         }
-        return
+        return true
       }
-      // While the phone shape menu is open, Escape closes it and every other
-      // shortcut waits: arrows would move the selection, and Delete or Cmd+X
-      // would act on a slide behind the open menu.
       if (ui.phoneShapeMenuOpen()) {
         if (event.key === 'Escape') {
           event.preventDefault()
           ui.closePhoneShapeMenu()
         }
-        return
+        return true
       }
-      // The layout screen's modals: Escape cancels, as their Cancel button
-      // does (not while a delete runs).
-      if (event.key === 'Escape' && ui.studioMode() === 'layouts' && layouts.newLayoutOpen()) {
+      return false
+    }
+    const handleModalEscape = (event: KeyboardEvent): boolean => {
+      if (event.key !== 'Escape') return false
+      if (ui.studioMode() === 'layouts' && layouts.newLayoutOpen()) {
         event.preventDefault()
         layouts.closeNewLayout()
-        return
+        return true
       }
-      if (event.key === 'Escape' && ui.studioMode() === 'layouts' && (layouts.deleteFlow().kind === 'confirming' || layouts.deleteFlow().kind === 'choosing-replacement')) {
+      if (ui.studioMode() === 'layouts' && (layouts.deleteFlow().kind === 'confirming' || layouts.deleteFlow().kind === 'choosing-replacement')) {
         event.preventDefault()
         layouts.cancelDeleteFlow()
-        return
+        return true
       }
-      // Like the slide menu just below: also when focus stayed in an editor
-      // through the right-click (see vim-mode.e2e.ts).
-      if (event.key === 'Escape' && layouts.menu().kind !== 'closed') {
+      if (layouts.menu().kind !== 'closed') {
         event.preventDefault()
         layouts.closeMenu()
-        return
+        return true
       }
-      if (event.key === 'Escape' && ui.contextMenu().kind !== 'closed') {
+      if (ui.contextMenu().kind !== 'closed') {
         event.preventDefault()
         ui.closeContextMenu()
-        return
+        return true
       }
-      if (isTypingInField()) return
-      if (document.activeElement?.closest('[data-panel="preview"]')) return
-      // The slide shortcuts (arrows, Delete, Cmd+X/C/V…) would act on slides
-      // out of sight while the layout screen shows.
-      if (ui.studioMode() === 'layouts') return
-      // Cmd+Z / Cmd+Shift+Z aren't handled here: left alone, they reach the
-      // Edit menu's Undo/Redo accelerators, the one path for both keyboard
-      // and mouse (see `onMenuHistory` above).
-      const key = event.key.toLowerCase()
-      if ((['Delete', 'Backspace'].includes(event.key) || (event.metaKey || event.ctrlKey) && ['x', 'c', 'v'].includes(key)) && !document.activeElement?.closest('[data-panel="slides"]')) return
-      // `slideEntries().length`, not `manifest.slideCount`/`manifest.slides.length`
-      // — the latter excludes drafts, which would leave ArrowUp/ArrowDown
-      // permanently unable to reach a draft placeholder (or anything past
-      // it) once a deck has one, even though it's reachable by click.
-      const count = slideEntries().length
-      if (count === 0) return
-      const current = editor.selectedIndex()
-      if (current !== null) {
-        if (event.metaKey && event.shiftKey && event.key === 'ArrowUp') {
-          event.preventDefault()
-          void moveSlide(current, -1)
-          return
-        }
-        if (event.metaKey && event.shiftKey && event.key === 'ArrowDown') {
-          event.preventDefault()
-          void moveSlide(current, 1)
-          return
-        }
-        if (event.metaKey && event.key === 'Enter') {
-          event.preventDefault()
-          void addSlide(current)
-          return
-        }
-        if (event.metaKey && key === 'x') {
+      return false
+    }
+    const handleSlideStructureShortcut = (event: KeyboardEvent, current: number): boolean => {
+      if (event.metaKey && event.shiftKey && event.key === 'ArrowUp') {
+        event.preventDefault()
+        void moveSlide(current, -1)
+        return true
+      }
+      if (event.metaKey && event.shiftKey && event.key === 'ArrowDown') {
+        event.preventDefault()
+        void moveSlide(current, 1)
+        return true
+      }
+      if (event.metaKey && event.key === 'Enter') {
+        event.preventDefault()
+        void addSlide(current)
+        return true
+      }
+      return false
+    }
+    const handleSlideEditShortcut = (event: KeyboardEvent, current: number): boolean => {
+      switch (event.metaKey ? event.key.toLowerCase() : '') {
+        case 'x':
           event.preventDefault()
           void cutSlide(current)
-          return
-        }
-        if (event.metaKey && key === 'c') {
+          return true
+        case 'c':
           // A slide stays "selected" (and this handler active) the whole
           // time a deck is open, so Cmd+C over an ordinary text selection
           // elsewhere (the deck path, an error message, ...) hit this
           // unconditionally and stole it — `preventDefault` here blocks
           // the native Edit-menu Copy from ever running. Only intercept
           // when there's no real text selection to defer to.
-          if ((window.getSelection()?.toString().length ?? 0) > 0) return
+          if ((window.getSelection()?.toString().length ?? 0) > 0) return true
           event.preventDefault()
           copySlide(current)
-          return
-        }
-        if (event.metaKey && key === 'v') {
+          return true
+        case 'v':
           event.preventDefault()
           void pasteSlideAfter(current)
-          return
-        }
-        if (event.key === 'Delete' || event.key === 'Backspace') {
-          event.preventDefault()
-          void deleteSlide(current)
-          return
-        }
+          return true
       }
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault()
+        void deleteSlide(current)
+        return true
+      }
+      return false
+    }
+    const handleSlideNavigation = (event: KeyboardEvent, current: number | null, count: number): void => {
       const base = current ?? 0
       if (event.key === 'ArrowDown') {
         event.preventDefault()
@@ -4338,6 +4315,24 @@ export function Studio() {
         event.preventDefault()
         void selectSlide(Math.max(base - 1, 0))
       }
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (handleBlockingPanels(event) || handleModalEscape(event)) return
+      if (isTypingInField()) return
+      if (document.activeElement?.closest('[data-panel="preview"]')) return
+      if (ui.studioMode() === 'layouts') return
+      // Cmd+Z / Cmd+Shift+Z aren't handled here: left alone, they reach the
+      // Edit menu's Undo/Redo accelerators, the one path for both keyboard
+      // and mouse (see `onMenuHistory` above).
+      const key = event.key.toLowerCase()
+      if ((['Delete', 'Backspace'].includes(event.key) || (event.metaKey || event.ctrlKey) && ['x', 'c', 'v'].includes(key)) && !document.activeElement?.closest('[data-panel="slides"]')) return
+      const count = slideEntries().length
+      if (count === 0) return
+      const current = editor.selectedIndex()
+      if (current !== null) {
+        if (handleSlideStructureShortcut(event, current) || handleSlideEditShortcut(event, current)) return
+      }
+      handleSlideNavigation(event, current, count)
     }
     // Escape closes an open right-click menu before anything under it hears
     // the key: an editor keeps focus through the right-click, and vim would
@@ -4473,16 +4468,26 @@ export function Studio() {
       <div className="flex-1 flex min-h-0">
         {/* The slides screen: its four panels, hidden (not unmounted) while
             the layout screen shows, so the editors keep their state. */}
-        <div data-slides-screen className={ui.studioMode() === 'slides' ? 'contents' : 'hidden'}>
-        <div data-panel-rail="" className="panel-rail" hidden={ui.slidesOpen() && ui.editorOpen() && ui.previewOpen() && (ui.reviewOpen() || !render.assetBaseUrl())}>
-          <PanelToggle panel="slides" language={settings.language()} hidden={ui.slidesOpen()} open={false} onToggle={() => ui.setSlidesOpen(true)} />
-          <PanelToggle panel="editor" language={settings.language()} hidden={ui.editorOpen()} open={false} onToggle={() => ui.setEditorOpen(true)} />
-          <PanelToggle panel="preview" language={settings.language()} hidden={ui.previewOpen()} open={false} onToggle={() => ui.setPreviewOpen(true)} />
-          <PanelToggle panel="review" language={settings.language()} hidden={ui.reviewOpen() || !render.assetBaseUrl()} open={false} onToggle={() => ui.setReviewOpen(true)} />
-        </div>
-        <div data-panel="slides" hidden={!ui.slidesOpen()} className="studio-panel">
-          <PanelToggle panel="slides" language={settings.language()} open={true} onToggle={() => { ui.closeContextMenu(); ui.setSlidesOpen(!ui.slidesOpen()) }} />
-          <div id="panel-slides" className={ui.slidesOpen() ? 'panel-content' : 'hidden'}>
+        <SlidesWorkspace
+          language={settings.language()}
+          mode={ui.studioMode()}
+          slidesOpen={ui.slidesOpen()}
+          editorOpen={ui.editorOpen()}
+          previewOpen={ui.previewOpen()}
+          reviewOpen={ui.reviewOpen()}
+          assetBaseUrl={render.assetBaseUrl()}
+          onOpenSlides={() => ui.setSlidesOpen(true)}
+          onOpenEditor={() => ui.setEditorOpen(true)}
+          onOpenPreview={() => ui.setPreviewOpen(true)}
+          onOpenReview={() => ui.setReviewOpen(true)}
+        >
+        <StudioPanelColumn
+          panel="slides"
+          className="studio-panel"
+          language={settings.language()}
+          open={ui.slidesOpen()}
+          onToggle={() => { ui.closeContextMenu(); ui.setSlidesOpen(!ui.slidesOpen()) }}
+        >
             <SlideList
               language={settings.language()}
               deckOpen={deck.deckPath() !== null}
@@ -4514,21 +4519,18 @@ export function Studio() {
               onSectionTimeInput={onSectionTimeInput}
               onCommitSectionEdit={closeSectionEditor}
             />
-          </div>
-        </div>
+        </StudioPanelColumn>
 
-        <div
-          hidden={!ui.slidesOpen()}
-          className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"
-          onMouseDown={startColumnResize(ui.slideListWidth, ui.setSlideListWidth, 1)}
-        />
+        <SlidesListDivider open={ui.slidesOpen()} onResize={startColumnResize(ui.slideListWidth, ui.setSlideListWidth, 1)} />
 
-        <div data-panel="editor" hidden={!ui.editorOpen()} className="studio-panel" style={ui.editorOpen() && !ui.previewOpen() ? 'flex: 1; min-width: 0' : ''}>
-          <PanelToggle panel="editor" language={settings.language()} open={true} onToggle={() => ui.setEditorOpen(!ui.editorOpen())} />
-          <div id="panel-editor"
-            className={ui.editorOpen() ? 'panel-content border-r border-border' : 'hidden'}
-            style={ui.previewOpen() ? `width: ${ui.editorWidth()}px` : 'width: 100%'}
-          >
+        <SlidesEditorColumn
+          language={settings.language()}
+          editorOpen={ui.editorOpen()}
+          previewOpen={ui.previewOpen()}
+          editorWidth={ui.editorWidth()}
+          onToggle={() => ui.setEditorOpen(!ui.editorOpen())}
+          onResize={startColumnResize(ui.editorWidth, ui.setEditorWidth, 1)}
+        >
             <SlideEditor
               language={settings.language()}
               hasSelection={editor.selectedRange() !== null}
@@ -4539,18 +4541,15 @@ export function Studio() {
               onToggleSource={toggleSourceEditor}
               onSourceHost={onSourceEditorHost}
             />
-          </div>
-        </div>
+        </SlidesEditorColumn>
 
-        <div
-          hidden={!ui.editorOpen() || !ui.previewOpen()}
-          className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"
-          onMouseDown={startColumnResize(ui.editorWidth, ui.setEditorWidth, 1)}
-        />
-
-        <div data-panel="preview" hidden={!ui.previewOpen()} className="studio-panel preview-panel">
-          <PanelToggle panel="preview" language={settings.language()} open={true} onToggle={() => { ui.closePhoneShapeMenu(); review.closeBox(); ui.setPreviewOpen(!ui.previewOpen()) }} />
-          <div id="panel-preview" className={ui.previewOpen() ? 'panel-content' : 'hidden'}>
+        <StudioPanelColumn
+          panel="preview"
+          language={settings.language()}
+          open={ui.previewOpen()}
+          className="studio-panel preview-panel"
+          onToggle={() => { ui.closePhoneShapeMenu(); review.closeBox(); ui.setPreviewOpen(!ui.previewOpen()) }}
+        >
             <SlidePreview
               language={settings.language()}
               selectedSlideKey={selectedSlideKey()}
@@ -4585,10 +4584,9 @@ export function Studio() {
               onImageClipboard={(slot, action) => { void runElementAction(action, { hit: null, pin: null, at: { x: 0, y: 0 }, image: { slot, order: [] } }) }}
               onRemoveImage={slot => { void removePreviewImage(slot) }}
             />
-          </div>
-        </div>
+        </StudioPanelColumn>
 
-        </div>
+        </SlidesWorkspace>
         {/* The layout screen's rail, leftmost like the slides screen's: a
             folded column's icon reopens it, the comments column's too. */}
         <div data-layout-panel-rail="" className="panel-rail" hidden={ui.studioMode() !== 'layouts' || !layoutRailShown(layoutColumns())}>
@@ -4671,68 +4669,57 @@ export function Studio() {
           onConfirmDelete={() => void confirmLayoutDelete()}
           onCancelDelete={layouts.cancelDeleteFlow}
         />
-        {/* The comments column, rightmost: a fourth column rather than a
-            strip under the preview, so the threads get the window's full
-            height. Hidden with the panel until a deck is open. Shared by
-            both screens — one column, one open/closed state, the same
-            threads — and outside both, so the layout screen has it too
-            (groundwork for todo/archive/layout-review-comments.md). While the layout
-            screen shows, its own rail holds the toggle to reopen it. */}
-        <div
-          hidden={!render.assetBaseUrl() || !ui.reviewOpen()}
-          className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40"
-          onMouseDown={startColumnResize(ui.reviewPanelWidth, ui.setReviewPanelWidth, -1)}
-        />
-
-        <div hidden={!render.assetBaseUrl() || !ui.reviewOpen()} data-panel="review" className="studio-panel" style={reviewFillsRow() ? 'flex: 1; min-width: 0' : ''}>
-          <PanelToggle panel="review" language={settings.language()} open={true} onToggle={() => ui.setReviewOpen(!ui.reviewOpen())} />
-          <div id="panel-review"
-            className={ui.reviewOpen() ? 'panel-content border-l border-border' : 'hidden'}
-            style={reviewFillsRow() ? 'width: 100%' : `width: ${ui.reviewPanelWidth()}px`}
-          >
-            <ReviewPanel
-              language={settings.language()}
-              shown={Boolean(render.assetBaseUrl())}
-              status={reviewStatus()}
-              canSend={review.availability().kind === 'ready'}
-              sending={review.busy() === 'sending'}
-              sendCount={review.sendCount()}
-              working={agentWorking()}
-              onReconnect={review.forgetAgent}
-              error={review.error()}
-              rows={reviewPanelRows()}
-              resolvedCount={reviewResolvedCount()}
-              showResolved={review.showResolved()}
-              resolvedToggleLabel={review.showResolved() ? settings.messages().hideResolved : settings.messages().showResolved(reviewResolvedCount())}
-              onToggleResolved={review.toggleShowResolved}
-              onSelectSlide={index => void selectSlideFromReview(index)}
-              onSelectLayout={target => void selectLayoutFromReview(target)}
-              highlightedThread={highlightedThread()}
-              replyText={review.replyDraft()?.text ?? ''}
-              onSend={() => void sendReview()}
-              onDiscard={review.discard}
-              editText={review.unsentEdit()?.text ?? ''}
-              onStartEdit={id => {
-                review.startEdit(id)
-                focusUnsentEdit()
-              }}
-              onEditInput={review.setEditText}
-              onEditSave={review.commitEdit}
-              onEditCancel={review.cancelEdit}
-              onStartReply={commentId => review.editReply(commentId, '')}
-              onReplyInput={review.setReplyText}
-              onReplyAdd={review.commitReply}
-              onReplyCancel={review.cancelReply}
-              onResolve={id => void resolveReviewComment(id)}
-              connectShown={connectShown()}
-              connectPrompt={connectPrompt()}
-              connectCommand={connectCommand()}
-              copied={connectCopied()}
-              onCopyPrompt={() => void copyConnectText('prompt')}
-              onCopyCommand={() => void copyConnectText('command')}
-            />
-          </div>
-        </div>
+        <ReviewColumn
+          language={settings.language()}
+          shown={Boolean(render.assetBaseUrl())}
+          open={ui.reviewOpen()}
+          fillsRow={reviewFillsRow()}
+          width={ui.reviewPanelWidth()}
+          onToggle={() => ui.setReviewOpen(!ui.reviewOpen())}
+          onResizeStart={startColumnResize(ui.reviewPanelWidth, ui.setReviewPanelWidth, -1)}
+        >
+          <ReviewPanel
+            language={settings.language()}
+            shown={Boolean(render.assetBaseUrl())}
+            status={reviewStatus()}
+            canSend={review.availability().kind === 'ready'}
+            sending={review.busy() === 'sending'}
+            sendCount={review.sendCount()}
+            working={agentWorking()}
+            onReconnect={review.forgetAgent}
+            error={review.error()}
+            rows={reviewPanelRows()}
+            resolvedCount={reviewResolvedCount()}
+            showResolved={review.showResolved()}
+            resolvedToggleLabel={review.showResolved() ? settings.messages().hideResolved : settings.messages().showResolved(reviewResolvedCount())}
+            onToggleResolved={review.toggleShowResolved}
+            onSelectSlide={index => void selectSlideFromReview(index)}
+            onSelectLayout={target => void selectLayoutFromReview(target)}
+            highlightedThread={highlightedThread()}
+            replyText={review.replyDraft()?.text ?? ''}
+            onSend={() => void sendReview()}
+            onDiscard={review.discard}
+            editText={review.unsentEdit()?.text ?? ''}
+            onStartEdit={id => {
+              review.startEdit(id)
+              focusUnsentEdit()
+            }}
+            onEditInput={review.setEditText}
+            onEditSave={review.commitEdit}
+            onEditCancel={review.cancelEdit}
+            onStartReply={commentId => review.editReply(commentId, '')}
+            onReplyInput={review.setReplyText}
+            onReplyAdd={review.commitReply}
+            onReplyCancel={review.cancelReply}
+            onResolve={id => void resolveReviewComment(id)}
+            connectShown={connectShown()}
+            connectPrompt={connectPrompt()}
+            connectCommand={connectCommand()}
+            copied={connectCopied()}
+            onCopyPrompt={() => void copyConnectText('prompt')}
+            onCopyCommand={() => void copyConnectText('command')}
+          />
+        </ReviewColumn>
       </div>
       )}
 
@@ -4837,19 +4824,12 @@ export function Studio() {
         onConfirm={() => void dispatch({ type: 'create-confirmed' })}
       />
 
-      <div role="status" data-update-notice hidden={!showUpdateNotice(updateStatus())}
-        className="fixed bottom-10 right-4 z-30 max-w-sm rounded-lg border border-border bg-popover text-popover-foreground p-3 shadow-lg">
-        <p className="text-sm font-medium">{updateStatusText(updateStatus(), settings.language())}</p>
-        <p className="text-xs whitespace-pre-wrap mt-2" hidden={!updateStatus().security}>{updateStatus().security ?? ''}</p>
-        <p role="alert" className="text-xs text-destructive mt-2" hidden={!updateStatus().error}>{updateStatus().error ?? ''}</p>
-        <div className="flex gap-3 mt-2 text-sm">
-          <button type="button" hidden={!canPrepareUpdate(updateStatus())} onClick={() => void runUpdateAction('prepare')} className="underline">{updateMessages(settings.language()).prepare}</button>
-          <button type="button" hidden={updateStatus().security !== null} onClick={() => void runUpdateAction('dismiss')}>{updateMessages(settings.language()).later}</button>
-        </div>
-      </div>
-      <div role="alert" hidden={!updateBlocksEditing(updateStatus())} className="fixed top-0 right-0 bottom-0 left-0 z-50 bg-popover text-popover-foreground flex items-center justify-center">
-        <p>{updateStatusText(updateStatus(), settings.language())}</p>
-      </div>
+      <UpdateNotices
+        status={updateStatus()}
+        language={settings.language()}
+        onPrepare={() => void runUpdateAction('prepare')}
+        onDismiss={() => void runUpdateAction('dismiss')}
+      />
       <SettingsPanel
         isOpen={settings.panelOpen()}
         language={settings.language()}

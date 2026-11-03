@@ -163,6 +163,8 @@ export interface MockDeck {
    * defaults to 0. Set this to act (e.g. Undo) while a deletion is in
    * flight. */
   deleteLayoutDelayMs?: number
+  /** Holds `delete_layout` after recording the invocation until this promise resolves. */
+  deleteLayoutGate?: Promise<void>
   /** When set, `render_draft` fails for a source with a slide naming a
    * layout `layouts` doesn't list — as peitho-core does once a layout's
    * file is gone. Off by default: most tests name layouts freely. */
@@ -518,6 +520,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
   })
   await page.exposeFunction('__mockInvoke', async (cmd: string, args: Record<string, unknown>) => {
     deck.invokedCommands?.push(cmd)
+    if (cmd === 'delete_layout' && deck.deleteLayoutGate) await deck.deleteLayoutGate
     const error = deck.commandError?.(cmd, args)
     if (cmd === 'present_deck' && deck.presentDeckDelayMs) await sleep(deck.presentDeckDelayMs)
     if (cmd === 'open_deck' && deck.openDeckDelayMs) await sleep(deck.openDeckDelayMs)

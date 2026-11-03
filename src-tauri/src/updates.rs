@@ -199,6 +199,26 @@ async fn fetch_signed_manifest(public_key: &str) -> Result<(serde_json::Value, S
     Ok((manifest, SignedManifest { bytes, signature }))
 }
 
+fn validate_offered_archive(raw_json: Option<&serde_json::Value>, manifest: &serde_json::Value, announced: &Version, current: &Version) -> Result<(), String> {
+    if let Some(raw_json) = raw_json {
+        if raw_json != manifest { return Err("Update information changed during verification. Please retry.".into()); }
+    } else if announced > current {
+        return Err("The announced update is not available for this app".into());
+    }
+    Ok(())
+}
+
+fn checked_status(version: Option<&str>, notes: Option<&str>, security: Option<String>, announced: &Version, dismissed_version: Option<&str>) -> UpdateStatus {
+    UpdateStatus {
+        phase: if version.is_some() { UpdatePhase::Available } else { UpdatePhase::Current },
+        version: version.map(str::to_owned),
+        notes: notes.map(str::to_owned),
+        dismissed: security.is_none() && dismissed_version.is_some_and(|v| v == announced.to_string()),
+        security,
+        ..Default::default()
+    }
+}
+
 async fn check(app: &AppHandle, automatic: bool) -> Result<UpdateStatus, String> {
     let state = app.state::<AppUpdates>();
     // Share an in-flight check/download rather than start another request.
@@ -260,20 +280,13 @@ async fn check(app: &AppHandle, automatic: bool) -> Result<UpdateStatus, String>
         persist(app);
         publish(app);
         let update = app.updater_builder().timeout(Duration::from_secs(30)).build().map_err(|err| err.to_string())?.check().await.map_err(|err| err.to_string())?;
-        if let Some(update) = &update {
-            if update.raw_json != manifest { return Err("Update information changed during verification. Please retry.".into()); }
-        } else if version > *current {
-            return Err("The announced update is not available for this app".into());
-        }
+        validate_offered_archive(update.as_ref().map(|u| &u.raw_json), &manifest, &version, current)?;
         let mut inner = state.inner.lock().unwrap();
-        inner.status = UpdateStatus {
-            phase: if update.is_some() { UpdatePhase::Available } else { UpdatePhase::Current },
-            version: update.as_ref().map(|u| u.version.clone()),
-            notes: update.as_ref().and_then(|u| u.body.clone()),
-            dismissed: security.is_none() && inner.dismissed_version.as_ref().is_some_and(|v| v == &version.to_string()),
-            security,
-            ..Default::default()
-        };
+        inner.status = checked_status(
+            update.as_ref().map(|u| u.version.as_str()),
+            update.as_ref().and_then(|u| u.body.as_deref()),
+            security, &version, inner.dismissed_version.as_deref(),
+        );
         inner.update = update;
         inner.manifest = Some(signed);
         Ok::<(), String>(())
@@ -492,40 +505,47 @@ pub fn intercept_exit(app: &AppHandle, api: &tauri::ExitRequestApi) {
     });
 }
 
+fn restore_history(inner: &mut Inner, history: History, key: Option<&str>, current: &Version, time: u64) {
+    inner.last_attempt = history.last_attempt.min(time);
+    inner.dismissed_version = history.dismissed_version;
+    let (Some(signed), Some(key)) = (history.manifest, key) else { return };
+    let Ok(manifest) = verify_manifest(&signed.bytes, &signed.signature, key) else { return };
+    let Some(version) = manifest.get("version")
+        .and_then(|v| v.as_str())
+        .and_then(|v| Version::parse(v).ok())
+        .filter(|v| v.pre.is_empty()) else { return };
+    let Ok(security) = security_reason(&manifest, current, &version) else { return };
+    inner.highest_version = Some(version.clone());
+    if version > *current {
+        inner.status.phase = UpdatePhase::Available;
+        inner.status.version = Some(version.to_string());
+        inner.status.notes = manifest.get("notes").and_then(|v| v.as_str()).map(str::to_owned);
+        inner.status.dismissed = security.is_none() && inner.dismissed_version == inner.status.version;
+        inner.status.security = security;
+    }
+    inner.manifest = Some(signed);
+}
+
+fn restore_update_directory(inner: &mut Inner, dir: &std::path::Path, key: Option<&str>, current: &Version) {
+    if let Ok(bytes) = std::fs::read(dir.join("update-history.json")) {
+        if let Ok(history) = serde_json::from_slice::<History>(&bytes) {
+            restore_history(inner, history, key, current, now());
+        }
+    }
+    if let Ok(error) = std::fs::read_to_string(dir.join("update-error.txt")) {
+        inner.status.phase = UpdatePhase::Error;
+        inner.status.error = Some(error);
+        let _ = std::fs::remove_file(dir.join("update-error.txt"));
+    }
+}
+
 pub fn initialize(app: &AppHandle) {
     let state = app.state::<AppUpdates>();
     let mut inner = state.inner.lock().unwrap();
-    inner.status.phase = if public_key(app).is_some() { UpdatePhase::Idle } else { UpdatePhase::Unconfigured };
+    let key = public_key(app);
+    inner.status.phase = if key.is_some() { UpdatePhase::Idle } else { UpdatePhase::Unconfigured };
     if let Ok(dir) = app.path().app_config_dir() {
-        if let Ok(bytes) = std::fs::read(dir.join("update-history.json")) {
-            if let Ok(history) = serde_json::from_slice::<History>(&bytes) {
-                inner.last_attempt = history.last_attempt.min(now());
-                inner.dismissed_version = history.dismissed_version;
-                if let (Some(signed), Some(key)) = (history.manifest, public_key(app)) {
-                    if let Ok(manifest) = verify_manifest(&signed.bytes, &signed.signature, &key) {
-                        if let Some(version) = manifest.get("version").and_then(|v| v.as_str()).and_then(|v| Version::parse(v).ok()).filter(|v| v.pre.is_empty()) {
-                            let current = &app.package_info().version;
-                            if let Ok(security) = security_reason(&manifest, current, &version) {
-                                inner.highest_version = Some(version.clone());
-                                if version > *current {
-                                    inner.status.phase = UpdatePhase::Available;
-                                    inner.status.version = Some(version.to_string());
-                                    inner.status.notes = manifest.get("notes").and_then(|v| v.as_str()).map(str::to_owned);
-                                    inner.status.dismissed = security.is_none() && inner.dismissed_version == inner.status.version;
-                                    inner.status.security = security;
-                                }
-                                inner.manifest = Some(signed);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if let Ok(error) = std::fs::read_to_string(dir.join("update-error.txt")) {
-            inner.status.phase = UpdatePhase::Error;
-            inner.status.error = Some(error);
-            let _ = std::fs::remove_file(dir.join("update-error.txt"));
-        }
+        restore_update_directory(&mut inner, &dir, key.as_deref(), &app.package_info().version);
     }
 }
 
@@ -614,6 +634,61 @@ mod tests {
         assert!(security_reason(&json!({}), &current, &current).unwrap().is_none());
     }
     #[test]
+    fn offered_archive_must_match_the_authenticated_manifest_even_without_a_newer_announcement() {
+        let announced = Version::parse("1.1.0").unwrap();
+        let manifest = json!({"version":"1.1.0", "notes":"Signed notes"});
+        let changed = json!({"version":"1.1.0", "notes":"Changed notes"});
+        for current in ["1.0.0", "1.1.0", "1.2.0"] {
+            let current = Version::parse(current).unwrap();
+            assert!(validate_offered_archive(Some(&manifest), &manifest, &announced, &current).is_ok());
+            assert_eq!(validate_offered_archive(Some(&changed), &manifest, &announced, &current).unwrap_err(),
+                "Update information changed during verification. Please retry.");
+        }
+    }
+
+    #[test]
+    fn missing_archive_only_fails_for_a_newer_announcement() {
+        let announced = Version::parse("1.1.0").unwrap();
+        let manifest = json!({"version":"1.1.0"});
+        assert_eq!(validate_offered_archive(None, &manifest, &announced, &Version::parse("1.0.0").unwrap()).unwrap_err(),
+            "The announced update is not available for this app");
+        for current in ["1.1.0", "1.2.0"] {
+            assert!(validate_offered_archive(None, &manifest, &announced, &Version::parse(current).unwrap()).is_ok());
+        }
+    }
+
+    #[test]
+    fn checked_status_preserves_archive_fields_and_security_overrides_remembered_dismissal() {
+        let announced = Version::parse("1.1.0").unwrap();
+        let status = checked_status(Some("1.1.0"), Some("Archive notes"), None, &announced, Some("1.1.0"));
+        assert!(status.phase == UpdatePhase::Available);
+        assert_eq!(status.version.as_deref(), Some("1.1.0"));
+        assert_eq!(status.notes.as_deref(), Some("Archive notes"));
+        assert!(status.dismissed);
+        for reason in ["Security fix", ""] {
+            let status = checked_status(Some("1.1.0"), None, Some(reason.into()), &announced, Some("1.1.0"));
+            assert_eq!(status.security.as_deref(), Some(reason));
+            assert!(!status.dismissed);
+        }
+        assert!(!checked_status(Some("1.1.0"), None, None, &announced, Some("1.0.0")).dismissed);
+        assert!(!checked_status(Some("1.1.0"), None, None, &announced, None).dismissed);
+    }
+
+    #[test]
+    fn checked_current_status_still_uses_the_announced_version_for_dismissal() {
+        let announced = Version::parse("1.1.0").unwrap();
+        let status = checked_status(None, None, None, &announced, Some("1.1.0"));
+        assert!(status.phase == UpdatePhase::Current);
+        assert!(status.dismissed);
+        assert_eq!(status.version, None);
+        assert_eq!(status.notes, None);
+        assert_eq!(status.downloaded, 0);
+        assert_eq!(status.total, None);
+        assert_eq!(status.error, None);
+        assert!(!status.install_on_exit);
+    }
+
+    #[test]
     fn scheduler_boundaries_and_clock_rollback() {
         assert!(due(0, 1));
         assert!(!due(100, 99));
@@ -640,5 +715,210 @@ mod tests {
         for (sig,key) in [("", ""),("invalid", "invalid"),("eA==", "eA==")] {
             assert!(verify_manifest(b"{}",sig,key).is_err());
         }
+    }
+    const RECOVERY_KEY: &str = include_str!("fixtures/updates/recovery.pub");
+    const ORIGINAL_KEY: &str = include_str!("fixtures/updates/test.pub");
+
+    fn cached_release(bytes: &[u8], signature: &str) -> History {
+        History {
+            last_attempt: 200,
+            dismissed_version: Some("1.1.0".into()),
+            manifest: Some(SignedManifest { bytes: bytes.to_vec(), signature: signature.into() }),
+        }
+    }
+
+    fn normal_release() -> History {
+        cached_release(include_bytes!("fixtures/updates/latest.json"), include_str!("fixtures/updates/latest.json.sig"))
+    }
+
+    fn seeded_recovery() -> Inner {
+        let mut inner = Inner::default();
+        inner.status.version = Some("seed version".into());
+        inner.status.notes = Some("seed notes".into());
+        inner.status.security = Some("seed security".into());
+        inner.status.error = Some("seed error".into());
+        inner.status.dismissed = true;
+        inner.status.downloaded = 17;
+        inner.status.total = Some(29);
+        inner.status.install_on_exit = true;
+        inner.bytes = Some(vec![1, 2]);
+        inner.install_on_exit = true;
+        inner.manual_install = true;
+        inner.exit_token = 42;
+        inner.exit_acks.insert("main".into(), Some(true));
+        inner.exiting = true;
+        inner.highest_version = Some(Version::parse("0.9.0").unwrap());
+        inner.manifest = Some(SignedManifest { bytes: b"seed".to_vec(), signature: "seed signature".into() });
+        inner
+    }
+
+    fn assert_unrelated_recovery_state(inner: &Inner) {
+        assert_eq!(inner.status.downloaded, 17);
+        assert_eq!(inner.status.total, Some(29));
+        assert!(inner.status.install_on_exit);
+        assert_eq!(inner.bytes.as_deref(), Some([1, 2].as_slice()));
+        assert!(inner.install_on_exit && inner.manual_install && inner.exiting);
+        assert_eq!(inner.exit_token, 42);
+        assert_eq!(inner.exit_acks.get("main"), Some(&Some(true)));
+    }
+
+    #[test]
+    fn given_a_newer_cached_release_when_recovered_then_fields_and_clock_are_restored() {
+        let history = normal_release();
+        let mut inner = seeded_recovery();
+        restore_history(&mut inner, normal_release(), Some(ORIGINAL_KEY), &Version::parse("1.0.0").unwrap(), 100);
+        assert!(inner.status.phase == UpdatePhase::Available);
+        assert_unrelated_recovery_state(&inner);
+        assert_eq!(inner.last_attempt, 100);
+        assert_eq!(inner.dismissed_version.as_deref(), Some("1.1.0"));
+        assert_eq!(inner.highest_version, Some(Version::parse("1.1.0").unwrap()));
+        assert_eq!(inner.status.version.as_deref(), Some("1.1.0"));
+        assert_eq!(inner.status.notes.as_deref(), Some("Test release"));
+        assert_eq!(inner.status.security, None);
+        assert!(inner.status.dismissed);
+        assert_eq!(inner.manifest.as_ref().unwrap().bytes, history.manifest.as_ref().unwrap().bytes);
+        assert_eq!(inner.manifest.as_ref().unwrap().signature, history.manifest.as_ref().unwrap().signature);
+    }
+
+    #[test]
+    fn given_an_equal_or_older_release_when_recovered_then_only_the_cache_and_floor_change() {
+        for current in ["1.1.0", "1.2.0"] {
+            let mut inner = seeded_recovery();
+            let status = serde_json::to_value(&inner.status).unwrap();
+            restore_history(&mut inner, normal_release(), Some(ORIGINAL_KEY), &Version::parse(current).unwrap(), 300);
+            assert!(inner.status.phase == UpdatePhase::Idle);
+            assert_eq!(inner.last_attempt, 200);
+            assert_eq!(inner.highest_version, Some(Version::parse("1.1.0").unwrap()));
+            assert_eq!(inner.manifest.as_ref().unwrap().bytes, normal_release().manifest.unwrap().bytes);
+            assert_eq!(serde_json::to_value(&inner.status).unwrap(), status);
+            assert_unrelated_recovery_state(&inner);
+        }
+    }
+
+    #[test]
+    fn given_untrusted_or_absent_cache_when_recovered_then_metadata_survives_without_clearing_fields() {
+        let mut tampered = normal_release();
+        tampered.manifest.as_mut().unwrap().bytes.push(b' ');
+        let mut unsigned = normal_release();
+        unsigned.manifest.as_mut().unwrap().signature = "bad signature".into();
+        let mut absent = normal_release();
+        absent.manifest = None;
+        for (history, key) in [
+            (normal_release(), None),
+            (tampered, Some(ORIGINAL_KEY)),
+            (unsigned, Some(ORIGINAL_KEY)),
+            (absent, Some(ORIGINAL_KEY)),
+        ] {
+            let mut inner = seeded_recovery();
+            inner.status.phase = UpdatePhase::Unconfigured;
+            let status = serde_json::to_value(&inner.status).unwrap();
+            inner.highest_version = Some(Version::parse("0.9.0").unwrap());
+            restore_history(&mut inner, history, key, &Version::parse("1.0.0").unwrap(), 100);
+            assert_eq!(inner.last_attempt, 100);
+            assert_eq!(inner.dismissed_version.as_deref(), Some("1.1.0"));
+            assert!(inner.status.phase == UpdatePhase::Unconfigured);
+            assert_eq!(serde_json::to_value(&inner.status).unwrap(), status);
+            assert_unrelated_recovery_state(&inner);
+            assert_eq!(inner.highest_version, Some(Version::parse("0.9.0").unwrap()));
+            assert_eq!(inner.manifest.as_ref().unwrap().bytes, b"seed");
+            assert_eq!(inner.manifest.as_ref().unwrap().signature, "seed signature");
+        }
+    }
+
+    #[test]
+    fn given_authenticated_advisories_when_restored_then_security_overrides_dismissal_and_invalid_ranges_block_cache() {
+        let current = Version::parse("1.0.0").unwrap();
+        let bytes = include_bytes!("fixtures/updates/security.json");
+        let signature = include_str!("fixtures/updates/security.json.sig");
+        assert!(verify_manifest(bytes, signature, RECOVERY_KEY).is_ok());
+        let mut inner = seeded_recovery();
+        restore_history(&mut inner, cached_release(bytes, signature), Some(RECOVERY_KEY), &current, 100);
+        assert!(inner.status.phase == UpdatePhase::Available);
+        assert_eq!(inner.status.security.as_deref(), Some("Security fix"));
+        assert!(!inner.status.dismissed);
+        let bytes = include_bytes!("fixtures/updates/invalid-security.json");
+        let signature = include_str!("fixtures/updates/invalid-security.json.sig");
+        let authenticated = verify_manifest(bytes, signature, RECOVERY_KEY).unwrap();
+        assert!(security_reason(&authenticated, &current, &Version::parse("1.1.0").unwrap()).is_err());
+        let mut invalid = seeded_recovery();
+        restore_history(&mut invalid, cached_release(bytes, signature), Some(RECOVERY_KEY), &current, 100);
+        assert_eq!(invalid.last_attempt, 100);
+        assert_eq!(invalid.highest_version, Some(Version::parse("0.9.0").unwrap()));
+        assert_eq!(invalid.manifest.as_ref().unwrap().bytes, b"seed");
+        assert_eq!(invalid.manifest.as_ref().unwrap().signature, "seed signature");
+        assert_eq!(invalid.status.version.as_deref(), Some("seed version"));
+        assert_eq!(invalid.status.notes.as_deref(), Some("seed notes"));
+        assert_eq!(invalid.status.security.as_deref(), Some("seed security"));
+        assert!(invalid.status.dismissed);
+        assert_eq!(invalid.status.error.as_deref(), Some("seed error"));
+        assert_eq!(invalid.dismissed_version.as_deref(), Some("1.1.0"));
+        assert_unrelated_recovery_state(&invalid);
+        assert!(invalid.status.phase == UpdatePhase::Idle);
+    }
+
+    #[test]
+    fn given_a_readable_error_marker_when_history_is_bad_or_missing_then_error_is_consumed() {
+        for history in [None, Some(b"not json".as_slice()), Some(b"\xff".as_slice())] {
+            for error in ["", "install failed\n"] {
+                let dir = tempfile::tempdir().unwrap();
+                if let Some(bytes) = history {
+                    std::fs::write(dir.path().join("update-history.json"), bytes).unwrap();
+                }
+                let marker = dir.path().join("update-error.txt");
+                std::fs::write(&marker, error).unwrap();
+                let mut inner = seeded_recovery();
+                restore_update_directory(&mut inner, dir.path(), None, &Version::parse("1.0.0").unwrap());
+                assert!(inner.status.phase == UpdatePhase::Error);
+                assert_eq!(inner.status.error.as_deref(), Some(error));
+                assert!(!marker.exists());
+                assert_eq!(inner.status.version.as_deref(), Some("seed version"));
+                assert_eq!(inner.status.notes.as_deref(), Some("seed notes"));
+                assert_eq!(inner.status.security.as_deref(), Some("seed security"));
+                assert!(inner.status.dismissed);
+                assert_unrelated_recovery_state(&inner);
+            }
+        }
+    }
+
+    #[test]
+    fn given_valid_history_when_error_overrides_available_then_recovered_fields_remain() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("update-history.json"), serde_json::to_vec(&normal_release()).unwrap()).unwrap();
+        let marker = dir.path().join("update-error.txt");
+        std::fs::write(&marker, "failed").unwrap();
+        let mut inner = seeded_recovery();
+        restore_update_directory(&mut inner, dir.path(), Some(ORIGINAL_KEY), &Version::parse("1.0.0").unwrap());
+        assert!(inner.status.phase == UpdatePhase::Error);
+        assert_eq!(inner.status.error.as_deref(), Some("failed"));
+        assert_eq!(inner.status.version.as_deref(), Some("1.1.0"));
+        assert_eq!(inner.status.notes.as_deref(), Some("Test release"));
+        assert!(inner.status.dismissed);
+        assert!(inner.manifest.is_some());
+        assert!(inner.highest_version.is_some());
+        assert!(!marker.exists());
+        assert_eq!(inner.status.security, None);
+        assert_unrelated_recovery_state(&inner);
+    }
+
+    #[test]
+    fn given_missing_or_non_utf8_marker_when_recovered_then_existing_fields_are_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("update-error.txt");
+        let current = Version::parse("1.0.0").unwrap();
+        let mut inner = seeded_recovery();
+        inner.status.error = Some("old error".into());
+        inner.last_attempt = 75;
+        let status = serde_json::to_value(&inner.status).unwrap();
+        restore_update_directory(&mut inner, dir.path(), None, &current);
+        assert!(inner.status.phase == UpdatePhase::Idle);
+        assert_eq!(inner.last_attempt, 75);
+        std::fs::write(&marker, [0xff]).unwrap();
+        restore_update_directory(&mut inner, dir.path(), None, &current);
+        assert!(inner.status.phase == UpdatePhase::Idle);
+        assert_eq!(inner.status.error.as_deref(), Some("old error"));
+        assert!(marker.exists());
+        assert_eq!(serde_json::to_value(&inner.status).unwrap(), status);
+        assert_eq!(inner.status.version.as_deref(), Some("seed version"));
+        assert_unrelated_recovery_state(&inner);
     }
 }

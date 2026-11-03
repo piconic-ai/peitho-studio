@@ -1,27 +1,22 @@
 'use client'
 
 import { type ManifestSection, type SectionDraft } from '../domain/render'
-import { type DurationPart, formatDurationMs, msToMinutesSeconds } from '../domain/slides'
+import { type DurationPart } from '../domain/slides'
 import { type SlideListEntry } from '../domain/slideList'
 import { type RowVisibility } from '../domain/sectionCollapse'
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
 import { commentKeyOf } from '../domain/reviewComment'
 import { mountSlideCanvas, observeCanvasScale } from '../dom/slideCanvas'
-import { isFocusMovingWithinSectionHeader, showCanonicalValue } from '../dom/sectionHeader'
+import { SlideSectionHeader } from './SlideSectionHeader'
+import { SlideStatusOverlay } from './SlideStatusOverlay'
+import { slideRowClass } from './slideRow'
 
 // Every prop here is a called value or a plain callback (never a signal
 // getter or a setter) — see `components/WelcomeScreen.tsx` for the BF044
 // rationale and `docs/architecture.md`'s "children never receive a setter"
-// rule. This is the largest and most delicate extraction in this stack: the
-// `.map()` over `entries` stays entirely inside this one component (rows
-// are NOT split into further per-row child components) because
-// BarefootJS's compiler fuses a whole `.map()` row's dynamic attributes into
-// one shared `createEffect` per row — see the comment above the canvas
-// host's own `ref` below for why that fusion is load-bearing here, and
-// `todo/archive/studio-tsx-refactoring.md`'s Step 19 entry for why a per-row
-// component split was deliberately avoided without a spike to validate it
-// first.
+// rule. Row identity, drag handling, visibility and canvas mounting stay
+// together in the keyed map; section controls own only header presentation.
 export interface SlideListProps {
   /** The UI language every label here is shown in. */
   language: Language
@@ -147,27 +142,14 @@ export function SlideList(props: SlideListProps) {
                 data-slide-row={String(entry.sourceIndex)}
                 onMouseDown={props.onDragStart(entry.sourceIndex)}
                 onContextMenu={e => props.onContextMenu(entry.sourceIndex, e)}
-                className={
-                  // `relative z-10` lifts the dragged row above its
-                  // siblings while `style`'s `translateY` below carries
-                  // it past them — without a stacking order bump it
-                  // would slide *under* whichever row it's currently
-                  // overlapping instead of visibly floating over it.
-                  (props.draggedIndex === entry.sourceIndex ? 'relative z-10 opacity-60 shadow-lg rounded-md ' : '')
-                  + (props.draggedIndex !== null && props.dragOverGap === entry.sourceIndex ? 'border-t-2 border-t-primary ' : '')
-                  // The gap after the whole list is marked on the last row
-                  // that shows at all: the very last row may sit inside a
-                  // collapsed section.
-                  + (props.draggedIndex !== null && props.dragOverGap === props.entries.length && entry.sourceIndex === props.lastVisibleRow ? 'border-b-2 border-b-primary ' : '')
-                  // A collapsed section's rows stay mounted and are only
-                  // hidden: unmounting and remounting a row's canvas host
-                  // runs into piconic-ai/barefootjs#2927/#3009 (see
-                  // CLAUDE.md). A hidden row has an all-zero bounding box,
-                  // so `dom/dragGesture.ts`'s `gapUnderCursor` never picks
-                  // it as a drop gap.
-                  + (props.rowVisibility[entry.sourceIndex] === 'hidden' ? 'hidden ' : '')
-                  + 'cursor-grab'
-                }
+                className={slideRowClass({
+                  index: entry.sourceIndex,
+                  draggedIndex: props.draggedIndex,
+                  dragOverGap: props.dragOverGap,
+                  entryCount: props.entries.length,
+                  lastVisibleRow: props.lastVisibleRow,
+                  visibility: props.rowVisibility[entry.sourceIndex],
+                })}
                 // `scale` lives here instead of a `scale-95` class
                 // because `transform` doesn't merge across a class and
                 // an inline style — whichever is specified in `style`
@@ -178,97 +160,18 @@ export function SlideList(props: SlideListProps) {
                 style={props.draggedIndex === entry.sourceIndex ? `transform: translateY(${String(props.dragDeltaY)}px) scale(0.95)` : ''}
               >
                 {props.sectionStartByIndex[entry.sourceIndex] ? (
-                  <div className="flex items-center gap-2 pt-3 pb-1">
-                    {/* Folds the section's slides away (or back) — separate
-                        from the summary button beside it, which opens the
-                        header's name/time editor instead. One SVG chevron
-                        rotated for the collapsed state, not the ▾/▸ text
-                        glyphs: those two differ in size and baseline from
-                        font to font, so the icon visibly jumped on toggle.
-                        `w-4` matches the slide rows' number column so the
-                        chevron and the header text line up with it. */}
-                    <button
-                      type="button"
-                      aria-label={props.rowVisibility[entry.sourceIndex] === 'header-only' ? messagesFor(props.language).expandSection : messagesFor(props.language).collapseSection}
-                      aria-expanded={props.rowVisibility[entry.sourceIndex] === 'header-only' ? 'false' : 'true'}
-                      onClick={() => props.onToggleSectionCollapse(entry.sourceIndex)}
-                      className="shrink-0 w-4 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground"
-                    >
-                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" className={props.rowVisibility[entry.sourceIndex] === 'header-only' ? 'block w-3 h-3 -rotate-90' : 'block w-3 h-3'}>
-                        <path d="m6 9 6 6 6-6" />
-                      </svg>
-                    </button>
-                    <div className="min-w-0 flex-1">
-                      {props.editingSectionIndex === entry.sourceIndex ? (
-                        // The time is edited with two number spinners instead of
-                        // free text in peitho's `1m30s` format, so no input can
-                        // produce a time peitho rejects (see `domain/slides.ts`'s
-                        // `withDurationPart`). The header saves — and collapses
-                        // back to its plain summary below — once focus leaves
-                        // it, not on each input's own blur (see
-                        // `isFocusMovingWithinSectionHeader`).
-                        <div data-section-header="" className="flex items-center gap-1">
-                          <input
-                            aria-label={messagesFor(props.language).sectionName}
-                            // Focused on opening by Studio.tsx (`focusSectionNameInput`),
-                            // not by a `ref` here: a `ref` in this branch runs only
-                            // when the row first mounts.
-                            value={props.sectionDraftOf(entry.sourceIndex).name}
-                            onInput={e => props.onSectionNameInput(entry.sourceIndex, e.target.value)}
-                            onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
-                            onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                            className="min-w-0 flex-1 bg-transparent outline-none text-xs font-semibold text-foreground/80"
-                          />
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            aria-label={messagesFor(props.language).sectionMinutes}
-                            value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes)}
-                            onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'minutes', e.target.valueAsNumber)}
-                            onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).minutes))}
-                            onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
-                            onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                            className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
-                          />
-                          <span className="shrink-0 text-xs text-muted-foreground">{messagesFor(props.language).minutesUnit}</span>
-                          {/* No `min`/`max` on the seconds spinner, so its arrows
-                              step past 59 and below 0 and carry into or borrow
-                              from the minutes. */}
-                          <input
-                            type="number"
-                            step="1"
-                            aria-label={messagesFor(props.language).sectionSeconds}
-                            value={String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds)}
-                            onInput={e => props.onSectionTimeInput(entry.sourceIndex, 'seconds', e.target.valueAsNumber)}
-                            onChange={e => showCanonicalValue(e.target, String(msToMinutesSeconds(props.sectionDraftOf(entry.sourceIndex).timeMs).seconds))}
-                            onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(entry.sourceIndex) }}
-                            onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
-                            className="w-10 shrink-0 bg-transparent outline-none text-xs text-muted-foreground text-right"
-                          />
-                          <span className="shrink-0 text-xs text-muted-foreground">{messagesFor(props.language).secondsUnit}</span>
-                        </div>
-                      ) : (
-                        // Collapsed by default: the native spinner arrows
-                        // permanently sitting in an otherwise plain list read as
-                        // an unstyled form, not a slide list, so they only
-                        // appear once someone actually asks to edit this header.
-                        <button
-                          type="button"
-                          aria-label={messagesFor(props.language).editSection}
-                          onClick={() => props.onEditSection(entry.sourceIndex)}
-                          className="w-full flex items-center gap-1 text-left"
-                        >
-                          <span className="min-w-0 flex-1 truncate text-xs font-semibold text-foreground/80">
-                            {props.sectionDraftOf(entry.sourceIndex).name}
-                          </span>
-                          <span className="shrink-0 text-xs text-muted-foreground">
-                            {formatDurationMs(props.sectionDraftOf(entry.sourceIndex).timeMs)}
-                          </span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  <SlideSectionHeader
+                    language={props.language}
+                    index={entry.sourceIndex}
+                    collapsed={props.rowVisibility[entry.sourceIndex] === 'header-only'}
+                    editing={props.editingSectionIndex === entry.sourceIndex}
+                    draft={props.sectionDraftOf(entry.sourceIndex)}
+                    onToggleSectionCollapse={props.onToggleSectionCollapse}
+                    onEditSection={props.onEditSection}
+                    onSectionNameInput={props.onSectionNameInput}
+                    onSectionTimeInput={props.onSectionTimeInput}
+                    onCommitSectionEdit={props.onCommitSectionEdit}
+                  />
                 ) : null}
                 <button
                   type="button"
@@ -337,28 +240,7 @@ export function SlideList(props: SlideListProps) {
                           <span className="text-xs text-muted-foreground text-center line-clamp-3">{entry.kind === 'placeholder' ? (entry.title || messagesFor(props.language).slideFallbackTitle(entry.sourceIndex + 1)) : ''}</span>
                         </div>
                       )}
-                      {/* Laid over the thumbnail (canvas or placeholder)
-                          rather than replacing it, so the slide stays
-                          recognizable underneath (`domain/slideStatus.ts`'s
-                          `slideEntryBadge` decided which, as `entry.badge`). */}
-                      {entry.badge !== null ? (
-                        <span
-                          data-slide-status={entry.badge}
-                          className="absolute top-0 right-0 bottom-0 left-0 flex items-start justify-end p-1 bg-black/40 pointer-events-none"
-                        >
-                          {/* DRAFT and SKIP share the same subdued, dark
-                              treatment — SKIP used to be a solid destructive
-                              red, which read as an error/alert rather than
-                              an ordinary editorial state, easily the most
-                              eye-catching thing on the whole slide list.
-                              ERROR is exactly that alert — the slide was
-                              left out of the render for not building — so
-                              it alone takes the destructive color. */}
-                          <span className={(entry.badge === 'error' ? 'bg-destructive text-destructive-foreground' : 'bg-muted text-foreground') + ' rounded-sm px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide'}>
-                            {messagesFor(props.language)[entry.badge === 'error' ? 'errorBadge' : entry.badge === 'draft' ? 'draftBadge' : 'skipBadge']}
-                          </span>
-                        </span>
-                      ) : null}
+                      <SlideStatusOverlay badge={entry.badge} language={props.language} />
                       {/* The slide's comments for the agent (unsent, and
                           unresolved in crit). Kept mounted and hidden at
                           zero rather than branched in, like the canvas

@@ -213,6 +213,25 @@ fn build_recent_menu(app: &tauri::AppHandle, recents: &[String], labels: &MenuLa
     Submenu::with_items(app, labels.open_recent, true, &refs)
 }
 
+fn open_menu_resource(app_handle: &tauri::AppHandle, id: &str) {
+    if let Some(url) = help_links::url_for_menu_id(id) {
+        if let Err(err) = app_handle.opener().open_url(url, None::<&str>) {
+            log::error!("failed to open a Help link: {err}");
+        }
+    } else if id == logging::LOG_FILE_MENU_ID {
+        if let Err(err) = logging::show_log_file(app_handle) {
+            log::error!("failed to show the log file: {err}");
+        }
+    } else if let Some(index) = id.strip_prefix("recent_deck:").and_then(|s| s.parse::<usize>().ok()) {
+        let recents = peitho::read_recent_decks(app_handle);
+        if let Some(path) = recents.get(index).cloned() {
+            let pending = app_handle.state::<PendingDecks>();
+            let session = app_handle.state::<PeithoSession>();
+            let _ = peitho::open_deck_window_impl(app_handle, &pending, &session, path);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -248,59 +267,52 @@ pub fn run() {
         .on_menu_event(|app_handle, event| {
             if updates::blocks_editing(app_handle) { return; }
             let id = event.id().as_ref();
-            if edit_menu::forward(app_handle, id) {
-                // Undo/Redo: handled by the focused window's frontend.
-            } else if peitho::forward_deck_menu(app_handle, id) {
-                // Deck settings: written by the focused window's frontend.
-            } else if id == settings::MENU_ID {
-                // The settings panel is an in-app modal: open it in the
-                // window the user is looking at.
-                edit_menu::emit_to_focused(app_handle, settings::MENU_EVENT, ());
-            } else if id == update_window::MENU_ID {
-                if let Err(err) = update_window::open_window(app_handle) {
-                    log::error!("failed to open the update window: {err}");
+            // Undo/Redo and deck settings are handled by the focused window's frontend.
+            if edit_menu::forward(app_handle, id) || peitho::forward_deck_menu(app_handle, id) {
+                return;
+            }
+            match id {
+                settings::MENU_ID => {
+                    // The settings panel is an in-app modal: open it in the
+                    // window the user is looking at.
+                    edit_menu::emit_to_focused(app_handle, settings::MENU_EVENT, ());
                 }
-            } else if id == about::MENU_ID {
-                if let Err(err) = about::open_window(app_handle) {
-                    log::error!("failed to open the About window: {err}");
+                update_window::MENU_ID => {
+                    if let Err(err) = update_window::open_window(app_handle) {
+                        log::error!("failed to open the update window: {err}");
+                    }
                 }
-            } else if id == QUIT_MENU_ID {
-                // Raises `RunEvent::ExitRequested`, where a prepared update
-                // is installed first (see `quit_item` in the menu builder).
-                app_handle.exit(0);
-            } else if id == "new_deck" {
-                // Needs the in-app name-entry modal, so it's routed back
-                // through the frontend rather than handled here.
-                let _ = app_handle.emit("menu:new-deck", ());
-            } else if id == "open_deck" {
-                let app_handle = app_handle.clone();
-                let title = i18n::menu_labels(settings::ui_language(&app_handle)).open_deck_dialog_title;
-                app_handle
-                    .dialog()
-                    .file()
-                    .set_title(title)
-                    .pick_folder(move |folder| {
-                        let Some(folder) = folder else { return };
-                        let Ok(path) = folder.into_path() else { return };
-                        let pending = app_handle.state::<PendingDecks>();
-                        let session = app_handle.state::<PeithoSession>();
-                        let _ = peitho::open_deck_window_impl(&app_handle, &pending, &session, path.display().to_string());
-                    });
-            } else if let Some(url) = help_links::url_for_menu_id(id) {
-                if let Err(err) = app_handle.opener().open_url(url, None::<&str>) {
-                    log::error!("failed to open a Help link: {err}");
+                about::MENU_ID => {
+                    if let Err(err) = about::open_window(app_handle) {
+                        log::error!("failed to open the About window: {err}");
+                    }
                 }
-            } else if id == logging::LOG_FILE_MENU_ID {
-                if let Err(err) = logging::show_log_file(app_handle) {
-                    log::error!("failed to show the log file: {err}");
+                QUIT_MENU_ID => {
+                    // Raises `RunEvent::ExitRequested`, where a prepared update
+                    // is installed first (see `quit_item` in the menu builder).
+                    app_handle.exit(0);
                 }
-            } else if let Some(index) = id.strip_prefix("recent_deck:").and_then(|s| s.parse::<usize>().ok()) {
-                let recents = peitho::read_recent_decks(app_handle);
-                if let Some(path) = recents.get(index).cloned() {
-                    let pending = app_handle.state::<PendingDecks>();
-                    let session = app_handle.state::<PeithoSession>();
-                    let _ = peitho::open_deck_window_impl(app_handle, &pending, &session, path);
+                "new_deck" => {
+                    // Needs the in-app name-entry modal, so it's routed back
+                    // through the frontend rather than handled here.
+                    let _ = app_handle.emit("menu:new-deck", ());
                 }
+                "open_deck" => {
+                    let app_handle = app_handle.clone();
+                    let title = i18n::menu_labels(settings::ui_language(&app_handle)).open_deck_dialog_title;
+                    app_handle
+                        .dialog()
+                        .file()
+                        .set_title(title)
+                        .pick_folder(move |folder| {
+                            let Some(folder) = folder else { return };
+                            let Ok(path) = folder.into_path() else { return };
+                            let pending = app_handle.state::<PendingDecks>();
+                            let session = app_handle.state::<PeithoSession>();
+                            let _ = peitho::open_deck_window_impl(&app_handle, &pending, &session, path.display().to_string());
+                        });
+                }
+                _ => open_menu_resource(app_handle, id),
             }
         })
         .on_window_event(|window, event| {

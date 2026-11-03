@@ -20,6 +20,89 @@ export interface SlideEditingCallbacks {
 const watched = new WeakMap<ShadowRoot, { callbacks: SlideEditingCallbacks; close: () => void }>()
 const CONTROLS = 'button,input,textarea,select,summary,a,video,audio,[contenteditable],[role="button"]'
 
+type DOMEditTarget =
+  | { kind: 'none' }
+  | { kind: 'image'; slot: string | null }
+  | { kind: 'edit'; element: HTMLElement; target: SlideEditTarget }
+
+function sourceDistance(element: HTMLElement, point: Pick<MouseEvent, 'clientX' | 'clientY'>): number {
+  const rect = element.getBoundingClientRect()
+  return Math.max(rect.left - point.clientX, 0, point.clientX - rect.right) ** 2
+    + Math.max(rect.top - point.clientY, 0, point.clientY - rect.bottom) ** 2
+}
+
+function nearestSlotSource(target: Element, slide: Element, point: Pick<MouseEvent, 'clientX' | 'clientY'>): HTMLElement | null {
+  const containedSlots = target === slide ? [] : target.querySelectorAll('[data-studio-slot]')
+  const slot = target.closest('[data-studio-slot], [data-studio-text]')
+    ?? (containedSlots.length === 1 ? containedSlots[0] : null)
+  const candidates = Array.from(slot?.querySelectorAll<HTMLElement>('[data-peitho-src]') ?? [])
+    .filter(element => !element.closest('pre,code,[data-studio-image]') && element.tagName !== 'IMG')
+  return candidates.sort((a, b) => sourceDistance(a, point) - sourceDistance(b, point))[0] ?? null
+}
+
+function sourceElementAtPoint(target: Element, slide: Element, point: Pick<MouseEvent, 'clientX' | 'clientY'>): HTMLElement | null {
+  return target.closest<HTMLElement>('[data-peitho-src]')
+    ?? target.closest('h1,h2,h3,h4,h5,h6')?.querySelector<HTMLElement>('[data-peitho-src]')
+    ?? nearestSlotSource(target, slide, point)
+}
+
+function textDescriptorForElement(element: HTMLElement): Extract<SlideEditTarget, { kind: 'text' }> | null {
+  const byteSpan = parseSourceSpan(element.getAttribute('data-peitho-src'))
+  const quote = element.getAttribute('data-peitho-md')
+  if (!byteSpan || quote === null || element.closest('pre,code')) return null
+  return {
+    kind: 'text',
+    slot: element.closest<HTMLElement>('[data-studio-text]')?.dataset.studioText
+      ?? element.closest<HTMLElement>('[data-studio-slot]')?.dataset.studioSlot,
+    byteSpan,
+    quote,
+    text: element.textContent ?? '',
+    heading: Boolean(element.closest('h1,h2,h3,h4,h5,h6')),
+  }
+}
+
+function resolveDOMEditTarget(target: Element, slide: Element, point: Pick<MouseEvent, 'clientX' | 'clientY'>): DOMEditTarget {
+  const source = sourceElementAtPoint(target, slide, point)
+  if (source) {
+    const descriptor = textDescriptorForElement(source)
+    return descriptor ? { kind: 'edit', element: source, target: descriptor } : { kind: 'none' }
+  }
+  const empty = target.closest<HTMLElement>('[data-studio-empty]')
+  if (!empty) return { kind: 'none' }
+  if (empty.dataset.studioAccepts === 'image') return { kind: 'image', slot: empty.dataset.studioSlot ?? null }
+  return {
+    kind: 'edit',
+    element: empty,
+    target: { kind: 'slot', slot: empty.dataset.studioSlot ?? '', accepts: empty.dataset.studioAccepts ?? '' },
+  }
+}
+
+function listEditContext(element: HTMLElement, target: SlideEditTarget): { element: HTMLElement; target: SlideEditTarget; selectedElement: HTMLElement; list: HTMLElement | null } {
+  const selectedElement = element
+  let list = element.closest<HTMLElement>('ul,ol')
+  while (list?.parentElement?.closest<HTMLElement>('ul,ol')) list = list.parentElement.closest<HTMLElement>('ul,ol')
+  if (list && target.kind === 'text') {
+    const listItems = Array.from(list.querySelectorAll<HTMLElement>('[data-peitho-src]')).flatMap(item => {
+      const byteSpan = parseSourceSpan(item.getAttribute('data-peitho-src'))
+      const quote = item.getAttribute('data-peitho-md')
+      return byteSpan && quote !== null ? [{ byteSpan, quote }] : []
+    })
+    if (listItems.length) { target = { ...target, listItems }; element = list }
+  }
+  return { element, target, selectedElement, list }
+}
+
+function placeEditingCaret(field: HTMLElement, point: Pick<MouseEvent, 'clientX' | 'clientY'>, root: ShadowRoot, getSelection: () => Selection | null): void {
+  const doc = document as Document & { caretPositionFromPoint?: (x: number, y: number, options?: { shadowRoots: ShadowRoot[] }) => { offsetNode: Node; offset: number } | null; caretRangeFromPoint?: (x: number, y: number) => Range | null }
+  const position = doc.caretPositionFromPoint?.(point.clientX, point.clientY, { shadowRoots: [root] })
+  let range = position ? document.createRange() : doc.caretRangeFromPoint?.(point.clientX, point.clientY)
+  if (position && range) { range.setStart(position.offsetNode, position.offset); range.collapse(true) }
+  if (!range || !field.contains(range.startContainer)) {
+    range = document.createRange(); range.selectNodeContents(field); range.collapse(false)
+  }
+  const selection = getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+}
+
 /** Edit the rendered element in place. Commit on leaving it, preserving
  * the slide typography and one CodeMirror Undo transaction per session. */
 export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCallbacks): void {
@@ -85,6 +168,31 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
 
   `
   root.append(style)
+  const ensureImageHandles = (image: HTMLElement) => {
+    if (image.querySelector('[data-studio-handle]')) return
+    for (const [direction, x, y] of [['nw', 0, 0], ['n', 50, 0], ['ne', 100, 0], ['w', 0, 50], ['e', 100, 50], ['sw', 0, 100], ['s', 50, 100], ['se', 100, 100]] as const) {
+      const handle = document.createElement('span'); handle.dataset.studioHandle = direction
+      handle.style.left = `${x}%`; handle.style.top = `${y}%`
+      handle.style.cursor = `${direction}-resize`
+      image.append(handle)
+    }
+  }
+  const updateSlotPlaceholder = (element: HTMLElement, accepts: string) => {
+    const ja = state.callbacks.language() === 'ja'
+    const labels: Record<string, string> = ja ? { title: 'タイトルを入力', body: '本文を入力', left: '左の文章を入力', right: '右の文章を入力', subtitle: 'サブタイトルを入力', footnotes: '脚注を追加' } : { title: 'Add a title', body: 'Add text', left: 'Add left column text', right: 'Add right column text', subtitle: 'Add a subtitle', footnotes: 'Add a footnote' }
+    element.dataset.studioPlaceholder = accepts === 'image' ? (ja ? '画像を追加' : 'Add an image') : (labels[element.dataset.studioSlot ?? ''] ?? (ja ? 'クリックして入力' : 'Click to add text'))
+  }
+  const isEmptySlot = (element: HTMLElement, accepts: string): boolean =>
+    ['inline', 'blocks', 'list', 'image'].includes(accepts) && element.textContent?.trim() === '' && !element.querySelector('img,svg,video,canvas')
+  const refreshSlotMarkers = (element: HTMLElement) => {
+    const accepts = element.dataset.studioAccepts ?? ''
+    const empty = isEmptySlot(element, accepts)
+    element.toggleAttribute('data-studio-empty', Boolean(empty) && state.callbacks.enabled())
+    const freeText = element.closest<HTMLElement>('[data-studio-text]')
+    if (freeText) freeText.hidden = Boolean(empty) && !freeText.querySelector('[data-studio-edit]')
+    if (state.callbacks.enabled() && !freeText?.hidden && (empty || element.matches('[data-studio-edit], :has([data-studio-edit])'))) revealHiddenAncestors(element)
+    updateSlotPlaceholder(element, accepts)
+  }
   const markEmpty = () => {
     host.toggleAttribute('data-studio-editing', state.callbacks.enabled())
     if (!style.isConnected) root.append(style)
@@ -96,27 +204,9 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     for (const element of root.querySelectorAll<HTMLElement>('[data-peitho-src], [data-studio-empty]')) element.toggleAttribute('data-studio-selected', element === selectedText)
     const images = Array.from(root.querySelectorAll<HTMLElement>('[data-studio-image]'))
     for (const image of images) image.toggleAttribute('data-studio-selected', image === selectedImage)
-    for (const image of root.querySelectorAll<HTMLElement>('[data-studio-image]')) {
-      if (image.querySelector('[data-studio-handle]')) continue
-      for (const [direction, x, y] of [['nw', 0, 0], ['n', 50, 0], ['ne', 100, 0], ['w', 0, 50], ['e', 100, 50], ['sw', 0, 100], ['s', 50, 100], ['se', 100, 100]] as const) {
-        const handle = document.createElement('span'); handle.dataset.studioHandle = direction
-        handle.style.left = `${x}%`; handle.style.top = `${y}%`
-        handle.style.cursor = `${direction}-resize`
-        image.append(handle)
-      }
-    }
+    for (const image of root.querySelectorAll<HTMLElement>('[data-studio-image]')) ensureImageHandles(image)
     for (const element of root.querySelectorAll<HTMLElement>('[data-studio-reveal]')) element.removeAttribute('data-studio-reveal')
-    for (const element of root.querySelectorAll<HTMLElement>('[data-studio-slot]')) {
-      const accepts = element.dataset.studioAccepts ?? ''
-      const empty = ['inline', 'blocks', 'list', 'image'].includes(accepts) && element.textContent?.trim() === '' && !element.querySelector('img,svg,video,canvas')
-      element.toggleAttribute('data-studio-empty', Boolean(empty) && state.callbacks.enabled())
-      const freeText = element.closest<HTMLElement>('[data-studio-text]')
-      if (freeText) freeText.hidden = Boolean(empty) && !freeText.querySelector('[data-studio-edit]')
-      if (state.callbacks.enabled() && !freeText?.hidden && (empty || element.matches('[data-studio-edit], :has([data-studio-edit])'))) revealHiddenAncestors(element)
-      const ja = state.callbacks.language() === 'ja'
-      const labels: Record<string, string> = ja ? { title: 'タイトルを入力', body: '本文を入力', left: '左の文章を入力', right: '右の文章を入力', subtitle: 'サブタイトルを入力', footnotes: '脚注を追加' } : { title: 'Add a title', body: 'Add text', left: 'Add left column text', right: 'Add right column text', subtitle: 'Add a subtitle', footnotes: 'Add a footnote' }
-      element.dataset.studioPlaceholder = accepts === 'image' ? (ja ? '画像を追加' : 'Add an image') : (labels[element.dataset.studioSlot ?? ''] ?? (ja ? 'クリックして入力' : 'Click to add text'))
-    }
+    for (const element of root.querySelectorAll<HTMLElement>('[data-studio-slot]')) refreshSlotMarkers(element)
   }
   // A layout may hide a slot's wrapper while the slot is empty (base.css
   // hides `.footnotes` via `data-empty-slots`), which would hide its
@@ -173,43 +263,67 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     }
     document.addEventListener('mousemove', move); document.addEventListener('mouseup', up)
   })
+  function handleTextObjectCommand(event: KeyboardEvent, target: Extract<SlideEditTarget, { kind: 'text' }> | null): boolean {
+    if ((event.metaKey || event.ctrlKey) && ['c', 'x'].includes(event.key.toLowerCase()) || ['Delete', 'Backspace'].includes(event.key)) {
+      event.preventDefault(); event.stopPropagation()
+      if (target) state.callbacks.textAction(target, ['Delete', 'Backspace'].includes(event.key) ? 'delete' : event.key.toLowerCase() === 'x' ? 'cut' : 'copy')
+      return true
+    }
+    return false
+  }
+  function startTextObjectEditing(element: HTMLElement, event: KeyboardEvent): void {
+    event.preventDefault(); event.stopPropagation()
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, detail: 2 }))
+    if (event.key === 'Enter' || !box) return
+    const range = document.createRange(); range.selectNodeContents(box)
+    const selection = getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+    document.execCommand('insertText', false, event.key)
+  }
+  function handleTextObjectKey(element: HTMLElement, event: KeyboardEvent): void {
+    const target = targetForText(element)
+    if (handleTextObjectCommand(event, target)) return
+    if (event.key === 'Enter' || event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      startTextObjectEditing(element, event)
+      return
+    }
+    event.stopPropagation()
+  }
+  function handleImageObjectKey(element: HTMLElement, event: KeyboardEvent): void {
+    if ((event.metaKey || event.ctrlKey) && ['c', 'x'].includes(event.key.toLowerCase())) {
+      event.preventDefault(); event.stopPropagation()
+      state.callbacks.imageClipboard(element.dataset.studioImage ?? '', event.key.toLowerCase() === 'x' ? 'cut' : 'copy')
+    } else if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault(); event.stopPropagation()
+      state.callbacks.removeImage(element.dataset.studioImage ?? '')
+    }
+  }
   root.addEventListener('keydown', event => {
     if (!(event instanceof KeyboardEvent) || !state.callbacks.enabled() || box || event.target instanceof Element && event.target.closest(CONTROLS)) return
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
       keyboardPaste(); event.stopPropagation(); return
     }
     if (selectedText?.isConnected && root.activeElement === selectedText) {
-      const target = targetForText(selectedText)
-      if ((event.metaKey || event.ctrlKey) && ['c', 'x'].includes(event.key.toLowerCase()) || ['Delete', 'Backspace'].includes(event.key)) {
-        event.preventDefault(); event.stopPropagation()
-        if (target) state.callbacks.textAction(target, ['Delete', 'Backspace'].includes(event.key) ? 'delete' : event.key.toLowerCase() === 'x' ? 'cut' : 'copy')
-        return
-      }
-      if (event.key === 'Enter' || event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
-        event.preventDefault(); event.stopPropagation()
-        selectedText.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, detail: 2 }))
-        if (event.key !== 'Enter' && box) {
-          const range = document.createRange(); range.selectNodeContents(box)
-          const selection = getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
-          document.execCommand('insertText', false, event.key)
-        }
-        return
-      }
-      event.stopPropagation(); return
+      handleTextObjectKey(selectedText, event)
+      return
     }
     if (!selectedImage?.isConnected || root.activeElement !== selectedImage) { event.stopPropagation(); return }
-    if ((event.metaKey || event.ctrlKey) && ['c', 'x'].includes(event.key.toLowerCase())) {
-      event.preventDefault(); event.stopPropagation()
-      state.callbacks.imageClipboard(selectedImage.dataset.studioImage ?? '', event.key.toLowerCase() === 'x' ? 'cut' : 'copy')
-    } else if (event.key === 'Delete' || event.key === 'Backspace') {
-      event.preventDefault(); event.stopPropagation()
-      state.callbacks.removeImage(selectedImage.dataset.studioImage ?? '')
-    }
+    handleImageObjectKey(selectedImage, event)
   })
   function targetForText(element: HTMLElement): Extract<SlideEditTarget, { kind: 'text' }> | null {
     const byteSpan = parseSourceSpan(element.getAttribute('data-peitho-src'))
     const quote = element.getAttribute('data-peitho-md')
     return byteSpan && quote !== null ? { kind: 'text', slot: element.closest<HTMLElement>('[data-studio-text]')?.dataset.studioText, byteSpan, quote, text: element.textContent ?? '', heading: Boolean(element.closest('h1,h2,h3,h4,h5,h6')) } : null
+  }
+  const handleActiveFieldClick = (target: Element): void => {
+    if (!box || box.contains(target)) return
+    if (!composing && commit?.()) close()
+  }
+  const configureEditingField = (field: HTMLElement, empty: boolean, session: SlideEditSession): void => {
+    if (empty) field.textContent = session.value
+    field.dataset.studioEdit = ''
+    field.contentEditable = 'true'
+    field.setAttribute('role', 'textbox')
+    field.setAttribute('aria-label', state.callbacks.language() === 'ja' ? 'スライドのテキスト' : 'Slide text')
   }
   const startTextEditing = (event: Event) => {
     if (!state.callbacks.enabled() || !(event instanceof MouseEvent) || event.button !== 0) return
@@ -219,42 +333,20 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     if (target.closest('.peitho-slide') && !target.closest('[data-peitho-src], [data-studio-slot]')) { host.tabIndex = 0; host.focus() }
     const slide = target.closest('.peitho-slide')
     if (!slide) return
-    if (box) { if (box.contains(target)) return; if (!composing && commit?.()) close(); return }
-    let element = target.closest<HTMLElement>('[data-peitho-src]') ?? target.closest('h1,h2,h3,h4,h5,h6')?.querySelector<HTMLElement>('[data-peitho-src]') ?? null
-    if (!element) {
-      const containedSlots = target === slide ? [] : target.querySelectorAll('[data-studio-slot]')
-      const slot = target.closest('[data-studio-slot], [data-studio-text]') ?? (containedSlots.length === 1 ? containedSlots[0] : null)
-      const candidates = Array.from(slot?.querySelectorAll<HTMLElement>('[data-peitho-src]') ?? []).filter(el => !el.closest('pre,code,[data-studio-image]') && el.tagName !== 'IMG')
-      const distance = (el: HTMLElement) => {
-        const rect = el.getBoundingClientRect()
-        return Math.max(rect.left - event.clientX, 0, event.clientX - rect.right) ** 2 + Math.max(rect.top - event.clientY, 0, event.clientY - rect.bottom) ** 2
-      }
-      element = candidates.sort((a, b) => distance(a) - distance(b))[0] ?? null
+    if (box) { handleActiveFieldClick(target); return }
+    const destination = resolveDOMEditTarget(target, slide, event)
+    if (destination.kind === 'image') {
+      state.callbacks.image(destination.slot)
+      return
     }
-    let editTarget: SlideEditTarget | null = null
-    if (element) {
-      const byteSpan = parseSourceSpan(element.getAttribute('data-peitho-src'))
-      const quote = element.getAttribute('data-peitho-md')
-      if (byteSpan && quote !== null && !element.closest('pre,code')) editTarget = { kind: 'text', slot: element.closest<HTMLElement>('[data-studio-text]')?.dataset.studioText ?? element.closest<HTMLElement>('[data-studio-slot]')?.dataset.studioSlot, byteSpan, quote, text: element.textContent ?? '', heading: Boolean(element.closest('h1,h2,h3,h4,h5,h6')) }
-    } else {
-      element = target.closest<HTMLElement>('[data-studio-empty]')
-      if (element) {
-        if (element.dataset.studioAccepts === 'image') { state.callbacks.image(element.dataset.studioSlot ?? null); return }
-        editTarget = { kind: 'slot', slot: element.dataset.studioSlot ?? '', accepts: element.dataset.studioAccepts ?? '' }
-      }
+    if (destination.kind === 'none') {
+      selectedText = null
+      markEmpty()
+      return
     }
-    if (!element || !editTarget) { selectedText = null; markEmpty(); return }
-    const selectedElement = element
-    let list = element.closest<HTMLElement>('ul,ol')
-    while (list?.parentElement?.closest<HTMLElement>('ul,ol')) list = list.parentElement.closest<HTMLElement>('ul,ol')
-    if (list && editTarget.kind === 'text') {
-      const listItems = Array.from(list.querySelectorAll<HTMLElement>('[data-peitho-src]')).flatMap(item => {
-        const byteSpan = parseSourceSpan(item.getAttribute('data-peitho-src'))
-        const quote = item.getAttribute('data-peitho-md')
-        return byteSpan && quote !== null ? [{ byteSpan, quote }] : []
-      })
-      if (listItems.length) { editTarget = { ...editTarget, listItems }; element = list }
-    }
+    const context = listEditContext(destination.element, destination.target)
+    let { element, target: editTarget } = context
+    const { selectedElement, list } = context
     selectedText = element; element.tabIndex = 0; markEmpty()
     const session = state.callbacks.edit(editTarget)
     if (!session) return
@@ -279,11 +371,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     const field = element
     const original = field.innerHTML
     const empty = editTarget.kind === 'slot'
-    if (empty) field.textContent = session.value
-    field.dataset.studioEdit = ''
-    field.contentEditable = 'true'
-    field.setAttribute('role', 'textbox')
-    field.setAttribute('aria-label', state.callbacks.language() === 'ja' ? 'スライドのテキスト' : 'Slide text')
+    configureEditingField(field, empty, session)
     restore = () => {
       session.finish()
       field.innerHTML = original
@@ -301,31 +389,40 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       if (listHost) listHost.replaceWith(...Array.from(listHost.childNodes))
       markEmpty()
     }
+    const markdownText = (node: Node): string => {
+      if (node.parentElement?.matches('ul,ol') && !node.textContent?.trim()) return ''
+      return literalSlideText(node.previousSibling instanceof Element && node.previousSibling.tagName === 'BR' ? (node.textContent ?? '').replace(/^\n/, '') : node.textContent ?? '')
+    }
+    const isListFormattingWhitespace = (node: Node): boolean => node.nodeType === Node.TEXT_NODE && node.textContent?.trim() === '' && node.textContent.includes('\n')
+    const listItemContent = (node: Element): string => {
+      const blocks: string[] = []
+      let inline = ''
+      const flush = () => { if (inline !== '') { blocks.push(inline); inline = '' } }
+      for (const child of node.childNodes) {
+        if (child instanceof Element && ['P', 'DIV', 'UL', 'OL'].includes(child.tagName)) {
+          flush()
+          blocks.push(child.matches('p,div') ? Array.from(child.childNodes).map(markdown).join('') : markdown(child).replace(/^\n+|\n+$/g, ''))
+        } else if (!isListFormattingWhitespace(child)) inline += markdown(child)
+      }
+      flush()
+      return blocks.join('\n\n')
+    }
+    const listItemMarkdown = (node: Element): string => {
+      const content = listItemContent(node)
+      if (node.hasAttribute('data-studio-unlisted')) return `\n\n${content.trim() === '' ? '&#160;' : content}\n\n`
+      const marker = node.parentElement?.tagName === 'OL' ? `${Number(node.parentElement.getAttribute('start') ?? 1) + Array.from(node.parentElement.children).indexOf(node)}. ` : '- '
+      const indentation = ' '.repeat(marker.length)
+      return `\n${marker}${content.trim() === '' ? '&#160;' : content.replace(/\n/g, `\n${indentation}`)}`
+    }
+    const listAwareLineBreak = (node: Element): string => list ? !node.nextSibling ? '' : '  \n' : '\n'
     const markdown = (node: Node): string => {
-      if (node.nodeType === Node.TEXT_NODE && node.parentElement?.matches('ul,ol') && !node.textContent?.trim()) return ''
-      if (node.nodeType === Node.TEXT_NODE) return literalSlideText(node.previousSibling instanceof Element && node.previousSibling.tagName === 'BR' ? (node.textContent ?? '').replace(/^\n/, '') : node.textContent ?? '')
+      if (node.nodeType === Node.TEXT_NODE) return markdownText(node)
       if (!(node instanceof Element)) return ''
       const text = Array.from(node.childNodes).map(markdown).join('')
       switch (node.tagName) {
-        case 'LI': {
-          const blocks: string[] = []
-          let inline = ''
-          const flush = () => { if (inline !== '') { blocks.push(inline); inline = '' } }
-          for (const child of node.childNodes) {
-            if (child instanceof Element && ['P', 'DIV', 'UL', 'OL'].includes(child.tagName)) {
-              flush()
-              blocks.push(child.matches('p,div') ? Array.from(child.childNodes).map(markdown).join('') : markdown(child).replace(/^\n+|\n+$/g, ''))
-            } else if (!(child.nodeType === Node.TEXT_NODE && child.textContent?.trim() === '' && child.textContent.includes('\n'))) inline += markdown(child)
-          }
-          flush()
-          const content = blocks.join('\n\n')
-          if (node.hasAttribute('data-studio-unlisted')) return `\n\n${content.trim() === '' ? '&#160;' : content}\n\n`
-          const marker = node.parentElement?.tagName === 'OL' ? `${Number(node.parentElement.getAttribute('start') ?? 1) + Array.from(node.parentElement.children).indexOf(node)}. ` : '- '
-          const indentation = ' '.repeat(marker.length)
-          return `\n${marker}${content.trim() === '' ? '&#160;' : content.replace(/\n/g, `\n${indentation}`)}`
-        }
+        case 'LI': return listItemMarkdown(node)
         case 'UL': case 'OL': return text
-        case 'BR': return list ? !node.nextSibling ? '' : '  \n' : '\n'
+        case 'BR': return listAwareLineBreak(node)
         case 'INPUT': return node.getAttribute('type') === 'checkbox' ? `[${(node as HTMLInputElement).checked ? 'x' : ' '}] ` : ''
         case 'CODE': return slideInlineCode(node.textContent ?? '')
         case 'STRONG': case 'B': return `**${text}**`
@@ -348,42 +445,59 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     const input = () => { if (!composing) commit?.() }
     const compositionStart = () => { composing = true }
     const compositionEnd = () => { composing = false; const ok = commit?.(); if (root.activeElement !== field && ok) close() }
+    const closestItem = (node: Node): HTMLElement | null => {
+      const element = node instanceof Element ? node : node.parentElement
+      return element?.closest<HTMLElement>('li') ?? null
+    }
+    const normalizeListCaret = (caret: Range, list: HTMLElement): HTMLElement | null => {
+      // WebKit can put the caret on the list container after its formatting newline.
+      const child = caret.startContainer === field ? field.childNodes[Math.max(0, caret.startOffset - 1)] : caret.startContainer
+      const adjacent = child instanceof Element ? child : child?.previousSibling
+      const adjacentItem = adjacent instanceof Element ? adjacent.closest<HTMLElement>('li') : null
+      const item = adjacentItem ?? Array.from(list.children).filter((el): el is HTMLElement => el instanceof HTMLElement && el.tagName === 'LI').at(-1) ?? null
+      if (!item) return null
+      const atBeginning = caret.startContainer === field && caret.startOffset === 0
+      caret.selectNodeContents(item); caret.collapse(atBeginning)
+      return item
+    }
+    const isListKey = (e: KeyboardEvent) => (e.key === 'Enter' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey
+    const handleListKey = (e: KeyboardEvent, list: HTMLElement): boolean => {
+      if (!isListKey(e)) return false
+      const selection = getSelection()
+      if (!selection?.rangeCount) return false
+      const caret = selectionRange(selection)
+      if (!caret) return true
+      let item = closestItem(caret.startContainer)
+      let normalizedCaret = false
+      if (!item && selection.isCollapsed && field.contains(caret.startContainer)) {
+        item = normalizeListCaret(caret, list)
+        normalizedCaret = item !== null
+      }
+      if (!item || !field.contains(item)) return false
+      const handleItemKey = (item: HTMLElement): boolean => {
+        const before = caret.cloneRange(); before.selectNodeContents(item); before.setEnd(caret.startContainer, caret.startOffset)
+        const atStart = selection.isCollapsed && before.toString() === ''
+        if (item.hasAttribute('data-studio-unlisted')) return false
+        const unlist = e.key === 'Backspace' ? atStart : item.textContent?.trim() === ''
+        if (unlist) {
+          e.preventDefault()
+          item.setAttribute('data-studio-unlisted', '')
+          item.style.listStyleType = 'none'
+          commit?.()
+          return true
+        }
+        if (e.key !== 'Enter') return false
+        // Keep the native Enter action: cancelling it or splitting DOM
+        // nodes ourselves prevents WKWebView from accepting further input.
+        if (normalizedCaret) { selection.removeAllRanges(); selection.addRange(caret) }
+        return true
+      }
+      return handleItemKey(item)
+    }
     const keydown = (e: KeyboardEvent) => {
       e.stopPropagation()
       if (e.isComposing || composing) return
-      if (list && (e.key === 'Enter' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-        const selection = getSelection()
-        if (selection?.rangeCount) {
-          const caret = selectionRange(selection)
-          if (!caret) return
-          let normalizedCaret = false
-          let item = (caret.startContainer instanceof Element ? caret.startContainer : caret.startContainer.parentElement)?.closest<HTMLElement>('li')
-          // WebKit can put the caret on the list container (after its final
-          // formatting newline), rather than inside the last item.
-          if (!item && selection.isCollapsed && field.contains(caret.startContainer)) {
-            const child = caret.startContainer === field ? field.childNodes[Math.max(0, caret.startOffset - 1)] : caret.startContainer
-            item = (child instanceof Element ? child : child?.previousSibling instanceof Element ? child.previousSibling : null)?.closest<HTMLElement>('li') ?? Array.from(list.children).filter((el): el is HTMLElement => el instanceof HTMLElement && el.tagName === 'LI').at(-1) ?? null
-            if (item) { normalizedCaret = true; const atBeginning = caret.startContainer === field && caret.startOffset === 0; caret.selectNodeContents(item); caret.collapse(atBeginning) }
-          }
-          if (item && field.contains(item)) {
-            const before = caret.cloneRange(); before.selectNodeContents(item); before.setEnd(caret.startContainer, caret.startOffset)
-            const atStart = selection.isCollapsed && before.toString() === ''
-            if (!item.hasAttribute('data-studio-unlisted') && ((e.key === 'Backspace' && atStart) || (e.key === 'Enter' && item.textContent?.trim() === ''))) {
-              e.preventDefault()
-              item.setAttribute('data-studio-unlisted', '')
-              item.style.listStyleType = 'none'
-              commit?.()
-              return
-            }
-            if (e.key === 'Enter' && !item.hasAttribute('data-studio-unlisted')) {
-              // Keep the native Enter action: cancelling it or splitting DOM
-              // nodes ourselves prevents WKWebView from accepting further input.
-              if (normalizedCaret) { selection.removeAllRanges(); selection.addRange(caret) }
-              return
-            }
-          }
-        }
-      }
+      if (list && handleListKey(e, list)) return
       if (e.key === 'Escape') { e.preventDefault(); if (session.cancel()) { close(); selectedText?.focus() } }
       if (e.key === 'Enter' && (editTarget?.kind === 'text' && editTarget.heading || e.metaKey || e.ctrlKey)) {
         e.preventDefault(); if (commit?.()) close()
@@ -396,15 +510,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     field.addEventListener('keydown', keydown)
     field.addEventListener('blur', blur)
     field.focus()
-    // A real click places the caret at the clicked character; empty boxes start at the end.
-    const doc = document as Document & { caretPositionFromPoint?: (x: number, y: number, options?: { shadowRoots: ShadowRoot[] }) => { offsetNode: Node; offset: number } | null; caretRangeFromPoint?: (x: number, y: number) => Range | null }
-    const position = doc.caretPositionFromPoint?.(event.clientX, event.clientY, { shadowRoots: [root] })
-    let range = position ? document.createRange() : doc.caretRangeFromPoint?.(event.clientX, event.clientY)
-    if (position && range) { range.setStart(position.offsetNode, position.offset); range.collapse(true) }
-    if (!range || !field.contains(range.startContainer)) {
-      range = document.createRange(); range.selectNodeContents(field); range.collapse(false)
-    }
-    const selection = getSelection(); selection?.removeAllRanges(); selection?.addRange(range)
+    placeEditingCaret(field, event, root, getSelection)
 
   }
   // Make the field editable during the first mouse gesture, before the

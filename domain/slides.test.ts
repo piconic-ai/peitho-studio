@@ -68,6 +68,18 @@ describe('splitSlides', () => {
     expect(splitSlides('')).toEqual([])
   })
 
+  test('adversarial: an unclosed frontmatter opener is a separator, leaving its following text as a slide', () => {
+    const source = '---\r\ntime: 1m\r\n# One'
+    expect(splitSlides(source)).toEqual([{ start: 5, end: source.length, text: 'time: 1m\r\n# One' }])
+  })
+
+  test('adversarial: spaced CRLF frontmatter preserves the exact following source range, with no slide for an empty body', () => {
+    const prelude = '  --- \r\ntime: 1m\r\n ---\r\n'
+    const body = '\r\n# One\r\n'
+    expect(splitSlides(prelude + body)).toEqual([{ start: prelude.length, end: prelude.length + body.length, text: body }])
+    expect(splitSlides(prelude)).toEqual([])
+  })
+
   test('adversarial: blank slides between separators are dropped', () => {
     const source = '# One\n\n---\n\n\n\n---\n\n# Two\n'
     const ranges = splitSlides(source)

@@ -738,18 +738,26 @@ export function previewPinsOf(
     const nth = taken.get(comment.body) ?? 0
     taken.set(comment.body, nth + 1)
     if (comment.resolved) continue
-    const sent = Object.hasOwn(sentPins, comment.body) ? sentPins[comment.body][nth] : undefined
-    if (sent?.pin != null) {
-      if (sent.slideKey === slideKey) pins.push({ id: `sent:${comment.id}`, ...sent.pin, sent: true })
-    } else if (slideKeyOf(comment) === slideKey) {
-      pins.push({ id: `sent:${comment.id}`, ...pinOfQuote(comment.quote), sent: true })
-    }
+    const pin = sentCommentPin(slideKey, comment, sentPins, nth, slideKeyOf)
+    if (pin !== null) pins.push({ id: `sent:${comment.id}`, ...pin, sent: true })
   }
   for (const comment of pending) {
     if (comment.slideKey === slideKey && comment.pin !== null) pins.push({ id: comment.id, ...comment.pin, sent: false })
   }
   if (box.kind === 'open' && box.slideKey === slideKey && box.pin !== null) pins.push({ id: 'writing', ...box.pin, sent: false })
   return pins.map((pin, i) => ({ ...pin, number: i + 1 }))
+}
+
+function sentCommentPin(
+  slideKey: string,
+  comment: ReviewComment,
+  sentPins: SentPins,
+  nth: number,
+  slideKeyOf: (comment: ReviewComment) => string | null,
+): PinSpot | null {
+  const sent = Object.hasOwn(sentPins, comment.body) ? sentPins[comment.body][nth] : undefined
+  if (sent?.pin != null) return sent.slideKey === slideKey ? sent.pin : null
+  return slideKeyOf(comment) === slideKey ? pinOfQuote(comment.quote) : null
 }
 
 /** Which of `slides` (each with its span in `source`) line `line` of

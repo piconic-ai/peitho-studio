@@ -12,9 +12,11 @@ exclude = [
   "src-tauri/examples/**",
   "*.test.ts",
   "*.test.tsx",
+  "*.test.js",
   "*.e2e.ts",
+  "*.e2e.js",
   "test_*.py",
 ]
 
 [ext]
-es = ["ts", "tsx"]
+es = ["js", "ts", "tsx"]

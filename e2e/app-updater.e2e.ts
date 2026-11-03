@@ -40,6 +40,11 @@ test('normal updates can be dismissed, while security updates keep their notice 
   deck.updateStatus = { ...deck.updateStatus!, dismissed: false, security: 'Unsafe previews' }
   await emit(page, 'updates:changed', deck.updateStatus)
   await expect(notice).toContainText('Unsafe previews')
+  await expect(notice.getByRole('alert')).toBeHidden()
+  await emit(page, 'updates:changed', { ...deck.updateStatus, error: 'Download failed' })
+  await expect(notice.getByRole('alert')).toHaveText('Download failed')
+  await emit(page, 'updates:changed', deck.updateStatus)
+  await expect(notice.getByRole('alert')).toBeHidden()
   await expect(notice.getByRole('button', { name: 'Later' })).toBeHidden()
   await editorContent(page).click()
   await moveToEditorEnd(page)

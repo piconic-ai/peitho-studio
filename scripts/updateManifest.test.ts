@@ -4,7 +4,7 @@ const url = 'https://github.com/piconic-ai/peitho-studio/releases/download/v1.1.
 test('spec: stable metadata includes signed archive and affected versions', () => {
   const security = [{ affectedFrom: '0.1.0-rc.1', fixedIn: '1.1.0', reason: 'Unsafe previews' }]
   const manifest = makeUpdateManifest('1.1.0', 'sig\n', url, 'Release notes', security)
-  expect(manifest.security).toEqual(security)
+  expect(manifest.security).toBe(security)
   expect(manifest.platforms['darwin-aarch64'].signature).toBe('sig')
 })
 test('adversarial: prereleases, unsafe URLs, missing signatures and invalid ranges fail publication', () => {
@@ -26,4 +26,15 @@ test('adversarial: an asset name GitHub would rewrite is rejected before it is p
   for (const name of ['Peitho Studio.app.tar.gz', 'Peitho+Studio.app.tar.gz', 'Peitho%2FStudio.tar.gz', '.hidden.tar.gz', '', 'ペイト.tar.gz']) {
     expect(() => makeUpdateManifest('1.1.0', 'sig', base + name, '')).toThrow()
   }
+})
+
+test('spec: advisory prereleases precede their stable fix and validation errors keep their order', () => {
+  const advisory = { affectedFrom: '1.1.0-rc.1', fixedIn: '1.1.0', reason: 'Fix previews' }
+  expect(makeUpdateManifest('1.1.0', 'sig', url, '', [advisory]).security).toEqual([advisory])
+  expect(() => makeUpdateManifest('1.1.0', 'sig', url, '', [{ ...advisory, affectedFrom: 'bad', reason: ' ' }]))
+    .toThrow('Invalid security advisory')
+  expect(() => makeUpdateManifest('1.1.0', 'sig', url, '', [{ ...advisory, affectedFrom: 'bad' }]))
+    .toThrow('Invalid advisory version')
+  expect(() => makeUpdateManifest('1.1.0', 'sig', url, '', [{ ...advisory, affectedFrom: '1.1.0' }]))
+    .toThrow('Invalid advisory range')
 })

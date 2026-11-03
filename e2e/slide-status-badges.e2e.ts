@@ -116,6 +116,8 @@ test('Given an open deck, when "Skip in Present" is turned on and then off from 
   await skipToggle.click()
   await expect(row.locator('[data-slide-status]')).toHaveCount(0, { timeout: 5_000 })
   await expect.poll(() => deck.source).not.toContain('"skip":true')
+  await row.click({ button: 'right' })
+  await expect(skipToggle).not.toContainText('✓')
 })
 
 test('Given a deck whose middle slide is marked draft, when the deck opens, then that thumbnail shows a DRAFT badge and its title instead of a rendered canvas, and its neighbors are unaffected', async ({ page }) => {
@@ -200,7 +202,7 @@ test('Given a draft slide, when "Mark as Draft" is unchecked from its context me
   await expect.poll(() => deck.source).not.toContain('"draft":true')
 })
 
-test('Given a deck with a draft slide, when ArrowDown is pressed twice from the first slide, then the selection reaches the slide after the draft one', async ({ page }) => {
+test('Given a deck with a draft slide, arrows traverse it and clamp at both ends', async ({ page }) => {
   await openDeck(page, { source: DECK_WITH_DRAFT_THEN_SKIPPED }, 3)
 
   // Select the first slide to give the keyboard handler a starting point.
@@ -212,6 +214,17 @@ test('Given a deck with a draft slide, when ArrowDown is pressed twice from the 
 
   await page.keyboard.press('ArrowDown')
   await expect.poll(() => editorText(page), { timeout: 5_000 }).toMatch(/# Backup Slide/)
+
+  await page.keyboard.press('ArrowDown')
+  await expect.poll(() => editorText(page)).toMatch(/# Backup Slide/)
+  await page.keyboard.press('ArrowUp')
+  await expect.poll(() => editorText(page)).toMatch(/# Hidden/)
+  await page.keyboard.press('ArrowUp')
+  await expect.poll(() => editorText(page)).toMatch(/# Opening/)
+  await page.keyboard.press('ArrowUp')
+  await expect.poll(() => editorText(page)).toMatch(/# Opening/)
+  await page.keyboard.press('ArrowDown')
+  await expect.poll(() => editorText(page)).toMatch(/# Hidden/)
 })
 
 test('Given a draft slide, when it is right-clicked, then "Skip in Present" and "Section Start" are disabled (peitho-core rejects both combined with draft)', async ({ page }) => {

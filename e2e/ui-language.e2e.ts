@@ -77,6 +77,29 @@ test.describe('functional', () => {
     await expect(page.getByRole('button', { name: /^レイアウトを変更/ })).toBeVisible()
   })
 
+  test('Given retained slide rows, when language changes and a section folds and expands, then labels update while its canvas and stylesheet stay mounted', async ({ page }) => {
+    await openDeck(page, { source: '<!-- {"key":"one","section":"Intro","time":"1m","skip":true} -->\n# Slide One\n\n---\n\n<!-- {"key":"two"} -->\n# Slide Two\n' })
+    const row = page.locator('[data-slide-row="0"]')
+    const rowElement = await row.elementHandle()
+    const canvas = await row.locator('[data-slide-canvas-key]').elementHandle()
+    if (!rowElement || !canvas) throw new Error('slide row canvas did not mount')
+    const stylesheet = await canvas.evaluateHandle(el => el.shadowRoot?.adoptedStyleSheets[0])
+    expect(await stylesheet.evaluate(sheet => sheet instanceof CSSStyleSheet)).toBe(true)
+
+    await chooseLanguage(page, '日本語')
+    await page.keyboard.press('Escape')
+    await expect(row.getByLabel('セクション名と時間を編集')).toBeVisible()
+    await expect(row.locator('[data-slide-status="skip"]')).toHaveText('スキップ')
+    await row.getByLabel('セクションを折りたたむ').click()
+    await expect(row.locator('button[title]')).toBeHidden()
+    await row.getByLabel('セクションを展開').click()
+    await expect(row.locator('button[title]')).toBeVisible()
+
+    expect(await rowElement.evaluate(el => el === document.querySelector('[data-slide-row="0"]'))).toBe(true)
+    expect(await canvas.evaluate(el => el === document.querySelector('[data-slide-row="0"] [data-slide-canvas-key]'))).toBe(true)
+    expect(await stylesheet.evaluate(sheet => sheet === document.querySelector('[data-slide-row="0"] [data-slide-canvas-key]')?.shadowRoot?.adoptedStyleSheets[0])).toBe(true)
+  })
+
   test('Given phone display in English, when Japanese is chosen, then the device menu names each device in Japanese, keeping its model and size', async ({ page }) => {
     await openDeck(page, { source: TWO_SLIDES })
     await page.locator('[data-panel="preview"] [data-viewport-toggle]').click()
@@ -100,12 +123,14 @@ test.describe('functional', () => {
   test('Given an open deck in English, when Japanese is chosen, then the editor pane, the status bar and the notes placeholder switch too', async ({ page }) => {
     await openDeck(page, { source: TWO_SLIDES })
     await expect(page.locator('footer')).toHaveText(/^Opened /)
+    await expect(page.locator('[data-panel="editor"] [data-panel-toggle]')).toHaveAttribute('aria-label', 'Editor: Close')
     await expect(page.locator('[data-editor="note"] .cm-placeholder')).toHaveText('Notes for the presenter — not shown to the audience.')
 
     await chooseLanguage(page, '日本語')
     await page.keyboard.press('Escape')
 
     await expect(page.getByText('スピーカーノート', { exact: true })).toBeVisible()
+    await expect(page.locator('[data-panel="editor"] [data-panel-toggle]')).toHaveAttribute('aria-label', 'エディターを閉じる')
     await expect(page.locator('[data-editor="note"] .cm-placeholder')).toHaveText('発表者用のメモ — 聴衆には表示されません。')
     await expect(page.locator('footer')).toHaveText(/を開きました$/)
   })
