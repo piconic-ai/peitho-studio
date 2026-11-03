@@ -407,14 +407,6 @@
       "cyclomatic": 12
     },
     {
-      "path": "src-tauri/src/engine/serve.rs",
-      "name": "respond",
-      "occurrence": 1,
-      "line": 164,
-      "cognitive": 30,
-      "cyclomatic": 18
-    },
-    {
       "path": "src-tauri/src/lib.rs",
       "name": "run / <closure>",
       "occurrence": 2,

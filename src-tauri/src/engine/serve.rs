@@ -55,6 +55,39 @@ impl ServedState {
     fn asset_source(&self, path: &str) -> Option<&PathBuf> {
         self.image_assets.get(path).or_else(|| self.draft_assets.get(path))
     }
+
+    fn local_font(&self, name: &str) -> Result<(Vec<u8>, &'static str), u16> {
+        if name.contains("..") {
+            return Err(404);
+        }
+        let dir = self.fonts_dir.as_ref().ok_or(404u16)?;
+        let bytes = std::fs::read(dir.join(name)).map_err(|_| 404u16)?;
+        Ok((bytes, font_content_type(name)))
+    }
+
+    fn deck_asset(&self, path: &str, name: &str) -> Result<(Vec<u8>, &'static str), u16> {
+        // Keyed by the full `assets/<hash>-<name>` dist path (see
+        // `RenderOutput::image_assets`), not by `name` alone. A missing
+        // resolved file must not fall through to a same-named deck file.
+        if let Some(source) = self.asset_source(path) {
+            let bytes = std::fs::read(source).map_err(|_| 404u16)?;
+            return Ok((bytes, asset_content_type(name)));
+        }
+        // Fall back to the deck's assets/ directory for files such as a
+        // chunk imported relatively by a layout's hashed module script.
+        // Canonicalization permits paths and symlinks within the deck,
+        // while rejecting ones that escape it (as DraftImageResolver does).
+        if self.deck_dir.as_os_str().is_empty() {
+            return Err(404);
+        }
+        let deck_abs = std::fs::canonicalize(&self.deck_dir).map_err(|_| 404u16)?;
+        let candidate_abs = std::fs::canonicalize(deck_abs.join("assets").join(name)).map_err(|_| 404u16)?;
+        if !candidate_abs.starts_with(&deck_abs) {
+            return Err(404);
+        }
+        let bytes = std::fs::read(candidate_abs).map_err(|_| 404u16)?;
+        Ok((bytes, asset_content_type(name)))
+    }
 }
 
 impl AssetServer {
@@ -187,48 +220,11 @@ fn respond(state: &Mutex<ServedState>, url: &str) -> Result<(Vec<u8>, &'static s
     }
 
     if let Some(name) = path.strip_prefix("fonts/") {
-        if name.contains("..") {
-            return Err(404);
-        }
-        if let Some(dir) = state.fonts_dir.as_ref() {
-            let candidate = dir.join(name);
-            if let Ok(bytes) = std::fs::read(&candidate) {
-                return Ok((bytes, font_content_type(name)));
-            }
-        }
-        return Err(404);
+        return state.local_font(name);
     }
 
     if let Some(name) = path.strip_prefix("assets/") {
-        // Keyed by the full `assets/<hash>-<name>` dist path (see
-        // `RenderOutput::image_assets`), not by `name` alone.
-        if let Some(source) = state.asset_source(path) {
-            if let Ok(bytes) = std::fs::read(source) {
-                return Ok((bytes, asset_content_type(name)));
-            }
-            return Err(404);
-        }
-        // Not an asset the render resolved (a Markdown image or a
-        // layout's own `src`/`poster`/`href`) — fall back to the deck's
-        // own `assets/` directory verbatim, for a file only reachable
-        // through one of those, e.g. a chunk a layout's module script
-        // imports relatively (`./index-XXXX.js` from the hashed
-        // `assets/<hash>-mount.js`). Same path-escape guard as
-        // `DraftImageResolver` (pipeline.rs): canonicalize and check
-        // containment before reading, not just string-level `..`
-        // rejection, which a symlink could route around.
-        if state.deck_dir.as_os_str().is_empty() {
-            return Err(404);
-        }
-        let Ok(deck_abs) = std::fs::canonicalize(&state.deck_dir) else { return Err(404) };
-        let Ok(candidate_abs) = std::fs::canonicalize(deck_abs.join("assets").join(name)) else { return Err(404) };
-        if !candidate_abs.starts_with(&deck_abs) {
-            return Err(404);
-        }
-        return match std::fs::read(&candidate_abs) {
-            Ok(bytes) => Ok((bytes, asset_content_type(name))),
-            Err(_) => Err(404),
-        };
+        return state.deck_asset(path, name);
     }
 
     Err(404)
@@ -390,6 +386,49 @@ mod tests {
 
         assert_eq!(bytes, b"resolved bytes");
         assert_eq!(content_type, "image/png");
+    }
+
+    #[test]
+    fn respond_spec_local_fonts_preserve_query_mime_and_literal_dot_rejection() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state_for(PathBuf::new(), HashMap::new());
+        assert_eq!(respond(&state, "/fonts/local.woff2"), Err(404));
+        state.lock().unwrap().fonts_dir = Some(dir.path().to_path_buf());
+        for (name, mime) in [("local.woff2", "font/woff2"), ("local.woff", "font/woff"), ("local.ttf", "application/octet-stream")] {
+            std::fs::write(dir.path().join(name), b"font bytes").unwrap();
+            assert_eq!(respond(&state, &format!("///fonts/{name}?v=1")), Ok((b"font bytes".to_vec(), mime)));
+        }
+        std::fs::write(dir.path().join("two..dots.woff"), b"not served").unwrap();
+        assert_eq!(respond(&state, "/fonts/two..dots.woff"), Err(404));
+        assert_eq!(respond(&state, "/fonts/missing.woff"), Err(404));
+    }
+
+    #[test]
+    fn respond_spec_fallback_can_reach_files_elsewhere_inside_the_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("assets")).unwrap();
+        std::fs::write(dir.path().join("module.mjs"), b"export default 1").unwrap();
+        let state = state_for(dir.path().to_path_buf(), HashMap::new());
+
+        assert_eq!(respond(&state, "///assets/../module.mjs?v=1"), Ok((b"export default 1".to_vec(), "text/javascript; charset=utf-8")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn respond_spec_fallback_symlinks_must_stay_inside_the_deck() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("assets")).unwrap();
+        std::fs::write(dir.path().join("inside.css"), b"inside").unwrap();
+        std::fs::write(outside.path().join("outside.css"), b"outside").unwrap();
+        symlink(dir.path().join("inside.css"), dir.path().join("assets/inside.css")).unwrap();
+        symlink(outside.path().join("outside.css"), dir.path().join("assets/outside.css")).unwrap();
+        let state = state_for(dir.path().to_path_buf(), HashMap::new());
+
+        assert_eq!(respond(&state, "/assets/inside.css"), Ok((b"inside".to_vec(), "text/css; charset=utf-8")));
+        assert_eq!(respond(&state, "/assets/outside.css"), Err(404));
     }
 
     // Feeds a real `render_source` output through, rather than a hand-built
