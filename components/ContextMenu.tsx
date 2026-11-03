@@ -34,7 +34,7 @@ export interface ContextMenuProps {
 /** The app's own right-click menu, in place of the webview's: the layout
  * list's, and the one on the previews and the editors. Permanently
  * mounted and hidden by class, like `SlideContextMenu.tsx` (see its
- * comment, and CLAUDE.md's BarefootJS pitfalls on branches). Its items
+ * comment, and AGENTS.md's BarefootJS pitfalls on branches). Its items
  * are whatever the menu's domain module lists, so a new action needs no
  * change here. A click on the backdrop — anywhere outside the menu —
  * closes it. A press on the menu doesn't take focus: an editor keeps its
@@ -68,7 +68,7 @@ export function ContextMenu(props: ContextMenuProps) {
             className={(item.danger ? 'text-destructive ' : '') + (item.separatorBefore ? 'mt-1 border-t border-border ' : '') + 'w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent'}
           >
             {/* Every item keeps the icon's gutter; only the comment fills
-                it. Toggled by class, not a branch (CLAUDE.md's BarefootJS
+                it. Toggled by class, not a branch (AGENTS.md's BarefootJS
                 pitfalls on conditionals in a `.map()` row). */}
             <svg
               aria-hidden="true"

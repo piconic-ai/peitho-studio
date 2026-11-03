@@ -122,7 +122,7 @@ export function SlideList(props: SlideListProps) {
         // `closest` only needs to detect *whether* the click was inside a
         // row, not read `data-slide-row`'s value, so it's unaffected by
         // that attribute's own staleness risk after a keyed reorder (see
-        // CLAUDE.md's keyed-`.map()` pitfall).
+        // AGENTS.md's keyed-`.map()` pitfall).
         onContextMenu={e => {
           if ((e.target as Element).closest('[data-slide-row]')) return
           props.onContextMenu(null, e)
@@ -132,7 +132,7 @@ export function SlideList(props: SlideListProps) {
           <p className="text-sm text-muted-foreground">{messagesFor(props.language).openDeckToSeeSlides}</p>
         ) : (
           // The `.map()` callback below must stay an expression body (a
-          // block body is a compile error, BF021 — see CLAUDE.md's
+          // block body is a compile error, BF021 — see AGENTS.md's
           // BarefootJS pitfalls), so every reference below re-reads
           // `entry.sourceIndex` directly rather than destructuring it into
           // a local first.

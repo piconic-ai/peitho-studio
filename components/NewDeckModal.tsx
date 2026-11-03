@@ -58,7 +58,7 @@ export function NewDeckModal(props: NewDeckModalProps) {
           <div className="mb-3">
             <div className="text-xs text-muted-foreground truncate">{props.parentDir}</div>
             {/* Always mounted, visibility toggled by `hidden` rather than
-                `{errorMessage ? <div/> : null}` — see CLAUDE.md's
+                `{errorMessage ? <div/> : null}` — see AGENTS.md's
                 BarefootJS pitfalls (a `commitChange`/`create_deck` failure
                 while this modal stays open is exactly the null-to-string,
                 well-after-mount transition that pattern silently drops). */}

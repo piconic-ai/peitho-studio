@@ -103,7 +103,7 @@ export interface LayoutScreenProps {
   /** Layout `name`'s small thumbnail host, once its row mounts:
    * `Studio.tsx` draws the layout into it — the saved files' preview, or
    * for the layout being edited, its unsaved draft — and draws it again as
-   * the draft changes. A keyed row's `ref` runs only once (CLAUDE.md's
+   * the draft changes. A keyed row's `ref` runs only once (AGENTS.md's
    * BarefootJS pitfalls), so the redraw can't happen here. */
   onThumbnailHost: (el: HTMLElement, name: string) => void
   /** The canvas layout `name`'s thumbnail is drawn on (the PC / Phone
@@ -178,7 +178,7 @@ function confirmLabel(messages: Messages, view: LayoutDeleteView): string {
  * Every operation on a layout is in the list's right-click menu
  * (`ContextMenu.tsx`); New Layout and Delete open the modals at the
  * end. Every part is permanently mounted and shown or hidden by class —
- * see CLAUDE.md's BarefootJS pitfalls on branches. */
+ * see AGENTS.md's BarefootJS pitfalls on branches. */
 export function LayoutScreen(props: LayoutScreenProps) {
   return (
     <div data-layout-screen className={(props.hidden ? 'hidden' : 'flex') + ' flex-1 min-w-0 min-h-0'}>
@@ -318,7 +318,7 @@ export function LayoutScreen(props: LayoutScreenProps) {
       </div>
       </div>
       {/* New Layout, opened from the list's empty-space menu: an in-app
-          modal (never `window.confirm`/`prompt`, CLAUDE.md), permanently
+          modal (never `window.confirm`/`prompt`, AGENTS.md), permanently
           mounted and shown by class like the rest of this screen. */}
       <div className={(props.newLayoutOpen ? '' : 'hidden ') + 'fixed top-0 right-0 bottom-0 left-0 z-40 bg-black/40'} onClick={() => props.onCancelNewLayout()} />
       <div className={(props.newLayoutOpen ? '' : 'hidden ') + 'fixed top-0 right-0 bottom-0 left-0 z-50 flex items-center justify-center pointer-events-none'}>

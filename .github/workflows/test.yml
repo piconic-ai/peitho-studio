@@ -11,7 +11,7 @@
 #   building the app crate needs its platform; skipped by the e2e job.
 #
 # Skipped entirely for changes that only touch docs (todo/, docs/, skills,
-# README/CLAUDE.md). Listed by location rather than as `**/*.md`, since a
+# README/AGENTS.md). Listed by location rather than as `**/*.md`, since a
 # deck is Markdown too and a test fixture deck must still trigger the run.
 # If these jobs become required checks in branch protection, move the
 # filtering into the jobs instead: a workflow skipped by `paths-ignore`

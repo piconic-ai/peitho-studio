@@ -13,7 +13,7 @@ coordinate click landed on the operator's own Chrome window instead of
 Peitho Studio's, during a screen-shared meeting. The same failure mode
 recurred later (a click landed on the operator's own terminal instead of
 Finder), at which point the skill was deleted rather than kept as a
-documented-but-unsafe default — see `CLAUDE.md`'s e2e section. `tauri-driver`
+documented-but-unsafe default — see `AGENTS.md`'s e2e section. `tauri-driver`
 (Tauri's own official WebDriver tooling) turned out to have no macOS
 support at all — Apple doesn't ship a WKWebDriver, confirmed at
 [tauri-apps/tauri#7068](https://github.com/tauri-apps/tauri/issues/7068).

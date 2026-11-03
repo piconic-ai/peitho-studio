@@ -1,6 +1,6 @@
 // Renders a slide fragment into a host element's Shadow root instead of an
 // `<iframe srcdoc>` — see `todo/thumbnail-iframe-removal.md`. Not unit-
-// tested (per CLAUDE.md, `dom/` is DOM-touching and untested for now);
+// tested (per AGENTS.md, `dom/` is DOM-touching and untested for now);
 // verify via `run-peitho-studio`.
 
 import type { Size } from '../domain/geometry'

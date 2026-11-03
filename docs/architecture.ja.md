@@ -4,7 +4,7 @@
 
 # フロントエンド アーキテクチャ原則
 
-`CLAUDE.md`の「純粋関数を好む」「状態はディレクトリ/ファイル構造で区別する」という
+`AGENTS.md`の「純粋関数を好む」「状態はディレクトリ/ファイル構造で区別する」という
 原則を、巨大コンポーネント(`components/Studio.tsx`)のリファクタリングを機に、
 より具体的な層構成として拡張したもの。実行手順・進捗は`todo/`配下(完了後は
 削除、または`todo/archive/`へ移動)、ここには**恒久的な原則・ルールのみ**を書く。
@@ -68,7 +68,7 @@ Studio.tsx`にそのまま残す判断をした(新しい層を導入するの�
 
 ## BarefootJSの制約が層構成に課す不変条件
 
-(個別の落とし穴の詳細は`CLAUDE.md`の「BarefootJSで踏んだ落とし穴」を参照。
+(個別の落とし穴の詳細は`AGENTS.md`の「BarefootJSで踏んだ落とし穴」を参照。
 ここでは、それが今回の層構成の**設計判断**にどう影響したかだけを書く。)
 
 - **Context APIはファイルをまたげない**(バンドルごとに`createContext()`が別
@@ -208,4 +208,4 @@ IME合成中のエディタ(CodeMirror)同期、プレビュー枠のiframe上�
 ウィンドウのpending deck、`peitho present`の起動——これらは実機Tauri
 ウィンドウでしか確認できない。`manual: { reason }`付きの例示として台帳化
 する。実機確認は現在ユーザー自身が手動で行う(自動化していた
-`run-peitho-studio` skillを削除した経緯は`CLAUDE.md`のe2e節を参照)。
+`run-peitho-studio` skillを削除した経緯は`AGENTS.md`のe2e節を参照)。

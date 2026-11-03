@@ -76,7 +76,7 @@ export function createRenderStore() {
   // The slides the current render isolated for not building (by their
   // position in `renderedSource()` — see `domain/brokenSlides.ts`),
   // written only with the manifest they were isolated from, in the same
-  // `batch()`. A whole map in one signal, which CLAUDE.md warns against
+  // `batch()`. A whole map in one signal, which AGENTS.md warns against
   // for anything rows read: no row reads this — `Studio.tsx`'s
   // `slideEntries` memo bakes each slide's error into its own entry
   // (`buildSlideList`), and the error bar's summary is a memo of a

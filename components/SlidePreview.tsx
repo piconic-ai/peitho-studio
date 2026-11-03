@@ -197,7 +197,7 @@ export function SlidePreview(props: SlidePreviewProps) {
           building, and there is no slide to show — peitho-core's error, as
           the error bar has it, stays readable here. Each text is picked
           by one expression indexing the messages, not a `? :` between two
-          children (see CLAUDE.md's BarefootJS pitfalls). */}
+          children (see AGENTS.md's BarefootJS pitfalls). */}
       <div
         data-preview-build-error
         data-preview-build-error-scope={props.buildErrorScope}

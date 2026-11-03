@@ -47,7 +47,7 @@ export interface RenderedSlideEntry {
  * keyed `.map()` doesn't correctly re-run a row's canvas `ref` when a key
  * *returns* to the `rendered` branch after a stint as `placeholder` on
  * that same key (confirmed by direct browser reproduction, not just
- * `bf debug graph`'s static analysis — see CLAUDE.md's BarefootJS
+ * `bf debug graph`'s static analysis — see AGENTS.md's BarefootJS
  * pitfalls): the canvas host element exists in the DOM but never gets
  * `mountSlideCanvas` run against it, leaving the thumbnail permanently
  * blank until the whole deck is reopened. A key that can never coincide

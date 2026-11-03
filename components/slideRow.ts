@@ -25,7 +25,7 @@ export function slideRowClass(row: SlideRowAppearance): string {
     // A collapsed section's rows stay mounted and are only
     // hidden: unmounting and remounting a row's canvas host
     // runs into piconic-ai/barefootjs#2927/#3009 (see
-    // CLAUDE.md). A hidden row has an all-zero bounding box,
+    // AGENTS.md). A hidden row has an all-zero bounding box,
     // so `dom/dragGesture.ts`'s `gapUnderCursor` never picks
     // it as a drop gap.
     + (row.visibility === 'hidden' ? 'hidden ' : '')

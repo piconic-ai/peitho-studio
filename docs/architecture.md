@@ -1,6 +1,6 @@
 # Frontend architecture principles
 
-An extension of `CLAUDE.md`'s "prefer pure functions" and "distinguish
+An extension of `AGENTS.md`'s "prefer pure functions" and "distinguish
 state by directory/file structure" principles into a more concrete layer
 structure, prompted by refactoring the large `components/Studio.tsx`
 component. Execution steps and progress live under `todo/` (delete once
@@ -73,7 +73,7 @@ serving both roles — "composition root" and "orchestration" — at once.
 
 ## Invariants BarefootJS's constraints impose on the layer structure
 
-(See `CLAUDE.md`'s "Pitfalls hit with BarefootJS" for details on each
+(See `AGENTS.md`'s "Pitfalls hit with BarefootJS" for details on each
 individual pitfall. This section only covers how they influenced this
 layer structure's **design decisions**.)
 
@@ -248,5 +248,5 @@ canvas's shadow root (`@font-face` registration, `adoptedStyleSheets`,
 focus is lost, a pending deck across multiple windows, launching `peitho
 present` — these can only be confirmed with a real Tauri window. Log
 them as examples carrying `manual: { reason }`; on-device verification is
-currently done by the user manually (see `CLAUDE.md`'s e2e section for
+currently done by the user manually (see `AGENTS.md`'s e2e section for
 why the automated `run-peitho-studio` skill was removed).
