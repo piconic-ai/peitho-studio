@@ -170,12 +170,14 @@ function titleOrder(deck: MockDeck): string[] {
 
 /** Drags row `from` by its thumbnail and drops it above row `onto`. */
 async function dragRowAbove(page: Page, from: number, onto: number): Promise<void> {
+  await expect.soft(page.locator(`[data-slide-row="${from}"]`)).toHaveCSS('cursor', 'grab')
   const source = await page.locator(`[data-slide-row="${from}"]`).boundingBox()
   const target = await page.locator(`[data-slide-row="${onto}"]`).boundingBox()
   if (!source || !target) throw new Error('rows have no layout')
   await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
   await page.mouse.down()
   await page.mouse.move(target.x + target.width / 2, target.y + 5, { steps: 5 })
+  await expect.soft(page.locator(`[data-slide-row="${onto}"]`)).toHaveCSS('border-top-width', '2px')
   await page.mouse.up()
 }
 
