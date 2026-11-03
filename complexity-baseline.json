@@ -415,14 +415,6 @@
       "cyclomatic": 18
     },
     {
-      "path": "src-tauri/src/engine/slide_edit.rs",
-      "name": "image_canvas_edit",
-      "occurrence": 1,
-      "line": 107,
-      "cognitive": 33,
-      "cyclomatic": 23
-    },
-    {
       "path": "src-tauri/src/lib.rs",
       "name": "run / <closure>",
       "occurrence": 2,

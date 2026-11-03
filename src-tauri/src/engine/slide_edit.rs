@@ -104,6 +104,65 @@ pub fn list_canvas(deck_path: &std::path::Path, content: &str, base: &str, slot:
     image_canvas_edit(deck_path, content, base, 0, &[], &[], None, None, 0, Some(slot))
 }
 
+fn is_canvas_slot(layout: &peitho_core::Layout, slot: &str) -> bool {
+    (slot.starts_with("studio-image-") || slot.starts_with("studio-text-")) && layout.slot(slot).is_some()
+}
+
+fn ordered_canvas_figures(mut ordered_figures: std::collections::HashMap<String, String>, order: &[String]) -> Result<String, String> {
+    let mut figures = String::new();
+    let has_content = order.iter().filter(|slot| slot.as_str() == "studio-content").count();
+    if has_content > 1 || order.len() != ordered_figures.len() + has_content { return Err("image order must include every canvas image exactly once".into()) }
+    let content_index = order.iter().position(|slot| slot == "studio-content").map(|index| index as isize).unwrap_or(-1);
+    for (index, slot) in order.iter().enumerate() {
+        if slot == "studio-content" { continue }
+        let figure = ordered_figures.remove(slot).ok_or("image order must include every canvas image exactly once")?;
+        let figure = rewrite_str(&figure, RewriteStrSettings {
+            element_content_handlers: vec![element!("[data-studio-image], [data-studio-text]", |el| {
+                let previous = el.get_attribute("style").unwrap_or_default();
+                let style = previous.split(';').filter(|part| !part.trim().starts_with("z-index:")).collect::<Vec<_>>().join(";");
+                el.set_attribute("style", &format!("{style};z-index:{};", index as isize - content_index))?;
+                Ok(())
+            })], ..RewriteStrSettings::default()
+        }).map_err(|err| err.to_string())?;
+        figures.push_str(&figure);
+    }
+    Ok(figures)
+}
+
+fn new_canvas_objects(layout: &peitho_core::Layout, count: usize, text_count: usize, front_layer: isize) -> Result<(String, Vec<String>), String> {
+    let mut figures = String::new();
+    let mut slots = Vec::new();
+    let mut next = 1;
+    for i in 0..count {
+        while layout.slot(&format!("studio-image-{next}")).is_some() { next += 1 }
+        let slot = format!("studio-image-{next}"); next += 1;
+        let rect = ImagePlacement { slot: slot.clone(), x: 0.15 + (i % 4) as f64 * 0.035, y: 0.25 + (i % 4) as f64 * 0.035, width: 0.55, height: 0.55 };
+        figures.push_str(&format!("<figure class=\"studio-free-image\" data-studio-image=\"{slot}\" style=\"{}z-index:{};\"><slot name=\"{slot}\" accepts=\"image\" arity=\"1\"></slot></figure>", placement_style(&rect)?, front_layer + i as isize + 1));
+        slots.push(slot);
+    }
+    if text_count > 0 {
+        let mut next_text = 1;
+        while layout.slot(&format!("studio-text-{next_text}")).is_some() { next_text += 1 }
+        let slot = format!("studio-text-{next_text}");
+        figures.push_str(&canvas_object(&slot, &format!("position:absolute;left:20%;top:30%;width:55%;margin:0;z-index:{};", front_layer + 1)));
+        slots.push(slot);
+    }
+    Ok((figures, slots))
+}
+
+fn persist_canvas_layout(deck_path: &std::path::Path, content: &str, html: String) -> Result<String, String> {
+    let hash = Sha256::digest(html.as_bytes());
+    let name = format!("studio-canvas-{:x}", &hash[..8].iter().fold(0u64, |n, byte| (n << 8) | u64::from(*byte)));
+    let source = super::layout_files::LayoutSource { html, css: None };
+    let existing = super::pipeline::deck_dir_of(deck_path).join(format!("layouts/{name}.html"));
+    if existing.is_file() {
+        if std::fs::read_to_string(existing).map_err(|err| err.to_string())? != source.html { return Err("image layout name is already in use".into()) }
+    } else {
+        super::layout_files::add_layout(deck_path, content, &name, &source, "placing an image on the slide")?;
+    }
+    Ok(name)
+}
+
 fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, count: usize, placements: &[ImagePlacement], removed: &[String], from: Option<&str>, order: Option<&[String]>, text_count: usize, text_slot: Option<&str>) -> Result<ImageCanvas, String> {
     if count > 32 { return Err("add at most 32 images at a time".into()) }
     let assets = super::pipeline::parse_source(deck_path, content)?.assets;
@@ -114,11 +173,11 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
     }).transpose()?;
     let layout = carried.as_ref().unwrap_or(layout);
     for rect in placements {
-        if !(rect.slot.starts_with("studio-image-") || rect.slot.starts_with("studio-text-")) || layout.slot(&rect.slot).is_none() { return Err("this image is not freely positioned".into()) }
+        if !is_canvas_slot(layout, &rect.slot) { return Err("this image is not freely positioned".into()) }
         placement_style(rect)?;
     }
     for slot in removed {
-        if !(slot.starts_with("studio-image-") || slot.starts_with("studio-text-")) || layout.slot(slot).is_none() { return Err("this image is not freely positioned".into()) }
+        if !is_canvas_slot(layout, slot) { return Err("this image is not freely positioned".into()) }
     }
     let mut ordered_figures = std::collections::HashMap::new();
     let mut image_count = 0;
@@ -144,7 +203,7 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
                 let layer = existing_style.split(';').find_map(|part| part.trim().strip_prefix("z-index:").and_then(|value| value.trim().parse::<isize>().ok())).unwrap_or(0);
                 front_layer = front_layer.max(layer).max(image_count);
                 if order.is_some() {
-                    if !(slot.starts_with("studio-image-") || slot.starts_with("studio-text-")) || layout.slot(&slot).is_none() { return Err("invalid canvas image".into()) }
+                    if !is_canvas_slot(layout, &slot) { return Err("invalid canvas image".into()) }
                     let style = el.get_attribute("style").unwrap_or_default().replace('&', "&amp;").replace('"', "&quot;");
                     ordered_figures.insert(slot.clone(), canvas_object(&slot, &style));
                     el.remove(); return Ok(())
@@ -163,41 +222,12 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
         ],
         ..RewriteStrSettings::default()
     }).map_err(|err| err.to_string())?;
-    let mut figures = String::new();
-    if let Some(order) = order {
-        let has_content = order.iter().filter(|slot| slot.as_str() == "studio-content").count();
-        if has_content > 1 || order.len() != ordered_figures.len() + has_content { return Err("image order must include every canvas image exactly once".into()) }
-        let content_index = order.iter().position(|slot| slot == "studio-content").map(|index| index as isize).unwrap_or(-1);
-        for (index, slot) in order.iter().enumerate() {
-            if slot == "studio-content" { continue }
-            let figure = ordered_figures.remove(slot).ok_or("image order must include every canvas image exactly once")?;
-            let figure = rewrite_str(&figure, RewriteStrSettings {
-                element_content_handlers: vec![element!("[data-studio-image], [data-studio-text]", |el| {
-                    let previous = el.get_attribute("style").unwrap_or_default();
-                    let style = previous.split(';').filter(|part| !part.trim().starts_with("z-index:")).collect::<Vec<_>>().join(";");
-                    el.set_attribute("style", &format!("{style};z-index:{};", index as isize - content_index))?;
-                    Ok(())
-                })], ..RewriteStrSettings::default()
-            }).map_err(|err| err.to_string())?;
-            figures.push_str(&figure);
-        }
-    }
-    let mut slots = Vec::new();
-    let mut next = 1;
-    for i in 0..count {
-        while layout.slot(&format!("studio-image-{next}")).is_some() { next += 1 }
-        let slot = format!("studio-image-{next}"); next += 1;
-        let rect = ImagePlacement { slot: slot.clone(), x: 0.15 + (i % 4) as f64 * 0.035, y: 0.25 + (i % 4) as f64 * 0.035, width: 0.55, height: 0.55 };
-        figures.push_str(&format!("<figure class=\"studio-free-image\" data-studio-image=\"{slot}\" style=\"{}z-index:{};\"><slot name=\"{slot}\" accepts=\"image\" arity=\"1\"></slot></figure>", placement_style(&rect)?, front_layer + i as isize + 1));
-        slots.push(slot);
-    }
-    if text_count > 0 {
-        let mut next_text = 1;
-        while layout.slot(&format!("studio-text-{next_text}")).is_some() { next_text += 1 }
-        let slot = format!("studio-text-{next_text}");
-        figures.push_str(&canvas_object(&slot, &format!("position:absolute;left:20%;top:30%;width:55%;margin:0;z-index:{};", front_layer + 1)));
-        slots.push(slot);
-    }
+    let mut figures = match order {
+        Some(order) => ordered_canvas_figures(ordered_figures, order)?,
+        None => String::new(),
+    };
+    let (new_figures, slots) = new_canvas_objects(layout, count, text_count, front_layer)?;
+    figures.push_str(&new_figures);
     let styles = if count > 0 && !html.contains("data-studio-image-styles") {
         IMAGE_STYLES
     } else { "" };
@@ -205,15 +235,7 @@ fn image_canvas_edit(deck_path: &std::path::Path, content: &str, base: &str, cou
         element_content_handlers: vec![element!("section", |el| { el.append(&format!("{styles}{figures}"), ContentType::Html); Ok(()) })],
         ..RewriteStrSettings::default()
     }).map_err(|err| err.to_string())?;
-    let hash = Sha256::digest(html.as_bytes());
-    let name = format!("studio-canvas-{:x}", &hash[..8].iter().fold(0u64, |n, byte| (n << 8) | u64::from(*byte)));
-    let source = super::layout_files::LayoutSource { html, css: None };
-    let existing = super::pipeline::deck_dir_of(deck_path).join(format!("layouts/{name}.html"));
-    if existing.is_file() {
-        if std::fs::read_to_string(existing).map_err(|err| err.to_string())? != source.html { return Err("image layout name is already in use".into()) }
-    } else {
-        super::layout_files::add_layout(deck_path, content, &name, &source, "placing an image on the slide")?;
-    }
+    let name = persist_canvas_layout(deck_path, content, html)?;
     Ok(ImageCanvas { layout: name, slots })
 }
 
@@ -405,6 +427,41 @@ mod tests {
         let html = std::fs::read_to_string(dir.path().join(format!("layouts/{}.html", removed.layout))).unwrap();
         assert!(parse_layout(&removed.layout, &html).unwrap().slot("studio-image-1").is_none());
         assert!(parse_layout(&removed.layout, &html).unwrap().slot("studio-image-2").is_some());
+    }
+
+    #[test]
+    fn canvas_variants_keep_exact_serialization_and_reuse_existing_files() {
+        let (dir, path, source) = deck();
+        let canvas = image_canvas(&path, &source, "two-column", 2, &[]).unwrap();
+        let layout_path = dir.path().join(format!("layouts/{}.html", canvas.layout));
+        let html = std::fs::read_to_string(&layout_path).unwrap().replace("z-index:1;", "z-index:7;color:&quot;red&amp;blue&quot;;");
+        std::fs::write(&layout_path, html).unwrap();
+        let order = ["studio-image-2".into(), "studio-content".into(), "studio-image-1".into()];
+        let ordered = order_image_canvas(&path, &source, &canvas.layout, &order).unwrap();
+        let added = image_canvas_edit(&path, &source, &ordered.layout, 2, &[], &["studio-image-1".into()], None, None, 3, None).unwrap();
+        assert_eq!(added.slots, ["studio-image-3", "studio-image-4", "studio-text-1"]);
+        assert_eq!(ordered.layout, "studio-canvas-f9ce68c3cbe0fd09");
+        assert_eq!(added.layout, "studio-canvas-6e763757a25f2cb8");
+        let added_html = std::fs::read_to_string(dir.path().join(format!("layouts/{}.html", added.layout))).unwrap();
+        assert_eq!(added_html.matches("data-studio-text=").count(), 1);
+        let again = image_canvas_edit(&path, &source, &ordered.layout, 2, &[], &["studio-image-1".into()], None, None, 3, None).unwrap();
+        assert_eq!(again.layout, added.layout);
+        std::fs::write(dir.path().join(format!("layouts/{}.html", added.layout)), "<section></section>").unwrap();
+        assert_eq!(image_canvas_edit(&path, &source, &ordered.layout, 2, &[], &["studio-image-1".into()], None, None, 3, None).err().unwrap(), "image layout name is already in use");
+    }
+
+    #[test]
+    fn canvas_validation_rejects_count_then_placement_before_removal_and_order() {
+        let (_dir, path, source) = deck();
+        assert_eq!(image_canvas(&path, "invalid source", "missing", 33, &[]).err().unwrap(), "add at most 32 images at a time");
+        let rect = ImagePlacement { slot: "left".into(), x: f64::NAN, y: 0., width: 0.5, height: 0.5 };
+        assert_eq!(image_canvas(&path, &source, "two-column", 0, &[rect]).err().unwrap(), "this image is not freely positioned");
+        let canvas = image_canvas(&path, &source, "two-column", 1, &[]).unwrap();
+        let rect = ImagePlacement { slot: "studio-image-1".into(), x: f64::NAN, y: 0., width: 0.5, height: 0.5 };
+        assert_eq!(image_canvas_edit(&path, &source, &canvas.layout, 0, &[rect], &["missing".into()], None, Some(&[]), 0, None).err().unwrap(), "image position must fit inside the slide");
+        assert_eq!(image_canvas_edit(&path, &source, &canvas.layout, 0, &[], &["studio-image-2".into()], None, Some(&[]), 0, None).err().unwrap(), "this image is not freely positioned");
+        let duplicate_content = ["studio-content".into(), "studio-content".into()];
+        assert_eq!(order_image_canvas(&path, &source, &canvas.layout, &duplicate_content).err().unwrap(), "image order must include every canvas image exactly once");
     }
 
     #[test]
