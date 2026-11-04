@@ -190,3 +190,25 @@ for (const recovery of ['preview cancel', 'body Undo', 'valid preview'] as const
     } finally { engine.stop() }
   })
 }
+
+test('Given a real missing-body failure, when its loose content is assigned to a column, then the body recovers', async ({ page }) => {
+  const engine = startRealEngine()
+  try {
+    const deckPath = await engine.newDeck(mkdtempSync(join(tmpdir(), 'peitho-column-recovery-')))
+    const source = '<!-- {"key":"s","layout":"two-column"} -->\n# Title\n'
+    writeFileSync(deckPath, source)
+    const deck = { source, deckPath, realEngine: (cmd: string, args: Record<string, unknown>) => engine.invoke(deckPath, cmd, args) }
+    await mockTauri(page, deck)
+    await page.goto('/')
+    await page.locator('[data-slide-row="0"]').click()
+    await expect.poll(() => editorText(page)).toBe('# Title')
+    await fillEditor(page, '# Title\n\n- Item')
+    await expect(page.locator(ERROR_BAR)).toContainText("missing 'body' slot")
+    await page.locator('[data-preview-host] [data-studio-slot="left"]').click()
+    const field = page.locator('[data-preview-host] [data-studio-edit]')
+    await expect(field).toHaveText('- Item')
+    await field.press('Meta+Enter')
+    await expect.poll(() => deck.source).toContain('::: {slot=left}\n\n- Item')
+    await expect(page.locator(ERROR_BAR)).toBeHidden()
+  } finally { engine.stop() }
+})

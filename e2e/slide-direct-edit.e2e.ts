@@ -129,7 +129,12 @@ test('cancel leaves Markdown unchanged and commenting remains an explicit mode',
 
 test('the original missing-body error can be recovered by clicking the desired column', async ({ page }) => {
   const deck = await open(page)
-  deck.commandError = (command, args) => command === 'render_draft' && String(args.content).includes('- Item') && !String(args.content).includes('slot=left') ? "slide 1 ('s'), line 4: unassigned content remains for missing 'body' slot" : null
+  deck.renderError = content => content.includes('- Item') && !content.includes('slot=left') ? {
+    kind: 'ResidualContent', line: 4, originFile: null, slide: { number: 1, key: 's' },
+    message: "unassigned content remains for missing 'body' slot",
+    headline: "slide 1 ('s'), line 4: unassigned content remains for missing 'body' slot",
+    help: "add a 'body' slot to the layout or remove the list",
+  } : null
   await fillEditor(page, '# Title\n\n- Item')
   await expect(page.getByText(/unassigned content remains/)).toBeVisible()
   await page.locator(`${PREVIEW} [data-studio-slot="left"]`).click()
