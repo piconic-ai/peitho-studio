@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.1.11](https://github.com/piconic-ai/peitho-studio/compare/v0.1.10...v0.1.11) - 2026-11-04
+
+- chore: remove todos migrated to GitHub Issues by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/237
+- docs: migrate project instructions to AGENTS.md by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/239
+- chore(barefootjs): update to 0.40.2 and retire obsolete constraints by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/240
+
 ## [v0.1.10](https://github.com/piconic-ai/peitho-studio/compare/v0.1.9...v0.1.10) - 2026-11-03
 
 - chore(maintenance): track complexity and schedule bundled dependency updates by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/196
