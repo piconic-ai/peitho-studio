@@ -522,7 +522,11 @@ export function Studio() {
   const [sourceSavesInFlight, setSourceSavesInFlight] = createSignal(0)
   async function commitSource(handOff = false): Promise<boolean> {
     const editing = editor.sourceEditing()
-    if (editing.kind !== 'open' || !editor.isSourceDirty()) return true
+    if (editing.kind !== 'open') return true
+    if (!editor.isSourceDirty()) {
+      if (errorMessage() === shownBuildError) setErrorMessage(null)
+      return true
+    }
     const text = editing.draft
     setErrorMessage(null)
     setSourceSavesInFlight(n => n + 1)
@@ -556,8 +560,10 @@ export function Studio() {
       setStatusMessage({ kind: 'saved' })
       return true
     } catch (err) {
-      if (err instanceof RenderFailure) showBuildError(err.message)
-      else setErrorMessage(String(err))
+      if (err instanceof RenderFailure) {
+        const current = editor.sourceEditing()
+        if ((current.kind === 'open' ? current.draft : liveSource()) === text) showBuildError(err.message)
+      } else setErrorMessage(String(err))
       return false
     } finally {
       setSourceSavesInFlight(n => n - 1)
@@ -1572,10 +1578,14 @@ export function Studio() {
         if (source !== render.renderedSource() && source !== persistedFailedSource) void renderPreview(source, { persisted: true })
         // Back to what's on screen (an Undo before the typed text rendered):
         // a render still in flight is now stale and must not land.
-        else previewGeneration++
+        else {
+          previewGeneration++
+          if (errorMessage() === shownBuildError) setErrorMessage(null)
+        }
       })
       return
     }
+    previewGeneration++
     const timer = window.setTimeout(() => {
       const draft = currentDraftSource()
       if (draft !== null) void renderPreview(draft)
@@ -2187,7 +2197,10 @@ export function Studio() {
     if (!saved) return
     if (handOffAsks === asksBefore) {
       const build = diskBuildOf(render.diskRender())
-      if (build === null || build.kind === 'ok') return
+      if (build === null || build.kind === 'ok') {
+        if (errorMessage() === shownBuildError) setErrorMessage(null)
+        return
+      }
       dispatchBuildErrorReport({ type: 'report-requested', errors: build.errors, source: build.source })
     }
     if (review.report().kind === 'waiting-for-agent' && review.busy() !== 'sending') setStatusMessage({ kind: 'build-error-waiting' })
@@ -2494,7 +2507,7 @@ export function Studio() {
       return true
     } catch (err) {
       if (err instanceof RenderFailure) {
-        showBuildError(err.message)
+        if (expectedDraft === undefined || liveSource() === nextSource) showBuildError(err.message)
         return false
       }
       setErrorMessage(String(err))
