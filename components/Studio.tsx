@@ -2195,8 +2195,12 @@ export function Studio() {
       : editor.isDirty() ? await handleSave({ handOff: true }) : true
     handOffSource = null
     if (!saved) return
+    const build = diskBuildOf(render.diskRender())
+    if (build?.kind === 'failed' && build.errors.length === 0) {
+      setStatusMessage({ kind: 'build-error-unreportable' })
+      return
+    }
     if (handOffAsks === asksBefore) {
-      const build = diskBuildOf(render.diskRender())
       if (build === null || build.kind === 'ok') {
         if (errorMessage() === shownBuildError) setErrorMessage(null)
         return

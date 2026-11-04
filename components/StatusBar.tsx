@@ -34,7 +34,12 @@ export function StatusBar(props: StatusBarProps) {
         hidden={props.errorMessage === null}
         className="px-3 py-1.5 bg-destructive/10 text-destructive text-xs shrink-0 border-t border-destructive/30 flex items-start gap-2"
       >
-        <span className="flex-1 select-text">{props.errorMessage}</span>
+        <div className="flex-1 select-text">
+          <span>{props.errorMessage}</span>
+          <p data-error-send-hint hidden={props.errorAction !== 'send'} className="mt-1">
+            {messagesFor(props.language).sendErrorToAiHint}
+          </p>
+        </div>
         <button
           type="button"
           data-image-slot-fix={props.imageSlotFix}
