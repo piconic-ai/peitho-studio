@@ -1,0 +1,16 @@
+{
+  "name": "barefoot-0402-upstream-repros",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify": "bun verify.ts"
+  },
+  "dependencies": {
+    "@barefootjs/client": "0.40.2",
+    "@barefootjs/jsx": "0.40.2",
+    "@barefootjs/vite": "0.40.2",
+    "@playwright/test": "1.63.0",
+    "typescript": "5.9.3",
+    "vite": "6.4.3"
+  }
+}
