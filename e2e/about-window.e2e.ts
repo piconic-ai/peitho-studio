@@ -30,7 +30,7 @@ test.describe('functional', () => {
 
     await expect(page.locator('img[src="/static/app-icon.svg"]')).toBeVisible()
     await expect(row(page, 'name')).toHaveText('Peitho Studio')
-    await expect(page.getByText('Write slides with Peitho. Plain Markdown and HTML, so AI can help you.')).toBeVisible()
+    await expect(page.getByText('Write HTML slides with Peitho. Plain Markdown and HTML, so AI can help you.')).toBeVisible()
     await expect(row(page, 'version')).toHaveText('0.1.0')
     await expect(row(page, 'build')).toHaveText('42')
     await expect(row(page, 'commit')).toHaveText('5995c42')
@@ -64,7 +64,7 @@ test.describe('functional', () => {
   test('Given Japanese is the chosen UI language, when the About window opens, then its words are in Japanese', async ({ page }) => {
     await openAbout(page, { settings: { uiLanguage: 'ja' } })
 
-    await expect(page.getByText('Peithoでスライドを書く。素のMarkdownとHTMLなので、AIに手伝ってもらえます。')).toBeVisible()
+    await expect(page.getByText('PeithoでHTMLスライドを書く。素のMarkdownとHTMLなので、AIに手伝ってもらえます。')).toBeVisible()
     await expect(page.getByText('バージョン')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Webサイト' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'ライセンス' })).toBeVisible()

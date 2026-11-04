@@ -6,7 +6,7 @@
 
 # Peitho Studio
 
-*Write slides with [Peitho](https://github.com/mizzy/peitho).*
+*Write HTML slides with [Peitho](https://github.com/mizzy/peitho).*
 
 A desktop editor for presentations: Markdown as the source of truth, HTML slides you can interact with. Use HTML, CSS and JavaScript to build slides your audience can explore. Edit them yourself, work with an AI coding agent, or use both.
 
