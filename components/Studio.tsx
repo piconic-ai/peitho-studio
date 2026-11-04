@@ -524,7 +524,7 @@ export function Studio() {
     const editing = editor.sourceEditing()
     if (editing.kind !== 'open') return true
     if (!editor.isSourceDirty()) {
-      if (errorMessage() === shownBuildError) setErrorMessage(null)
+      clearBuildError()
       return true
     }
     const text = editing.draft
@@ -560,10 +560,8 @@ export function Studio() {
       setStatusMessage({ kind: 'saved' })
       return true
     } catch (err) {
-      if (err instanceof RenderFailure) {
-        const current = editor.sourceEditing()
-        if ((current.kind === 'open' ? current.draft : liveSource()) === text) showBuildError(err.message)
-      } else setErrorMessage(String(err))
+      const current = editor.sourceEditing()
+      showSaveError(err, (current.kind === 'open' ? current.draft : liveSource()) === text)
       return false
     } finally {
       setSourceSavesInFlight(n => n - 1)
@@ -1426,6 +1424,14 @@ export function Studio() {
     shownBuildError = message
     setErrorMessage(message)
   }
+  function clearBuildError(): void {
+    if (errorMessage() === shownBuildError) setErrorMessage(null)
+  }
+  function showSaveError(err: unknown, showBuild: boolean): void {
+    if (err instanceof RenderFailure) {
+      if (showBuild) showBuildError(err.message)
+    } else setErrorMessage(String(err))
+  }
 
   async function copyErrorMessage(): Promise<void> {
     const message = shownErrorMessage()
@@ -1580,7 +1586,7 @@ export function Studio() {
         // a render still in flight is now stale and must not land.
         else {
           previewGeneration++
-          if (errorMessage() === shownBuildError) setErrorMessage(null)
+          clearBuildError()
         }
       })
       return
@@ -2202,7 +2208,7 @@ export function Studio() {
     }
     if (handOffAsks === asksBefore) {
       if (build === null || build.kind === 'ok') {
-        if (errorMessage() === shownBuildError) setErrorMessage(null)
+        clearBuildError()
         return
       }
       dispatchBuildErrorReport({ type: 'report-requested', errors: build.errors, source: build.source })
@@ -2510,11 +2516,7 @@ export function Studio() {
       saved = true
       return true
     } catch (err) {
-      if (err instanceof RenderFailure) {
-        if (expectedDraft === undefined || liveSource() === nextSource) showBuildError(err.message)
-        return false
-      }
-      setErrorMessage(String(err))
+      showSaveError(err, expectedDraft === undefined || liveSource() === nextSource)
       return false
     } finally {
       finishSave(saved)
