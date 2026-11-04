@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="en"><body><main id="app"></main><script type="module">
+import './Probes.tsx'
+import { render } from '@barefootjs/client/runtime'
+render(document.getElementById('app'), new URLSearchParams(location.search).get('probe'), {})
+</script></body></html>

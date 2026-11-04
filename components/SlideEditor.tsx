@@ -14,11 +14,8 @@ import { messagesFor } from '../domain/messages'
 // because of text no slide's body shows (`domain/sourceEditing.ts`). Its
 // toggle row is offered only while `sourceOffered`.
 //
-// Every host stays mounted even with no slide selected or the source
-// editor open — only a `hidden` class toggles. A `ref` inside a
-// conditional branch re-runs on every re-entry while the branch's cleanup
-// never runs (AGENTS.md, BarefootJS pitfalls), which would create a new
-// editor per re-entry and leave the old one alive.
+// Every host stays mounted so Studio.tsx keeps the same CodeMirror
+// instances when selection or the whole-deck source editor changes.
 export interface SlideEditorProps {
   /** The UI language every label here is shown in. */
   language: Language
@@ -38,9 +35,6 @@ export function SlideEditor(props: SlideEditorProps) {
     <div className="flex-1 flex flex-col min-h-0">
       <div className={(props.sourceOffered ? '' : 'hidden ') + 'shrink-0 flex items-start gap-3 px-3 py-2 text-xs border-b border-border bg-muted/30'}>
         <span className="flex-1 text-muted-foreground">{messagesFor(props.language).deckSourceHint}</span>
-        {/* One expression picks the label: a `? :` text child in a component
-            mounted inside a branch can leave that branch half-entered
-            (AGENTS.md, BarefootJS pitfalls). */}
         <button
           type="button"
           data-source-toggle

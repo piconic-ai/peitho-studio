@@ -12,7 +12,6 @@ const DEVICE_OPTIONS = DEVICE_PRESETS.map(preset => ({
   detail: `${preset.model} ${deviceDimensions(preset)}`,
 }))
 
-// Props are values, not signal getters (BF044) — see `WelcomeScreen.tsx`.
 export interface ViewportToggleProps {
   language: Language
   /** Which segment is lit. */

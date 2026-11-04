@@ -239,211 +239,34 @@ don't bundle everything into one giant commit.
   handler calls `app_handle.exit(0)`. Dock "Quit", logout and shutdown
   still go through `terminate:` and can't be held.
 
-## Pitfalls hit with BarefootJS
+## BarefootJS
 
-- **Keyed `.map()` reuse bug** (reported as
-  [piconic-ai/barefootjs#2859](https://github.com/piconic-ai/barefootjs/issues/2859)):
-  when rows sharing the same key get reordered, that key's DOM node is
-  reused, but a non-signal value captured in the closure at the original
-  `.map()` call (e.g. a raw `i` index) does not get updated inside the
-  render body. Event handlers are unaffected (since PR #2191 they
-  re-derive the index from `data-key` on click), but values used in the
-  render body are affected. When you need "this item's current position"
-  inside a keyed `.map()`, don't write the raw loop index directly into
-  JSX — hold it in a per-key signal instead (see below).
-- **Don't hold an entire `Map`/`Record` in a single signal/memo.** A
-  design like `createMemo<Map<key, X>>` — holding "the whole collection"
-  as one value — subscribes every row that reads it to "the whole
-  collection," so every row re-renders whenever any single item changes
-  (a source of flicker). Instead, lazily create a `Map<key, [getter,
-  setter]>` per key, and in `createEffect` only call the setter for the
-  key whose value actually changed (the `fragmentSignal`/`indexSignal`
-  pattern — see `state/renderStore.ts`).
-- **Make the `.map()` callback an expression body.** Use the
-  `(item, i) => (<jsx/>)` form and avoid a block body like
-  `{ const x = ...; return <jsx/> }` — a block body is a compile error
-  (`BF021`). If you need to derive something from the index, precompute
-  it outside the `.map()` with `createMemo`.
-- **(Corrected — see below) Don't jump to "this breaks at runtime" from
-  `bf debug graph`'s `(no tracked deps)` alone.** This section used to
-  claim two "constraints": that signals/memos break when passed from a
-  factory function (the `state/xxxStore.ts` pattern of returning
-  `{ x, ... }`), and that they break when read through a helper function.
-  Both turned out to be wrong. Reproducing all three patterns exactly as
-  used in `domain/drag.ts` (calling a factory's return value from JSX via
-  `store.x()`, using multiple memo calls inside a complex expression
-  inside `.map()`, and a helper function that reads a memo internally and
-  is called from JSX like `helper('cut')`) and actually checking browser
-  behavior showed **all three update dynamically, correctly**. `bf debug
-  graph` is a compile-time static-analysis result, and BarefootJS has a
-  separate dynamic reactivity-tracking mechanism (wrap-by-default), so "a
-  dependency the static analysis can't find" doesn't imply "it won't
-  update at runtime." What looked broken at the time (the Step 7 drag
-  visual effect) was most likely an artifact of a different, later-
-  discovered cause (during on-device verification, DevTools' Inspect
-  Element mode was still active and clicks weren't reaching the app).
-  **Lesson**: `bf debug graph`'s `no tracked deps` is "a lead worth
-  digging into," not "proof it's broken." Whether something is actually
-  broken should be judged only after checking with `@barefootjs/test` IR
-  tests or real-browser verification when in doubt. The only constraint
-  actually confirmed to be real is this single one:
-  **destructuring a signal's getter out with `const { x } = store` fails
-  at runtime with `ReferenceError: Can't find variable: x`** (because the
-  compiler's identifier extraction doesn't see through destructuring).
-  Receiving it as `const store = createFooStore()` and calling it via the
-  property (`store.x()`) is fine.
-- **Pass props the called value, not the `Memo<T>` getter itself**
-  (`isBusy={isBusy()}`, not `isBusy={isBusy}`). Passing the latter is a
-  compiler build error, `BF044` (`Signal/Memo getter passed without
-  calling it`) — hit when extracting `components/WelcomeScreen.tsx` by
-  typing a prop as `isBusy: Memo<boolean>`. BarefootJS's props
-  reactivity follows the same model as SolidJS: `value={count()}` is
-  lowered by the compiler into a getter property,
-  `{ get value() { return count() } }`. The child reads it directly as
-  `props.xxx` (destructuring triggers the `BF043` warning — reactivity is
-  lost; if the intent really is to use it once as an initial value, mute
-  it explicitly with `@bf-ignore props-destructuring`). This `props.xxx`-
-  style read also often doesn't show up in `bf debug graph`'s static
-  graph (`no tracked deps`), but per the lesson above, dynamic tracking
-  actually updates it correctly — confirmed with Playwright.
-- **A `const` local passed as a prop is lowered by *inlining its
-  initializer*, not by referencing the binding.** `const x = f(sig());
-  <Child p={x}/>` compiles to `get p() { return f(sig()) }` — which is
-  exactly right for a derived value (it's how the prop stays reactive),
-  and wrong for anything whose initializer *constructs* something: every
-  read of `props.p` builds a brand-new instance. Hit when passing a
-  shared `CSSStyleSheet` (`createSlideStylesheet(...)`) down to
-  `SlideList`: each thumbnail row's `ref` got its own separately-parsed
-  sheet, and the `replaceSync` effect updated an object no shadow root
-  had adopted, so a theme change would never have reached the mounted
-  thumbnails. Verified by reading `dist/assets/components/*.js`. Keep
-  such a value behind an accessor (`function getX() { return x }`) and
-  pass *that* — a function identifier is passed by reference
-  (`get p() { return getX }`), same as any callback prop.
-- **Unlike the prop case above, a `const` local used directly as a native
-  DOM element's JSX attribute (not passed down to a child) is evaluated
-  once and stays frozen — no reactive inlining happens.** `const x =
-  props.a || props.b; <button disabled={x}/>` compiles `x` to a plain
-  variable computed once in the component's init function; the JSX
-  attribute's own compiled effect references that already-resolved value,
-  never re-reading `props.a`/`props.b`. The compiler's props-to-child
-  inlining (previous entry) doesn't apply here — only an expression
-  written directly inline in the JSX (`disabled={!props.a || props.b}`,
-  duplicated per usage if needed) or wrapped in `createMemo` and called
-  (`disabled={x()}`) stays reactive. Hit extracting `DeckHeader.tsx`'s
-  duplicated `!props.deckPath || props.presentPending` into one local —
-  `bf debug graph` still reported both DOM bindings as tracking
-  `props.deckPath`/`props.presentPending` (a false positive for this
-  specific case), and it silently stopped updating at runtime, caught
-  only by `e2e/present-click-feedback.e2e.ts`. Verified by reading
-  `dist/assets/components/*.js`.
-- **A `createEffect` called inside a conditional branch's `ref` leaks one
-  effect per re-entry into that branch, forever** (reported as
-  [piconic-ai/barefootjs#2927](https://github.com/piconic-ai/barefootjs/issues/2927),
-  with a minimal repro and root-cause trace). A branch's compiled
-  `bindEvents()` re-runs in full every time the branch is re-entered
-  (confirmed in `dist/assets/components/*.js` and
-  `@barefootjs/client`'s `runtime/index.js`), but the branch's own cleanup
-  is never invoked on re-entry, and `createEffect`'s cleanup doesn't
-  re-run on re-execution either — so a `ref={el => createEffect(() =>
-  ...)}` inside `cond ? <div ref={...}/> : <other/>` leaves the *previous*
-  entry's effect still running against its now-detached `el` every time
-  `cond` flips back to true, one more instance per flip, forever (each one
-  keeps doing real work — e.g. re-mounting a Shadow DOM canvas — against
-  an element nothing references anymore). Confirmed via `SlidePreview.tsx`
-  toggling on `selectedSlideKey`. Fix: keep both branches permanently
-  mounted and toggle visibility (a `hidden` class) instead of branching —
-  same pattern `SlideContextMenu.tsx` already used for an unrelated
-  reason. `ref`-scoped effects are otherwise fine (see `SlideList.tsx`'s
-  thumbnail row, which mounts unconditionally within its `.map()`); the
-  leak is specifically about a `ref` whose *entire host element* is inside
-  a branch that unmounts and remounts.
-- **`event.stopPropagation()` inside a `.map()` row's event handler doesn't
-  stop a sibling handler on the row's static parent** (reported as
-  [piconic-ai/barefootjs#2930](https://github.com/piconic-ai/barefootjs/issues/2930),
-  with a minimal repro and root-cause trace). A `.map()` row's handler
-  isn't a real per-element `addEventListener` — it's a single delegated
-  listener on the `.map()`'s nearest static ancestor that resolves
-  `event.target` back to a row via `closest()`/DOM position. When that
-  same static ancestor *also* has its own directly-authored handler for
-  the same event, the two end up as two separate listeners on the
-  identical DOM node — and `stopPropagation()` only blocks propagation to
-  *other elements*, never a sibling listener already registered on the
-  *same* element, so both fire regardless of which one calls it. Hit in
-  `SlideList.tsx`: the slide-list container's own `onContextMenu` (for
-  right-clicking empty space) and each row's `onContextMenu` (for
-  right-clicking a slide, calling `stopPropagation()` for exactly this
-  reason) both fired on every row right-click, with the container's
-  `null`-index call always overwriting the row's real index right after —
-  Cut/Copy/Delete looked permanently disabled no matter which slide was
-  clicked. Fix: don't rely on `stopPropagation()` between a `.map()` row
-  and its own static parent's handler for the same event — have the
-  parent's handler explicitly skip itself when the click landed inside a
-  row (e.g. `event.target.closest('[data-slide-row]')`) instead.
-- **A keyed `.map()` row's `ref` doesn't re-run when a branch is re-entered
-  after the row's key round-trips through another branch** (reported as
-  [piconic-ai/barefootjs#3009](https://github.com/piconic-ai/barefootjs/issues/3009),
-  with a minimal repro and root-cause trace). Distinct from the
-  already-corrected #2927 entry above (which is about a `createEffect`
-  *leaking* on re-entry, and concluded a plain `ref` re-runs fine on
-  re-entry) — this is a plain `ref` (no `createEffect` inside it) that
-  simply never runs a *second* time: `cond ? <div ref={...}/> : <other/>`
-  inside a keyed `.map()` row, when that row's key goes `cond===true` ->
-  `cond===false` -> `cond===true` again (the SAME key throughout), leaves
-  the third render's `<div>` in the DOM but its `ref` callback never
-  executes — confirmed by reading the compiled output's `outerHTML`, not
-  just `bf debug graph`. Hit in `SlideList.tsx`/`domain/slideList.ts`: a
-  slide's thumbnail row toggling `rendered` -> `placeholder` (marked
-  draft) -> `rendered` (un-drafted) left the canvas `<div>` present but
-  un-mounted (`mountSlideCanvas` never ran, no `data-slide-canvas-key`
-  set) — a permanently blank thumbnail until the whole deck was reopened.
-  Fix: never let the two branches share a key across the toggle — give the
-  branch that doesn't need a stable identity (a draft placeholder, which
-  is rare and short-lived) a key namespace that can *never* collide with
-  the other branch's key (e.g. `` `placeholder:${sourceIndex}` ``, never
-  the slide's own explicit key), so the toggle is always a genuinely new
-  key from the `.map()`'s perspective — forcing a real unmount+fresh-mount
-  (the already-exercised, correctly-working case) instead of an in-place
-  branch swap.
+Use the installed `bf guide` documentation for compiler rules. Before adding
+workarounds for a framework bug, reproduce it in a browser. `bf debug graph`
+is static analysis; missing tracked dependencies alone do not prove a runtime
+failure.
 
-- **A `ref` on an element inside a conditional branch of a keyed `.map()`
-  row runs only when the row first mounts, not when the branch is entered
-  later** (related to #3009 above, but hit on the *first* entry too). A
-  `ref={el => el.focus()}` on the section header's name input never ran
-  when the header opened for editing, so the input was never focused.
-  Verified by reading `dist/assets/components/*.js`: the branch's `ref`
-  call sits in the row's mount path, not in the branch's `bindEvents`. Do
-  such work from the handler that flips the branch instead (see
-  `dom/sectionHeader.ts`'s `focusSectionNameInput`).
-- **An input's `value={expr}` binding writes to the DOM only when `expr`'s
-  result changes.** Text the user typed that normalizes back to the value
-  already shown (`000` or `-1` into a number input that shows `0`) stays on
-  screen. When an input normalizes what's typed, also rewrite the field
-  from `onChange` (see `dom/sectionHeader.ts`'s `showCanonicalValue`).
-- **A conditional nested inside a branch renders nothing if it switches
-  right after the outer branch is entered.** `SlideContextMenu.tsx`'s
-  picker (`layoutPickerOpen ? <div>{view === 'loading' ? … : <list/>}</div>
-  : null`) opened already expanded while `view` was still `'loading'`
-  stayed empty once `view` turned `'ready'` — the inner region's end marker
-  was gone from the DOM. Expanding it after the previews had loaded
-  rendered normally. Enter such a branch only once the inner value has
-  settled (see `openLayoutPickerOn` in `Studio.tsx`).
-- **A `? :` text child in a component mounted inside a branch can leave that
-  branch half-entered.** `ReviewPanel.tsx`'s `{props.sending ? a : b}`
-  kept `Studio.tsx`'s "Loading deck…" on screen after the deck opened
-  (every mocked e2e failed). One expression that picks the text
-  (`messages[props.sending ? 'x' : 'y']`) rendered normally.
-- **A nested `.map()` inside a conditional branch never updates its inner
-  rows** (reported as
-  [piconic-ai/barefootjs#3274](https://github.com/piconic-ai/barefootjs/issues/3274),
-  still so on 0.39.1). In `cond ? <div>{KEYS.map(key => (...{picks(key)
-  .map(pick => <button aria-checked={props.x === pick.choice ...}/>)}))}</div>
-  : null`, the inner rows' reactive attributes and text are rendered once and
-  never updated, whether either array is a `const` or a signal: clicks
-  change the state but not the buttons. The same loops outside a branch, and
-  a single `.map()` inside one, are fine. Write one `.map()` per group (see
-  `components/NewDeckModal.tsx`), or keep the loops mounted and toggle a
-  `hidden` class.
+- Keep independent signals per slide key when unrelated rows should not
+  update together. A single `Map` or `Record` signal subscribes every reader
+  to the whole collection.
+- Preserve the identity of shared objects passed to children. A local
+  `const` passed as a prop can have its initializer inlined at each read.
+  Use a stable accessor for objects such as the shared `CSSStyleSheet`.
+- Use `createMemo` or inline JSX expressions for compound values derived
+  from props. `const disabled = !props.ready || props.busy` stays frozen
+  when used in a native element's attribute on 0.40.2.
+- When normalizing an input back to an unchanged signal value, also write
+  the canonical value to the input. Equality-based signal updates alone do
+  not replace user text such as `000` with `0`.
+- Keep StatusBar's error controls mounted and toggle the bar with `hidden`.
+  On 0.40.2, mounting that subtree conditionally freezes subsequent
+  disabled/hidden updates. The image-layout fix and send-error E2Es cover it.
+- Keep CodeMirror hosts mounted when their editor instances must survive
+  selection and pane changes. Framework effect cleanup does not manage
+  externally created editor instances automatically.
+
+The 0.40.2 audit, the distinction between old warnings and confirmed fixes,
+and the browser regression command are in `docs/barefootjs-upgrade.md`.
 
 ## Pitfalls hit with UnoCSS (Wind4 preset)
 

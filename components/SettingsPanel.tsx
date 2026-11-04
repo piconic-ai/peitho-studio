@@ -89,9 +89,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
               type="checkbox"
               data-setting="vim-mode"
               checked={props.vimMode}
-              // `checked` writes to the DOM only when `props.vimMode` changes,
-              // and a failed save leaves it as it was, so put the box back
-              // by hand (AGENTS.md, BarefootJS pitfalls: input bindings).
+              // A failed save leaves the setting unchanged, so restore the
+              // checkbox the user already toggled.
               onChange={e => {
                 const box = e.target as HTMLInputElement
                 void props.onVimModeChange(box.checked).then(saved => { if (!saved) box.checked = props.vimMode })

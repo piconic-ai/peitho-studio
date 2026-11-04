@@ -1,11 +1,6 @@
-// Regression tests for the same "invisible error" bug fixed in StatusBar
-// (see error-banner-visibility.e2e.ts and AGENTS.md's BarefootJS
-// pitfalls), found by Pullfrog's review of that fix in two other
-// components sharing the same `errorMessage` signal: WelcomeScreen (a
-// failed `open_deck`, e.g. a stale Recent entry) and NewDeckModal (a
-// failed `create_deck`) both stay mounted across their own failure
-// window, so both hit the identical `{errorMessage ? <div/> : null}`
-// gap.
+// Opening or creating a deck must show errors on the screen that stays
+// open after the failure. Keep these checks when changing conditional
+// rendering in WelcomeScreen and NewDeckModal.
 import { test, expect } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 

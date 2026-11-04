@@ -22,12 +22,8 @@ export function slideRowClass(row: SlideRowAppearance): string {
     // that shows at all: the very last row may sit inside a
     // collapsed section.
     + (row.draggedIndex !== null && row.dragOverGap === row.entryCount && row.index === row.lastVisibleRow ? 'border-b-2 border-b-primary ' : '')
-    // A collapsed section's rows stay mounted and are only
-    // hidden: unmounting and remounting a row's canvas host
-    // runs into piconic-ai/barefootjs#2927/#3009 (see
-    // AGENTS.md). A hidden row has an all-zero bounding box,
-    // so `dom/dragGesture.ts`'s `gapUnderCursor` never picks
-    // it as a drop gap.
+    // Keep collapsed rows' canvases mounted. A hidden row has an all-zero
+    // bounding box, so `dom/dragGesture.ts`'s `gapUnderCursor` skips it.
     + (row.visibility === 'hidden' ? 'hidden ' : '')
     + 'cursor-grab'
   )

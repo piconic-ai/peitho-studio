@@ -2,13 +2,7 @@
 
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
-import { newDeckChoiceLabel, newDeckSettingPicks, type NewDeckSettingPick, type NewDeckSettings } from '../domain/newDeckSettings'
-// Props here are values (`isBusy={isBusy()}`), not signal getters — see
-// `components/WelcomeScreen.tsx` for why (BF044). `isOpen` gates rendering
-// inside this component (a single sibling condition, not a nested
-// ternary — the pattern docs/architecture.md asks for) rather than at the
-// call site, so callers don't have to duplicate the `? <NewDeckModal .../> :
-// null` wrapper.
+import { NEW_DECK_SETTING_KEYS, newDeckChoiceLabel, newDeckSettingPicks, type NewDeckSettingPick, type NewDeckSettings } from '../domain/newDeckSettings'
 export interface NewDeckModalProps {
   /** The UI language every label here is shown in. */
   language: Language
@@ -57,56 +51,29 @@ export function NewDeckModal(props: NewDeckModalProps) {
           />
           <div className="mb-3">
             <div className="text-xs text-muted-foreground truncate">{props.parentDir}</div>
-            {/* Always mounted, visibility toggled by `hidden` rather than
-                `{errorMessage ? <div/> : null}` — see AGENTS.md's
-                BarefootJS pitfalls (a `commitChange`/`create_deck` failure
-                while this modal stays open is exactly the null-to-string,
-                well-after-mount transition that pattern silently drops). */}
-            <div hidden={props.errorMessage === null} className="text-xs text-destructive">{props.errorMessage}</div>
+            {props.errorMessage !== null ? <div className="text-xs text-destructive">{props.errorMessage}</div> : null}
           </div>
-          {/* Buttons rather than a `<select>`, as in SettingsPanel's language
-              picker: with two choices each, both stay in view, and the
-              choices are the Edit menu's own (`DECK_SETTING_CHOICES`). Two
-              groups rather than one `.map()` over the settings: nested
-              inside this `isOpen` branch, the inner rows would never update
-              (piconic-ai/barefootjs#3274). */}
           <div className="mb-3 flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-3">
-              <span id="new-deck-aspect-ratio-label" className="text-xs text-muted-foreground">{messagesFor(props.language).newDeckAspectRatio}</span>
-              <div role="radiogroup" aria-labelledby="new-deck-aspect-ratio-label" className="flex rounded-md border border-border overflow-hidden">
-                {newDeckSettingPicks('aspect_ratio').map(pick => (
-                  <button
-                    type="button"
-                    key={pick.choice}
-                    role="radio"
-                    aria-checked={props.settings.aspect_ratio === pick.choice ? 'true' : 'false'}
-                    disabled={props.isBusy}
-                    onClick={() => props.onSettingChange(pick)}
-                    className={(props.settings.aspect_ratio === pick.choice ? 'bg-primary text-primary-foreground ' : 'hover:bg-accent ') + 'px-3 py-1 text-xs disabled:opacity-50'}
-                  >
-                    {newDeckChoiceLabel(pick)}
-                  </button>
-                ))}
+            {NEW_DECK_SETTING_KEYS.map(key => (
+              <div key={key} className="flex items-center justify-between gap-3">
+                <span id={'new-deck-' + key + '-label'} className="text-xs text-muted-foreground">{key === 'aspect_ratio' ? messagesFor(props.language).newDeckAspectRatio : messagesFor(props.language).newDeckLanguage}</span>
+                <div role="radiogroup" aria-labelledby={'new-deck-' + key + '-label'} className="flex rounded-md border border-border overflow-hidden">
+                  {newDeckSettingPicks(key).map(pick => (
+                    <button
+                      type="button"
+                      key={pick.choice}
+                      role="radio"
+                      aria-checked={props.settings[key] === pick.choice ? 'true' : 'false'}
+                      disabled={props.isBusy}
+                      onClick={() => props.onSettingChange(pick)}
+                      className={(props.settings[key] === pick.choice ? 'bg-primary text-primary-foreground ' : 'hover:bg-accent ') + 'px-3 py-1 text-xs disabled:opacity-50'}
+                    >
+                      {newDeckChoiceLabel(pick)}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span id="new-deck-language-label" className="text-xs text-muted-foreground">{messagesFor(props.language).newDeckLanguage}</span>
-              <div role="radiogroup" aria-labelledby="new-deck-language-label" className="flex rounded-md border border-border overflow-hidden">
-                {newDeckSettingPicks('lang').map(pick => (
-                  <button
-                    type="button"
-                    key={pick.choice}
-                    role="radio"
-                    aria-checked={props.settings.lang === pick.choice ? 'true' : 'false'}
-                    disabled={props.isBusy}
-                    onClick={() => props.onSettingChange(pick)}
-                    className={(props.settings.lang === pick.choice ? 'bg-primary text-primary-foreground ' : 'hover:bg-accent ') + 'px-3 py-1 text-xs disabled:opacity-50'}
-                  >
-                    {newDeckChoiceLabel(pick)}
-                  </button>
-                ))}
-              </div>
-            </div>
+            ))}
           </div>
           <div className="flex justify-end gap-2">
             <button

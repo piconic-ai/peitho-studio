@@ -5,8 +5,6 @@ import { messagesFor } from '../domain/messages'
 import type { VariantOption } from '../domain/deckVariants'
 import type { StudioMode } from '../domain/layoutScreen'
 
-// Props here are values (`presentMenuOpen={presentMenuOpen()}`), not signal
-// getters — see `components/WelcomeScreen.tsx` for why (BF044).
 export interface DeckHeaderProps {
   /** The UI language every label here is shown in. */
   language: Language
@@ -42,12 +40,6 @@ export function DeckHeader(props: DeckHeaderProps) {
           has focus, including a WKWebView selection), so a dedicated
           copy button here is unnecessary UI. */}
       <span className="text-sm text-muted-foreground truncate select-text">{props.deckPath}</span>
-      {/* Permanently mounted, toggled by a `hidden` class rather than a
-          `cond ? <.../> : null` branch: the variant list arrives after this
-          header has already mounted (see `refreshDeckVariants` in
-          Studio.tsx), and a conditional's post-mount branches inside a
-          freshly mounted subtree are exactly what SlideContextMenu.tsx
-          found unreliable. */}
       <div className={(props.variantSwitcherShown ? '' : 'hidden ') + 'relative shrink-0'}>
         <button
           type="button"

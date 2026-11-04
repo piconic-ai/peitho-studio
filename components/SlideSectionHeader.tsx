@@ -53,9 +53,7 @@ export function SlideSectionHeader(props: SlideSectionHeaderProps) {
           <div data-section-header="" className="flex items-center gap-1">
             <input
               aria-label={messagesFor(props.language).sectionName}
-              // Focused on opening by Studio.tsx (`focusSectionNameInput`),
-              // not by a `ref` here: a `ref` in this branch runs only
-              // when the row first mounts.
+              // Studio.tsx focuses this field when section editing opens.
               value={props.draft.name}
               onInput={e => props.onSectionNameInput(props.index, e.target.value)}
               onBlur={e => { if (!isFocusMovingWithinSectionHeader(e)) props.onCommitSectionEdit(props.index) }}

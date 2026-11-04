@@ -2,16 +2,6 @@
 
 import { type Language } from '../domain/language'
 import { messagesFor } from '../domain/messages'
-// Props here are values (`isBusy={isBusy()}`), not signal getters
-// (`isBusy={isBusy}`) — BarefootJS's compiler rejects the latter with
-// BF044 ("Signal/Memo getter passed without calling it"). Unlike a
-// design this refactor's docs/architecture.md briefly assumed (a
-// `Memo<T>`-typed prop, recognized as reactive via a `Reactive<T>`
-// brand), the actual model matches SolidJS: the compiler lowers
-// `value={count()}` into a getter property (`{ get value() { return
-// count() } }`) on the props object it builds for the child, so reading
-// `props.xxx` here (never destructured — that captures once and goes
-// stale, BF043) re-tracks the parent's signal on every access.
 export interface WelcomeScreenProps {
   /** The UI language every label here is shown in. */
   language: Language
@@ -66,12 +56,7 @@ export function WelcomeScreen(props: WelcomeScreenProps) {
             rendered) so its appearance doesn't itself shift the
             surrounding buttons. */}
         <div className="h-4 text-xs text-muted-foreground">{props.isBusy ? messagesFor(props.language).opening : ''}</div>
-        {/* Always mounted, visibility toggled by `hidden` rather than
-            `{errorMessage ? <div/> : null}` — see AGENTS.md's BarefootJS
-            pitfalls (a failed open/create while this screen stays mounted
-            is exactly the null-to-string, well-after-mount transition that
-            pattern silently drops). */}
-        <div hidden={props.errorMessage === null} className="text-xs text-destructive text-center">{props.errorMessage}</div>
+        {props.errorMessage !== null ? <div className="text-xs text-destructive text-center">{props.errorMessage}</div> : null}
         {props.recentDecks.length > 0 ? (
           <div className="w-full">
             <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">{messagesFor(props.language).recentDecks}</div>

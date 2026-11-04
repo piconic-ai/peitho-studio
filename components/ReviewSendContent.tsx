@@ -23,10 +23,7 @@ export function ReviewSendContent(props: ReviewSendContentProps) {
         <circle cx="9" cy="13.5" r="1.2" fill="currentColor" stroke="none" />
         <circle cx="15" cy="13.5" r="1.2" fill="currentColor" stroke="none" />
       </svg>
-      {/* One expression picking the text, not a `? :` of two texts: a
-          conditional text child here left `Studio.tsx`'s deck-open
-          branch half-entered (its "Loading deck…" never went away). */}
-      <span className={props.working && !props.sending ? 'animate-pulse' : ''}>{messagesFor(props.language)[props.sending ? 'sendingToAgent' : props.working ? 'agentThinking' : 'sendToAgent']}</span>
+      <span className={props.working && !props.sending ? 'animate-pulse' : ''}>{props.sending ? messagesFor(props.language).sendingToAgent : props.working ? messagesFor(props.language).agentThinking : messagesFor(props.language).sendToAgent}</span>
     </>
   )
 }

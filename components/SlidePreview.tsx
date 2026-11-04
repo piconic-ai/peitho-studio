@@ -114,14 +114,8 @@ export function SlidePreview(props: SlidePreviewProps) {
           {props.scaleLabel}
         </span>
       </div>
-      {/* Both children stay mounted for this component's whole life and
-          only toggle `hidden`, rather than one conditional swapping them:
-          BarefootJS re-runs a conditional branch's bindings every time that
-          branch is re-entered and never disposes what the previous run
-          created, so a selection that goes away and comes back would leave
-          the `ref`'s effect below running against the detached host while a
-          second one started on the new host. (`SlideContextMenu` is kept
-          permanently mounted for a related reason.) */}
+      {/* The canvas host stays mounted across selection changes so edits
+          can patch the same host through `patchSlideCanvases`. */}
       <div
         data-preview-host
         data-preview-device-width={props.deviceWidth === null ? '' : String(props.deviceWidth)}
@@ -192,12 +186,8 @@ export function SlidePreview(props: SlidePreviewProps) {
       <div className={(props.selectedSlideKey === null && props.buildError === null ? '' : 'hidden ') + 'flex-1 flex items-center justify-center text-sm text-muted-foreground'}>
         {props.hasDeck ? messagesFor(props.language).selectSlideToPreview : messagesFor(props.language).openDeckToPreview}
       </div>
-      {/* Permanently mounted like its siblings (see above): the deck on
-          disk doesn't build, or the selected slide was isolated for not
-          building, and there is no slide to show — peitho-core's error, as
-          the error bar has it, stays readable here. Each text is picked
-          by one expression indexing the messages, not a `? :` between two
-          children (see AGENTS.md's BarefootJS pitfalls). */}
+      {/* When the deck or selected slide cannot build, show peitho-core's
+          error here as well as in the error bar. */}
       <div
         data-preview-build-error
         data-preview-build-error-scope={props.buildErrorScope}
