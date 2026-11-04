@@ -143,3 +143,50 @@ for (const phase of ['body preview', 'body autosave', 'source autosave', 'body p
     } finally { release(); engine.stop() }
   })
 }
+
+for (const recovery of ['preview cancel', 'body Undo', 'valid preview'] as const) {
+  test(`Given an invalid source draft, when ${recovery} restores or renders the body, then the source error remains available to send`, async ({ page }) => {
+    const engine = startRealEngine()
+    try {
+      const deckPath = await engine.newDeck(mkdtempSync(join(tmpdir(), 'peitho-cross-editor-')))
+      const body = '# Title\n\nOriginal body'
+      const source = `---\ntime: 1m\n---\n<!-- {"key":"s","layout":"title-body"} -->\n${body}\n`
+      const broken = source.replace('time: 1m', 'fontss: x')
+      writeFileSync(deckPath, broken)
+      let validBodyRenders = 0
+      const deck = {
+        source: broken, deckPath,
+        realEngine: async (cmd: string, args: Record<string, unknown>) => {
+          const result = await engine.invoke(deckPath, cmd, args)
+          if (cmd === 'render_draft' && typeof args.content === 'string' && args.content.includes('Changed')) validBodyRenders++
+          return result
+        },
+      }
+      await mockTauri(page, deck)
+      await page.goto('/')
+      await page.locator('[data-source-toggle]').click()
+      await fillEditor(page, source, 'source')
+      await expect.poll(() => deck.source).toBe(source)
+      await expect(page.locator(ERROR_BAR)).toBeHidden()
+      await fillEditor(page, broken, 'source')
+      await expect(page.locator(ERROR_BAR)).toContainText('unknown field `fontss`')
+      await expect(page.locator('[data-error-send-hint]')).toBeVisible()
+      await page.clock.install()
+      await page.clock.pauseAt(new Date(Date.now() + 1000))
+      await page.locator('[data-preview-host] h1').click()
+      await page.keyboard.insertText('Changed')
+      if (recovery === 'valid preview') {
+        await page.clock.runFor(100)
+        await expect.poll(() => validBodyRenders).toBeGreaterThan(0)
+      }
+      if (recovery === 'body Undo') await menuHistory(page, 'undo')
+      else await page.keyboard.press('Escape')
+      await page.clock.runFor(100)
+      await expect.poll(() => editorText(page)).toBe(body)
+      await expect.poll(() => editorText(page, 'source')).toBe(broken)
+      expect(deck.source).toBe(source)
+      await expect(page.locator(ERROR_BAR)).toContainText('unknown field `fontss`')
+      await expect(page.locator('[data-error-send-hint]')).toBeVisible()
+    } finally { engine.stop() }
+  })
+}
