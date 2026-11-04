@@ -7,7 +7,7 @@ from the app (its own `package.json` and lockfile), living in `site/`.
 
 - One static `index.html`, styled by `public/site.css` (light only):
   - a hero with the app icon, "Peitho Studio", "Write HTML slides with Peitho."
-    ("Edit Markdown. Preview slides. Bring your AI Agent.") above a recording of the real Studio UI demonstrating Markdown editing and an Agent-assisted HTML layout change;
+    above a recording of the real Studio UI demonstrating Markdown editing and an Agent-assisted HTML layout change;
   - a "Built on Peitho" card: Peitho's one-line description and a small
     Markdown-to-slide illustration, linking to
     [peitho.gosu.ke](https://peitho.gosu.ke);

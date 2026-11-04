@@ -58,7 +58,6 @@ h1, h2 { font-family: var(--serif); font-weight: 400; letter-spacing: -0.03em; }
 .hero h1 { margin: 0; font-size: clamp(44px, 8vw, 72px); line-height: 1.05; }
 .hero-lede { margin: 12px 0 0; font-size: clamp(19px, 2.8vw, 23px); text-wrap: balance; }
 .hero-lede a { color: inherit; }
-.hero-sub { margin: 6px 0 0; font-size: clamp(15px, 2vw, 17px); color: var(--muted); text-wrap: balance; }
 
 /* The app window */
 .window {

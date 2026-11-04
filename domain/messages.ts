@@ -488,7 +488,7 @@ const en: Messages = {
   imageLayoutAddFailed: error => `Could not add the image layout: ${error}`,
 
   // Same words as the site's (site/index.html).
-  aboutDescription: 'Write HTML slides with Peitho. Plain Markdown and HTML, so AI can help you.',
+  aboutDescription: 'Write HTML slides with Peitho.',
   aboutVersion: 'Version',
   aboutBuild: 'Build',
   aboutCommit: 'Commit',
@@ -702,7 +702,7 @@ const ja: Messages = {
   layoutAlreadyApplied: layout => `スライドはすでにレイアウト ${layout} を使っています`,
   imageLayoutAddFailed: error => `画像用レイアウトを追加できませんでした: ${error}`,
 
-  aboutDescription: 'PeithoでHTMLスライドを書く。素のMarkdownとHTMLなので、AIに手伝ってもらえます。',
+  aboutDescription: 'PeithoでHTMLスライドを書く。',
   aboutVersion: 'バージョン',
   aboutBuild: 'ビルド',
   aboutCommit: 'コミット',
