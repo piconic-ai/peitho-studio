@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.1.12](https://github.com/piconic-ai/peitho-studio/compare/v0.1.11...v0.1.12) - 2026-11-05
+
+- fix: recover cleanly from broken drafts and explain AI handoff by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/242
+
 ## [v0.1.11](https://github.com/piconic-ai/peitho-studio/compare/v0.1.10...v0.1.11) - 2026-11-04
 
 - chore: remove todos migrated to GitHub Issues by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/237
