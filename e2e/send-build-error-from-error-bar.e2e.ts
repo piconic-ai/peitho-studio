@@ -307,3 +307,53 @@ test('Given an error that is not a build error, then the bar still offers to cop
   await expect(page.locator(SEND)).toBeHidden()
   expect(deck.source).toBe(SOURCE)
 })
+
+for (const dirty of [false, true]) {
+  test(`Given a layout file error and ${dirty ? 'a dirty source draft' : 'no edits'}, when Send to AI is pressed, then the user sees why it cannot be sent`, async ({ page }) => {
+    const crit = createFakeCritIpc()
+    const error: RenderErrorPayload = {
+      kind: 'Other', line: null, originFile: null, slide: null,
+      headline: 'layout file could not be read', message: 'layout file could not be read', help: '',
+    }
+    const deck = await open(page, deckWith(crit, { renderError: () => error }))
+    await expect(page.locator(ERROR_BAR)).toContainText(error.headline)
+    if (dirty) {
+      await page.locator(SOURCE_TOGGLE).click()
+      await fillEditor(page, `${SOURCE}\nExtra source text`, 'source')
+    }
+    await expect(page.locator(SEND)).toBeVisible()
+    await page.locator(SEND).click()
+    await expect(page.locator(STATUS)).toHaveText('Layout file and file access errors cannot be sent to the AI.')
+    expect(sentComments(crit)).toEqual([])
+    expect(methods(crit)).not.toContain('finish')
+    expect(deck.source).toBe(dirty ? `${SOURCE}\nExtra source text` : SOURCE)
+  })
+}
+
+test('Given a failed draft followed by a presentation error, when Undo restores the saved draft, then the presentation error remains', async ({ page }) => {
+  const deck = await open(page, deckWith(createFakeCritIpc(), {
+    commandError: cmd => cmd === 'present_deck' ? 'simulated present_deck failure' : null,
+  }))
+  await breakSlideTwo(page, deck)
+  await page.getByRole('button', { name: 'Present', exact: true }).click()
+  await expect(page.locator(ERROR_BAR)).toContainText('simulated present_deck failure')
+  await page.locator('[data-editor="body"] .cm-content').click()
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => editorText(page)).toBe('# Two\n\nFine')
+  await expect(page.locator(ERROR_BAR)).toContainText('simulated present_deck failure')
+  await expect(page.locator(COPY)).toBeVisible()
+})
+
+test('Given a disk slide that still fails, when Undo discards a different failed draft, then the disk error remains available to send', async ({ page }) => {
+  const source = SOURCE.replace('# Two\n\nFine', BROKEN_TWO)
+  const deck = await open(page, deckWith(createFakeCritIpc({ session: 'working' }), { source }))
+  await page.locator('[data-slide-row="1"]').click()
+  await expect.poll(() => editorText(page)).toBe(BROKEN_TWO)
+  await fillEditor(page, `${BROKEN_TWO}\n\nMore typing`)
+  await expect(page.locator(ERROR_BAR)).toContainText(SLIDE_TWO_MESSAGE)
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => editorText(page)).toBe(BROKEN_TWO)
+  await expect(page.locator(ERROR_BAR)).toContainText("1 slide doesn't build")
+  await expect(page.locator('[data-slide-status="error"]')).toBeVisible()
+  expect(deck.source).toBe(source)
+})

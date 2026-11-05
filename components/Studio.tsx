@@ -175,6 +175,7 @@ export function Studio() {
   // `open` always goes through the same one state-transition table
   // regardless of which event started the chain.
   async function runOpen(path: string): Promise<void> {
+    clearBuildError('all')
     setErrorMessage(null)
     // Before the render lands, not after: a deck that opens broken reports
     // its build errors to the agent (`dispatchBuildErrorReport`) as soon
@@ -332,6 +333,9 @@ export function Studio() {
   // language, so a language change rewords a message already shown.
   const [statusMessage, setStatusMessage] = createSignal<StatusMessage>({ kind: 'none' })
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null)
+  type DraftBuildErrorOwner = 'body' | 'source'
+  const [draftBuildErrors, setDraftBuildErrors] = createSignal<Record<DraftBuildErrorOwner, string | null>>({ body: null, source: null })
+  const draftBuildError = createMemo(() => draftBuildErrors().source ?? draftBuildErrors().body)
   const [errorMessageCopied, setErrorMessageCopied] = createSignal(false)
   // Whether the open deck may run its scripts, and so whether the "scripts
   // are turned off" banner is up — see `domain/scriptTrust.ts`. Until the
@@ -522,7 +526,11 @@ export function Studio() {
   const [sourceSavesInFlight, setSourceSavesInFlight] = createSignal(0)
   async function commitSource(handOff = false): Promise<boolean> {
     const editing = editor.sourceEditing()
-    if (editing.kind !== 'open' || !editor.isSourceDirty()) return true
+    if (editing.kind !== 'open') return true
+    if (!editor.isSourceDirty()) {
+      clearBuildError('source')
+      return true
+    }
     const text = editing.draft
     setErrorMessage(null)
     setSourceSavesInFlight(n => n + 1)
@@ -553,11 +561,12 @@ export function Studio() {
       // drafts and every kept position are rebuilt for the new source.
       await refreshSource(true)
       editor.setSourceEditing(current => sourceSaved(current, text))
+      if (!editor.isSourceDirty()) clearBuildError('source')
       setStatusMessage({ kind: 'saved' })
       return true
     } catch (err) {
-      if (err instanceof RenderFailure) showBuildError(err.message)
-      else setErrorMessage(String(err))
+      const current = editor.sourceEditing()
+      showSaveError(err, (current.kind === 'open' ? current.draft : liveSource()) === text, 'source')
       return false
     } finally {
       setSourceSavesInFlight(n => n - 1)
@@ -795,7 +804,7 @@ export function Studio() {
     const before = editor.bodyDraft()
     const range = splitSlides(render.renderedSource())[index]
     const renderedBody = range ? extractPageComment(extractNote(range.text).rest).rest : null
-    const recovery = errorMessage()?.includes(`slide ${index + 1} `) && errorMessage()?.includes("missing 'body' slot")
+    const recovery = draftBuildErrors().body?.includes(`slide ${index + 1} `) && draftBuildErrors().body?.includes("missing 'body' slot")
     if (renderedBody === null || (renderedBody !== before.replace(/\n{3,}/g, '\n\n').trim() && !recovery)) return null
     const rawBody = range ? extractPageComment(extractNote(range.text, true).rest, true).rest : ''
     const bodyStart = (range?.start ?? 0) + (range?.text.indexOf(rawBody) ?? 0)
@@ -1152,7 +1161,7 @@ export function Studio() {
     const summary = brokenSlidesSummary(render.brokenSlides())
     return summary === null ? null : settings.messages().slidesDoNotBuild(summary.count, summary.first.headline)
   })
-  const shownErrorMessage = createMemo<string | null>(() => errorMessage() ?? deckErrorMessage() ?? brokenSlidesMessage())
+  const shownErrorMessage = createMemo<string | null>(() => errorMessage() ?? draftBuildError() ?? deckErrorMessage() ?? brokenSlidesMessage())
   // The preview's header (and the phone shape menu in it) is hidden while no
   // slide is selected — a draft placeholder or no slide at all — so an open
   // menu goes with it instead of reappearing already open on the next
@@ -1400,25 +1409,22 @@ export function Studio() {
   // still unread.
   // Also skipped while the error bar offers a fix: the error stays until
   // it's acted on or goes away by itself (the next successful render).
-  // And skipped for a build error of the text being edited: that error is
-  // what is left to fix, and it goes by itself the moment a render goes
-  // through (`renderPreview`/`commitChange`) — or to the agent, from the
-  // bar's own button (`handOffBuildError`). Only that one — any other
-  // error shown meanwhile (a failed present, the clipboard) clears as
-  // usual, and the deck's own refusal comes back behind it
-  // (`shownErrorMessage`).
   createEffect(() => {
     if (errorMessage() === null || deck.newDeckModalOpen() || shownFix().kind !== 'none') return
-    if (errorMessage() === shownBuildError) return
     const timer = window.setTimeout(() => setErrorMessage(null), 6000)
     return () => window.clearTimeout(timer)
   })
-  // The last build error shown for the text being edited (a draft that
-  // doesn't build, a save refused for it) — see the timer above.
-  let shownBuildError: string | null = null
-  function showBuildError(message: string): void {
-    shownBuildError = message
-    setErrorMessage(message)
+  function showBuildError(message: string, owner: DraftBuildErrorOwner): void {
+    setDraftBuildErrors(errors => ({ ...errors, [owner]: message }))
+    setErrorMessage(null)
+  }
+  function clearBuildError(owner: DraftBuildErrorOwner | 'all'): void {
+    setDraftBuildErrors(errors => owner === 'all' ? { body: null, source: null } : { ...errors, [owner]: null })
+  }
+  function showSaveError(err: unknown, showBuild: boolean, owner: DraftBuildErrorOwner): void {
+    if (err instanceof RenderFailure) {
+      if (showBuild) showBuildError(err.message, owner)
+    } else setErrorMessage(String(err))
   }
 
   async function copyErrorMessage(): Promise<void> {
@@ -1475,6 +1481,7 @@ export function Studio() {
         persistedFailedSource = null
         render.applyRenderPayload(result.payload, content, result.broken)
         if (persisted) render.markDiskRendered(content, result.broken)
+        clearBuildError('body')
         setErrorMessage(null)
         return
       }
@@ -1487,9 +1494,10 @@ export function Studio() {
         // and an earlier draft's error — about text that is gone — goes.
         persistedFailedSource = content
         render.markRenderFailed(result.error, content)
+        clearBuildError('body')
         setErrorMessage(null)
       } else {
-        showBuildError(renderFailureMessage(result.error))
+        showBuildError(renderFailureMessage(result.error), 'body')
       }
     } catch (err) {
       if (generation !== previewGeneration) return
@@ -1572,10 +1580,14 @@ export function Studio() {
         if (source !== render.renderedSource() && source !== persistedFailedSource) void renderPreview(source, { persisted: true })
         // Back to what's on screen (an Undo before the typed text rendered):
         // a render still in flight is now stale and must not land.
-        else previewGeneration++
+        else {
+          previewGeneration++
+          clearBuildError('body')
+        }
       })
       return
     }
+    previewGeneration++
     const timer = window.setTimeout(() => {
       const draft = currentDraftSource()
       if (draft !== null) void renderPreview(draft)
@@ -2185,23 +2197,31 @@ export function Studio() {
       : editor.isDirty() ? await handleSave({ handOff: true }) : true
     handOffSource = null
     if (!saved) return
+    const build = diskBuildOf(render.diskRender())
+    if (build?.kind === 'failed' && build.errors.length === 0) {
+      setStatusMessage({ kind: 'build-error-unreportable' })
+      return
+    }
     if (handOffAsks === asksBefore) {
-      const build = diskBuildOf(render.diskRender())
-      if (build === null || build.kind === 'ok') return
+      if (build === null || build.kind === 'ok') {
+        clearBuildError('all')
+        return
+      }
       dispatchBuildErrorReport({ type: 'report-requested', errors: build.errors, source: build.source })
     }
     if (review.report().kind === 'waiting-for-agent' && review.busy() !== 'sending') setStatusMessage({ kind: 'build-error-waiting' })
   }
   // What the error bar offers next to the error it shows
   // (`domain/errorBar.ts`): a build error — the text being edited not
-  // building (`shownBuildError`), or the deck on disk (its refusal, or the
+  // building (`draftBuildError`), or the deck on disk (its refusal, or the
   // slides isolated from it) — goes to the AI, or is with it already; any
   // other error is copied.
   const errorAction = createMemo<'copy' | 'send' | 'fixing'>(() => {
     const transient = errorMessage()
     const shown: ShownError | null = transient !== null
-      ? (transient === shownBuildError ? 'transient-build' : 'transient-other')
-      : (deckErrorMessage() !== null || brokenSlidesMessage() !== null ? 'deck-build' : null)
+      ? 'transient-other'
+      : draftBuildError() !== null ? 'transient-build'
+        : (deckErrorMessage() !== null || brokenSlidesMessage() !== null ? 'deck-build' : null)
     if (shown === null) return 'copy'
     const session = review.session()
     const agent: AgentState = session?.kind !== 'found' ? 'none' : session.agentWaiting ? 'waiting' : 'working'
@@ -2493,11 +2513,7 @@ export function Studio() {
       saved = true
       return true
     } catch (err) {
-      if (err instanceof RenderFailure) {
-        showBuildError(err.message)
-        return false
-      }
-      setErrorMessage(String(err))
+      showSaveError(err, expectedDraft === undefined || liveSource() === nextSource, 'body')
       return false
     } finally {
       finishSave(saved)
@@ -2509,6 +2525,7 @@ export function Studio() {
   // must leave disk-render tracking and hand-off identity untouched.
   function recordSavedRender(source: string, result: Awaited<ReturnType<typeof renderIsolating>>, handOff: boolean): void {
     if (handOff) handOffSource = source
+    if (liveSource() === source) clearBuildError('body')
     if (result.kind === 'rendered') {
       render.markDiskRendered(source, result.broken)
       return
@@ -2789,7 +2806,7 @@ export function Studio() {
     const next = applyLayoutPinsStep(texts, step)
     if (next.every((text, i) => text === texts[i])) return null
     const inverse = inverseLayoutPinsStep(texts, step)
-    if (!await commitChange(rebuildSource(next), { kind: 'keep' })) throw new Error(errorMessage() ?? settings.messages().deckChangeFailed)
+    if (!await commitChange(rebuildSource(next), { kind: 'keep' })) throw new Error(shownErrorMessage() ?? settings.messages().deckChangeFailed)
     return inverse
   }
 
@@ -3312,7 +3329,7 @@ export function Studio() {
     // keeps the window open, the error bar saying so over its reason —
     // and, as for a layout draft, the next close discards it.
     if (editor.sourceOpen() && !await flushSourceEditor()) {
-      showBuildError(settings.messages().sourceCloseUnsaved(errorMessage() ?? ''))
+      showBuildError(settings.messages().sourceCloseUnsaved(shownErrorMessage() ?? ''), 'source')
       return
     }
     if (await flushLayoutEditor()) {
@@ -3543,7 +3560,7 @@ export function Studio() {
           return
         case 'failed':
           // `commitChange` has put peitho-core's reason in the error bar.
-          throw new Error(errorMessage() ?? settings.messages().deckChangeFailed)
+          throw new Error(shownErrorMessage() ?? settings.messages().deckChangeFailed)
         case 'rejected':
           throw new Error(settings.messages().deckChangeFailed)
         default: {

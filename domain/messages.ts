@@ -49,6 +49,8 @@ export interface Messages {
    * written to disk first when it is the editor's own typing
    * (todo/send-build-error-from-error-bar.md). */
   sendErrorToAi: string
+  sendErrorToAiHint: string
+  buildErrorUnreportable: string
   /** In the button's place once the error was sent and the AI is at
    * work on it (`domain/errorBar.ts`). */
   aiFixingError: string
@@ -312,6 +314,8 @@ const en: Messages = {
   copyError: 'Copy',
   errorCopied: 'Copied',
   sendErrorToAi: 'Send to AI',
+  sendErrorToAiHint: 'Saves your edits, even if the deck cannot build, so the AI can fix them.',
+  buildErrorUnreportable: 'Layout file and file access errors cannot be sent to the AI.',
   aiFixingError: 'AI is fixing…',
 
   speakerNotes: 'Speaker Notes',
@@ -527,6 +531,8 @@ const ja: Messages = {
   copyError: 'コピー',
   errorCopied: 'コピーしました',
   sendErrorToAi: 'AIに送る',
+  sendErrorToAiHint: 'AIが修正できるよう、ビルドできない編集内容もデッキに保存します。',
+  buildErrorUnreportable: 'レイアウトファイルやファイルの読み込みのエラーは、AIへの送信に対応していません。',
   aiFixingError: 'AIが調整中…',
 
   speakerNotes: 'スピーカーノート',

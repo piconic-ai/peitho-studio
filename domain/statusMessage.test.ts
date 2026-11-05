@@ -12,6 +12,7 @@ const EVERY_STATUS: StatusMessage[] = [
   { kind: 'reloaded-external-change' },
   { kind: 'build-error-reported' },
   { kind: 'build-error-waiting' },
+  { kind: 'build-error-unreportable' },
   { kind: 'presenting', rehearsal: false },
   { kind: 'presenting', rehearsal: true },
   { kind: 'importing-images', count: 1 },
@@ -80,6 +81,11 @@ describe('statusText', () => {
   test('spec: Given the user asked for the build error to go and no agent waits, when worded in each language, then the status says it waits', () => {
     expect(statusText(messagesFor('en'), { kind: 'build-error-waiting' })).toBe('Waiting for the AI to connect; the build error goes once it does.')
     expect(statusText(messagesFor('ja'), { kind: 'build-error-waiting' })).toBe('AIの接続を待っています。接続したらビルドエラーを送ります。')
+  })
+
+  test('spec: Given an error excluded from AI reporting, when worded, then the status explains why it was not sent', () => {
+    expect(statusText(messagesFor('en'), { kind: 'build-error-unreportable' })).toBe('Layout file and file access errors cannot be sent to the AI.')
+    expect(statusText(messagesFor('ja'), { kind: 'build-error-unreportable' })).toBe('レイアウトファイルやファイルの読み込みのエラーは、AIへの送信に対応していません。')
   })
 
   test('spec: Given nothing to report, when worded, then the status bar is empty', () => {
