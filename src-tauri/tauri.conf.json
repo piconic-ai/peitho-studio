@@ -17,7 +17,8 @@
         "height": 900,
         "resizable": true,
         "fullscreen": false,
-        "devtools": false
+        "devtools": false,
+        "zoomHotkeysEnabled": true
       }
     ],
     "security": {

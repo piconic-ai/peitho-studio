@@ -9,6 +9,8 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "core:window:allow-close",
+    "core:window:allow-scale-factor",
+    "core:webview:allow-set-webview-zoom",
     "dialog:allow-open",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text"

@@ -1,3 +1,4 @@
+import { isZoomShortcut } from '../domain/keyboard'
 import type { Language } from '../domain/language'
 import { parseSourceSpan } from '../domain/reviewComment'
 import { flushSlideTextEdit } from './slideCanvas'
@@ -298,7 +299,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     }
   }
   root.addEventListener('keydown', event => {
-    if (!(event instanceof KeyboardEvent) || !state.callbacks.enabled() || box || event.target instanceof Element && event.target.closest(CONTROLS)) return
+    if (!(event instanceof KeyboardEvent) || isZoomShortcut(event) || !state.callbacks.enabled() || box || event.target instanceof Element && event.target.closest(CONTROLS)) return
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
       keyboardPaste(); event.stopPropagation(); return
     }
@@ -495,6 +496,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       return handleItemKey(item)
     }
     const keydown = (e: KeyboardEvent) => {
+      if (isZoomShortcut(e)) return
       e.stopPropagation()
       if (e.isComposing || composing) return
       if (list && handleListKey(e, list)) return
@@ -541,6 +543,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     startTextEditing(event)
   })
   host.addEventListener('keydown', event => {
+    if (isZoomShortcut(event)) return
     if (event.target !== host || host.shadowRoot?.activeElement || box || !state.callbacks.enabled()) return
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
       keyboardPaste(); event.stopPropagation()

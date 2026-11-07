@@ -699,6 +699,7 @@ pub(crate) fn open_deck_window_impl(app: &AppHandle, pending: &PendingDecks, ses
         .inner_size(1440.0, 900.0)
         .position(base_x + step * WINDOW_CASCADE_STEP_PX, base_y + step * WINDOW_CASCADE_STEP_PX)
         .resizable(true)
+        .zoom_hotkeys_enabled(true)
         .build()
         .map_err(|err| err.to_string())?;
     Ok(())
