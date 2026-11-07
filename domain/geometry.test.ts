@@ -81,27 +81,43 @@ describe('isPointInRect', () => {
 })
 
 describe('dropPointToCss', () => {
-  test('spec: Given macOS on a Retina display, when a drop position is converted, then it is already in CSS pixels and unchanged', () => {
-    expect(dropPointToCss({ x: 400, y: 300 }, 2, true)).toEqual({ x: 400, y: 300 })
+  test('spec: Given macOS at 100% zoom on a Retina display, when converted, then AppKit points match CSS pixels', () => {
+    expect(dropPointToCss({ x: 400, y: 300 }, 2, true, 2)).toEqual({ x: 400, y: 300 })
   })
 
-  test('spec: Given another platform on a scaled display, when converted, then it is divided by the scale', () => {
-    expect(dropPointToCss({ x: 400, y: 300 }, 2, false)).toEqual({ x: 200, y: 150 })
+  test('spec: Given macOS at 120% or 80% zoom, when converted, then the native monitor scale removes page zoom', () => {
+    expect(dropPointToCss({ x: 480, y: 360 }, 2.4, true, 2)).toEqual({ x: 400, y: 300 })
+    expect(dropPointToCss({ x: 320, y: 240 }, 1.6, true, 2)).toEqual({ x: 400, y: 300 })
   })
 
-  test('spec: Given another platform on a standard display, when converted, then it is unchanged', () => {
-    expect(dropPointToCss({ x: 400, y: 300 }, 1, false)).toEqual({ x: 400, y: 300 })
+  test('spec: Given another platform, when converted, then physical pixels are divided by page DPR regardless of native scale', () => {
+    expect(dropPointToCss({ x: 400, y: 300 }, 2, false, 3)).toEqual({ x: 200, y: 150 })
+    expect(dropPointToCss({ x: 400, y: 300 }, 1, false, 2)).toEqual({ x: 400, y: 300 })
   })
 
-  test('adversarial: Given a fractional scale, when converted off macOS, then the division is exact', () => {
-    expect(dropPointToCss({ x: 300, y: 150 }, 1.5, false)).toEqual({ x: 200, y: 100 })
+  test('adversarial: Given fractional page and monitor scales, when converted, then subpixel coordinates survive', () => {
+    expect(dropPointToCss({ x: 300, y: 150 }, 1.5, false, 2)).toEqual({ x: 200, y: 100 })
+    const point = dropPointToCss({ x: 480.3, y: 360.6 }, 2.400000095, true, 2)
+    expect(point.x).toBeCloseTo(400.25, 4)
+    expect(point.y).toBeCloseTo(300.5, 4)
+    const zoomedOut = dropPointToCss({ x: 320.2, y: 240.4 }, 1.60000002, true, 2)
+    expect(zoomedOut.x).toBeCloseTo(400.25, 4)
+    expect(zoomedOut.y).toBeCloseTo(300.5, 4)
+    expect(dropPointToCss({ x: 240, y: 120 }, 1.875, true, 1.5)).toEqual({ x: 192, y: 96 })
   })
 
-  test('adversarial: Given a zero, negative, NaN or infinite scale, when converted, then the point is left as is on every platform', () => {
+  test('adversarial: Given a zero, negative, NaN or infinite scale, when converted, then the point is left unchanged', () => {
     for (const scale of [0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(dropPointToCss({ x: 4, y: 6 }, scale, false)).toEqual({ x: 4, y: 6 })
-      expect(dropPointToCss({ x: 4, y: 6 }, scale, true)).toEqual({ x: 4, y: 6 })
+      expect(dropPointToCss({ x: 4, y: 6 }, scale, false, 2)).toEqual({ x: 4, y: 6 })
+      expect(dropPointToCss({ x: 4, y: 6 }, scale, true, 2)).toEqual({ x: 4, y: 6 })
+      expect(dropPointToCss({ x: 4, y: 6 }, 2, true, scale)).toEqual({ x: 4, y: 6 })
+      expect(dropPointToCss({ x: 4, y: 6 }, 2, false, scale)).toEqual({ x: 2, y: 3 })
     }
+  })
+
+  test('adversarial: Given the origin or negative coordinates, when zoomed, then their direction is preserved', () => {
+    expect(dropPointToCss({ x: 0, y: 0 }, 2.4, true, 2)).toEqual({ x: 0, y: 0 })
+    expect(dropPointToCss({ x: -480, y: -360 }, 2.4, true, 2)).toEqual({ x: -400, y: -300 })
   })
 })
 

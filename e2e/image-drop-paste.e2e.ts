@@ -201,6 +201,43 @@ test.describe('functional: on a Retina display', () => {
   })
 })
 
+// These emulate native coordinate units at the IPC boundary. Browser DPR
+// overrides do not reproduce WKWebView's native zoom or its rendering.
+for (const zoom of [1.2, 0.8]) {
+  test.describe(`functional: macOS native drop coordinates at ${zoom * 100}% page zoom`, () => {
+    test.use({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15' })
+
+    test('Given native monitor scale 2 and a zoom-dependent DPR, when dropped near the preview edge, then only the inside drop imports an image', async ({ page }) => {
+      await page.addInitScript(dpr => {
+        Object.defineProperty(window, 'devicePixelRatio', { get: () => dpr })
+      }, 2 * zoom)
+      const deck: MockDeck = { source: TWO_SLIDES, nativeScaleFactor: 2 }
+      const invocations = await openDeck(page, deck)
+      const preview = await page.locator('[data-preview-host]').boundingBox()
+      if (preview === null) throw new Error('preview not visible')
+      const edge = zoom > 1 ? preview.x + preview.width : preview.x
+      const insideX = edge + (zoom > 1 ? -2 : 2)
+      const outsideX = preview.x + preview.width + 2
+      const y = preview.y + preview.height / 2
+      const nativeDrop = async (path: string, x: number) => {
+        await page.evaluate(({ path, x, y, zoom }) => {
+          ;(window as unknown as { __mockEmitTauriEvent: (event: string, payload: unknown) => void })
+            .__mockEmitTauriEvent('tauri://drag-drop', { paths: [path], position: { x: x * zoom, y: y * zoom } })
+        }, { path, x, y, zoom })
+      }
+
+      await nativeDrop('/d/outside.png', outsideX)
+      await page.waitForTimeout(200)
+      expect(imports(invocations)).toEqual([])
+      expect(await editorText(page)).toBe('# Slide One\n\nSome text')
+
+      await nativeDrop('/d/inside.png', insideX)
+      await expect.poll(() => imports(invocations).map(call => call.args)).toEqual([{ path: '/d/inside.png' }])
+      await expect.poll(() => editorText(page)).toContain('![](img/inside.png)')
+    })
+  })
+}
+
 test.describe('non-functional: errors and timing', () => {
   test('Given saving the image fails, when an image is pasted, then the error is shown and the text is left as it was', async ({ page }) => {
     const deck: MockDeck = {

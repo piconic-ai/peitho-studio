@@ -54,16 +54,15 @@ export function isDrag(from: Point | null, to: Point, slop: number): boolean {
   return from !== null && Math.hypot(to.x - from.x, to.y - from.y) > slop
 }
 
-/** A file drop's position as Tauri reports it, in CSS pixels. Tauri calls
- * it a `PhysicalPosition`, but on macOS wry passes AppKit's
- * `draggingLocation` through unscaled (wry 0.55
- * `wkwebview/drag_drop.rs`), which is already in points — CSS pixels — so
- * only elsewhere is it divided by `scale`, the page's `devicePixelRatio`.
- * A scale that isn't a positive number (never a real one) leaves the point
- * as is rather than producing `Infinity`/`NaN`. */
-export function dropPointToCss(point: Point, scale: number, macOS: boolean): Point {
-  if (macOS || !(scale > 0) || !Number.isFinite(scale)) return point
-  return { x: point.x / scale, y: point.y / scale }
+/** Converts a native file drop to CSS pixels. On macOS, wry reports
+ * unzoomed AppKit points, so the native monitor scale restores physical
+ * pixels before division by the page's zoom-dependent devicePixelRatio.
+ * Invalid scales leave the point unchanged. */
+export function dropPointToCss(point: Point, scale: number, macOS: boolean, nativeScaleFactor: number): Point {
+  if (!(scale > 0) || !Number.isFinite(scale)) return point
+  if (macOS && (!(nativeScaleFactor > 0) || !Number.isFinite(nativeScaleFactor))) return point
+  const nativeScale = macOS ? nativeScaleFactor : 1
+  return { x: point.x * nativeScale / scale, y: point.y * nativeScale / scale }
 }
 
 /** Where `point` lies across `rect`, as fractions of its width and height

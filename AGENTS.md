@@ -211,10 +211,11 @@ don't bundle everything into one giant commit.
   legacy-slot shrink — it drew the old and new bundles the same size —
   so the size has to be checked in the real Dock/Finder.
 - On macOS, `onDragDropEvent`'s `position` is labelled `PhysicalPosition`
-  but is actually in points (CSS pixels): wry passes AppKit's
-  `draggingLocation` through unscaled. Dividing it by `devicePixelRatio`
-  halves it on a Retina display (see `dropPointToCss` in
-  `domain/geometry.ts`).
+  but is actually in unzoomed AppKit points. Convert to CSS pixels by
+  multiplying by the current window's native `scaleFactor()` and dividing
+  by the page's `devicePixelRatio`, which includes webview zoom. Query the
+  native factor for each drop so moving between monitors stays correct
+  (see `dropPointToCss` in `domain/geometry.ts`).
 - State that should differ per window (the open deck, its file watcher,
   its subprocess) must be kept in a map keyed by `window.label()` rather
   than a single global — otherwise a second window silently overwrites
