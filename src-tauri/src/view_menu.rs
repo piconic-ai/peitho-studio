@@ -1,4 +1,3 @@
-#[cfg(target_os = "macos")]
 use tauri::menu::PredefinedMenuItem;
 use tauri::menu::Submenu;
 use tauri::{AppHandle, Manager, Runtime};
@@ -13,10 +12,7 @@ struct ZoomAction {
 
 // Tauri's legacy accelerator parser maps NumpadAdd to the native '+' key
 // equivalent on macOS, where it also gives the menu its expected ⌘+ label.
-#[cfg(target_os = "macos")]
 const ZOOM_IN_ACCELERATOR: &str = "CmdOrCtrl+NumpadAdd";
-#[cfg(not(target_os = "macos"))]
-const ZOOM_IN_ACCELERATOR: &str = "CmdOrCtrl+Equal";
 
 const ZOOM_ACTIONS: [ZoomAction; 3] = [
     ZoomAction { id: "view_zoom_in", key: "+", accelerator: ZOOM_IN_ACCELERATOR },
@@ -31,7 +27,6 @@ pub(crate) fn build<R: Runtime>(app: &AppHandle<R>, labels: &MenuLabels) -> taur
         .map(|(action, label)| tauri::menu::MenuItem::with_id(app, action.id, label, true, Some(action.accelerator)))
         .collect::<tauri::Result<Vec<_>>>()?;
     let menu = Submenu::with_id_and_items(app, "view", labels.view, true, &[&items[0], &items[1], &items[2]])?;
-    #[cfg(target_os = "macos")]
     menu.append_items(&[&PredefinedMenuItem::separator(app)?, &PredefinedMenuItem::fullscreen(app, Some(labels.enter_full_screen))?])?;
     Ok(menu)
 }
@@ -47,10 +42,8 @@ pub(crate) fn forward<R: Runtime>(app: &AppHandle<R>, id: &str) -> bool {
         // Reuse Tauri's per-webview zoom-hotkey closure, including the zoom
         // last set by keyboard or wheel. Separate native state would drift.
         let script = format!(
-            "window.dispatchEvent(new KeyboardEvent('keydown', {{key: {}, metaKey: {}, ctrlKey: {}, bubbles: true}}))",
+            "window.dispatchEvent(new KeyboardEvent('keydown', {{key: {}, metaKey: true, bubbles: true}}))",
             serde_json::to_string(key).unwrap(),
-            cfg!(target_os = "macos"),
-            !cfg!(target_os = "macos"),
         );
         if let Err(error) = window.eval(&script) {
             log::error!("failed to apply zoom menu action: {error}");
