@@ -1,9 +1,11 @@
 {
   "$schema": "../../gen/schemas/desktop-schema.json",
   "identifier": "e2e-testing",
-  "description": "Only loaded in an `--features e2e-testing` build (see build.rs) — lets the frontend invoke `pw_result`, which tauri-plugin-playwright's control server needs to return eval results back to Rust.",
+  "description": "Only loaded with e2e-testing (see build.rs). Enables Playwright evaluation results and native View menu inspection and activation for WKWebView tests.",
   "windows": ["*"],
   "permissions": [
-    "playwright:default"
+    "playwright:default",
+    "view-menu-test:allow-activate",
+    "view-menu-test:allow-items"
   ]
 }

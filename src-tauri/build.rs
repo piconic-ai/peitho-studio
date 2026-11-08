@@ -24,8 +24,13 @@ fn main() {
   println!("cargo:rustc-env=PEITHO_STUDIO_TARGET={}", std::env::var("TARGET").expect("cargo sets TARGET for build scripts"));
   embed_build_info();
   require_crit_sidecar();
-  tauri_build::try_build(tauri_build::Attributes::new().capabilities_path_pattern(pattern))
-    .expect("failed to run tauri-build");
+  let attributes = tauri_build::Attributes::new().capabilities_path_pattern(pattern);
+  let attributes = if std::env::var_os("CARGO_FEATURE_E2E_TESTING").is_some() {
+    attributes.plugin("view-menu-test", tauri_build::InlinedPlugin::new().commands(&["activate", "items"]))
+  } else {
+    attributes
+  };
+  tauri_build::try_build(attributes).expect("failed to run tauri-build");
 }
 
 /// `bundle.externalBin: ["binaries/crit"]` (tauri.conf.json) makes
