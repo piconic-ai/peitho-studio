@@ -56,3 +56,39 @@ test('Cmd zoom shortcuts resize the real WKWebView layout viewport', async ({ ta
     await expect.poll(viewportWidth).toBe(baseline)
   }
 })
+
+test('View menu actions share the keyboard zoom level in the focused WKWebView', async ({ tauriPage }) => {
+  const page = tauriPage
+  const invokeMenu = (id: string) => page.evaluate<boolean>(`window.__TAURI_INTERNALS__.invoke(
+    'plugin:view-menu-test|activate', { id: ${JSON.stringify(id)} }
+  )`)
+  const pageScale = () => page.evaluate<number>('window.devicePixelRatio')
+  const keyboard = (key: string) => page.evaluate<boolean>(`window.dispatchEvent(new KeyboardEvent('keydown', {
+    key: ${JSON.stringify(key)}, metaKey: true, bubbles: true
+  }))`)
+  const items = await page.evaluate<Array<[string, string]>>(`window.__TAURI_INTERNALS__.invoke('plugin:view-menu-test|items')`)
+  expect(items.map(([id]) => id)).toEqual(['view_zoom_in', 'view_zoom_out', 'view_actual_size'])
+  expect(items.every(([, label]) => label.length > 0)).toBe(true)
+
+  await keyboard('0')
+  const baseline = await pageScale()
+  try {
+    expect(await invokeMenu('view_zoom_in')).toBe(true)
+    await expect.poll(pageScale).toBeCloseTo(baseline * 1.2, 4)
+    await keyboard('+')
+    await expect.poll(pageScale).toBeCloseTo(baseline * 1.4, 4)
+    await page.evaluate<boolean>(`window.dispatchEvent(new WheelEvent('mousewheel', { ctrlKey: true, deltaY: -1, cancelable: true }))`)
+    await expect.poll(pageScale).toBeCloseTo(baseline * 1.6, 4)
+    expect(await invokeMenu('view_zoom_out')).toBe(true)
+    await expect.poll(pageScale).toBeCloseTo(baseline * 1.4, 4)
+    expect(await invokeMenu('view_actual_size')).toBe(true)
+    await expect.poll(pageScale).toBeCloseTo(baseline, 4)
+    expect(await invokeMenu('view_zoom_out')).toBe(true)
+    await expect.poll(pageScale).toBeCloseTo(baseline * 0.8, 4)
+    expect(await invokeMenu('not_a_zoom_action')).toBe(false)
+    expect(await pageScale()).toBeCloseTo(baseline * 0.8, 4)
+  } finally {
+    await invokeMenu('view_actual_size')
+    await expect.poll(pageScale).toBeCloseTo(baseline, 4)
+  }
+})
