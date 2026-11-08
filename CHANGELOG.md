@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.1.13](https://github.com/piconic-ai/peitho-studio/compare/v0.1.12...v0.1.13) - 2026-11-08
+
+- feat(zoom): add browser-style screen zoom shortcuts by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/244
+- fix(resize): let the editor use available preview space by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/247
+
 ## [v0.1.12](https://github.com/piconic-ai/peitho-studio/compare/v0.1.11...v0.1.12) - 2026-11-05
 
 - fix: recover cleanly from broken drafts and explain AI handoff by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/242
