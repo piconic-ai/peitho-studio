@@ -13,7 +13,9 @@ html, body {
 
 /* Folding hides contents rather than recreating editors or slide canvases. */
 .studio-panel { position: relative; display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
+.slides-editor-panel { flex-shrink: 1; min-width: 180px; }
 .preview-panel { flex: 1; min-width: 0; }
+[data-panel="editor"]:not([hidden]) ~ [data-panel="preview"] { min-width: 180px; }
 .panel-content { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 .panel-rail { display: flex; flex-direction: column; width: 36px; flex-shrink: 0; padding-top: 4px; gap: 4px; border-right: 1px solid var(--border); }
 .panel-toggle { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 4px; color: var(--muted-foreground); background: var(--background); cursor: pointer; }

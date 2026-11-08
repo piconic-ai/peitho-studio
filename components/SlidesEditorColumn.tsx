@@ -17,11 +17,11 @@ interface SlidesEditorColumnProps {
 export function SlidesEditorColumn(props: SlidesEditorColumnProps) {
   return (
     <>
-      <div data-panel="editor" hidden={!props.editorOpen} className="studio-panel" style={props.editorOpen && !props.previewOpen ? 'flex: 1; min-width: 0' : ''}>
+      <div data-panel="editor" hidden={!props.editorOpen} className="studio-panel slides-editor-panel" style={props.editorOpen && !props.previewOpen ? 'flex: 1; min-width: 0' : ''}>
         <PanelToggle panel="editor" language={props.language} open={true} onToggle={props.onToggle} />
         <div id="panel-editor"
           className={props.editorOpen ? 'panel-content border-r border-border' : 'hidden'}
-          style={props.previewOpen ? `width: ${props.editorWidth}px` : 'width: 100%'}
+          style={props.previewOpen ? `width: ${props.editorWidth}px; max-width: 100%` : 'width: 100%'}
         >
           {props.children}
         </div>
