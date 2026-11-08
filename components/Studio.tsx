@@ -4536,7 +4536,7 @@ export function Studio() {
           panel="preview"
           language={settings.language()}
           open={ui.previewOpen()}
-          className={ui.editorOpen() ? 'studio-panel preview-panel slides-preview-with-editor' : 'studio-panel preview-panel'}
+          className="studio-panel preview-panel"
           onToggle={() => { ui.closePhoneShapeMenu(); review.closeBox(); ui.setPreviewOpen(!ui.previewOpen()) }}
         >
             <SlidePreview
