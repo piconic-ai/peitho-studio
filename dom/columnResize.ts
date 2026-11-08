@@ -48,9 +48,13 @@ export function startColumnResize(
   }
 }
 
+export function measureColumnWidth(selector: string): number | undefined {
+  return document.querySelector(selector)?.getBoundingClientRect().width
+}
+
 /** Measures the column and the preview donating its spare CSS width. */
 export function measureColumnMaxWidth(columnSelector: string, previewSelector: string): number {
-  const columnWidth = document.querySelector(columnSelector)?.getBoundingClientRect().width ?? 0
-  const previewWidth = document.querySelector(previewSelector)?.getBoundingClientRect().width ?? 0
+  const columnWidth = measureColumnWidth(columnSelector) ?? 0
+  const previewWidth = measureColumnWidth(previewSelector) ?? 0
   return columnWidthBudget({ columnWidth, previewWidth, reservedWidth: MIN_COLUMN_WIDTH })
 }

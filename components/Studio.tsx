@@ -73,7 +73,7 @@ import { type StatusMessage, statusText } from '../domain/statusMessage'
 import { type ScriptTrust, type ScriptTrustEvent, nextScriptTrust, scriptTrustOnOpen, trustBannerShown } from '../domain/scriptTrust'
 import { takesCommandKeys, type VimMode } from '../domain/vimMode'
 import { gapUnderCursor, attachDragListeners, setDragAffordance } from '../dom/dragGesture'
-import { COLUMN_WIDTH_BOUNDS, measureColumnMaxWidth, measureWidthsNextFrame, startColumnResize } from '../dom/columnResize'
+import { COLUMN_WIDTH_BOUNDS, measureColumnMaxWidth, measureColumnWidth, measureWidthsNextFrame, startColumnResize } from '../dom/columnResize'
 import { blurEditorFieldOnRowPress, isFocusWithin, isTypingInField, replayFocusedFieldHistory } from '../dom/fieldFocus'
 import { canReplayCodeEditorGroup, codeEditorPositionAt, codeEditorSelection, codeEditorSelectionPoint, createCodeEditor, insertIntoCodeEditor, isCodeEditorComposing, isolateCodeEditorHistory, replaceCodeEditorTextUndoable, replayCodeEditorGroup, replayFocusedCodeEditorHistory, resetCodeEditorText, restoreCodeEditor, selectInCodeEditor, setCodeEditorPlaceholder, setCodeEditorText, setCodeEditorVimMode, snapshotCodeEditor, type CodeEditorOptions, type CodeEditorSnapshot } from '../dom/codeEditor'
 import { createEditorSlideStates } from '../dom/editorSlideStates'
@@ -4517,7 +4517,7 @@ export function Studio() {
           previewOpen={ui.previewOpen()}
           editorWidth={ui.editorWidth()}
           onToggle={() => ui.setEditorOpen(!ui.editorOpen())}
-          onResize={startColumnResize(ui.editorWidth, ui.setEditorWidth, 1, () =>
+          onResize={startColumnResize(() => measureColumnWidth('#panel-editor') ?? ui.editorWidth(), ui.setEditorWidth, 1, () =>
             measureColumnMaxWidth('#panel-editor', '[data-panel="preview"]'))}
         >
             <SlideEditor
@@ -4536,7 +4536,7 @@ export function Studio() {
           panel="preview"
           language={settings.language()}
           open={ui.previewOpen()}
-          className="studio-panel preview-panel"
+          className={ui.editorOpen() ? 'studio-panel preview-panel slides-preview-with-editor' : 'studio-panel preview-panel'}
           onToggle={() => { ui.closePhoneShapeMenu(); review.closeBox(); ui.setPreviewOpen(!ui.previewOpen()) }}
         >
             <SlidePreview
