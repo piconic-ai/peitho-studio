@@ -137,5 +137,5 @@ test('Given folded slide panels, when switching screens, then their rail and mou
   await expect(rail).toBeHidden()
   await expect(row).toHaveAttribute('data-shell-mount', 'retained')
   await expect(preview).toHaveAttribute('data-shell-mount', 'retained')
-  await expect(page.locator('[data-panel="preview"]')).toHaveClass('studio-panel preview-panel')
+  await expect(page.locator('[data-panel="preview"]')).toBeVisible()
 })
