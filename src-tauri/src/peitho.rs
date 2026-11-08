@@ -1969,16 +1969,22 @@ mod tests {
     #[test]
     fn given_two_bursts_apart_then_each_is_reported_once() {
         let (tx, rx) = mpsc::channel();
-        let sender = std::thread::spawn(move || {
-            tx.send("a").unwrap();
-            tx.send("b").unwrap();
-            std::thread::sleep(Duration::from_millis(300));
-            tx.send("c").unwrap();
+        let (reported_tx, reported_rx) = mpsc::channel();
+        tx.send("a").unwrap();
+        tx.send("b").unwrap();
+        let worker = std::thread::spawn(move || {
+            forward_bursts(rx, Duration::from_millis(10), |burst| {
+                reported_tx.send(burst).unwrap();
+            });
         });
-        let mut bursts = Vec::new();
-        forward_bursts(rx, Duration::from_millis(100), |burst| bursts.push(burst));
-        sender.join().unwrap();
-        assert_eq!(bursts, vec![vec!["a", "b"], vec!["c"]]);
+        // Only start the next burst after the receiver has reported the first.
+        let first = reported_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        tx.send("c").unwrap();
+        drop(tx);
+        let second = reported_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        worker.join().unwrap();
+        assert_eq!(vec![first, second], vec![vec!["a", "b"], vec!["c"]]);
+        assert_eq!(reported_rx.try_recv(), Err(mpsc::TryRecvError::Disconnected));
     }
 
     #[test]
