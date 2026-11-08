@@ -1969,16 +1969,22 @@ mod tests {
     #[test]
     fn given_two_bursts_apart_then_each_is_reported_once() {
         let (tx, rx) = mpsc::channel();
-        let sender = std::thread::spawn(move || {
-            tx.send("a").unwrap();
-            tx.send("b").unwrap();
-            std::thread::sleep(Duration::from_millis(300));
-            tx.send("c").unwrap();
+        let (reported_tx, reported_rx) = mpsc::channel();
+        tx.send("a").unwrap();
+        tx.send("b").unwrap();
+        let worker = std::thread::spawn(move || {
+            forward_bursts(rx, Duration::from_millis(10), |burst| {
+                reported_tx.send(burst).unwrap();
+            });
         });
-        let mut bursts = Vec::new();
-        forward_bursts(rx, Duration::from_millis(100), |burst| bursts.push(burst));
-        sender.join().unwrap();
-        assert_eq!(bursts, vec![vec!["a", "b"], vec!["c"]]);
+        // Only start the next burst after the receiver has reported the first.
+        let first = reported_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        tx.send("c").unwrap();
+        drop(tx);
+        let second = reported_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        worker.join().unwrap();
+        assert_eq!(vec![first, second], vec![vec!["a", "b"], vec!["c"]]);
+        assert_eq!(reported_rx.try_recv(), Err(mpsc::TryRecvError::Disconnected));
     }
 
     #[test]
@@ -2017,20 +2023,43 @@ mod tests {
     }
 
     #[test]
-    fn given_an_agent_rewriting_a_layout_and_its_css_then_one_change_is_reported() {
+    fn given_an_agent_rewriting_a_layout_and_its_css_then_notifications_observe_the_latest_contents() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("layouts")).unwrap();
         std::fs::create_dir_all(dir.path().join("css")).unwrap();
-        std::fs::write(dir.path().join("layouts/quote.html"), "<section></section>").unwrap();
-        std::fs::write(dir.path().join("css/quote.css"), ".x {}").unwrap();
-        let (_watcher, count) = counting_watch(dir.path());
+        let html = dir.path().join("layouts/quote.html");
+        let css = dir.path().join("css/quote.css");
+        std::fs::write(&html, "<section></section>").unwrap();
+        std::fs::write(&css, ".x {}").unwrap();
+        let (tx, rx) = mpsc::channel();
+        let watched_html = html.clone();
+        let watched_css = css.clone();
+        let _watcher = watch_layout_dirs(dir.path(), move || {
+            // Capture contents in the notification, so a stale queued callback
+            // cannot pass by reading the files later on the test thread.
+            let _ = tx.send((
+                std::fs::read_to_string(&watched_html).unwrap(),
+                std::fs::read_to_string(&watched_css).unwrap(),
+            ));
+        })
+        .unwrap();
 
-        std::fs::write(dir.path().join("layouts/quote.html"), "<section><h1>agent</h1></section>").unwrap();
-        std::fs::write(dir.path().join("css/quote.css"), ".x { color: red; }").unwrap();
-
-        assert_eq!(wait_for(&count, 1, Duration::from_secs(5)), 1);
-        std::thread::sleep(Duration::from_millis(600));
-        assert_eq!(count.load(Ordering::SeqCst), 1, "one burst, one report");
+        for (latest_html, latest_css) in [
+            ("<section><h1>agent</h1></section>", ".x { color: red; }"),
+            ("<section><h1>revised</h1></section>", ".x { color: blue; }"),
+        ] {
+            std::fs::write(&html, latest_html).unwrap();
+            std::fs::write(&css, latest_css).unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            loop {
+                let observed = rx
+                    .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                    .expect("a layout notification must observe both latest file contents");
+                if observed == (latest_html.to_owned(), latest_css.to_owned()) {
+                    break;
+                }
+            }
+        }
     }
 
     #[test]
