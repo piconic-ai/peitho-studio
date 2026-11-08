@@ -15,6 +15,7 @@ mod logging;
 mod peitho;
 mod settings;
 mod update_window;
+mod view_menu;
 
 #[doc(hidden)]
 pub use peitho::invoke_for_e2e;
@@ -186,8 +187,7 @@ fn build_menu_with_recents(app: &tauri::AppHandle, recents: Vec<String>, languag
             )?,
             &file_menu,
             &edit_menu,
-            #[cfg(target_os = "macos")]
-            &Submenu::with_items(app, labels.view, true, &[&PredefinedMenuItem::fullscreen(app, Some(labels.enter_full_screen))?])?,
+            &view_menu::build(app, labels)?,
             &window_menu,
             &help_menu,
         ],
@@ -257,7 +257,7 @@ pub fn run() {
     // `window.__PW_ACTIVE__` readiness marker never appeared when this was
     // registered from `setup()` instead).
     #[cfg(feature = "e2e-testing")]
-    let builder = builder.plugin(tauri_plugin_playwright::init());
+    let builder = builder.plugin(tauri_plugin_playwright::init()).plugin(view_menu::test_plugin());
     builder
         .manage(updates::AppUpdates::default())
         .manage(PeithoSession::default())
@@ -268,7 +268,7 @@ pub fn run() {
             if updates::blocks_editing(app_handle) { return; }
             let id = event.id().as_ref();
             // Undo/Redo and deck settings are handled by the focused window's frontend.
-            if edit_menu::forward(app_handle, id) || peitho::forward_deck_menu(app_handle, id) {
+            if edit_menu::forward(app_handle, id) || view_menu::forward(app_handle, id) || peitho::forward_deck_menu(app_handle, id) {
                 return;
             }
             match id {
