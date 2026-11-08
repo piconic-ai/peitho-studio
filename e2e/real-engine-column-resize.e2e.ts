@@ -216,7 +216,7 @@ test('960 CSS viewport with every panel open: no growth when preview has no spar
   await scenario(page, info, '# Title\n\nBody', async () => {
     const before = await width(page)
     const preview = await width(page, '[data-panel="preview"]')
-    expect(preview).toBeLessThan(180)
+    expect(preview, 'preview keeps its minimum with no spare room').toBeCloseTo(180, 0)
     const rightBefore = await page.locator('[data-panel="review"]').evaluate(el => el.getBoundingClientRect().right)
     await drag(page, 500)
     expect.soft(await width(page), 'already constrained editor does not grow').toBeCloseTo(before, 0)
