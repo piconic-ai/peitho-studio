@@ -1,3 +1,5 @@
+import { columnWidthBudget } from '../domain/columnResize'
+
 const MIN_COLUMN_WIDTH = 180
 const MAX_COLUMN_WIDTH = 640
 
@@ -20,15 +22,13 @@ export function measureWidthsNextFrame(selectors: readonly string[], then: (widt
   })
 }
 
-/** Returns a `mousedown` handler that drags a column divider, clamped to
- * [MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH]. `direction` flips which way growing
- * the column corresponds to (the slide-list divider grows it as the cursor
- * moves right; the editor/preview divider grows the editor as the cursor
- * moves left). */
+/** Drags a column by the CSS clientX delta times `direction`, with the
+ * minimum width and a maximum resolved on each mouse movement. */
 export function startColumnResize(
   getWidth: () => number,
   setWidth: (next: number) => void,
   direction: 1 | -1,
+  getMaxWidth: () => number = () => MAX_COLUMN_WIDTH,
 ) {
   return (event: MouseEvent) => {
     event.preventDefault()
@@ -36,7 +36,7 @@ export function startColumnResize(
     const startWidth = getWidth()
     const onMove = (moveEvent: MouseEvent) => {
       const delta = (moveEvent.clientX - startX) * direction
-      const next = Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, startWidth + delta))
+      const next = Math.max(MIN_COLUMN_WIDTH, Math.min(getMaxWidth(), startWidth + delta))
       setWidth(next)
     }
     const onUp = () => {
@@ -46,4 +46,11 @@ export function startColumnResize(
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
   }
+}
+
+/** Measures the column and the preview donating its spare CSS width. */
+export function measureColumnMaxWidth(columnSelector: string, previewSelector: string): number {
+  const columnWidth = document.querySelector(columnSelector)?.getBoundingClientRect().width ?? 0
+  const previewWidth = document.querySelector(previewSelector)?.getBoundingClientRect().width ?? 0
+  return columnWidthBudget({ columnWidth, previewWidth, reservedWidth: MIN_COLUMN_WIDTH })
 }
