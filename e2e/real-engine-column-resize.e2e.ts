@@ -230,3 +230,70 @@ test('960 CSS viewport with every panel open: no growth when preview has no spar
     expect.soft(await width(page), 'regrowth uses only space actually freed for preview').toBeCloseTo(available, 0)
   })
 })
+
+async function assertViewportRefit(page: Page, info: TestInfo, stage: string): Promise<void> {
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+  const geometry = await page.locator('[data-panel]:visible').evaluateAll(els => ({
+    viewport: innerWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    panels: els.map(el => {
+      const rect = el.getBoundingClientRect()
+      return { panel: el.getAttribute('data-panel'), left: rect.left, width: rect.width, right: rect.right }
+    }),
+  }))
+  await info.attach(stage, { body: JSON.stringify({ ...geometry, markdown: await editorText(page) }), contentType: 'application/json' })
+  expect.soft(geometry.scrollWidth, `${stage}: no horizontal overflow`).toBeLessThanOrEqual(geometry.viewport + 1)
+  await contained(page)
+  expect.soft(await width(page, '[data-panel="preview"]'), `${stage}: preview keeps usable space`).toBeGreaterThanOrEqual(179)
+}
+
+async function assertSmallLeftDrag(page: Page, info: TestInfo): Promise<void> {
+  // A failing overflow layout can put the divider outside the viewport.
+  // Bring the actual divider into view before exercising real mouse input.
+  await page.locator(DIVIDER).scrollIntoViewIfNeeded()
+  const before = await width(page)
+  await drag(page, -20)
+  const after = await width(page)
+  await info.attach('small-left-drag', { body: JSON.stringify({ before, after, markdown: await editorText(page) }), contentType: 'application/json' })
+  expect.soft(after, 'next 20 CSS px left drag starts from rendered editor width').toBeCloseTo(before - 20, 0)
+}
+
+test('idle viewport refit: grow at 2400, shrink to 1440, then expand again', async ({ page }, info) => {
+  await page.setViewportSize({ width: 2400, height: 900 })
+  await scenario(page, info, '# Title\n\nBody', async () => {
+    await growToAvailable(page)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await assertViewportRefit(page, info, 'idle-shrink')
+    await assertSmallLeftDrag(page, info)
+    await page.setViewportSize({ width: 2400, height: 900 })
+    await assertViewportRefit(page, info, 'expanded-again')
+  })
+})
+
+test('idle viewport refit: repeated wide and narrow viewport cycles', async ({ page }, info) => {
+  await page.setViewportSize({ width: 2400, height: 900 })
+  await scenario(page, info, '# Title\n\nBody', async () => {
+    for (let cycle = 1; cycle <= 2; cycle++) {
+      await page.setViewportSize({ width: 2400, height: 900 })
+      await growToAvailable(page)
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await assertViewportRefit(page, info, `cycle-${cycle}-narrow`)
+    }
+    await assertSmallLeftDrag(page, info)
+  })
+})
+
+test('idle viewport refit: preview hidden and reshown after wide editor preference', async ({ page }, info) => {
+  await page.setViewportSize({ width: 2400, height: 900 })
+  await scenario(page, info, '# Title\n\nBody', async () => {
+    await growToAvailable(page)
+    await toggle(page, 'preview')
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await contained(page)
+    await toggle(page, 'preview')
+    await assertViewportRefit(page, info, 'preview-reshown-narrow')
+    await assertSmallLeftDrag(page, info)
+    await page.setViewportSize({ width: 2400, height: 900 })
+    await assertViewportRefit(page, info, 'preview-reshown-expanded')
+  })
+})
