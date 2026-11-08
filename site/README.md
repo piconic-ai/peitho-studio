@@ -79,8 +79,8 @@ bun site/scripts/build-brand-assets.ts   # from the repository root
 
 The site lives at <https://peitho-studio.piconic.ai/>. `wrangler.jsonc`
 declares it as a `custom_domain` route, so `wrangler deploy` creates the DNS
-record and certificate on the `piconic.ai` zone itself; `workers_dev` and
-`preview_urls` are off so this is the page's only host. `index.html` spells
+record and certificate on the `piconic.ai` zone itself. `workers_dev` is off,
+while `preview_urls` is on so uploaded versions can have preview URLs. `index.html` spells
 the host out in `<link rel="canonical">`, `og:url` and `og:image` (most link
 previewers ignore a relative `og:image`), so changing the hostname means
 updating both files.
@@ -107,15 +107,15 @@ GitHub Actions workflow. Its settings, for reference:
 
 - Path (root directory): `/site` — everything below runs in this
   directory, so `site/bun.lock` picks bun for the install.
-- Build command: `bun run build`
-- Deploy command: `bunx wrangler deploy`
+- Build command: none. The deploy commands build the site.
+- Deploy command: `bun run deploy`
 - Preview (non-production branch) command: `bun run deploy:preview`. It runs on
-  pull requests as a build check only: `preview_urls` is off in
-  `wrangler.jsonc`, so the uploaded version gets no URL, and the page has
-  no `workers.dev` host at all.
+  non-production branches and uploads a version with a preview URL. It does
+  not deploy that version to the production hostname.
 - Build watch paths, include: `site/*`, `brand/*`, `src-tauri/icons/*` —
   the page pulls its icons from the other two, and any other commit to the
-  app doesn't need a build.
+  app doesn't need a build. Set these paths in both **Production** and
+  **Previews Base**. Existing preview branches can retain their own settings.
 
 `bun run deploy` from a logged-in machine still works as a manual fallback.
 
@@ -143,6 +143,34 @@ update its `deploy_command` to `bun run deploy:preview` using the
 then rebuild the affected branch and verify the command in its logs.
 The API requires Workers Builds Configuration permission; a Wrangler OAuth
 login with Workers Scripts access alone may return `403 Forbidden`.
+
+## Recover a failed Workers build
+
+Open the failed GitHub check's **Details** link and read the complete build log.
+Compare the commit, root directory, and deploy command with a successful build.
+
+- If dependency installation or Vite fails, reproduce that failure locally.
+- If Wrangler reports API error `971` with a `Retry-After` delay after Vite
+  succeeds, wait at least the reported delay before retrying. See
+  [Cloudflare API rate limits](https://developers.cloudflare.com/fundamentals/api/reference/limits/).
+  A successful local build does not validate the remote upload.
+- For authentication or configuration errors, fix the reported cause before
+  retrying. Do not treat every deploy failure as rate limiting.
+
+Use **Retry build** on the failed build, then verify that the new build uses the
+intended commit and command. Check that **Workers Builds: peitho-studio-site**
+succeeds on that same commit in GitHub. If **Retry build** is disabled, inspect
+whether its branch still exists and whether your account can retry builds.
+Record the blocked retry rather than treating a successful build on another
+commit as recovery of the original check.
+
+If app-only changes start site builds, inspect **Build watch paths** in both
+**Production** and **Previews Base**. Compare the actual changed paths with the
+include paths above. Cloudflare also
+[bypasses path matching](https://developers.cloudflare.com/workers/ci-cd/builds/build-watch-paths/)
+for pushes with no changed files, at least 3,000 changed files, or at least 20
+commits. Check an existing preview branch's settings separately before assuming
+that a change to Previews Base applies to it.
 
 ## Release assets
 
