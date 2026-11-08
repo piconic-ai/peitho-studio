@@ -42,7 +42,7 @@ import { type ManifestSlide, type RenderErrorPayload, type RenderPayload, type S
 import { type BrokenSlides, NO_BROKEN_SLIDES, brokenSlidesAfterCommand, brokenSlidesAfterEdit, brokenSlidesSummary, isolateSlide, restoreEditAnnotations, saveDecision, savesUnrendered, sourceSaveDecision, startIsolation } from '../domain/brokenSlides'
 import { RenderFailure } from '../ipc/renderOutcome'
 import { SOURCE_EDITING_CLOSED, openSourceEditing, slideIndexAfterSourceSave, sourceEditorOffered, sourceReadFromDisk, sourceSaved, typeInSource } from '../domain/sourceEditing'
-import { clampMenuPosition, dropPointToCss, type Size } from '../domain/geometry'
+import { clampMenuPosition, type Size } from '../domain/geometry'
 import { replacementInsertion, textBetween } from '../domain/editorText'
 import { fileNameOf, partitionDroppedPaths } from '../domain/images'
 import { previewDevice, scaledDownPercent, viewportCanvas } from '../domain/viewport'
@@ -990,7 +990,7 @@ export function Studio() {
   async function dropFiles(drop: FileDrop): Promise<void> {
     const view = bodyEditor
     if (!view || editor.selectedIndex() === null || settings.panelOpen() || previewImageBusy()) return
-    const at = dropPointToCss(drop.position, window.devicePixelRatio, /Mac/.test(navigator.userAgent))
+    const at = drop.position
     const pos = codeEditorPositionAt(view, at)
     const preview = document.querySelector('[data-preview-host]')?.getBoundingClientRect()
     const onPreview = preview && at.x >= preview.left && at.x <= preview.right && at.y >= preview.top && at.y <= preview.bottom && ui.previewOpen()

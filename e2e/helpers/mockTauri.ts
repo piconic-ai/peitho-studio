@@ -20,6 +20,8 @@ import type { FakeCritIpc } from '../../ipc/fakeCritIpc'
 
 export interface MockDeck {
   source: string
+  /** Native monitor scale, independent of page zoom. Defaults to page DPR. */
+  nativeScaleFactor?: number
   /** Model Studio's editable slot wrappers from the supplied layout HTML. */
   editableLayouts?: boolean
   /** Paths `get_recent_decks` returns — defaults to none. */
@@ -780,7 +782,7 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
   // `present-ready` before clearing its busy state, so a listener that
   // never fires would make every present-click test hang until its
   // timeout).
-  await page.addInitScript(() => {
+  await page.addInitScript(nativeScaleFactor => {
     const w = window as unknown as {
       __TAURI_INTERNALS__: Record<string, unknown>
       __TAURI_EVENT_PLUGIN_INTERNALS__: Record<string, unknown>
@@ -851,8 +853,9 @@ export async function mockTauri(page: Page, deck: MockDeck): Promise<void> {
         listenerLabels.set(handlerId, target && target.kind !== 'Any' ? target.label ?? null : null)
         return handlerId
       }
+      if (cmd === 'plugin:window|scale_factor') return nativeScaleFactor ?? window.devicePixelRatio
       if (cmd.startsWith('plugin:event|')) return null
       return w.__mockInvoke(cmd, args)
     }
-  })
+  }, deck.nativeScaleFactor ?? null)
 }

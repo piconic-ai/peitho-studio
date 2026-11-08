@@ -1644,3 +1644,43 @@ for (const change of ['selection', 'draft'] as const) {
     else await expect.poll(() => editorText(page)).toContain('New typing\n\nKeep **formatting**')
   })
 }
+
+test('browser zoom shortcuts reach the window from the canvas, selected text and editing text', async ({ page }) => {
+  const deck = await open(page)
+  const outcome = async (target: Locator, init: Pick<KeyboardEventInit, 'key' | 'metaKey' | 'ctrlKey'>) => target.evaluate((element, init) => {
+    let received = 0
+    const receive = () => { received++ }
+    window.addEventListener('keydown', receive)
+    try {
+      const event = new KeyboardEvent('keydown', { ...init, bubbles: true, composed: true, cancelable: true })
+      element.dispatchEvent(event)
+      return { received, prevented: event.defaultPrevented }
+    } finally { window.removeEventListener('keydown', receive) }
+  }, init)
+  const check = async (target: Locator) => {
+    for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
+      for (const key of ['+', '=', '-', '0']) {
+        expect(await outcome(target, { key, ...modifier })).toEqual({ received: 1, prevented: false })
+      }
+    }
+    expect(await outcome(target, { key: 'F8' })).toEqual({ received: 0, prevented: false })
+  }
+
+  const host = page.locator(PREVIEW)
+  await page.locator(`${PREVIEW} .peitho-slide`).click({ position: { x: 5, y: 5 } })
+  await expect(host).toBeFocused()
+  await check(host)
+
+  await page.locator(`${PREVIEW} h1`).click()
+  const field = page.locator(FIELD)
+  await expect(field).toBeFocused()
+  await check(field)
+  await expect(field).toHaveText('Title')
+
+  await field.press('Escape')
+  await expect(field).toHaveCount(0)
+  const selected = page.locator(`${PREVIEW} [data-studio-selected]`)
+  await expect(selected).toBeFocused()
+  await check(selected)
+  expect(deck.source).toBe(SOURCE)
+})

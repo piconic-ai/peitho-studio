@@ -8,11 +8,12 @@
 // default) and reports them as paths through `onDragDropEvent` instead.
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
-import type { Point } from '../domain/geometry'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { dropPointToCss, type Point } from '../domain/geometry'
 import type { Unsubscribe } from './deckIpc'
 
-/** Files dropped on this window: their paths, and where from the webview's
- * top left, as Tauri reports it — see `dropPointToCss` for its units. */
+/** Files dropped on this window, with a position in CSS pixels relative
+ * to the webview's top left. */
 export interface FileDrop {
   paths: string[]
   position: Point
@@ -40,10 +41,13 @@ export function createTauriImageIpc(): ImageIpc {
     importImageFile: path => invoke('import_deck_image_file', { path }),
     importImageBytes: (name, bytes) => invoke('import_deck_image_bytes', bytes, { headers: { 'x-image-name': name } }),
     onFileDrop: callback => {
-      const unlisten = getCurrentWebview().onDragDropEvent(event => {
+      const unlisten = getCurrentWebview().onDragDropEvent(async event => {
         if (event.payload.type !== 'drop') return
         const { paths, position } = event.payload
-        callback({ paths, position: { x: position.x, y: position.y } })
+        const dpr = window.devicePixelRatio
+        const macOS = /Mac/.test(navigator.userAgent)
+        const nativeScaleFactor = macOS ? await getCurrentWindow().scaleFactor() : 1
+        callback({ paths, position: dropPointToCss(position, dpr, macOS, nativeScaleFactor) })
       })
       return () => { void unlisten.then(stop => { stop() }) }
     },
