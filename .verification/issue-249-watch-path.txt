@@ -1,0 +1,2 @@
+Cloudflare watch-path probe: this repository-root file is outside site/*, brand/*, and src-tauri/icons/*.
+This branch is for verification only and must not be merged.
