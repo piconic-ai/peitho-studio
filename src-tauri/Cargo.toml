@@ -40,7 +40,7 @@ sha2 = "0.10"
 # upstream release tag since peitho-core's API carries no semver guarantee
 # (it's the peitho CLI's internal engine, not a published crate); bump it in
 # lockstep with the `peitho` CLI `peitho present` launches.
-peitho-core = { git = "https://github.com/mizzy/peitho", tag = "v1.34.0" }
+peitho-core = { git = "https://github.com/mizzy/peitho", tag = "v1.48.0" }
 sys-locale = "0.3.2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-opener = "2"

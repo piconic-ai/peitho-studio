@@ -4,7 +4,7 @@ Bug reports, feature requests and pull requests are welcome. Please open a [GitH
 
 ## Local development
 
-Install [Bun](https://bun.sh), Rust and the platform prerequisites for [Tauri](https://v2.tauri.app/start/prerequisites/). The renderer uses the pinned `peitho-core` Git dependency in `src-tauri/Cargo.toml`; no local Peitho checkout is required. Install the matching `peitho` CLI on `PATH` to use Present (currently v1.34.0).
+Install [Bun](https://bun.sh), Rust and the platform prerequisites for [Tauri](https://v2.tauri.app/start/prerequisites/). The renderer uses the pinned `peitho-core` Git dependency in `src-tauri/Cargo.toml`; no local Peitho checkout is required. Install the matching `peitho` CLI on `PATH` to use Present (currently v1.48.0).
 
 ```sh
 git clone https://github.com/piconic-ai/peitho-studio.git
