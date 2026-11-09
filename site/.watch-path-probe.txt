@@ -1,0 +1,2 @@
+Cloudflare watch-path positive control: site/* must trigger a preview build.
+Verification branch only; do not merge.
