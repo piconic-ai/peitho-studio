@@ -79,10 +79,10 @@ bun site/scripts/build-brand-assets.ts   # from the repository root
 
 The site lives at <https://peitho-studio.piconic.ai/>. `wrangler.jsonc`
 declares it as a `custom_domain` route, so `wrangler deploy` creates the DNS
-record and certificate on the `piconic.ai` zone itself; `workers_dev` and
-`preview_urls` are off so this is the page's only host. `index.html` spells
-the host out in `<link rel="canonical">`, `og:url` and `og:image` (most link
-previewers ignore a relative `og:image`), so changing the hostname means
+record and certificate on the `piconic.ai` zone itself. `workers_dev` is off,
+while `preview_urls` is on so uploaded versions can have preview URLs.
+`index.html` spells the host out in `<link rel="canonical">`, `og:url` and
+`og:image` (most link previewers ignore a relative `og:image`), so changing the hostname means
 updating both files.
 
 ## Commands
@@ -102,47 +102,35 @@ bun run deploy:preview # build, then upload a version without deploying to produ
 ## Deploying
 
 [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)
-is connected to this repository and deploys `main`; nothing runs from a
-GitHub Actions workflow. Its settings, for reference:
+is connected to this repository. Its saved settings are:
 
-- Path (root directory): `/site` — everything below runs in this
-  directory, so `site/bun.lock` picks bun for the install.
-- Build command: `bun run build`
-- Deploy command: `bunx wrangler deploy`
-- Preview (non-production branch) command: `bun run deploy:preview`. It runs on
-  pull requests as a build check only: `preview_urls` is off in
-  `wrangler.jsonc`, so the uploaded version gets no URL, and the page has
-  no `workers.dev` host at all.
-- Build watch paths, include: `site/*`, `brand/*`, `src-tauri/icons/*` —
-  the page pulls its icons from the other two, and any other commit to the
-  app doesn't need a build.
+| Setting | Production | Previews Base |
+| --- | --- | --- |
+| Branch | `main` | Non-production branches |
+| Root directory | `/site` | `/site` |
+| Build command | None | None |
+| Deploy command | `bun run deploy` | `bun run deploy:preview` |
+| Include paths | `site/*`, `brand/*`, `src-tauri/icons/*` | Same as Production |
+| Exclude paths | None | None |
 
-`bun run deploy` from a logged-in machine still works as a manual fallback.
+The deploy commands build the site themselves. Production deploys to
+`peitho-studio.piconic.ai`; preview builds upload a version without deploying
+it to the production hostname.
 
-`deploy:preview` temporarily unsets `WRANGLER_CI_MATCH_TAG` to work around
+Watch paths are relative to the repository root. The site uses assets from
+`brand/` and `src-tauri/icons/`, so those directories must also trigger builds.
+Set the include paths in both **Production** and **Previews Base**. Existing
+preview branches can retain their own settings. Cloudflare documents
+[path matching and its exceptions](https://developers.cloudflare.com/workers/ci-cd/builds/build-watch-paths/).
+
+`deploy:preview` unsets `WRANGLER_CI_MATCH_TAG` to work around
 [Workers Builds issue #15682](https://github.com/cloudflare/workers-sdk/issues/15682).
-Debug logs confirmed that CI supplied a different tag from the existing Worker's
-tag even though its name matched and the API lookup succeeded. This skips the
-CI identity check, so the command explicitly pins the account ID and Worker name.
-It only uploads a version; production deployment keeps the normal identity check.
-Remove the workaround after Cloudflare fixes the preview build trigger.
+The command pins the account ID and Worker name because it bypasses the CI
+identity check. Production keeps the normal check.
 
-Existing preview branches can retain the old `bun run preview` command even
-after Previews Base is saved. Retrying a build may still use that old command;
-check **Deploy command** in the actual build details, not just the settings.
-The `preview` script therefore forwards to `deploy:preview` when Cloudflare's
-[built-in `WORKERS_CI=1` variable](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/#environment-variables)
-is present. Locally it still builds and starts `wrangler dev`. This prevents
-stale branch settings from leaving CI waiting on a development server.
-The affected branch must include this change; retrying an older commit cannot
-pick it up. Keep the dashboard preview command set to `bun run deploy:preview`.
-
-To repair the remote configuration, inspect the failed build's trigger and
-update its `deploy_command` to `bun run deploy:preview` using the
-[Builds API](https://developers.cloudflare.com/workers/ci-cd/builds/api-reference/),
-then rebuild the affected branch and verify the command in its logs.
-The API requires Workers Builds Configuration permission; a Wrangler OAuth
-login with Workers Scripts access alone may return `403 Forbidden`.
+Some existing preview branches still invoke `bun run preview`. In
+`WORKERS_CI=1`, `scripts/preview.sh` forwards that command to `deploy:preview`;
+locally it builds and starts `wrangler dev`.
 
 ## Release assets
 
