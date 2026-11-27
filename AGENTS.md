@@ -250,24 +250,23 @@ failure.
 - Keep independent signals per slide key when unrelated rows should not
   update together. A single `Map` or `Record` signal subscribes every reader
   to the whole collection.
-- Preserve the identity of shared objects passed to children. A local
-  `const` passed as a prop can have its initializer inlined at each read.
-  Use a stable accessor for objects such as the shared `CSSStyleSheet`.
+- Use a stable accessor for a shared object whose initializer reads reactive
+  state, such as `createSlideStylesheet(render.slideStylesheetText())`.
+  These allocating initializers can still be expanded on prop reads in
+  0.41.4. Non-reactive object constants no longer need this workaround.
 - Use `createMemo` or inline JSX expressions for compound values derived
-  from props. `const disabled = !props.ready || props.busy` stays frozen
-  when used in a native element's attribute on 0.40.2.
+  from props. A computed local such as
+  `const disabled = !props.ready || props.busy` is evaluated once, as the
+  props-reactivity guide documents.
 - When normalizing an input back to an unchanged signal value, also write
   the canonical value to the input. Equality-based signal updates alone do
   not replace user text such as `000` with `0`.
-- Keep StatusBar's error controls mounted and toggle the bar with `hidden`.
-  On 0.40.2, mounting that subtree conditionally freezes subsequent
-  disabled/hidden updates. The image-layout fix and send-error E2Es cover it.
 - Keep CodeMirror hosts mounted when their editor instances must survive
   selection and pane changes. Framework effect cleanup does not manage
   externally created editor instances automatically.
 
-The 0.40.2 audit, the distinction between old warnings and confirmed fixes,
-and the browser regression command are in `docs/barefootjs-upgrade.md`.
+The current 0.41.4 update, the historical 0.40.2 audit, and the browser
+regression command are in `docs/barefootjs-upgrade.md`.
 
 ## Pitfalls hit with UnoCSS (Wind4 preset)
 

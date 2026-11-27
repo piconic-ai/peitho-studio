@@ -1,13 +1,5 @@
-// Regression test for a real bug: StatusBar's error banner used the
-// `{errorMessage ? <div/> : null}` conditional-mount pattern, whose later
-// branch (only reachable once `errorMessage` transitions from `null` to a
-// string well after mount) sometimes never rendered — the same BarefootJS
-// ternary-mounting gap documented during the original fix. This made every commitChange failure (e.g. a real
-// peitho-core "slide matches multiple layouts" build error hit via New
-// Slide on a deck with more than one layout) invisible: errorMessage() was
-// set correctly, but nothing ever painted, so the user just saw "nothing
-// happens". Fixed by keeping the banner permanently mounted and toggling
-// it with `hidden` instead (see StatusBar.tsx).
+// A failed render must show its error even when the banner starts absent.
+// Keep this check when changing StatusBar's conditional rendering.
 import { test, expect } from '@playwright/test'
 import { mockTauri, type MockDeck } from './helpers/mockTauri'
 

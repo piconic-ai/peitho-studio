@@ -90,6 +90,32 @@ const tests: [string, (page: Page) => Promise<void>][] = [
   ['StableObjectIdentity', async page => {
     assert.equal(await page.locator('output').textContent(), 'same')
   }],
+  ['ObjectIdentity', async page => {
+    assert.equal(await page.locator('output').textContent(), 'same')
+  }],
+  ['LiteralObjectIdentity', async page => {
+    assert.equal(await page.locator('output').textContent(), 'same')
+  }],
+  ['FragmentAttributes', async page => {
+    const action = page.locator('[data-fragment-action]')
+    const toggleBusy = page.locator('[data-toggle-busy]')
+    const toggleShown = page.locator('[data-toggle-shown]')
+    assert.equal(await action.isDisabled(), false)
+    assert.equal(await action.isVisible(), true)
+    await toggleBusy.click()
+    assert.equal(await toggleBusy.textContent(), 'busy')
+    assert.equal(await action.isDisabled(), true)
+    assert.equal(await action.isVisible(), false)
+    await toggleBusy.click()
+    assert.equal(await action.isDisabled(), false)
+    assert.equal(await action.isVisible(), true)
+    await toggleShown.click()
+    assert.equal(await action.count(), 0)
+    await toggleShown.click()
+    await toggleBusy.click()
+    assert.equal(await action.isDisabled(), true)
+    assert.equal(await action.isVisible(), false)
+  }],
   ['GetterProp', async page => {
     await page.getByRole('button').click()
     assert.equal(await page.locator('output').textContent(), '1')
@@ -112,7 +138,7 @@ if (process.argv.includes('--audit')) {
     await page.getByRole('button', { name: 'toggle', exact: true }).click()
     assert.equal(await action.isDisabled(), false)
   }])
-  tests.push(['ObjectIdentity', async page => {
+  tests.push(['ReactiveObjectIdentity', async page => {
     assert.equal(await page.locator('output').textContent(), 'same')
   }])
 }

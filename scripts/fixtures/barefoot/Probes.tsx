@@ -119,6 +119,27 @@ export function ObjectIdentity() {
   return <section><IdentityChild token={token} /></section>
 }
 
+export function LiteralObjectIdentity() {
+  const token = { value: 1 }
+  return <section><IdentityChild token={token} /></section>
+}
+
+export function ReactiveObjectIdentity() {
+  const [value] = createSignal(1)
+  const token = { value: value() }
+  return <section><IdentityChild token={token} /></section>
+}
+
+export function FragmentAttributes() {
+  const [shown, setShown] = createSignal(true)
+  const [busy, setBusy] = createSignal(false)
+  return <>
+    <button data-toggle-busy onClick={() => setBusy(!busy())}>{busy() ? 'busy' : 'idle'}</button>
+    <button data-toggle-shown onClick={() => setShown(!shown())}>toggle branch</button>
+    {shown() ? <button data-fragment-action disabled={busy()} hidden={busy()}>action</button> : null}
+  </>
+}
+
 export function GetterChild(props: { value: () => number }) {
   return <output>{props.value()}</output>
 }

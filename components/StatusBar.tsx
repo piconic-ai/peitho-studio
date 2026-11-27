@@ -28,10 +28,7 @@ export interface StatusBarProps {
 export function StatusBar(props: StatusBarProps) {
   return (
     <>
-      {/* Keep controls mounted: conditional mounting freezes their later
-          disabled/hidden updates on BarefootJS 0.40.2. */}
-      <div
-        hidden={props.errorMessage === null}
+      {props.errorMessage !== null ? <div
         className="px-3 py-1.5 bg-destructive/10 text-destructive text-xs shrink-0 border-t border-destructive/30 flex items-start gap-2"
       >
         <div className="flex-1 select-text">
@@ -76,7 +73,7 @@ export function StatusBar(props: StatusBarProps) {
         >
           {props.errorMessageCopied ? messagesFor(props.language).errorCopied : messagesFor(props.language).copyError}
         </button>
-      </div>
+      </div> : null}
       <footer className="h-6 shrink-0 flex items-center px-3 text-xs text-muted-foreground border-t border-border">
         {props.statusMessage}
       </footer>
