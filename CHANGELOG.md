@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.1.14](https://github.com/piconic-ai/peitho-studio/compare/v0.1.13...v0.1.14) - 2026-11-27
+
+- test: stabilize layout watcher notification contracts by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/251
+- docs(site): align deployment guidance with verified build settings by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/253
+- chore(barefootjs): update to 0.41.4 and remove fixed workaround by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/260
+
 ## [v0.1.13](https://github.com/piconic-ai/peitho-studio/compare/v0.1.12...v0.1.13) - 2026-11-08
 
 - feat(zoom): add browser-style screen zoom shortcuts by @kfly8 in https://github.com/piconic-ai/peitho-studio/pull/244
