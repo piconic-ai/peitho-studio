@@ -246,6 +246,7 @@ fn image_content_type(name: &str) -> &'static str {
         "jpg" | "jpeg" => "image/jpeg",
         "gif" => "image/gif",
         "webp" => "image/webp",
+        extension if extension.eq_ignore_ascii_case("svg") => "image/svg+xml",
         _ => "application/octet-stream",
     }
 }
@@ -370,6 +371,18 @@ mod tests {
 
         assert_eq!(respond(&state, "/assets/hero.mp4").unwrap().1, "video/mp4");
         assert_eq!(respond(&state, "/assets/data.json").unwrap().1, "application/json; charset=utf-8");
+    }
+
+    #[test]
+    fn respond_serves_svg_images_with_their_image_mime_type() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("assets")).unwrap();
+        let state = state_for(dir.path().to_path_buf(), HashMap::new());
+        for (name, mime) in [("diagram.svg", "image/svg+xml"), ("diagram.SVG", "image/svg+xml"), ("diagram.svg.txt", "application/octet-stream")] {
+            let svg = br#"<svg xmlns="http://www.w3.org/2000/svg"/>"#;
+            std::fs::write(dir.path().join("assets").join(name), svg).unwrap();
+            assert_eq!(respond(&state, &format!("/assets/{name}")), Ok((svg.to_vec(), mime)));
+        }
     }
 
     #[test]
