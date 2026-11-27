@@ -147,7 +147,7 @@ mod tests {
         assert_eq!(verdicts.iter().map(|v| v.layout.as_str()).collect::<Vec<_>>(), vec!["cover", "statement"]);
         assert_eq!(verdicts[1], fits("statement"));
         let reason = mismatch_reason(&verdicts, "cover").expect("a body can't go on a title-only layout");
-        assert!(reason.contains("'body'"), "unexpected reason: {reason}");
+        assert_eq!(reason, "no slot in layout 'cover' accepts this paragraph");
     }
 
     #[test]

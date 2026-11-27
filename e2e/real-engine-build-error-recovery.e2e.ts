@@ -203,7 +203,7 @@ test('Given a real missing-body failure, when its loose content is assigned to a
     await page.locator('[data-slide-row="0"]').click()
     await expect.poll(() => editorText(page)).toBe('# Title')
     await fillEditor(page, '# Title\n\n- Item')
-    await expect(page.locator(ERROR_BAR)).toContainText("missing 'body' slot")
+    await expect(page.locator(ERROR_BAR)).toContainText("no slot in layout 'two-column' accepts this list")
     await page.locator('[data-preview-host] [data-studio-slot="left"]').click()
     const field = page.locator('[data-preview-host] [data-studio-edit]')
     await expect(field).toHaveText('- Item')

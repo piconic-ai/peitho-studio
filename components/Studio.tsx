@@ -804,7 +804,7 @@ export function Studio() {
     const before = editor.bodyDraft()
     const range = splitSlides(render.renderedSource())[index]
     const renderedBody = range ? extractPageComment(extractNote(range.text).rest).rest : null
-    const recovery = draftBuildErrors().body?.includes(`slide ${index + 1} `) && draftBuildErrors().body?.includes("missing 'body' slot")
+    const recovery = draftBuildErrors().body?.includes(`slide ${index + 1} `) && draftBuildErrors().body?.includes("\n  = help: add a 'body' slot to the layout or remove the ")
     if (renderedBody === null || (renderedBody !== before.replace(/\n{3,}/g, '\n\n').trim() && !recovery)) return null
     const rawBody = range ? extractPageComment(extractNote(range.text, true).rest, true).rest : ''
     const bodyStart = (range?.start ?? 0) + (range?.text.indexOf(rawBody) ?? 0)
