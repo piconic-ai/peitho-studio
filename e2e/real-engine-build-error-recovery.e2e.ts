@@ -210,6 +210,7 @@ for (const selection of ['pinned', 'automatic']) {
       await page.locator('[data-slide-row="0"]').click()
       await expect.poll(() => editorText(page)).toBe('# Title')
       await fillEditor(page, '# Title\n\n- Item')
+      if (selection === 'automatic') await expect(page.locator(ERROR_BAR)).toContainText('no layout matches this slide')
       await expect(page.locator(ERROR_BAR)).toContainText("no slot in layout 'two-column' accepts this list")
       await page.locator('[data-preview-host] [data-studio-slot="left"]').click()
       const field = page.locator('[data-preview-host] [data-studio-edit]')
