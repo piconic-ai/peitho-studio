@@ -176,6 +176,7 @@ pub fn parse_source(deck_path: &Path, source: &str) -> Result<ParsedSource, Rend
         &expanded.source,
         frontmatter,
         assets.highlighter.get(),
+        peitho_core::Audience::Live,
         &UnsupportedSvgRunner,
         &UnsupportedEmbedRenderer,
         &UnsupportedOEmbedFetcher,
@@ -220,7 +221,7 @@ pub(super) fn render_parsed_with_images(
 
     let theme_css = build_theme_css(
         &css_files,
-        &checked.slide_slot_classes(),
+        &checked.override_keys(),
         &layouts.slot_classes(),
         &layouts.root_classes(),
     )?;
