@@ -1210,11 +1210,9 @@ export function Studio() {
   // per thumbnail. Sharing the *object* is also what makes mount order
   // irrelevant: a row whose `ref` adopts this sheet before the effect below
   // has ever run still picks the CSS up when it lands, with no remount.
-  // `SlideList` gets the accessor, never `slideStylesheet` itself: the
-  // compiler inlines a `const`'s initializer into the prop getter it lowers
-  // (that's what keeps a derived prop reactive), which for an initializer
-  // that *constructs* something hands every reader its own fresh instance —
-  // here, a separately-parsed sheet per row that no `replaceSync` reaches.
+  // This initializer reads reactive CSS text. BarefootJS 0.41.4 can still
+  // expand an allocating initializer that reads reactive state on each
+  // prop read. The accessor keeps every canvas on this same sheet.
   const slideStylesheet = createSlideStylesheet(render.slideStylesheetText())
   function getSlideStylesheet(): CSSStyleSheet {
     return slideStylesheet
