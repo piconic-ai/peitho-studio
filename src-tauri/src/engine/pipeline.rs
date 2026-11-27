@@ -176,6 +176,7 @@ pub fn parse_source(deck_path: &Path, source: &str) -> Result<ParsedSource, Rend
         &expanded.source,
         frontmatter,
         assets.highlighter.get(),
+        peitho_core::Audience::Live,
         &UnsupportedSvgRunner,
         &UnsupportedEmbedRenderer,
         &UnsupportedOEmbedFetcher,
@@ -220,7 +221,7 @@ pub(super) fn render_parsed_with_images(
 
     let theme_css = build_theme_css(
         &css_files,
-        &checked.slide_slot_classes(),
+        &checked.override_keys(),
         &layouts.slot_classes(),
         &layouts.root_classes(),
     )?;
@@ -839,6 +840,34 @@ mod tests {
         assert_eq!((slides[0]["key"].as_str(), slides[0]["index"].as_u64()), (Some("opening"), Some(0)));
         assert!(slides[0].get("draft").is_none());
         assert!(!output.fragments.contains_key("wip"));
+    }
+
+    #[test]
+    fn render_source_keeps_present_only_slides_and_their_css_in_preview() {
+        let dir = tempfile::tempdir().unwrap();
+        let css_dir = dir.path().join("css");
+        std::fs::create_dir(&css_dir).unwrap();
+        let rule = r#"[data-slide-key="demo"] .slot-title { color: red; }"#;
+        std::fs::write(css_dir.join("overrides.css"), rule).unwrap();
+        let source = "# Intro\n\n---\n\n<!-- {\"key\":\"demo\",\"present_only\":true} -->\n# Live demo\n";
+        let output = render_source(&dir.path().join("deck.md"), source).unwrap();
+
+        assert!(output.fragments["demo"].contains("Live demo"));
+        assert!(output.css.contains(rule));
+    }
+
+    #[test]
+    fn render_source_reports_when_an_override_targets_a_draft_slide() {
+        let dir = tempfile::tempdir().unwrap();
+        let css_dir = dir.path().join("css");
+        std::fs::create_dir(&css_dir).unwrap();
+        std::fs::write(css_dir.join("overrides.css"), r#"[data-slide-key="wip"] .slot-title { color: red; }"#).unwrap();
+        let source = "# Intro\n\n---\n\n<!-- {\"key\":\"wip\",\"draft\":true} -->\n# Draft\n";
+        let err = render_source(&dir.path().join("deck.md"), source).err().unwrap();
+
+        let payload = build_payload(err);
+        assert_eq!(payload.kind, "Theme");
+        assert!(payload.help.contains(r#"slide 'wip' is marked {"draft":true}"#), "{payload:?}");
     }
 
     // A layout that references its own asset directly (not through Markdown

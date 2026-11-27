@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, expect, type Page } from '@playwright/test'
@@ -191,24 +191,34 @@ for (const recovery of ['preview cancel', 'body Undo', 'valid preview'] as const
   })
 }
 
-test('Given a real missing-body failure, when its loose content is assigned to a column, then the body recovers', async ({ page }) => {
-  const engine = startRealEngine()
-  try {
-    const deckPath = await engine.newDeck(mkdtempSync(join(tmpdir(), 'peitho-column-recovery-')))
-    const source = '<!-- {"key":"s","layout":"two-column"} -->\n# Title\n'
-    writeFileSync(deckPath, source)
-    const deck = { source, deckPath, realEngine: (cmd: string, args: Record<string, unknown>) => engine.invoke(deckPath, cmd, args) }
-    await mockTauri(page, deck)
-    await page.goto('/')
-    await page.locator('[data-slide-row="0"]').click()
-    await expect.poll(() => editorText(page)).toBe('# Title')
-    await fillEditor(page, '# Title\n\n- Item')
-    await expect(page.locator(ERROR_BAR)).toContainText("missing 'body' slot")
-    await page.locator('[data-preview-host] [data-studio-slot="left"]').click()
-    const field = page.locator('[data-preview-host] [data-studio-edit]')
-    await expect(field).toHaveText('- Item')
-    await field.press('Meta+Enter')
-    await expect.poll(() => deck.source).toContain('::: {slot=left}\n\n- Item')
-    await expect(page.locator(ERROR_BAR)).toBeHidden()
-  } finally { engine.stop() }
-})
+for (const selection of ['pinned', 'automatic']) {
+  test(`a loose list can be assigned to a column with ${selection} layout selection`, async ({ page }) => {
+    const engine = startRealEngine()
+    try {
+      const root = mkdtempSync(join(tmpdir(), 'peitho-column-recovery-'))
+      const deckPath = join(root, 'deck.md')
+      mkdirSync(join(root, 'css'))
+      mkdirSync(join(root, 'layouts'))
+      copyFileSync('src-tauri/src/engine/builtin/standard/two-column.html', join(root, 'layouts/two-column.html'))
+      writeFileSync(join(root, 'layouts/code.html'), '<section><slot name="title" accepts="inline" arity="1"></slot><slot name="code" accepts="code" arity="1"></slot></section>')
+      const settings = selection === 'pinned' ? { key: 's', layout: 'two-column' } : { key: 's' }
+      const source = `<!-- ${JSON.stringify(settings)} -->\n# Title\n`
+      writeFileSync(deckPath, source)
+      const deck = { source, deckPath, realEngine: (cmd: string, args: Record<string, unknown>) => engine.invoke(deckPath, cmd, args) }
+      await mockTauri(page, deck)
+      await page.goto('/')
+      await page.locator('[data-slide-row="0"]').click()
+      await expect.poll(() => editorText(page)).toBe('# Title')
+      await fillEditor(page, '# Title\n\n- Item')
+      if (selection === 'automatic') await expect(page.locator(ERROR_BAR)).toContainText('no layout matches this slide')
+      await expect(page.locator(ERROR_BAR)).toContainText("no slot in layout 'two-column' accepts this list")
+      await page.locator('[data-preview-host] [data-studio-slot="left"]').click()
+      const field = page.locator('[data-preview-host] [data-studio-edit]')
+      await expect(field).toHaveText('- Item')
+      await field.press('Meta+Enter')
+      await expect.poll(() => deck.source).toContain('::: {slot=left}\n\n- Item')
+      if (selection === 'automatic') expect(deck.source).not.toContain('"layout"')
+      await expect(page.locator(ERROR_BAR)).toBeHidden()
+    } finally { engine.stop() }
+  })
+}

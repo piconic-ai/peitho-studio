@@ -170,7 +170,7 @@ test.describe('functional', () => {
   })
 
   test('Given a deck whose layouts have no image slot, when an image is dropped, then a slide-specific layout handles it without a build error', async ({ page }) => {
-    const noSlot = "no slot accepts image in layout 'title-body-code'"
+    const noSlot = "no slot in layout 'title-body-code' accepts this image"
     const deck: MockDeck = {
       source: TWO_SLIDES,
       commandError: (cmd, args) => (cmd === 'render_draft' && String(args.content).includes('![](') && !String(args.content).includes('slot=studio-image-') ? noSlot : null),

@@ -149,7 +149,7 @@ mod tests {
         let source = placeholder_source(&parse_layout(layout.name, layout.html).unwrap());
         let output = render_source(&deck_path, &source).unwrap_or_else(|err| panic!("{err}\n{source}"));
         let fragment = &output.fragments[PREVIEW_KEY];
-        assert!(fragment.contains(r#"<span class="slot-title">"#), "{fragment}");
+        assert!(fragment.contains(r#"<span class="slot-title""#), "{fragment}");
         assert!(fragment.contains(r#"<div class="slot-body">"#), "{fragment}");
     }
 

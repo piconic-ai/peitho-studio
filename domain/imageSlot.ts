@@ -1,5 +1,5 @@
 // A slide holding an image whose layout has no slot for one: peitho-core
-// refuses to build it with "no slot accepts image in layout '...'". The
+// refuses to build it with "no slot in layout '...' accepts this image". The
 // error bar offers a way out next to that error — open the "Change Layout"
 // picker when another of the deck's layouts fits the slide, or add Studio's
 // built-in image layout (`add_image_layout`, `engine::image_layout` in
@@ -12,10 +12,10 @@ import type { PageConfig } from './pageConfig'
  * `engine::image_layout`. */
 export const IMAGE_LAYOUT = 'title-body-image'
 
-/** peitho-core's own wording for the error (`mapping.rs::image_slot_name`).
+/** peitho-core's own wording for the error (`check.rs::no_image_slot_error`).
  * On a deck with several layouts it shows up once per rejected layout,
  * under "no layout matches this slide". */
-const IMAGE_SLOT_MESSAGE = "no slot accepts image in layout '"
+const IMAGE_SLOT_MESSAGE = /no slot in layout '.*' accepts this image$/m
 
 /** A build error that is peitho-core's "no slot accepts image", and the
  * slide it names — `index` counts every slide, drafts included (the
@@ -32,7 +32,7 @@ const SLIDE_NUMBER = /(?:^|[\s,])slide (\d+)(?=[ ,:])/
 /** `message` as an `ImageSlotError`, or `null` when it's any other error
  * (or none), or names no slide among the deck's `slideCount`. */
 export function parseImageSlotError(message: string | null, slideCount: number): ImageSlotError | null {
-  if (message === null || !message.includes(IMAGE_SLOT_MESSAGE)) return null
+  if (message === null || !IMAGE_SLOT_MESSAGE.test(message)) return null
   const headline = message.split('\n', 1)[0]
   const match = SLIDE_NUMBER.exec(headline)
   if (match === null) return null

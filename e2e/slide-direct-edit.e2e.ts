@@ -131,17 +131,17 @@ test('the original missing-body error can be recovered by clicking the desired c
   const deck = await open(page)
   deck.renderError = content => content.includes('- Item') && !content.includes('slot=left') ? {
     kind: 'ResidualContent', line: 4, originFile: null, slide: { number: 1, key: 's' },
-    message: "unassigned content remains for missing 'body' slot",
-    headline: "slide 1 ('s'), line 4: unassigned content remains for missing 'body' slot",
+    message: "no slot in layout 'two-column' accepts this list",
+    headline: "slide 1 ('s'), line 4: no slot in layout 'two-column' accepts this list",
     help: "add a 'body' slot to the layout or remove the list",
   } : null
   await fillEditor(page, '# Title\n\n- Item')
-  await expect(page.getByText(/unassigned content remains/)).toBeVisible()
+  await expect(page.getByText(/accepts this list/)).toBeVisible()
   await page.locator(`${PREVIEW} [data-studio-slot="left"]`).click()
   await expect(page.locator(FIELD)).toHaveText('- Item')
   await page.locator(FIELD).press('Meta+Enter')
   await expect.poll(() => deck.source).toContain('::: {slot=left}\n\n- Item')
-  await expect(page.getByText(/unassigned content remains/)).toHaveCount(0)
+  await expect(page.getByText(/accepts this list/)).toHaveCount(0)
 })
 
 test('adding and moving an image keeps the column layout and supports Undo', async ({ page }) => {

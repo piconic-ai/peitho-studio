@@ -62,6 +62,15 @@ function textDescriptorForElement(element: HTMLElement): Extract<SlideEditTarget
   }
 }
 
+function markTextSelection(element: HTMLElement, selected: boolean): void {
+  if (!selected) element.removeAttribute('data-studio-selected')
+  else if (!element.hasAttribute('data-studio-selected')) {
+    // A theme can give an annotated slot display: contents. It needs
+    // a box to receive focus and keyboard input while selected.
+    element.dataset.studioSelected = getComputedStyle(element).display === 'contents' ? 'contents' : ''
+  }
+}
+
 function resolveDOMEditTarget(target: Element, slide: Element, point: Pick<MouseEvent, 'clientX' | 'clientY'>): DOMEditTarget {
   const source = sourceElementAtPoint(target, slide, point)
   if (source) {
@@ -155,6 +164,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
     [data-studio-empty]::before { content: attr(data-studio-placeholder); font: 24px system-ui; color: #777; }
     [data-studio-slot][data-studio-accepts="image"][data-studio-empty] { cursor: pointer; }
     [data-studio-selected] { outline: 2px solid #2563eb; outline-offset: 5px; }
+    [data-studio-selected="contents"] { display: inline !important; }
     [data-studio-edit] { outline: 2px solid #2563eb; outline-offset: 5px; cursor: text; min-width: 1em; }
     [data-studio-slot][data-studio-edit] { display: block !important; }
     [data-studio-edit][data-studio-empty]::before { content: none; }
@@ -202,7 +212,7 @@ export function watchSlideEditing(host: HTMLElement, callbacks: SlideEditingCall
       selectedImage = sameSlide ? Array.from(root.querySelectorAll<HTMLElement>('[data-studio-image]')).find(image => image.dataset.studioImage === selectedImage?.dataset.studioImage) ?? null : null
     }
     if (selectedText && !selectedText.isConnected) selectedText = null
-    for (const element of root.querySelectorAll<HTMLElement>('[data-peitho-src], [data-studio-empty]')) element.toggleAttribute('data-studio-selected', element === selectedText)
+    for (const element of root.querySelectorAll<HTMLElement>('[data-peitho-src], [data-studio-empty]')) markTextSelection(element, element === selectedText)
     const images = Array.from(root.querySelectorAll<HTMLElement>('[data-studio-image]'))
     for (const image of images) image.toggleAttribute('data-studio-selected', image === selectedImage)
     for (const image of root.querySelectorAll<HTMLElement>('[data-studio-image]')) ensureImageHandles(image)

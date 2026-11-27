@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { clearedSlideText, joinBlocks, removeSlideText, imageSlotContent, literalSlideText, slideHeadingText, slideInlineCode, slideTextLines, looseBodyEdit, removeImageSlot, slotTextInsertion, textEditFor, textEditInsertion } from './slideEdit'
+import { clearedSlideText, joinBlocks, removeSlideText, imageSlotContent, literalSlideText, slideHeadingText, slideInlineCode, slideTextLines, isMissingBodySlot, looseBodyEdit, removeImageSlot, slotTextInsertion, textEditFor, textEditInsertion } from './slideEdit'
 
 test('Japanese text edits locate the annotated bytes in the selected body and preserve heading syntax', () => {
   const body = '# 売上\n\n本文'
@@ -235,4 +235,15 @@ test('an empty title replacement preserves heading spacing and CRLF formatting',
   const body = '\r\n  #   \r\n\r\nExisting body'
   const insertion = slotTextInsertion(body, 'title', 'inline', ' First\r\nSecond\rThird ')!
   expect(body.slice(0, insertion.from) + insertion.insert + body.slice(insertion.to)).toBe('\r\n  #   First\r Second\rThird\r\n\r\nExisting body')
+})
+
+test('missing body recovery follows the layout displayed for the selected slide', () => {
+  const aggregate = "slide 2 ('demo'), line 4: no layout matches this slide\ncover: no slot in layout 'cover' accepts this list\nphoto: no slot in layout 'photo' accepts this image"
+  expect(isMissingBodySlot(aggregate, 1, 'cover')).toBe(true)
+  expect(isMissingBodySlot(aggregate, 1, 'photo')).toBe(false)
+  expect(isMissingBodySlot(aggregate, 0, 'cover')).toBe(false)
+  expect(isMissingBodySlot(aggregate, 1, undefined)).toBe(false)
+  expect(isMissingBodySlot(null, 1, 'cover')).toBe(false)
+  const direct = "slide 2: no slot in layout 'cover' accepts this paragraph\n  = help: add a 'body' slot to the layout or remove the paragraph"
+  expect(isMissingBodySlot(direct, 1, 'cover')).toBe(true)
 })
