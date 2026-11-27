@@ -18,9 +18,9 @@
     "test:barefoot": "bun scripts/check-barefoot-regressions.ts"
   },
   "dependencies": {
-    "@barefootjs/client": "^0.40.2",
-    "@barefootjs/jsx": "^0.40.2",
-    "@barefootjs/shared": "^0.40.2",
+    "@barefootjs/client": "^0.41.4",
+    "@barefootjs/jsx": "^0.41.4",
+    "@barefootjs/shared": "^0.41.4",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.13",
@@ -31,9 +31,9 @@
     "dompurify": "^3.4.16"
   },
   "devDependencies": {
-    "@barefootjs/cli": "^0.40.2",
-    "@barefootjs/test": "^0.40.2",
-    "@barefootjs/vite": "^0.40.2",
+    "@barefootjs/cli": "^0.41.4",
+    "@barefootjs/test": "^0.41.4",
+    "@barefootjs/vite": "^0.41.4",
     "@fontsource/charis-sil": "5.3.0",
     "@playwright/test": "^1.63.0",
     "@srsholmes/tauri-playwright": "^0.4.1",
