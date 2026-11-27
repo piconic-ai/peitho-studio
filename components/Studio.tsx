@@ -15,7 +15,7 @@ import { createTauriImageIpc, type FileDrop } from '../ipc/imageIpc'
 import { elementActionFor } from '../domain/elementAction'
 import { previewElementPlacement } from '../dom/elementPlacement'
 import { editorTextChange } from '../domain/editorText'
-import { clearedSlideText, textEditFor, textEditInsertion, slotTextInsertion, looseBodyEdit, removeImageSlot, type SlideEditTarget, type SlideEditSession } from '../domain/slideEdit'
+import { clearedSlideText, textEditFor, textEditInsertion, slotTextInsertion, isMissingBodySlot, looseBodyEdit, removeImageSlot, type SlideEditTarget, type SlideEditSession } from '../domain/slideEdit'
 import { createTauriCritIpc } from '../ipc/critIpc'
 import {
   REVIEW_AUTHOR, REVIEW_POLL_MS, commentCountsBySlide, commentKeyOf, commentTargetOf, layoutClickTarget, layoutTargetLabel, layoutTargetOfComment, lineSelectionOf, newLayoutComment, newReviewComment, pollsForAgent,
@@ -804,7 +804,7 @@ export function Studio() {
     const before = editor.bodyDraft()
     const range = splitSlides(render.renderedSource())[index]
     const renderedBody = range ? extractPageComment(extractNote(range.text).rest).rest : null
-    const recovery = draftBuildErrors().body?.includes(`slide ${index + 1} `) && draftBuildErrors().body?.includes("\n  = help: add a 'body' slot to the layout or remove the ")
+    const recovery = isMissingBodySlot(draftBuildErrors().body, index, render.slideLayouts()[selectedSlideKey() ?? ''])
     if (renderedBody === null || (renderedBody !== before.replace(/\n{3,}/g, '\n\n').trim() && !recovery)) return null
     const rawBody = range ? extractPageComment(extractNote(range.text, true).rest, true).rest : ''
     const bodyStart = (range?.start ?? 0) + (range?.text.indexOf(rawBody) ?? 0)

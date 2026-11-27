@@ -91,6 +91,20 @@ export function removeImageSlot(body: string, slot: string): string | null {
   return fence.test(body) ? body.replace(fence, '').trim() : null
 }
 
+const BODY_FRAGMENTS = new Set(['paragraph', 'list', 'heading', 'blockquote', 'table', 'math block', 'footnote block', 'embed card', 'generic embed card', 'text block'])
+
+/** Automatic layout dispatch reports each rejection without its slot hint. */
+export function isMissingBodySlot(message: string | null, slideIndex: number, layout: string | undefined): boolean {
+  if (message === null) return false
+  const [headline, ...details] = message.split('\n')
+  const slide = /(?:^|[\s,])slide (\d+)(?=[ ,:])/.exec(headline)
+  if (Number(slide?.[1]) !== slideIndex + 1) return false
+  if (details.some(line => line.startsWith("  = help: add a 'body' slot to the layout or remove the "))) return true
+  if (!layout || !headline.endsWith(': no layout matches this slide')) return false
+  const prefix = `${layout}: no slot in layout '${layout}' accepts this `
+  return details.some(line => line.startsWith(prefix) && BODY_FRAGMENTS.has(line.slice(prefix.length)))
+}
+
 /** Recover simple unrouted prose/list content after a heading. Used only
  * for a missing-body error, when the user explicitly picks its destination
  * on the canvas. No fenced slot content is moved implicitly. */
