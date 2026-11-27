@@ -2549,7 +2549,7 @@ Start writing your slides here.\n";
         );
 
         let err = pipeline::render_source(&deck_path, &source).err().expect("title-body has no image slot").to_string();
-        assert!(err.contains("no slot accepts image in layout 'title-body'"), "{err}");
+        assert!(err.contains("no slot in layout 'title-body' accepts this image"), "{err}");
         let verdicts = crate::engine::layout_fit::check_slide_layouts(&deck_path, &source, 1).unwrap().unwrap();
         let fitting: Vec<&str> = verdicts
             .iter()
@@ -2688,7 +2688,7 @@ Start writing your slides here.\n";
         let source = format!("{}\n![]({image})\n", std::fs::read_to_string(&deck_path).unwrap());
 
         let err = pipeline::render_source(&deck_path, &source).err().expect("title-slide has no image slot").to_string();
-        assert!(err.contains("no slot accepts image in layout 'title-slide'"), "{err}");
+        assert!(err.contains("no slot in layout 'title-slide' accepts this image"), "{err}");
         let verdicts = crate::engine::layout_fit::check_slide_layouts(&deck_path, &source, 0).unwrap().unwrap();
         let fitting: Vec<&str> = verdicts
             .iter()
@@ -2712,7 +2712,7 @@ Start writing your slides here.\n";
         std::fs::write(&deck_path, &source).unwrap();
 
         let err = pipeline::render_source(&deck_path, &source).err().expect("the built-in layout has no image slot").to_string();
-        assert!(err.contains("no slot accepts image"), "{err}");
+        assert!(err.contains("' accepts this image"), "{err}");
     }
 
     #[test]

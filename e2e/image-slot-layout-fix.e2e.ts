@@ -54,7 +54,7 @@ function renderError(engine: FakeEngine, content: string): string | null {
     if (!slide.includes('![](')) continue
     const layout = layoutOf(engine, slide) ?? engine.layouts[0]
     if (IMAGE_LAYOUTS.has(layout)) continue
-    return `slide ${String(index + 1)} ('${keyOf(slide, index)}'), line 3: no slot accepts image in layout '${layout}'\n  = help: add exactly one slot with accepts="image" or remove the image`
+    return `slide ${String(index + 1)} ('${keyOf(slide, index)}'), line 3: no slot in layout '${layout}' accepts this image\n  = help: add exactly one slot with accepts="image" or remove the image`
   }
   return null
 }
@@ -64,7 +64,7 @@ function verdicts(engine: FakeEngine, content: string, slideIndex: number): Layo
   return engine.layouts.map(layout => (
     IMAGE_LAYOUTS.has(layout) || !hasImage
       ? { layout, fit: { kind: 'fits' } }
-      : { layout, fit: { kind: 'mismatch', reason: `no slot accepts image in layout '${layout}'` } }
+      : { layout, fit: { kind: 'mismatch', reason: `no slot in layout '${layout}' accepts this image` } }
   ))
 }
 
@@ -98,7 +98,7 @@ async function typeUnroutedImage(page: Page): Promise<void> {
 }
 
 const fixButton = (page: Page) => page.locator('[data-image-slot-fix]')
-const errorBar = (page: Page) => page.getByText('no slot accepts image in layout')
+const errorBar = (page: Page) => page.getByText('accepts this image')
 
 // Studio pins a new slide to the layout of the one before it, so a slide
 // pinned to a layout with no image slot is the common case.

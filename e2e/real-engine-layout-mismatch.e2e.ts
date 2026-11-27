@@ -110,3 +110,31 @@ test('Given a deck whose only slide holds just a heading, when the image layout 
     engine.stop()
   }
 })
+
+test('Given a typed image on a slide with no image slot, when the fitting layout is chosen from the error bar, then the preview renders the image', async ({ page }) => {
+  const engine = startRealEngine()
+  try {
+    const deckPath = await engine.newDeck(mkdtempSync(join(tmpdir(), 'peitho-image-recovery-')))
+    mkdirSync(join(dirname(deckPath), 'img'), { recursive: true })
+    writeFileSync(join(dirname(deckPath), 'img/photo.png'), TINY_PNG)
+    const source = '<!-- {"key":"photo","layout":"title-body"} -->\n# Photo\n'
+    writeFileSync(deckPath, source)
+    const deck = {
+      source, deckPath, layouts: ['title-body', IMAGE_LAYOUT],
+      realEngine: (cmd: string, args: Record<string, unknown>) => engine.invoke(deckPath, cmd, args),
+    }
+    await mockTauri(page, deck)
+    await page.goto('/')
+    await page.locator('[data-slide-row="0"]').click()
+    await expect.poll(() => editorText(page)).toBe('# Photo')
+    await fillEditor(page, '# Photo\n\n![](img/photo.png)')
+    await page.locator('[data-image-slot-fix]').click()
+    await page.locator(`button[data-key="${IMAGE_LAYOUT}"]`).click()
+
+    await expect.poll(() => deck.source).toContain(`"layout":"${IMAGE_LAYOUT}"`)
+    await expect(page.locator(ERROR_BAR)).toBeHidden()
+    await expect(page.locator('[data-preview-host] img')).toHaveCount(1)
+  } finally {
+    engine.stop()
+  }
+})
